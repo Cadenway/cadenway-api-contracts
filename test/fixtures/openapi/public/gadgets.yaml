@@ -1,0 +1,124 @@
+openapi: 3.1.0
+info:
+  title: Gadgets fixture
+  version: 1.0.0
+  description: >-
+    Second fictional public contract of the pipeline tests. It declares the same `Error` schema and
+    the same pagination parameters as the widgets fixture, word for word, so the tests cover a name
+    shared by two documents.
+  contact:
+    name: Pipeline fixture
+servers:
+  - url: https://fixture.invalid
+    description: Placeholder; nothing is deployed at this address.
+tags:
+  - name: gadgets
+    description: Another fictional resource.
+paths:
+  /gadgets:
+    get:
+      operationId: listGadgets
+      summary: List gadgets
+      description: Returns one page of gadgets.
+      tags:
+        - gadgets
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of gadgets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GadgetPage'
+              examples:
+                lastPage:
+                  summary: A last page
+                  value:
+                    items:
+                      - id: gad-1
+                        label: Spare lever
+                    nextCursor: null
+        '400':
+          $ref: '#/components/responses/Error'
+components:
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque position returned as `nextCursor` by the previous page.
+      required: false
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      description: Maximum number of items in the page.
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+  responses:
+    Error:
+      description: The request was refused.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalidCursor:
+              summary: An unknown cursor
+              value:
+                code: pagination.invalid-cursor
+                message: The cursor does not belong to this list.
+  schemas:
+    Gadget:
+      type: object
+      description: Another fictional resource.
+      required:
+        - id
+        - label
+      properties:
+        id:
+          type: string
+          description: Identifier of the gadget.
+        label:
+          type: string
+          description: Display label.
+    GadgetPage:
+      type: object
+      description: One page of gadgets.
+      required:
+        - items
+        - nextCursor
+      properties:
+        items:
+          type: array
+          description: The gadgets of this page.
+          items:
+            $ref: '#/components/schemas/Gadget'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          description: Cursor of the next page, or null on the last page.
+    Error:
+      type: object
+      description: The single error shape of every route.
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Stable machine code.
+        message:
+          type: string
+          description: Human-readable explanation.
+        details:
+          type: object
+          description: Optional structured context.
+          additionalProperties: true

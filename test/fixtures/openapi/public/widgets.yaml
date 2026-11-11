@@ -1,0 +1,223 @@
+openapi: 3.1.0
+info:
+  title: Widgets fixture
+  version: 1.0.0
+  description: >-
+    Fictional contract used only by the pipeline tests of this repository. It describes no Waypoint
+    route; it only follows the contract style rules so the generators run on a realistic shape.
+  contact:
+    name: Pipeline fixture
+servers:
+  - url: https://fixture.invalid
+    description: Placeholder; nothing is deployed at this address.
+tags:
+  - name: widgets
+    description: A fictional resource.
+paths:
+  /widgets:
+    get:
+      operationId: listWidgets
+      summary: List widgets
+      description: Returns one page of widgets, ordered by creation date.
+      tags:
+        - widgets
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of widgets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WidgetPage'
+              examples:
+                firstPage:
+                  summary: A first page followed by another one
+                  value:
+                    items:
+                      - id: wid-1
+                        name: Left gear
+                        color: red
+                        createdAt: '2026-01-15T09:30:00Z'
+                    nextCursor: wid-1
+        '400':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createWidget
+      summary: Create a widget
+      description: Creates a widget and returns it.
+      tags:
+        - widgets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWidgetRequest'
+            examples:
+              redGear:
+                summary: A red widget
+                value:
+                  name: Left gear
+                  color: red
+      responses:
+        '201':
+          description: The created widget.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Widget'
+              examples:
+                redGear:
+                  summary: The created widget
+                  value:
+                    id: wid-1
+                    name: Left gear
+                    color: red
+                    createdAt: '2026-01-15T09:30:00Z'
+        '400':
+          $ref: '#/components/responses/Error'
+  /widgets/{widgetId}:
+    get:
+      operationId: getWidget
+      summary: Get a widget
+      description: Returns one widget by its identifier.
+      tags:
+        - widgets
+      parameters:
+        - $ref: '#/components/parameters/WidgetId'
+      responses:
+        '200':
+          description: The widget.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Widget'
+              examples:
+                redGear:
+                  summary: An existing widget
+                  value:
+                    id: wid-1
+                    name: Left gear
+                    color: red
+                    createdAt: '2026-01-15T09:30:00Z'
+        '404':
+          $ref: '#/components/responses/Error'
+components:
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque position returned as `nextCursor` by the previous page.
+      required: false
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      description: Maximum number of items in the page.
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    WidgetId:
+      name: widgetId
+      in: path
+      description: Identifier of the widget.
+      required: true
+      schema:
+        type: string
+  responses:
+    Error:
+      description: The request was refused.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notFound:
+              summary: An unknown widget
+              value:
+                code: widget.not-found
+                message: No widget has this identifier.
+  schemas:
+    Widget:
+      type: object
+      description: A fictional resource.
+      required:
+        - id
+        - name
+        - color
+        - createdAt
+      properties:
+        id:
+          type: string
+          description: Identifier of the widget.
+        name:
+          type: string
+          description: Display name.
+          minLength: 1
+          maxLength: 80
+        color:
+          $ref: '#/components/schemas/WidgetColor'
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation date, ISO 8601.
+    WidgetColor:
+      type: string
+      description: Color of a widget.
+      enum:
+        - red
+        - green
+        - blue
+    WidgetPage:
+      type: object
+      description: One page of widgets.
+      required:
+        - items
+        - nextCursor
+      properties:
+        items:
+          type: array
+          description: The widgets of this page.
+          items:
+            $ref: '#/components/schemas/Widget'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          description: Cursor of the next page, or null on the last page.
+    CreateWidgetRequest:
+      type: object
+      description: The fields a client sends to create a widget.
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Display name.
+          minLength: 1
+          maxLength: 80
+        color:
+          $ref: '#/components/schemas/WidgetColor'
+    Error:
+      type: object
+      description: The single error shape of every route.
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Stable machine code.
+        message:
+          type: string
+          description: Human-readable explanation.
+        details:
+          type: object
+          description: Optional structured context.
+          additionalProperties: true
