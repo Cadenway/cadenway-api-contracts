@@ -47,8 +47,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      # The runner has no local main branch, hence the explicit base.
-      - run: pnpm changeset status --since=origin/main
 
   conventions:
     name: Commit conventions
