@@ -1,0 +1,8 @@
+{
+  "name": "waypoint-api-contracts",
+  "version": "0.1.0",
+  "description": "waypoint-api-contracts tooling: 10 wp-contracts-* agents (OpenAPI, AsyncAPI, shared enumeration, code generation, documentation and release builders plus read-only breaking-change, consistency and consumer-impact reviewers, plus a .github maintainer), 11 /wp-* commands, 7 path-scoped rules, 8 skills, and the guard, git-guard and format hooks. The plugin root is this .claude/ folder; the hooks only act inside a waypoint-api-contracts checkout.",
+  "author": {
+    "name": "Valentin FORTIN"
+  }
+}
