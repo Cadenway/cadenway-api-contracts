@@ -22,6 +22,7 @@ node_modules/
 # Build outputs and caches.
 dist/
 coverage/
+.angular/
 .cache/
 .turbo/
 *.tsbuildinfo

@@ -1,0 +1,23 @@
+{
+  "name": "@waypoint/api-client",
+  "version": "0.0.0",
+  "description": "Angular HttpClient services for the Waypoint public API, generated from the OpenAPI specs.",
+  "license": "UNLICENSED",
+  "sideEffects": false,
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "directory": "dist"
+  },
+  "scripts": {
+    "build": "ng build api-client",
+    "typecheck": "ngc --noEmit -p tsconfig.lib.json"
+  },
+  "peerDependencies": {
+    "@angular/common": "^22.0.0",
+    "@angular/core": "^22.0.0",
+    "rxjs": "^7.4.0"
+  },
+  "dependencies": {
+    "tslib": "^2.3.0"
+  }
+}

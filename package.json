@@ -1,0 +1,50 @@
+{
+  "name": "waypoint-api-contracts",
+  "version": "0.0.0",
+  "description": "Waypoint API contracts: OpenAPI and AsyncAPI specs, and the packages generated from them.",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": "^24.15.0"
+  },
+  "scripts": {
+    "prepare": "node scripts/install-git-hooks.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint:specs": "node scripts/lint-specs.mjs",
+    "breaking": "node scripts/breaking.mjs",
+    "generate": "node scripts/generate.mjs",
+    "typecheck": "pnpm -r run typecheck && tsc -p tsconfig.test.json",
+    "test": "node scripts/vitest.mjs",
+    "build": "pnpm -r run build",
+    "docs:build": "node scripts/docs-build.mjs",
+    "changeset": "changeset",
+    "quality": "pnpm format:check && pnpm lint:specs && pnpm breaking && pnpm generate && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@angular/build": "^22.2.0",
+    "@angular/cli": "^22.2.0",
+    "@angular/common": "catalog:",
+    "@angular/compiler": "^22.2.0",
+    "@angular/compiler-cli": "^22.2.0",
+    "@angular/core": "catalog:",
+    "@asyncapi/modelina": "^5.10.0",
+    "@changesets/cli": "^3.0.0",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@redocly/cli": "^2.70.0",
+    "@stoplight/spectral-cli": "^6.17.0",
+    "@types/node": "^24.19.2",
+    "ng-packagr": "^22.2.0",
+    "orval": "^8.40.0",
+    "prettier": "^3.9.10",
+    "rxjs": "catalog:",
+    "tslib": "catalog:",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.0",
+    "yaml": "^2.9.0",
+    "zod": "catalog:"
+  }
+}

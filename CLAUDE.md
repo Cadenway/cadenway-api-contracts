@@ -42,8 +42,6 @@ pnpm build
 pnpm changeset status
 ```
 
-
-
 ## Tooling: this repository ships its own `.claude/`
 
 Open `waypoint-api-contracts/` as the workspace root to activate it. The `wp-contracts-*` agents, the `/wp-*`

@@ -33,12 +33,12 @@ The scripts below are this repository's contract. While the repository is being 
 create them with these exact names; afterwards, use them and never an ad-hoc equivalent. Run the
 narrowest check that covers the change first, then widen:
 
-| Changed                 | Minimum check                                                         |
-| ----------------------- | --------------------------------------------------------------------- |
-| A spec                  | `pnpm lint:specs`, `pnpm breaking`, `pnpm generate`, `pnpm typecheck` |
-| Shared enumerations     | `pnpm test`, `pnpm build`                                             |
-| Any change to a package | a changeset                                                           |
-| Docs or agent instructions only | Scoped formatting and link review |
+| Changed                         | Minimum check                                                         |
+| ------------------------------- | --------------------------------------------------------------------- |
+| A spec                          | `pnpm lint:specs`, `pnpm breaking`, `pnpm generate`, `pnpm typecheck` |
+| Shared enumerations             | `pnpm test`, `pnpm build`                                             |
+| Any change to a package         | a changeset                                                           |
+| Docs or agent instructions only | Scoped formatting and link review                                     |
 
 Report the commands you actually ran and their results; a check you did not run is reported as not
 run.
