@@ -1,16 +1,15 @@
 # Code owners of cadenway-api-contracts. The last matching pattern wins.
 #
-# The rules stay commented until the GitHub organization and its teams exist: replace <org> and the
-# team names, then uncomment them. An owner that does not exist makes GitHub report the file as
-# invalid.
+# Owners are the Cadenway maintainers team, which needs write access to this repository; GitHub
+# requests their review on every pull request that touches these paths.
 
-# * @<org>/maintainers
+* @Cadenway/maintainers
 
 # Public and internal routes.
-# /openapi/ @<org>/maintainers
+/openapi/ @Cadenway/maintainers
 
 # Events.
-# /asyncapi/ @<org>/maintainers
+/asyncapi/ @Cadenway/maintainers
 
 # CI and release workflows, templates and these rules.
-# /.github/ @<org>/maintainers
+/.github/ @Cadenway/maintainers
