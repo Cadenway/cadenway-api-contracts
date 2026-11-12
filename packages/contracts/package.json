@@ -1,6 +1,6 @@
 {
   "name": "@cadenway/contracts",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Cadenway contract types, runtime validators, event names and shared enumerations.",
   "license": "UNLICENSED",
   "repository": {
