@@ -1,0 +1,57 @@
+name: Release
+
+# Changesets keeps a `chore: version packages` pull request open with the pending changesets, opened
+# by the Cadenway deploy app so its CI runs. Merging it bumps the versions and the changelogs; the run
+# that follows on main builds and publishes the changed packages to GitHub Packages, then creates
+# their tags and GitHub releases.
+on:
+  push:
+    branches: [main]
+
+# Each job states the permissions it needs.
+permissions: {}
+
+jobs:
+  release:
+    name: Version or publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # The deploy app key is an environment secret that only main may use.
+    environment: release
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      # Publishing to GitHub Packages uses the workflow token.
+      packages: write
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          client-id: ${{ vars.CADENWAY_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CADENWAY_DEPLOY_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      # pnpm ignores the repository .npmrc credentials: setup-node writes them in the user config.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@cadenway'
+      - run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          publish-script: pnpm release
+          commit-message: 'chore: version packages'
+          pr-title: 'chore: version packages'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

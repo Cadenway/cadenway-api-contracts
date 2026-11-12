@@ -3,6 +3,11 @@
   "version": "0.0.0",
   "description": "Cadenway contract types, runtime validators, event names and shared enumerations.",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cadenway/cadenway-api-contracts.git",
+    "directory": "packages/contracts"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {
