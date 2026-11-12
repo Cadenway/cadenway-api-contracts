@@ -1,0 +1,5 @@
+# Spectral rules of `pnpm lint:specs`: the stock OpenAPI and AsyncAPI rulesets. Each rule only
+# applies to documents of its own format.
+extends:
+  - spectral:oas
+  - spectral:asyncapi

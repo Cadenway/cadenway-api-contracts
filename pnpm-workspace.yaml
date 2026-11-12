@@ -1,0 +1,30 @@
+# pnpm settings for this repository. Registry and auth lines stay in .npmrc.
+
+packages:
+  - 'packages/*'
+
+# Versions used by more than one manifest: the root tooling and a published package.
+catalog:
+  '@angular/common': ^22.2.0
+  '@angular/core': ^22.2.0
+  rxjs: ^7.8.2
+  tslib: ^2.8.1
+  zod: ^4.6.0
+
+# Install scripts are reviewed one by one: pnpm refuses an install that would skip an unlisted one.
+allowBuilds:
+  # Each of these only deletes its own unused dist/ folder; the package runs from lib/.
+  '@hyperjump/json-pointer': false
+  '@hyperjump/json-schema': false
+  '@hyperjump/json-schema-core': false
+  '@hyperjump/pact': false
+  # Native modules of the Angular CLI: each ships a prebuilt binary as an optional dependency.
+  '@parcel/watcher': false
+  esbuild: false
+  lmdb: false
+  msgpackr-extract: false
+  # Usage telemetry of the Spectral packages.
+  '@scarf/scarf': false
+  # The AsyncAPI CLI and the yarn it carries only print a notice; the CLI runs without them.
+  '@asyncapi/cli': false
+  yarn: false

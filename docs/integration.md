@@ -10,12 +10,12 @@ Author the contract in this repository first. After a compatible release of the 
 
 ## Contract Style
 
-Source: `wp-contract-style` ([Claude](../.claude/skills/wp-contract-style/SKILL.md), [Codex](../.codex/skills/wp-contract-style/SKILL.md)).
+Source: `cw-contract-style` ([Claude](../.claude/skills/cw-contract-style/SKILL.md), [Codex](../.codex/skills/cw-contract-style/SKILL.md)).
 
 | Concern            | Rule                                                                                             |
 | ------------------ | ------------------------------------------------------------------------------------------------ |
 | Fields             | camelCase                                                                                        |
-| Ids                | strings; tasks use the space prefix (`WAY-482`)                                                  |
+| Ids                | strings; tasks use the space prefix (`CAD-482`)                                                  |
 | Dates              | ISO 8601; dates without time as `YYYY-MM-DD`                                                     |
 | Lists              | cursor pagination, `limit` ≤ 100                                                                 |
 | Errors             | `{ code, message, details? }`; `code` stable and documented                                      |
@@ -24,7 +24,7 @@ Source: `wp-contract-style` ([Claude](../.claude/skills/wp-contract-style/SKILL.
 
 ## Versioning Rules
 
-Source: `wp-versioning-rules` ([Claude](../.claude/skills/wp-versioning-rules/SKILL.md), [Codex](../.codex/skills/wp-versioning-rules/SKILL.md)).
+Source: `cw-versioning-rules` ([Claude](../.claude/skills/cw-versioning-rules/SKILL.md), [Codex](../.codex/skills/cw-versioning-rules/SKILL.md)).
 
 | Change                                                                             | Level                                 |
 | ---------------------------------------------------------------------------------- | ------------------------------------- |

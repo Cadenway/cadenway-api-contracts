@@ -1,6 +1,6 @@
-# waypoint-api-contracts: Claude Code tooling
+# cadenway-api-contracts: Claude Code tooling
 
-This `.claude/` folder ships the Claude Code tooling of waypoint-api-contracts: **10 agents**,
+This `.claude/` folder ships the Claude Code tooling of cadenway-api-contracts: **10 agents**,
 11 slash commands, 7 rules, 8 skills, 3 hooks, the project
 settings.
 
@@ -27,11 +27,11 @@ Start from [AGENTS.md](../AGENTS.md) (the rules every assistant follows) and [CL
 Start from this checkout and attach the peers you need, for example:
 
 ```powershell
-claude --add-dir ../waypoint-api-gateway ../waypoint-task-service ../waypoint-webapp
+claude --add-dir ../cadenway-api-gateway ../cadenway-task-service ../cadenway-webapp
 ```
 
-Their `.claude/agents/` are discovered too, so their `wp-*` roles become available. Peer checkouts
-are **read-only** from a waypoint-api-contracts session (the guard refuses edits there): change them in their
+Their `.claude/agents/` are discovered too, so their `cw-*` roles become available. Peer checkouts
+are **read-only** from a cadenway-api-contracts session (the guard refuses edits there): change them in their
 own session and pull request.
 
 ## Agents
@@ -42,32 +42,32 @@ check that writes files. No agent delegates further.
 
 | Agent | Responsibility | Model | Effort | Mode |
 | --- | --- | --- | --- | --- |
-| `wp-contracts-openapi-author` | Public and internal routes. | opus | high | Assigned writes |
-| `wp-contracts-asyncapi-author` | Events and their payloads. | opus | high | Assigned writes |
-| `wp-contracts-enum-maintainer` | Shared enumerations. | sonnet | high | Assigned writes |
-| `wp-contracts-codegen-maintainer` | Generation pipeline. | sonnet | high | Assigned writes |
-| `wp-contracts-docs-maintainer` | Published API documentation. | sonnet | medium | Assigned writes |
-| `wp-contracts-release-manager` | Changesets and deprecations. | sonnet | medium | Assigned writes |
-| `wp-contracts-breaking-change-reviewer` | Compatibility of a spec change. | opus | xhigh | Read-only |
-| `wp-contracts-consistency-reviewer` | Naming and style across specs. | sonnet | high | Read-only |
-| `wp-contracts-consumer-impact-reviewer` | Who must change, in which order. | sonnet | high | Read-only |
-| `wp-contracts-github-maintainer` | Workflows, templates and community files in .github/. | sonnet | medium | Assigned writes |
+| `cw-contracts-openapi-author` | Public and internal routes. | opus | high | Assigned writes |
+| `cw-contracts-asyncapi-author` | Events and their payloads. | opus | high | Assigned writes |
+| `cw-contracts-enum-maintainer` | Shared enumerations. | sonnet | high | Assigned writes |
+| `cw-contracts-codegen-maintainer` | Generation pipeline. | sonnet | high | Assigned writes |
+| `cw-contracts-docs-maintainer` | Published API documentation. | sonnet | medium | Assigned writes |
+| `cw-contracts-release-manager` | Changesets and deprecations. | sonnet | medium | Assigned writes |
+| `cw-contracts-breaking-change-reviewer` | Compatibility of a spec change. | opus | xhigh | Read-only |
+| `cw-contracts-consistency-reviewer` | Naming and style across specs. | sonnet | high | Read-only |
+| `cw-contracts-consumer-impact-reviewer` | Who must change, in which order. | sonnet | high | Read-only |
+| `cw-contracts-github-maintainer` | Workflows, templates and community files in .github/. | sonnet | medium | Assigned writes |
 
 ## Commands
 
 | Command | What it does | Runs |
 | --- | --- | --- |
-| `/wp-route` | Add or change a route. | `wp-contracts-openapi-author` |
-| `/wp-event` | Add or change an event. | `wp-contracts-asyncapi-author` |
-| `/wp-enum` | Change a shared enumeration. | `wp-contracts-enum-maintainer` |
-| `/wp-codegen` | Change the generation pipeline. | `wp-contracts-codegen-maintainer` |
-| `/wp-docs` | Maintain the published API docs. | `wp-contracts-docs-maintainer` |
-| `/wp-release` | Prepare changesets and deprecations. | `wp-contracts-release-manager` |
-| `/wp-breaking-review` | Check compatibility of a spec change. | `wp-contracts-breaking-change-reviewer` |
-| `/wp-consistency-review` | Check naming and style. | `wp-contracts-consistency-reviewer` |
-| `/wp-impact` | List affected repositories and their order. | `wp-contracts-consumer-impact-reviewer` |
-| `/wp-github` | Change workflows, templates or community files in .github/. | `wp-contracts-github-maintainer` |
-| `/wp-quality` | Run the local quality gate, stopping at the first failure. | runs the commands itself |
+| `/cw-route` | Add or change a route. | `cw-contracts-openapi-author` |
+| `/cw-event` | Add or change an event. | `cw-contracts-asyncapi-author` |
+| `/cw-enum` | Change a shared enumeration. | `cw-contracts-enum-maintainer` |
+| `/cw-codegen` | Change the generation pipeline. | `cw-contracts-codegen-maintainer` |
+| `/cw-docs` | Maintain the published API docs. | `cw-contracts-docs-maintainer` |
+| `/cw-release` | Prepare changesets and deprecations. | `cw-contracts-release-manager` |
+| `/cw-breaking-review` | Check compatibility of a spec change. | `cw-contracts-breaking-change-reviewer` |
+| `/cw-consistency-review` | Check naming and style. | `cw-contracts-consistency-reviewer` |
+| `/cw-impact` | List affected repositories and their order. | `cw-contracts-consumer-impact-reviewer` |
+| `/cw-github` | Change workflows, templates or community files in .github/. | `cw-contracts-github-maintainer` |
+| `/cw-quality` | Run the local quality gate, stopping at the first failure. | runs the commands itself |
 
 ## Rules
 
@@ -87,14 +87,14 @@ See [skills/](skills/) for the complete inventory, including the technology guid
 
 | Skill | Use |
 | --- | --- |
-| `wp-context` | What Waypoint is, where the mockup, the integration guide and the repository map live, the product vocabulary (spaces, lists, sprints, tasks, statuses, milestones) and the multi-repository ownership rules. |
-| `wp-contract-style` | Naming, pagination, error, id and date conventions shared by every Waypoint spec. |
-| `wp-versioning-rules` | Which spec changes are minor or major, how deprecation works, and how events are versioned. |
-| `wp-tech-asyncapi` | AsyncAPI contracts and event tooling. |
-| `wp-tech-github-actions` | GitHub Actions workflows and CI configuration. |
-| `wp-tech-openapi` | OpenAPI specifications and HTTP contracts. |
-| `wp-tech-pnpm` | pnpm packages, scripts and workspaces. |
-| `wp-tech-typescript` | TypeScript code and package boundaries. |
+| `cw-context` | What Cadenway is, where the mockup, the integration guide and the repository map live, the product vocabulary (spaces, lists, sprints, tasks, statuses, milestones) and the multi-repository ownership rules. |
+| `cw-contract-style` | Naming, pagination, error, id and date conventions shared by every Cadenway spec. |
+| `cw-versioning-rules` | Which spec changes are minor or major, how deprecation works, and how events are versioned. |
+| `cw-tech-asyncapi` | AsyncAPI contracts and event tooling. |
+| `cw-tech-github-actions` | GitHub Actions workflows and CI configuration. |
+| `cw-tech-openapi` | OpenAPI specifications and HTTP contracts. |
+| `cw-tech-pnpm` | pnpm packages, scripts and workspaces. |
+| `cw-tech-typescript` | TypeScript code and package boundaries. |
 
 ## Hooks
 

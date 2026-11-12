@@ -1,0 +1,40 @@
+{
+  "name": "@cadenway/contracts",
+  "version": "0.0.0",
+  "description": "Cadenway contract types, runtime validators, event names and shared enumerations.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./types/*": {
+      "types": "./dist/generated/types/*.d.ts",
+      "default": "./dist/generated/types/*.js"
+    },
+    "./validators/*": {
+      "types": "./dist/generated/validators/*.d.ts",
+      "default": "./dist/generated/validators/*.js"
+    },
+    "./events/*": {
+      "types": "./dist/generated/events/*.d.ts",
+      "default": "./dist/generated/events/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  }
+}

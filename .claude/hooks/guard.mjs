@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * PreToolUse hook (waypoint-api-contracts): refuse writes that are never right in this repository.
+ * PreToolUse hook (cadenway-api-contracts): refuse writes that are never right in this repository.
  * Deny = exit 2 with the reason on stderr; everything else = exit 0.
  *
  * Reads `tool_input.file_path` and the written text (`content`, `new_string`, or the
  * `edits[].new_string` of a MultiEdit) and denies, in this order:
  *
- *  1. Sibling checkouts (`../waypoint-*`): read-only from a waypoint-api-contracts session.
+ *  1. Sibling checkouts (`../cadenway-*`): read-only from a cadenway-api-contracts session.
  *  2. Generated trees and build outputs. Edit the source and rebuild.
  *  3. Lockfiles edited by hand (`pnpm-lock.yaml`, `package-lock.json`). Use the package manager.
  *  4. Git internals (`.git/`).
@@ -15,14 +15,14 @@
  *  6. Repository-specific rules (see REPO_RULES).
  *
  * Deliberately conservative: ordinary sources, specs, docs and configuration stay writable. The hook
- * only acts inside a waypoint-api-contracts checkout (marker: `.claude/.claude-plugin/plugin.json` named
- * waypoint-api-contracts), so it is inert elsewhere.
+ * only acts inside a cadenway-api-contracts checkout (marker: `.claude/.claude-plugin/plugin.json` named
+ * cadenway-api-contracts), so it is inert elsewhere.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const REPO_NAME = 'waypoint-api-contracts';
+const REPO_NAME = 'cadenway-api-contracts';
 
 const GENERATED = [
   [/^(?:.*\/)?node_modules\//, 'an installed dependency'],
@@ -62,7 +62,7 @@ function isRepoRoot(dir) {
   }
 }
 
-/** Walks upward from a path and returns the nearest waypoint-api-contracts checkout root, or null. */
+/** Walks upward from a path and returns the nearest cadenway-api-contracts checkout root, or null. */
 export function findRepoRoot(start) {
   let dir = path.resolve(start);
   for (;;) {
@@ -80,16 +80,16 @@ export function writtenText(input) {
   return String(input.content ?? input.new_string ?? '');
 }
 
-/** Refuses writes into a sibling Waypoint checkout. */
+/** Refuses writes into a sibling Cadenway checkout. */
 export function evaluateSibling(root, absolute) {
   const relative = path.relative(path.dirname(root), path.resolve(absolute));
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
   const [folder] = relative.split(/[\\/]/);
   if (folder === path.basename(root)) return null;
-  if (!/^waypoint-[a-z0-9-]+$/i.test(folder)) return null;
+  if (!/^cadenway-[a-z0-9-]+$/i.test(folder)) return null;
   return deny(
     `${relative.replace(/\\/g, '/')} belongs to the sibling checkout ${folder}, which is read-only from a ` +
-      'waypoint-api-contracts session. Write the need down for its owner (its wp-* agents) and change it in its own session and pull request.',
+      'cadenway-api-contracts session. Write the need down for its owner (its cw-* agents) and change it in its own session and pull request.',
   );
 }
 

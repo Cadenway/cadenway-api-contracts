@@ -1,0 +1,49 @@
+{
+  "name": "cadenway-api-contracts",
+  "version": "0.0.0",
+  "description": "Cadenway API contracts: OpenAPI and AsyncAPI specs, and the packages generated from them.",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": "^24.15.0"
+  },
+  "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint:specs": "spectral lint \"openapi/**/*.yaml\" \"asyncapi/**/*.yaml\"",
+    "generate": "orval",
+    "generate:events": "asyncapi generate models typescript",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "vitest run --passWithNoTests",
+    "build": "pnpm -r run build",
+    "docs:build": "redocly build-docs",
+    "changeset": "changeset",
+    "quality": "pnpm format:check && pnpm generate && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@angular/build": "^22.2.0",
+    "@angular/cli": "^22.2.0",
+    "@angular/common": "catalog:",
+    "@angular/compiler": "^22.2.0",
+    "@angular/compiler-cli": "^22.2.0",
+    "@angular/core": "catalog:",
+    "@asyncapi/cli": "^6.3.0",
+    "@changesets/cli": "^3.0.0",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@redocly/cli": "^2.70.0",
+    "@stoplight/spectral-cli": "^6.17.0",
+    "@types/node": "^24.19.2",
+    "ng-packagr": "^22.2.0",
+    "orval": "^8.40.0",
+    "prettier": "^3.9.10",
+    "rxjs": "catalog:",
+    "tslib": "catalog:",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.0",
+    "zod": "catalog:"
+  }
+}
