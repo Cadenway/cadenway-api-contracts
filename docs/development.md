@@ -45,8 +45,8 @@ run.
 
 ## Planned full check list
 
-The following commands match the planned local gate. Run `/wp-quality` in Claude Code or
-`$wp-quality` in Codex without arguments. Verify CI coverage once workflows exist.
+The following commands match the planned local gate. Run `/cw-quality` in Claude Code or
+`$cw-quality` in Codex without arguments. Verify CI coverage once workflows exist.
 
 ```bash
 pnpm format:check
@@ -63,7 +63,7 @@ pnpm changeset status
 
 - Trunk-based: work branches come from `main`, named `<type>/<lowercase-kebab-description>` with a
   type among `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
-  `revert`; put the Waypoint task id first when there is one (`feat/way-482-sso-screen`). Never an
+  `revert`; put the Cadenway task id first when there is one (`feat/cad-482-sso-screen`). Never an
   agent name as a prefix. Validate with `git check-ref-format --branch <name>`.
 - Commits and PR titles follow Conventional Commits: `type(scope): subject`, English, imperative,
   lowercase subject, no trailing period, at most 100 characters; `!` only for a breaking change.

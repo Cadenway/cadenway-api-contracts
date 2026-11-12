@@ -1,4 +1,4 @@
-# waypoint-api-contracts: agent instructions
+# cadenway-api-contracts: agent instructions
 
 These instructions are mandatory for every AI assistant working in this repository, whatever the
 vendor. [CLAUDE.md](CLAUDE.md) imports them for Claude Code. Explicit user instructions take
@@ -17,14 +17,14 @@ This file states the **rules**. The tooling (agents, commands, skills, hooks) is
 
 ## What this repository is
 
-waypoint-api-contracts is intended to define what the API gateway exposes, what each service exposes internally, and what the services say to each other. It is planned to publish `@waypoint/contracts` and `@waypoint/api-client`, generated from the specs. This checkout is being bootstrapped: inspect the actual files and scripts before relying on the target structure or checks below.
+cadenway-api-contracts is intended to define what the API gateway exposes, what each service exposes internally, and what the services say to each other. It is planned to publish `@cadenway/contracts` and `@cadenway/api-client`, generated from the specs. This checkout is being bootstrapped: inspect the actual files and scripts before relying on the target structure or checks below.
 
 ```text
 openapi/public/      ← one file per domain (tasks.yaml, billing.yaml…)
 openapi/internal/    ← one file per service (task-service.yaml…)
 asyncapi/            ← one file per emitting service
-packages/contracts/  → @waypoint/contracts
-packages/api-client/ → @waypoint/api-client (generated)
+packages/contracts/  → @cadenway/contracts
+packages/api-client/ → @cadenway/api-client (generated)
 ```
 
 Implementation order after a release: producing service, then gateways and listening services, then the webapp. Each step only adds, so each repository ships alone.
@@ -52,7 +52,7 @@ Implementation order after a release: producing service, then gateways and liste
 
 ## GitHub files (`.github/`)
 
-This repository carries everything GitHub reads from it; Waypoint has no organization `.github`
+This repository carries everything GitHub reads from it; Cadenway has no organization `.github`
 repository and nothing is inherited.
 
 - [`.github/README.md`](.github/README.md) is the repository home page; `CONTRIBUTING.md`,
@@ -84,7 +84,7 @@ run.
 
 - Trunk-based: work branches come from `main`, named `<type>/<lowercase-kebab-description>` with a
   type among `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
-  `revert`; put the Waypoint task id first when there is one (`feat/way-482-sso-screen`). Never an
+  `revert`; put the Cadenway task id first when there is one (`feat/cad-482-sso-screen`). Never an
   agent name as a prefix. Validate with `git check-ref-format --branch <name>`.
 - Commits and PR titles follow Conventional Commits: `type(scope): subject`, English, imperative,
   lowercase subject, no trailing period, at most 100 characters; `!` only for a breaking change.
@@ -97,11 +97,11 @@ run.
 - Never run a registry publish (`npm publish`, `pnpm publish`): the release workflow publishes.
 - Never force-push, and never amend or rebase commits that are already pushed.
 - Never bypass the Git hooks (`--no-verify`, `core.hooksPath` overrides, `ALLOW_MAIN_PUSH=1`,
-  `WP_SKIP_PUSH_CHECKS=1`).
+  `CW_SKIP_PUSH_CHECKS=1`).
 - Never write a token, password or private key anywhere; `.npmrc` keeps `${NODE_AUTH_TOKEN}`. Do
   not read or write secret environment files; new variables are documented in `.env.example`.
 - Never edit generated trees (`dist/`, `node_modules/`, `coverage/`, `packages/*/src/generated/`) or lockfiles by hand.
-- Never modify a sibling checkout (`../waypoint-*`) from a task in this repository.
+- Never modify a sibling checkout (`../cadenway-*`) from a task in this repository.
 - Never merge a breaking change without a major changeset and a deprecation already shipped.
 
 The agent hooks enforce most of these mechanically; a refused command is a signal to stop and ask,
@@ -110,10 +110,10 @@ not to find another way around it.
 ## Agent tooling
 
 - **Claude Code**: [CLAUDE.md](CLAUDE.md) and [.claude/README.md](.claude/README.md): the
-  `wp-contracts-*` agents, the `/wp-*` commands (`/wp-quality` runs the whole local gate),
+  `cw-contracts-*` agents, the `/cw-*` commands (`/cw-quality` runs the whole local gate),
   path-scoped rules and hooks.
-- **Builders** (assigned writes): `wp-contracts-openapi-author`, `wp-contracts-asyncapi-author`, `wp-contracts-enum-maintainer`, `wp-contracts-codegen-maintainer`, `wp-contracts-docs-maintainer`, `wp-contracts-release-manager`, `wp-contracts-github-maintainer`.
-- **Reviewers** (read-only): `wp-contracts-breaking-change-reviewer`, `wp-contracts-consistency-reviewer`, `wp-contracts-consumer-impact-reviewer`.
+- **Builders** (assigned writes): `cw-contracts-openapi-author`, `cw-contracts-asyncapi-author`, `cw-contracts-enum-maintainer`, `cw-contracts-codegen-maintainer`, `cw-contracts-docs-maintainer`, `cw-contracts-release-manager`, `cw-contracts-github-maintainer`.
+- **Reviewers** (read-only): `cw-contracts-breaking-change-reviewer`, `cw-contracts-consistency-reviewer`, `cw-contracts-consumer-impact-reviewer`.
 - Specialists are available, not mandatory. Delegate a bounded responsibility with explicit files and
   checks, assign disjoint files to parallel agents and integrate their results yourself.
 

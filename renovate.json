@@ -10,9 +10,9 @@
       "automerge": true
     },
     {
-      "description": "Waypoint packages are proposed as soon as they are published.",
-      "matchPackageNames": ["@waypoint/**"],
-      "groupName": "waypoint packages",
+      "description": "Cadenway packages are proposed as soon as they are published.",
+      "matchPackageNames": ["@cadenway/**"],
+      "groupName": "cadenway packages",
       "minimumReleaseAge": null
     },
     {

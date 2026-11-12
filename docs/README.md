@@ -1,6 +1,6 @@
-# waypoint-api-contracts documentation
+# cadenway-api-contracts documentation
 
-Planned role: waypoint-api-contracts is the common language of Waypoint: what the API gateway exposes, what each service exposes internally, and what the services say to each other. It publishes `@waypoint/contracts` and `@waypoint/api-client`, generated from the specs.
+Planned role: cadenway-api-contracts is the common language of Cadenway: what the API gateway exposes, what each service exposes internally, and what the services say to each other. It publishes `@cadenway/contracts` and `@cadenway/api-client`, generated from the specs.
 
 ## Current status
 

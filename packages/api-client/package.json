@@ -1,7 +1,7 @@
 {
-  "name": "@waypoint/api-client",
+  "name": "@cadenway/api-client",
   "version": "0.0.0",
-  "description": "Angular HttpClient services for the Waypoint public API, generated from the OpenAPI specs.",
+  "description": "Angular HttpClient services for the Cadenway public API, generated from the OpenAPI specs.",
   "license": "UNLICENSED",
   "sideEffects": false,
   "publishConfig": {

@@ -1,7 +1,7 @@
 {
-  "name": "@waypoint/contracts",
+  "name": "@cadenway/contracts",
   "version": "0.0.0",
-  "description": "Waypoint contract types, runtime validators, event names and shared enumerations.",
+  "description": "Cadenway contract types, runtime validators, event names and shared enumerations.",
   "license": "UNLICENSED",
   "type": "module",
   "sideEffects": false,

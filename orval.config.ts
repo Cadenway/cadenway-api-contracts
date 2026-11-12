@@ -16,8 +16,8 @@ function listSpecs(folder: string): string[] {
 }
 
 // One entry per document, discovered here so that adding a spec needs no change in this file:
-// - every document of openapi/ gives its zod validators to @waypoint/contracts;
-// - a document of openapi/public also gives its Angular services to @waypoint/api-client, the one
+// - every document of openapi/ gives its zod validators to @cadenway/contracts;
+// - a document of openapi/public also gives its Angular services to @cadenway/api-client, the one
 //   surface the applications call.
 const entries: Record<string, unknown> = {};
 
