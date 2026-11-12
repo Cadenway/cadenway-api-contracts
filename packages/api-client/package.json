@@ -3,6 +3,11 @@
   "version": "0.0.0",
   "description": "Angular HttpClient services for the Cadenway public API, generated from the OpenAPI specs.",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cadenway/cadenway-api-contracts.git",
+    "directory": "packages/api-client"
+  },
   "sideEffects": false,
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
