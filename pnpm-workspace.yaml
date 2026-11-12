@@ -25,3 +25,6 @@ allowBuilds:
   msgpackr-extract: false
   # Usage telemetry of the Spectral packages.
   '@scarf/scarf': false
+  # The AsyncAPI CLI and the yarn it carries only print a notice; the CLI runs without them.
+  '@asyncapi/cli': false
+  yarn: false

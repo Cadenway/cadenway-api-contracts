@@ -43,6 +43,32 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  breaking:
+    name: Breaking changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: head
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.base_ref }}
+          path: base
+          persist-credentials: false
+      # Compares every OpenAPI document with main; skipped while main has no spec.
+      - if: hashFiles('base/openapi/**/*.yaml') != ''
+        uses: oasdiff/oasdiff-action/breaking@8a211b41745fcecdfa4a86531ffbf08934fb14f6 # v0.1.23
+        with:
+          base: 'base/openapi/**/*.yaml'
+          revision: 'head/openapi/**/*.yaml'
+          composed: true
+          fail-on: ERR
+
   conventions:
     name: Commit conventions
     if: github.event_name == 'pull_request'
