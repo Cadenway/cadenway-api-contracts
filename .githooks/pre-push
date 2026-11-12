@@ -16,4 +16,9 @@ if [ "${CW_SKIP_PUSH_CHECKS:-}" = "1" ]; then
   exit 0
 fi
 
-pnpm format:check && pnpm lint:specs
+pnpm format:check || exit 1
+
+# Spectral fails on a glob that matches no document: the spec lint runs once a spec exists.
+if find openapi asyncapi -name '*.yaml' -print 2>/dev/null | grep -q .; then
+  pnpm lint:specs
+fi
