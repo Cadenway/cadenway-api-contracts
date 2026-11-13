@@ -36,6 +36,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm format:check
+      # Spectral, with the Cadenway rules of .spectral.yaml; the reference documents of
+      # test/spectral/valid/ are linted too, so the step has something to check before the first spec.
+      - run: pnpm lint:specs
       - run: pnpm generate
       # The generated trees are committed: a spec change without its regenerated code stops here.
       - run: git status --porcelain && test -z "$(git status --porcelain)"
@@ -68,6 +71,29 @@ jobs:
           revision: 'head/openapi/**/*.yaml'
           composed: true
           fail-on: ERR
+
+  tooling:
+    name: Agent tooling copies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # A rule or a skill exists twice, for Claude Code and for Codex: the two copies must match.
+      - name: Compare the .claude and .codex copies of rules and skills
+        run: |
+          status=0
+          for file in .claude/rules/*.md .claude/skills/*/SKILL.md; do
+            twin=".codex/${file#.claude/}"
+            if ! cmp --silent "$file" "$twin"; then
+              echo "::error file=$file::differs from $twin"
+              status=1
+            fi
+          done
+          exit "$status"
 
   conventions:
     name: Commit conventions

@@ -1,0 +1,176 @@
+# Fixture of test/spectral/ruleset.spec.ts and of `pnpm lint:specs`: a document that follows the
+# contract style. It is not a Cadenway contract; the contracts live in openapi/ and asyncapi/.
+openapi: 3.1.0
+info:
+  title: Contract style reference, public routes
+  version: 1.0.0
+  description: Shows the shapes the Spectral rules of this repository accept.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+servers:
+  - url: https://api.cadenway.com
+tags:
+  - name: tasks
+    description: Tasks of a list.
+paths:
+  /v1/tasks:
+    get:
+      operationId: listTasks
+      summary: List tasks
+      description: Lists the tasks the caller can read, by cursor.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: sort
+          in: query
+          description: Sort key; a leading `-` sorts in descending order.
+          schema:
+            type: string
+            examples: ['-dueDate']
+      responses:
+        '200':
+          description: One page of tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+  /v1/tasks/{taskId}:
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        description: Task id, with the prefix of its space.
+        schema:
+          type: string
+          examples: [CAD-482]
+    get:
+      operationId: getTask
+      summary: Read a task
+      description: Returns one task with the version of its aggregate.
+      tags: [tasks]
+      responses:
+        '200':
+          description: The task.
+          headers:
+            ETag:
+              description: Version of the aggregate.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/Problem'
+    patch:
+      operationId: updateTask
+      summary: Update a task
+      description: Applies a JSON Merge Patch (RFC 7396) to the task.
+      tags: [tasks]
+      parameters:
+        - name: If-Match
+          in: header
+          description: Version the change was made from.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/TaskPatch'
+      responses:
+        '200':
+          description: The updated task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '412':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+components:
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor taken from `nextCursor`.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      description: Page size.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+  responses:
+    Problem:
+      description: The request failed; `code` says why.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem with the Cadenway extensions `code` and `details`.
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+          description: Stable machine code, `<domain>.<reason>`.
+        details:
+          type: object
+          additionalProperties: true
+    Task:
+      type: object
+      required: [id, title, version]
+      properties:
+        id:
+          type: string
+          examples: [CAD-482]
+        title:
+          type: string
+        version:
+          type: integer
+    TaskPatch:
+      type: object
+      properties:
+        title:
+          type: string
+    TaskPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+        nextCursor:
+          type: [string, 'null']

@@ -1,0 +1,82 @@
+# Fixture of test/spectral/ruleset.spec.ts and of `pnpm lint:specs`: a document that follows the
+# contract style. It is not a Cadenway contract; the contracts live in openapi/ and asyncapi/.
+asyncapi: 3.0.0
+info:
+  title: Contract style reference, events
+  version: 1.0.0
+  description: Shows the shapes the Spectral rules of this repository accept.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: UNLICENSED
+  tags:
+    - name: tasks
+      description: Tasks of a list.
+servers:
+  local:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream of the local stack.
+channels:
+  taskUpdatedV1:
+    address: evt.task.updated.v1
+    description: A task changed. Emitted by task-service.
+    messages:
+      taskUpdatedV1:
+        $ref: '#/components/messages/taskUpdatedV1'
+operations:
+  publishTaskUpdatedV1:
+    action: send
+    summary: task-service publishes the change of a task.
+    description: Sent from the outbox of task-service once the change is committed.
+    channel:
+      $ref: '#/channels/taskUpdatedV1'
+    messages:
+      - $ref: '#/channels/taskUpdatedV1/messages/taskUpdatedV1'
+components:
+  messages:
+    taskUpdatedV1:
+      name: task.updated.v1
+      title: Task updated
+      summary: A task changed.
+      headers:
+        type: object
+        properties:
+          traceparent:
+            type: string
+            description: W3C Trace Context of the request that caused the event.
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, taskId, changed]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            type: object
+            required: [type, id]
+            properties:
+              type:
+                type: string
+                enum: [user, automation, git, system]
+              id:
+                type: string
+          version:
+            type: integer
+            description: Version of the task after the change.
+          taskId:
+            type: string
+            examples: [CAD-482]
+          changed:
+            type: array
+            description: Names of the fields that changed.
+            items:
+              type: string

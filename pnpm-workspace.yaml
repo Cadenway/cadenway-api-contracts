@@ -11,6 +11,19 @@ catalog:
   tslib: ^2.8.1
   zod: ^4.6.0
 
+# Supply chain: a version is installable two days after its publication (2880 minutes), and never
+# when its publisher trust is weaker than that of an earlier version of the same package.
+minimumReleaseAge: 2880
+trustPolicy: no-downgrade
+
+# No `trustPolicyExclude` list: a version the policy rejects is replaced, not excepted.
+# Spectral's ruleset bundler asks for rollup ^2.80.0, a maintenance line whose releases are
+# published by hand, without provenance: `trustPolicy` rejects rollup@2.80.0. The bundler runs on
+# rollup 4, published from GitHub Actions with provenance; test/spectral/ruleset.spec.ts runs it
+# on every rule. Remove this override when the bundler declares rollup 4 itself.
+overrides:
+  '@stoplight/spectral-ruleset-bundler>rollup': ^4.0.0
+
 # Install scripts are reviewed one by one: pnpm refuses an install that would skip an unlisted one.
 allowBuilds:
   # Each of these only deletes its own unused dist/ folder; the package runs from lib/.
@@ -25,6 +38,5 @@ allowBuilds:
   msgpackr-extract: false
   # Usage telemetry of the Spectral packages.
   '@scarf/scarf': false
-  # The AsyncAPI CLI and the yarn it carries only print a notice; the CLI runs without them.
-  '@asyncapi/cli': false
+  # Carried by the plugin command of the Modelina CLI; its script only prints a notice.
   yarn: false
