@@ -1,0 +1,176 @@
+# Fixture of test/spectral/ruleset.spec.ts: every Cadenway rule on OpenAPI documents is broken
+# here once, on purpose. Not linted by `pnpm lint:specs`.
+openapi: 3.1.0
+info:
+  title: Contract style counter-example, public routes
+  version: 1.0.0
+  description: Breaks the Spectral rules of this repository.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+servers:
+  - url: https://api.cadenway.com
+tags:
+  - name: tasks
+    description: Tasks of a list.
+paths:
+  # cadenway-path-prefix-public: no /v1/.
+  /tasks:
+    get:
+      operationId: listTasksWithoutPrefix
+      summary: List tasks
+      description: Misses the version prefix, and pages by cursor without a limit.
+      tags: [tasks]
+      parameters:
+        # cadenway-pagination-cursor: `cursor` without `limit`, and `nextCursor` is never null.
+        - name: cursor
+          in: query
+          description: Opaque cursor.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One page of tasks.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nextCursor]
+                properties:
+                  nextCursor:
+                    type: string
+  # cadenway-path-kebab-case: snake_case segment and PascalCase parameter.
+  /v1/task_items/{TaskId}:
+    get:
+      operationId: getTaskItem
+      summary: Read a task item
+      description: Has a path that is not kebab-case.
+      tags: [tasks]
+      parameters:
+        - name: TaskId
+          in: path
+          required: true
+          description: Task id.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The task item.
+        # cadenway-error-problem-json: an error answered as application/json.
+        '404':
+          description: No such task item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  # cadenway-path-plural-collection: a singular collection.
+  /v1/task/{taskId}:
+    get:
+      operationId: getTaskSingular
+      summary: Read a task
+      description: Has a singular collection in its path.
+      tags: [tasks]
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          description: Task id.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The task.
+        # cadenway-error-status: 500 is not a documented error status.
+        '500':
+          $ref: '#/components/responses/Problem'
+  # cadenway-path-no-organization: the organization in the path.
+  /v1/organizations/{organizationId}/tasks:
+    get:
+      operationId: listTasksOfOrganization
+      summary: List the tasks of an organization
+      description: Carries the organization in its path, and pages by number.
+      tags: [tasks]
+      parameters:
+        - name: organizationId
+          in: path
+          required: true
+          description: Organization id.
+          schema:
+            type: string
+        # cadenway-pagination-no-offset: page pagination.
+        - name: page
+          in: query
+          description: Page number.
+          schema:
+            type: integer
+        # cadenway-pagination-limit: above 100 and without a default.
+        - name: limit
+          in: query
+          description: Page size.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: One page of tasks.
+        # cadenway-problem-schema: a problem without `code` and `details`.
+        '400':
+          description: The request is malformed.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required: [type, title, status]
+                properties:
+                  type:
+                    type: string
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+components:
+  # cadenway-openapi-no-path-items-component.
+  pathItems:
+    Unused:
+      description: A path item component, which oasdiff does not resolve.
+  responses:
+    Problem:
+      description: The request failed; `code` says why.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    # cadenway-openapi-no-dynamic-ref.
+    Tree:
+      $dynamicAnchor: node
+      type: object
+      properties:
+        children:
+          type: array
+          items:
+            $dynamicRef: '#node'

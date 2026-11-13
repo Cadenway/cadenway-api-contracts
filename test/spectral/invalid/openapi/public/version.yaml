@@ -1,0 +1,25 @@
+# Fixture of test/spectral/ruleset.spec.ts: breaks cadenway-openapi-version on purpose. Not linted
+# by `pnpm lint:specs`.
+openapi: 3.0.3
+info:
+  title: Contract style counter-example, spec version
+  version: 1.0.0
+  description: Written in OpenAPI 3.0.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+servers:
+  - url: https://api.cadenway.com
+tags:
+  - name: tasks
+    description: Tasks of a list.
+paths:
+  /v1/tasks:
+    get:
+      operationId: listTasks
+      summary: List tasks
+      description: Lists tasks.
+      tags: [tasks]
+      responses:
+        '200':
+          description: The tasks.

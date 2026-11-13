@@ -1,0 +1,25 @@
+# Fixture of test/spectral/ruleset.spec.ts: breaks cadenway-path-prefix-internal on purpose. Not
+# linted by `pnpm lint:specs`.
+openapi: 3.1.0
+info:
+  title: Contract style counter-example, internal routes
+  version: 1.0.0
+  description: An internal route with the public prefix.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+servers:
+  - url: http://task-service:3000
+tags:
+  - name: tasks
+    description: Tasks of a list.
+paths:
+  /v1/tasks:
+    get:
+      operationId: listTasksInternal
+      summary: List tasks
+      description: Lists tasks for the gateway.
+      tags: [tasks]
+      responses:
+        '200':
+          description: The tasks.

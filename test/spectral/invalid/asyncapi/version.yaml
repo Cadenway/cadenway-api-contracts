@@ -1,0 +1,11 @@
+# Fixture of test/spectral/ruleset.spec.ts: breaks cadenway-asyncapi-version on purpose. Not linted
+# by `pnpm lint:specs`.
+asyncapi: 3.1.0
+info:
+  title: Contract style counter-example, spec version
+  version: 1.0.0
+  description: Written in AsyncAPI 3.1.0, which the model generator does not read.
+channels:
+  taskUpdatedV1:
+    address: evt.task.updated.v1
+    description: A task changed.

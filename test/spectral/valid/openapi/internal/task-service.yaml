@@ -1,0 +1,76 @@
+# Fixture of test/spectral/ruleset.spec.ts and of `pnpm lint:specs`: a document that follows the
+# contract style. It is not a Cadenway contract; the contracts live in openapi/ and asyncapi/.
+openapi: 3.1.0
+info:
+  title: Contract style reference, internal routes
+  version: 1.0.0
+  description: Shows the shapes the Spectral rules of this repository accept.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+servers:
+  - url: http://task-service:3000
+tags:
+  - name: tasks
+    description: Tasks of a list.
+paths:
+  /internal/v1/tasks/{taskId}:
+    get:
+      operationId: getTaskInternal
+      summary: Read a task
+      description: Returns one task to the gateway.
+      tags: [tasks]
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          description: Task id, with the prefix of its space.
+          schema:
+            type: string
+            examples: [CAD-482]
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          description: No such task in the organization of the token.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+components:
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem with the Cadenway extensions `code` and `details`.
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    Task:
+      type: object
+      required: [id, version]
+      properties:
+        id:
+          type: string
+          examples: [CAD-482]
+        version:
+          type: integer
