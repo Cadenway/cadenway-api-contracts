@@ -52,7 +52,7 @@ The following commands match the planned local gate. Run `/cw-quality` in Claude
 pnpm format:check
 pnpm test:lint
 pnpm lint:code
-pnpm lint:specs                # Spectral
+pnpm lint:specs                # Redocly
 pnpm breaking                  # oasdiff against main
 pnpm generate
 pnpm typecheck

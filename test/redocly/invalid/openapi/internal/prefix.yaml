@@ -1,4 +1,4 @@
-# Fixture of test/spectral/ruleset.spec.ts: breaks cadenway-path-prefix-internal on purpose. Not
+# Fixture of test/redocly/ruleset.spec.ts: breaks cadenway/path-prefix-internal on purpose. Not
 # linted by `pnpm lint:specs`.
 openapi: 3.1.0
 info:

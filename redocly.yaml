@@ -1,0 +1,25 @@
+plugins:
+  - ./rules/contracts-redocly.mjs
+extends:
+  - recommended
+rules:
+  struct: error
+  security-defined: off
+  cadenway/openapi-version: error
+  cadenway/openapi-no-dynamic-ref: error
+  cadenway/openapi-no-path-items-component: error
+  cadenway/path-kebab-case: error
+  cadenway/path-plural-collection: warn
+  cadenway/path-no-organization: error
+  cadenway/path-prefix-public: error
+  cadenway/path-prefix-internal: error
+  cadenway/error-status: error
+  cadenway/error-problem-json: error
+  cadenway/problem-schema: error
+  cadenway/pagination-no-offset: error
+  cadenway/pagination-limit: error
+  cadenway/pagination-cursor: error
+  cadenway/asyncapi-version: error
+  cadenway/event-channel-address: error
+  cadenway/event-name: error
+  cadenway/event-payload: error

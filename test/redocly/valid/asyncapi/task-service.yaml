@@ -1,10 +1,10 @@
-# Fixture of test/spectral/ruleset.spec.ts and of `pnpm lint:specs`: a document that follows the
+# Fixture of test/redocly/ruleset.spec.ts and of `pnpm lint:specs`: a document that follows the
 # contract style. It is not a Cadenway contract; the contracts live in openapi/ and asyncapi/.
 asyncapi: 3.0.0
 info:
   title: Contract style reference, events
   version: 1.0.0
-  description: Shows the shapes the Spectral rules of this repository accept.
+  description: Shows the shapes the Redocly rules of this repository accept.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts

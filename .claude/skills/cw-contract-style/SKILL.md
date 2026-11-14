@@ -47,17 +47,17 @@ description: "Naming, pagination, error, id and date conventions shared by every
 
 ## Checked by `pnpm lint:specs`
 
-`.spectral.yaml` holds the rules Spectral can check; the rest is reviewed. The documents of
-`test/spectral/valid/` pass every rule and show the expected shapes.
+`redocly.yaml` enables the rules in `rules/contracts-redocly.mjs`; the rest is reviewed. The documents of
+`test/redocly/valid/` pass every rule and show the expected shapes.
 
 | Rule | Checks |
 | --- | --- |
-| `cadenway-openapi-version`, `cadenway-openapi-no-dynamic-ref`, `cadenway-openapi-no-path-items-component` | OpenAPI 3.1 and the two constructs oasdiff does not resolve |
-| `cadenway-path-prefix-public`, `cadenway-path-prefix-internal` | `/v1/` and `/internal/v1/`, by folder |
-| `cadenway-path-kebab-case`, `cadenway-path-no-organization` | kebab-case segments, camelCase path parameters, no organization parameter |
-| `cadenway-path-plural-collection` | warning only: a segment followed by a path parameter ends with `s` |
-| `cadenway-error-status`, `cadenway-error-problem-json`, `cadenway-problem-schema` | the allowed error statuses, the media type and the members of the problem |
-| `cadenway-pagination-no-offset`, `cadenway-pagination-limit`, `cadenway-pagination-cursor` | no page or offset parameter; `limit` from 1 to 100, 50 by default; `cursor`, `limit` and a nullable `nextCursor` together |
-| `cadenway-asyncapi-version` | AsyncAPI 3.0.0 |
-| `cadenway-event-channel-address`, `cadenway-event-name` | `evt.<entity>.<fact>.v<n>` and `<entity>.<fact>.v<n>` |
-| `cadenway-event-payload` | `id`, `occurredAt`, `organizationId`, `actor`, `version` required; the four actor types; an integer `version` |
+| `cadenway/openapi-version`, `cadenway/openapi-no-dynamic-ref`, `cadenway/openapi-no-path-items-component` | OpenAPI 3.1 and the two constructs oasdiff does not resolve |
+| `cadenway/path-prefix-public`, `cadenway/path-prefix-internal` | `/v1/` and `/internal/v1/`, by folder |
+| `cadenway/path-kebab-case`, `cadenway/path-no-organization` | kebab-case segments, camelCase path parameters, no organization parameter |
+| `cadenway/path-plural-collection` | warning only: a segment followed by a path parameter ends with `s` |
+| `cadenway/error-status`, `cadenway/error-problem-json`, `cadenway/problem-schema` | the allowed error statuses, the media type and the members of the problem |
+| `cadenway/pagination-no-offset`, `cadenway/pagination-limit`, `cadenway/pagination-cursor` | no page or offset parameter; `limit` from 1 to 100, 50 by default; `cursor`, `limit` and a nullable `nextCursor` together |
+| `cadenway/asyncapi-version` | AsyncAPI 3.0.0 |
+| `cadenway/event-channel-address`, `cadenway/event-name` | `evt.<entity>.<fact>.v<n>` and `<entity>.<fact>.v<n>` |
+| `cadenway/event-payload` | `id`, `occurredAt`, `organizationId`, `actor`, `version` required; the four actor types; an integer `version` |

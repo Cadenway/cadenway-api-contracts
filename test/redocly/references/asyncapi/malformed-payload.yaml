@@ -1,0 +1,14 @@
+asyncapi: 3.0.0
+info:
+  title: Malformed event payload
+  version: 1.0.0
+channels: {}
+operations: {}
+components:
+  messages:
+    malformed:
+      name: task.updated.v1
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version]
+        properties: malformed

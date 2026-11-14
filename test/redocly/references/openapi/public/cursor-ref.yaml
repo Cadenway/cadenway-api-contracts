@@ -1,0 +1,35 @@
+openapi: 3.1.0
+info:
+  title: Referenced cursor type
+  version: 1.0.0
+paths:
+  /v1/tasks:
+    get:
+      operationId: listTasks
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: A page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nextCursor]
+                properties:
+                  nextCursor:
+                    $ref: '#/components/schemas/Cursor'
+components:
+  schemas:
+    Cursor:
+      type: [string, 'null']

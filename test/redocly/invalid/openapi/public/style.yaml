@@ -1,10 +1,10 @@
-# Fixture of test/spectral/ruleset.spec.ts: every Cadenway rule on OpenAPI documents is broken
+# Fixture of test/redocly/ruleset.spec.ts: every Cadenway rule on OpenAPI documents is broken
 # here once, on purpose. Not linted by `pnpm lint:specs`.
 openapi: 3.1.0
 info:
   title: Contract style counter-example, public routes
   version: 1.0.0
-  description: Breaks the Spectral rules of this repository.
+  description: Breaks the Redocly rules of this repository.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -14,7 +14,7 @@ tags:
   - name: tasks
     description: Tasks of a list.
 paths:
-  # cadenway-path-prefix-public: no /v1/.
+  # cadenway/path-prefix-public: no /v1/.
   /tasks:
     get:
       operationId: listTasksWithoutPrefix
@@ -22,7 +22,7 @@ paths:
       description: Misses the version prefix, and pages by cursor without a limit.
       tags: [tasks]
       parameters:
-        # cadenway-pagination-cursor: `cursor` without `limit`, and `nextCursor` is never null.
+        # cadenway/pagination-cursor: `cursor` without `limit`, and `nextCursor` is never null.
         - name: cursor
           in: query
           description: Opaque cursor.
@@ -39,7 +39,7 @@ paths:
                 properties:
                   nextCursor:
                     type: string
-  # cadenway-path-kebab-case: snake_case segment and PascalCase parameter.
+  # cadenway/path-kebab-case: snake_case segment and PascalCase parameter.
   /v1/task_items/{TaskId}:
     get:
       operationId: getTaskItem
@@ -56,14 +56,14 @@ paths:
       responses:
         '200':
           description: The task item.
-        # cadenway-error-problem-json: an error answered as application/json.
+        # cadenway/error-problem-json: an error answered as application/json.
         '404':
           description: No such task item.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  # cadenway-path-plural-collection: a singular collection.
+  # cadenway/path-plural-collection: a singular collection.
   /v1/task/{taskId}:
     get:
       operationId: getTaskSingular
@@ -80,10 +80,10 @@ paths:
       responses:
         '200':
           description: The task.
-        # cadenway-error-status: 500 is not a documented error status.
+        # cadenway/error-status: 500 is not a documented error status.
         '500':
           $ref: '#/components/responses/Problem'
-  # cadenway-path-no-organization: the organization in the path.
+  # cadenway/path-no-organization: the organization in the path.
   /v1/organizations/{organizationId}/tasks:
     get:
       operationId: listTasksOfOrganization
@@ -97,13 +97,13 @@ paths:
           description: Organization id.
           schema:
             type: string
-        # cadenway-pagination-no-offset: page pagination.
+        # cadenway/pagination-no-offset: page pagination.
         - name: page
           in: query
           description: Page number.
           schema:
             type: integer
-        # cadenway-pagination-limit: above 100 and without a default.
+        # cadenway/pagination-limit: above 100 and without a default.
         - name: limit
           in: query
           description: Page size.
@@ -114,7 +114,7 @@ paths:
       responses:
         '200':
           description: One page of tasks.
-        # cadenway-problem-schema: a problem without `code` and `details`.
+        # cadenway/problem-schema: a problem without `code` and `details`.
         '400':
           description: The request is malformed.
           content:
@@ -134,7 +134,7 @@ paths:
                   instance:
                     type: string
 components:
-  # cadenway-openapi-no-path-items-component.
+  # cadenway/openapi-no-path-items-component.
   pathItems:
     Unused:
       description: A path item component, which oasdiff does not resolve.
@@ -165,7 +165,7 @@ components:
         details:
           type: object
           additionalProperties: true
-    # cadenway-openapi-no-dynamic-ref.
+    # cadenway/openapi-no-dynamic-ref.
     Tree:
       $dynamicAnchor: node
       type: object

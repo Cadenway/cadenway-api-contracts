@@ -36,8 +36,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm format:check
-      # Spectral, with the Cadenway rules of .spectral.yaml; the reference documents of
-      # test/spectral/valid/ are linted too, so the step has something to check before the first spec.
+      # Lint the reference documents as well as the authored contracts.
       - run: pnpm test:lint
       - run: pnpm lint:code
       - run: pnpm lint:specs
