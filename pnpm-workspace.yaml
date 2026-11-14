@@ -23,17 +23,8 @@ overrides:
 
 # Install scripts are reviewed one by one: pnpm refuses an install that would skip an unlisted one.
 allowBuilds:
-  # Each of these only deletes its own unused dist/ folder; the package runs from lib/.
-  '@hyperjump/json-pointer': false
-  '@hyperjump/json-schema': false
-  '@hyperjump/json-schema-core': false
-  '@hyperjump/pact': false
   # Native modules of the Angular CLI: each ships a prebuilt binary as an optional dependency.
   '@parcel/watcher': false
   esbuild: false
   lmdb: false
   msgpackr-extract: false
-  # Usage telemetry included by a dependency.
-  '@scarf/scarf': false
-  # Carried by the plugin command of the Modelina CLI; its script only prints a notice.
-  yarn: false

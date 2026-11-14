@@ -1,0 +1,7 @@
+{
+  "extends": "../../packages/api-client/tsconfig.lib.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["generated/api-client/**/*.ts"]
+}

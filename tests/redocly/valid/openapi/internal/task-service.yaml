@@ -39,35 +39,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/Task'
         '404':
-          description: No such task in the organization of the token.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+          $ref: '../../../../../components/http.yaml#/components/responses/Problem'
 components:
   schemas:
-    Problem:
-      type: object
-      description: RFC 9457 problem with the Cadenway extensions `code` and `details`.
-      required: [type, title, status, code]
-      properties:
-        type:
-          type: string
-          format: uri-reference
-        title:
-          type: string
-        status:
-          type: integer
-        detail:
-          type: string
-        instance:
-          type: string
-          format: uri-reference
-        code:
-          type: string
-        details:
-          type: object
-          additionalProperties: true
     Task:
       type: object
       required: [id, version]

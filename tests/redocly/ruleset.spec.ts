@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 // The specs of this repository do not exist yet, so nothing else proves that the Cadenway rules of
 // redocly.yaml fire: tests/redocly/valid/ must pass all of them, and each document of
 // tests/redocly/invalid/ must be reported with exactly the rules its comments name.
+// The documents of tests/redocly/valid/ take the problem, the pagination members and the actor from
+// components/, like a real spec: they also prove that the rules read through those references.
 
 /**
  * Interface Finding
@@ -183,10 +185,23 @@ describe('Redocly ruleset', () => {
     TIMEOUT,
   );
 
+  it(
+    'follows a reference written inside a shared component from the file that holds it',
+    () => {
+      expect(cadenwayCodes('tests/redocly/references/openapi/public/nested-external.yaml')).toEqual(
+        ['cadenway/problem-schema'],
+      );
+    },
+    TIMEOUT,
+  );
+
   it.each([
     'tests/redocly/valid/openapi/public/tasks.yaml',
     'tests/redocly/valid/openapi/internal/task-service.yaml',
     'tests/redocly/valid/asyncapi/task-service.yaml',
+    'tests/redocly/valid/asyncapi/identity-service.yaml',
+    'components/http.yaml',
+    'components/events.yaml',
   ])(
     'accepts %s',
     (document) => {

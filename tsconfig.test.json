@@ -4,5 +4,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["tests/**/*.ts", "vitest.config.ts"]
+  "include": ["tests/**/*.ts", "vitest.config.ts"],
+  "exclude": ["tests/codegen/generated/api-client"]
 }

@@ -24,8 +24,8 @@ paths:
       description: Lists the tasks the caller can read, by cursor.
       tags: [tasks]
       parameters:
-        - $ref: '#/components/parameters/Cursor'
-        - $ref: '#/components/parameters/Limit'
+        - $ref: '../../../../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../../../../components/http.yaml#/components/parameters/Limit'
         - name: sort
           in: query
           description: Sort key; a leading `-` sorts in descending order.
@@ -40,11 +40,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/TaskPage'
         '400':
-          $ref: '#/components/responses/Problem'
+          $ref: '../../../../../components/http.yaml#/components/responses/Problem'
         '401':
-          $ref: '#/components/responses/Problem'
+          $ref: '../../../../../components/http.yaml#/components/responses/Problem'
         '429':
-          $ref: '#/components/responses/Problem'
+          $ref: '../../../../../components/http.yaml#/components/responses/Problem'
   /v1/tasks/{taskId}:
     parameters:
       - name: taskId
@@ -72,7 +72,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Task'
         '404':
-          $ref: '#/components/responses/Problem'
+          $ref: '../../../../../components/http.yaml#/components/responses/Problem'
     patch:
       operationId: updateTask
       summary: Update a task
@@ -98,59 +98,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/Task'
         '404':
-          $ref: '#/components/responses/Problem'
+          $ref: '../../../../../components/http.yaml#/components/responses/Problem'
         '412':
-          $ref: '#/components/responses/Problem'
+          $ref: '../../../../../components/http.yaml#/components/responses/Problem'
         '422':
-          $ref: '#/components/responses/Problem'
+          $ref: '../../../../../components/http.yaml#/components/responses/Problem'
 components:
-  parameters:
-    Cursor:
-      name: cursor
-      in: query
-      description: Opaque cursor taken from `nextCursor`.
-      schema:
-        type: string
-    Limit:
-      name: limit
-      in: query
-      description: Page size.
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 100
-        default: 50
-  responses:
-    Problem:
-      description: The request failed; `code` says why.
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/Problem'
   schemas:
-    Problem:
-      type: object
-      description: RFC 9457 problem with the Cadenway extensions `code` and `details`.
-      required: [type, title, status, code]
-      properties:
-        type:
-          type: string
-          format: uri-reference
-        title:
-          type: string
-        status:
-          type: integer
-        detail:
-          type: string
-        instance:
-          type: string
-          format: uri-reference
-        code:
-          type: string
-          description: Stable machine code, `<domain>.<reason>`.
-        details:
-          type: object
-          additionalProperties: true
     Task:
       type: object
       required: [id, title, version]
@@ -176,4 +130,4 @@ components:
           items:
             $ref: '#/components/schemas/Task'
         nextCursor:
-          type: [string, 'null']
+          $ref: '../../../../../components/http.yaml#/components/schemas/NextCursor'

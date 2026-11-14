@@ -1,0 +1,27 @@
+# Schemas shared by every AsyncAPI document of asyncapi/. A spec references them with a relative
+# `$ref` (`../components/events.yaml#/components/schemas/...`); nothing here is an event.
+asyncapi: 3.0.0
+info:
+  title: Cadenway shared event components
+  version: 1.0.0
+  description: The members every Cadenway event payload carries with the same shape.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    Actor:
+      type: object
+      description: Who caused the event.
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          description: Kind of actor.
+          enum: [user, automation, git, system]
+        id:
+          type: string
+          description: Id of the user, the automation rule, the Git integration or the service.

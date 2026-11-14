@@ -14,6 +14,7 @@ description: "Naming, pagination, error, id and date conventions shared by every
 | Errors | `application/problem+json` (RFC 9457): `type`, `title`, `status`, `detail`, `instance`, with the extensions `code` and `details`; `code` stable and documented |
 | Partial aggregates | `partial: string[]` naming the missing parts |
 | Enumerations | `StatusKey`, `StatusCategory`, `MilestoneStatusKey`, `PriorityKey`, `CancelReason`, `Recurrence` |
+| Shared components | `components/http.yaml` (problem schema and response, `cursor`, `limit`, `nextCursor`) and `components/events.yaml` (`actor`), referenced by a relative `$ref` and never copied into a spec |
 
 ## HTTP API
 
@@ -39,7 +40,9 @@ description: "Naming, pagination, error, id and date conventions shared by every
 
 | Concern | Rule |
 | --- | --- |
-| Spec version | AsyncAPI 3.0.0 exactly: the model generator does not read 3.1.0 and writes one untyped `Root` model without failing |
+| Spec version | AsyncAPI 3.0.0 exactly: `pnpm generate:events` refuses any other version |
+| Payload | declares `properties` and `required` itself, without `allOf`; uses the JSON Schema keywords the event generator turns into a validator, which refuses the others |
+| Compatibility | no tool compares events with `main`; a payload change other than an added optional member takes a new versioned name and is reviewed |
 | `version` | the version of the aggregate, in every event; a consumer ignores a version it has already applied |
 | `actor` | `{ type: 'user' \| 'automation' \| 'git' \| 'system', id }` |
 | Subject | `evt.<name>`, the address of the channel |

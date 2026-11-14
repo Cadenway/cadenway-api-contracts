@@ -4,9 +4,7 @@
 
 ## Bootstrap status
 
-At the time this documentation was written, this checkout has no `package.json`, application source tree, or GitHub workflow files. The target architecture, scripts, and workflows in this guide must be created and verified during bootstrap.
-
-The commands below are the documented **target workflow**, copied from the repository overview and instructions. They are not proof that scripts, infrastructure, CI, or dependencies currently exist. Inspect the repository's actual manifests and files before running them, and report unavailable checks rather than inventing replacements. Run Git, pnpm, build, and test commands with this repository as the working directory, never from the parent workspace.
+The scripts below exist in `package.json`; `pnpm quality` runs them in order, except `pnpm changeset status`. Run Git, pnpm, build and test commands with this repository as the working directory, never from the parent workspace. `openapi/` and `asyncapi/` hold no contract yet, so the generation, the typecheck and the tests run on the documents of `tests/redocly/valid/`.
 
 ## Before making a change
 
@@ -43,10 +41,10 @@ narrowest check that covers the change first, then widen:
 Report the commands you actually ran and their results; a check you did not run is reported as not
 run.
 
-## Planned full check list
+## Full check list
 
-The following commands match the planned local gate. Run `/cw-quality` in Claude Code or
-`$cw-quality` in Codex without arguments. Verify CI coverage once workflows exist.
+The following commands are the local gate. Run `/cw-quality` in Claude Code or `$cw-quality` in
+Codex without arguments. CI runs the same steps and fails when `pnpm generate` leaves a diff.
 
 ```bash
 pnpm format:check
@@ -61,6 +59,19 @@ pnpm test
 pnpm build
 pnpm changeset status
 ```
+
+## What each command covers
+
+| Command           | Does                                                                                                                                                                                                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm lint:specs` | Redocly on `openapi/`, `asyncapi/`, `components/` and `tests/redocly/valid/`                                                                                                                                                                                                   |
+| `pnpm breaking`   | oasdiff between the OpenAPI documents of the working tree and `origin/main` (`--base <ref>` for another commit), like the CI job: composed mode, failure on `ERR`. Skipped while the base holds no spec. Uses `oasdiff` from the PATH, else its container image through Docker |
+| `pnpm generate`   | `generate:clean`, `generate:openapi` (orval), `generate:events`; the result is committed                                                                                                                                                                                       |
+| `pnpm typecheck`  | the two packages, the tests, and `tests/codegen/generated/` with the compiler options of each package                                                                                                                                                                          |
+| `pnpm test`       | the Redocly rules, the generators, the generated fixture code, the enumerations                                                                                                                                                                                                |
+| `pnpm build`      | both packages; the build of `@cadenway/contracts` also writes `packages/contracts/specs/`                                                                                                                                                                                      |
+
+**Events have no automated breaking-change check.** oasdiff reads OpenAPI only, here and in CI. A change to an event payload is caught by review (`/cw-breaking-review`) and by the rule that anything but an added optional member takes a new versioned event name.
 
 ## Collaboration and release
 

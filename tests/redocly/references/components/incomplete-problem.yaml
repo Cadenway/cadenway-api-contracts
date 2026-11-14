@@ -1,0 +1,23 @@
+openapi: 3.1.0
+info:
+  title: Shared response with an incomplete problem
+  version: 1.0.0
+components:
+  responses:
+    Problem:
+      description: The request failed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer

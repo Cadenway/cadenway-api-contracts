@@ -21,6 +21,8 @@ node_modules/
 
 # Build outputs and caches.
 dist/
+# Specs copied into the package by its build.
+packages/contracts/specs/
 coverage/
 .angular/
 .cache/

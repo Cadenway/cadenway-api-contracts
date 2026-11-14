@@ -73,6 +73,9 @@ jobs:
           revision: 'head/openapi/**/*.yaml'
           composed: true
           fail-on: ERR
+          # The specs take the problem and the pagination members from components/ by a relative
+          # `$ref`, which the action refuses by default. `pnpm breaking` passes the same option.
+          allow-external-refs: true
 
   tooling:
     name: Agent tooling copies
