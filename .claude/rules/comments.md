@@ -1,7 +1,7 @@
 ---
 paths:
   - 'packages/**/*.ts'
-  - 'test/**/*.ts'
+  - 'tests/**/*.ts'
   - 'openapi/**/*.yaml'
   - 'openapi/**/*.yml'
   - 'asyncapi/**/*.yaml'

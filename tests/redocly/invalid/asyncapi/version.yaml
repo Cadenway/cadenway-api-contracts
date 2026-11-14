@@ -1,4 +1,4 @@
-# Fixture of test/redocly/ruleset.spec.ts: breaks cadenway/asyncapi-version on purpose. Not linted
+# Fixture of tests/redocly/ruleset.spec.ts: breaks cadenway/asyncapi-version on purpose. Not linted
 # by `pnpm lint:specs`.
 asyncapi: 3.1.0
 info:

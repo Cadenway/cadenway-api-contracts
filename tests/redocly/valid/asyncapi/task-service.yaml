@@ -1,4 +1,4 @@
-# Fixture of test/redocly/ruleset.spec.ts and of `pnpm lint:specs`: a document that follows the
+# Fixture of tests/redocly/ruleset.spec.ts and of `pnpm lint:specs`: a document that follows the
 # contract style. It is not a Cadenway contract; the contracts live in openapi/ and asyncapi/.
 asyncapi: 3.0.0
 info:
@@ -9,7 +9,8 @@ info:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
   license:
-    name: UNLICENSED
+    name: Example license
+    url: https://example.com/license
   tags:
     - name: tasks
       description: Tasks of a list.
