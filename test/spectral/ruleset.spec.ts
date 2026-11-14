@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
@@ -8,21 +8,83 @@ import { describe, expect, it } from 'vitest';
 // .spectral.yaml fire: test/spectral/valid/ must pass all of them, and each document of
 // test/spectral/invalid/ must be reported with exactly the rules its comments name.
 
+/**
+ * Interface Finding
+ *
+ * @description
+ * Diagnostic returned by the Spectral CLI.
+ */
 interface Finding {
+  // #region Properties
+  /**
+   * Property code
+   *
+   * @description
+   * Identifier of the rule that reported the finding.
+   *
+   * @type {string}
+   * @readonly
+   */
   readonly code: string;
-  /** Spectral severity: 0 error, 1 warning, 2 information, 3 hint. */
+
+  /**
+   * Property severity
+   *
+   * @description
+   * Spectral severity: 0 error, 1 warning, 2 information, 3 hint.
+   *
+   * @type {number}
+   * @readonly
+   */
   readonly severity: number;
+  // #endregion
 }
 
-const require = createRequire(import.meta.url);
-const cliPackage = require.resolve('@stoplight/spectral-cli/package.json');
-const cli = join(dirname(cliPackage), 'dist', 'index.js');
+/**
+ * Constant require
+ *
+ * @description
+ * CommonJS resolver relative to this test module.
+ *
+ * @type {ReturnType<typeof createRequire>}
+ */
+const require: ReturnType<typeof createRequire> = createRequire(import.meta.url);
+/**
+ * Constant cliPackage
+ *
+ * @description
+ * Location of the installed Spectral CLI manifest.
+ *
+ * @type {string}
+ */
+const cliPackage: string = require.resolve('@stoplight/spectral-cli/package.json');
+/**
+ * Constant cli
+ *
+ * @description
+ * Executable entry point of the installed Spectral CLI.
+ *
+ * @type {string}
+ */
+const cli: string = join(dirname(cliPackage), 'dist', 'index.js');
 
-/** Runs the Spectral CLI on one document, with the ruleset of the repository root. */
+/**
+ * Function lint
+ *
+ * @description
+ * Runs Spectral on a document with the repository ruleset.
+ *
+ * @param {string} document - Document path passed to Spectral.
+ * @returns {Finding[]} Findings reported by Spectral.
+ */
 function lint(document: string): Finding[] {
-  const run = spawnSync(process.execPath, [cli, 'lint', '--format', 'json', '--quiet', document], {
-    encoding: 'utf8',
-  });
+  const run: SpawnSyncReturns<string> = spawnSync(
+    process.execPath,
+    [cli, 'lint', '--format', 'json', '--quiet', document],
+    {
+      encoding: 'utf8',
+    },
+  );
   // Exit code 1 means findings at error level; anything else is a crash of the linter.
   if (run.status !== 0 && run.status !== 1) {
     throw new Error(`spectral exited with ${String(run.status)}: ${run.stderr}`);
@@ -30,15 +92,31 @@ function lint(document: string): Finding[] {
   return JSON.parse(run.stdout) as Finding[];
 }
 
-/** The Cadenway rules a document breaks, sorted, each once. */
+/**
+ * Function cadenwayCodes
+ *
+ * @description
+ * Returns each Cadenway rule a document breaks, sorted once.
+ *
+ * @param {string} document - Document path to inspect.
+ * @returns {string[]} Sorted rule identifiers.
+ */
 function cadenwayCodes(document: string): string[] {
-  const codes = lint(document)
+  const codes: string[] = lint(document)
     .map((finding) => finding.code)
     .filter((code) => code.startsWith('cadenway-'));
   return [...new Set(codes)].sort();
 }
 
-const TIMEOUT = 60_000;
+/**
+ * Constant TIMEOUT
+ *
+ * @description
+ * Maximum duration of a Spectral process test, in milliseconds.
+ *
+ * @type {number}
+ */
+const TIMEOUT: number = 60_000;
 
 describe('Spectral ruleset', () => {
   it.each([
@@ -48,7 +126,7 @@ describe('Spectral ruleset', () => {
   ])(
     'accepts %s',
     (document) => {
-      const findings = lint(document);
+      const findings: Finding[] = lint(document);
 
       expect(findings.filter((finding) => finding.severity === 0)).toEqual([]);
       expect(findings.filter((finding) => finding.code.startsWith('cadenway-'))).toEqual([]);
@@ -92,7 +170,7 @@ describe('Spectral ruleset', () => {
   it(
     'keeps the plural check a warning: a pattern cannot tell an irregular plural',
     () => {
-      const plural = lint('test/spectral/invalid/openapi/public/style.yaml').filter(
+      const plural: Finding[] = lint('test/spectral/invalid/openapi/public/style.yaml').filter(
         (finding) => finding.code === 'cadenway-path-plural-collection',
       );
 

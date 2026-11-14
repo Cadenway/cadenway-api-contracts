@@ -33,6 +33,8 @@ and reports missing scripts as unavailable.
 
 ```bash
 pnpm format:check
+pnpm test:lint
+pnpm lint:code
 pnpm lint:specs                # Spectral
 pnpm breaking                  # oasdiff against main
 pnpm generate
