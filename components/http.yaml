@@ -1,0 +1,70 @@
+# Components shared by every OpenAPI document of openapi/. A spec references them with a relative
+# `$ref` (`../../components/http.yaml#/components/...`); nothing here is a route.
+openapi: 3.1.0
+info:
+  title: Cadenway shared HTTP components
+  version: 1.0.0
+  description: The error format and the pagination members every Cadenway route uses.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor taken from the `nextCursor` of the previous page.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      description: Page size.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+  responses:
+    Problem:
+      description: The request failed; `code` says why.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    NextCursor:
+      type: [string, 'null']
+      description: Cursor of the next page; `null` on the last page.
+    Problem:
+      type: object
+      description: RFC 9457 problem with the Cadenway extensions `code` and `details`.
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: URI reference that identifies the problem type.
+        title:
+          type: string
+          description: Short summary of the problem type, the same for every occurrence.
+        status:
+          type: integer
+          description: HTTP status of the response.
+        detail:
+          type: string
+          description: Explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: URI reference that identifies this occurrence.
+        code:
+          type: string
+          description: Stable machine code, `<domain>.<reason>`.
+        details:
+          type: object
+          description: Members specific to the code, for example the fields that failed validation.
+          additionalProperties: true

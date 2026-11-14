@@ -2,10 +2,26 @@ const HTTP_METHODS = ['get', 'put', 'post', 'patch', 'delete'];
 const ERROR_STATUSES = new Set(['400', '401', '403', '404', '409', '412', '422', '429', '503']);
 const ACTORS = ['user', 'automation', 'git', 'system'];
 
+// Document each node reached through a `$ref` to another file was read from. A `$ref` written inside
+// a shared component (components/) points into that file, not into the spec being linted, so it is
+// resolved from there.
+const origins = new WeakMap();
+
+function remember(node, source) {
+  if (!node || typeof node !== 'object' || origins.has(node)) return;
+  origins.set(node, source);
+  for (const child of Object.values(node)) remember(child, source);
+}
+
 function resolve(node, context) {
-  return node && typeof node === 'object' && '$ref' in node
-    ? (context.resolve(node)?.node ?? node)
-    : node;
+  if (!node || typeof node !== 'object' || !('$ref' in node)) return node;
+  const resolved = context.resolve(node, origins.get(node));
+  if (resolved?.node === undefined || resolved.node === null) return node;
+  const source = resolved.location?.source?.absoluteRef;
+  if (source !== undefined && source !== context.location.source.absoluteRef) {
+    remember(resolved.node, source);
+  }
+  return resolved.node;
 }
 
 function hasRequired(schema, names) {

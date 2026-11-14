@@ -1,0 +1,8 @@
+{
+  "extends": "../../packages/contracts/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "generated/contracts",
+    "noEmit": true
+  },
+  "include": ["generated/contracts/**/*.ts"]
+}

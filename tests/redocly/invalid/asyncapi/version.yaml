@@ -4,7 +4,7 @@ asyncapi: 3.1.0
 info:
   title: Contract style counter-example, spec version
   version: 1.0.0
-  description: Written in AsyncAPI 3.1.0, which the model generator does not read.
+  description: Written in AsyncAPI 3.1.0, which the event generator refuses.
 channels:
   taskUpdatedV1:
     address: evt.task.updated.v1

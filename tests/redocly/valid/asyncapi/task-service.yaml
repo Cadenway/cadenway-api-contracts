@@ -62,14 +62,7 @@ components:
             type: string
             format: uuid
           actor:
-            type: object
-            required: [type, id]
-            properties:
-              type:
-                type: string
-                enum: [user, automation, git, system]
-              id:
-                type: string
+            $ref: '../../../../components/events.yaml#/components/schemas/Actor'
           version:
             type: integer
             description: Version of the task after the change.

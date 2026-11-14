@@ -1,0 +1,13 @@
+openapi: 3.1.0
+info:
+  title: Reference written inside a shared component
+  version: 1.0.0
+paths:
+  /v1/tasks:
+    get:
+      operationId: listTasks
+      responses:
+        '200':
+          description: The tasks.
+        '400':
+          $ref: '../../components/incomplete-problem.yaml#/components/responses/Problem'

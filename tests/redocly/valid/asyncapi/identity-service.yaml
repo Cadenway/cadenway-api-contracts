@@ -1,0 +1,110 @@
+# Fixture of tests/redocly/ruleset.spec.ts, of `pnpm lint:specs` and of the generated code checked by
+# tests/codegen/: an event outside any organization, with optional, nullable and nested members. It
+# is not a Cadenway contract; the contracts live in openapi/ and asyncapi/.
+asyncapi: 3.0.0
+info:
+  title: Contract style reference, events without an organization
+  version: 1.0.0
+  description: Shows the payload shapes the event generator of this repository turns into code.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Example license
+    url: https://example.com/license
+  tags:
+    - name: users
+      description: User accounts.
+servers:
+  local:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream of the local stack.
+channels:
+  userSignedUpV1:
+    address: evt.user.signed-up.v1
+    description: An account was created. Emitted by identity-service.
+    messages:
+      userSignedUpV1:
+        $ref: '#/components/messages/userSignedUpV1'
+operations:
+  publishUserSignedUpV1:
+    action: send
+    summary: identity-service publishes the creation of an account.
+    description: Sent from the outbox of identity-service once the account is committed.
+    channel:
+      $ref: '#/channels/userSignedUpV1'
+    messages:
+      - $ref: '#/channels/userSignedUpV1/messages/userSignedUpV1'
+components:
+  messages:
+    userSignedUpV1:
+      name: user.signed-up.v1
+      title: User signed up
+      summary: An account was created.
+      payload:
+        type: object
+        required:
+          [id, occurredAt, organizationId, actor, version, userId, email, method, signedUpOn]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, an account exists before it joins an organization.
+          actor:
+            $ref: '../../../../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the account after the change.
+          userId:
+            type: string
+            format: uuid
+          email:
+            type: string
+            format: email
+            examples: [camille.martin@ateliernord.example]
+          method:
+            type: string
+            description: How the account was created.
+            enum: [password, sso]
+          signedUpOn:
+            type: string
+            format: date
+            description: Calendar day of the sign-up, in the time zone of the account.
+          invitationId:
+            type: [string, 'null']
+            format: uuid
+            description: Invitation that led to the sign-up, when there is one.
+          profile:
+            type: object
+            description: What the user typed while signing up.
+            required: [displayName]
+            properties:
+              displayName:
+                type: string
+                minLength: 1
+                maxLength: 120
+                examples: [Camille Martin]
+              timeZone:
+                type: string
+                description: IANA time zone.
+                examples: [Europe/Paris]
+          interests:
+            type: array
+            description: Topics picked in the welcome screen.
+            maxItems: 20
+            items:
+              type: string
+          attribution:
+            type: object
+            description: Campaign parameters of the sign-up link, by name.
+            additionalProperties:
+              type: string

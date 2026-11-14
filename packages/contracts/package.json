@@ -27,16 +27,18 @@
       "types": "./dist/generated/events/*.d.ts",
       "default": "./dist/generated/events/*.js"
     },
+    "./specs/*": "./specs/*",
     "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "specs"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json && node ../../scripts/bundle-specs.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
