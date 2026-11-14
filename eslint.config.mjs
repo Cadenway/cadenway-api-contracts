@@ -10,7 +10,7 @@ import memberRegions from './rules/member-regions.mjs';
 export default defineConfig(
   globalIgnores(['**/dist/', '**/generated/', 'coverage/', 'docs/', '.claude/', '.codex/']),
   {
-    files: ['packages/**/*.ts', 'test/**/*.ts'],
+    files: ['packages/**/*.ts', 'tests/**/*.ts'],
     extends: [
       eslint.configs.recommended,
       tseslint.configs.strictTypeChecked,
@@ -34,7 +34,7 @@ export default defineConfig(
     },
   },
   {
-    files: ['packages/**/*.ts', 'test/**/*.ts'],
+    files: ['packages/**/*.ts', 'tests/**/*.ts'],
     plugins: { jsdoc, cadenway: { rules: { documentation, 'member-regions': memberRegions } } },
     linterOptions: { noInlineConfig: true },
     rules: {

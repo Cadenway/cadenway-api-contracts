@@ -55,7 +55,7 @@ Source: `cw-contract-style` ([Claude](../.claude/skills/cw-contract-style/SKILL.
 ### Checked by `pnpm lint:specs`
 
 `redocly.yaml` enables the rules in `rules/contracts-redocly.mjs`; the rest is reviewed. The documents of
-`test/redocly/valid/` pass every rule and show the expected shapes.
+`tests/redocly/valid/` pass every rule and show the expected shapes.
 
 | Rule                                                                                                      | Checks                                                                                                                    |
 | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |

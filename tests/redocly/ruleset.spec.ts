@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // The specs of this repository do not exist yet, so nothing else proves that the Cadenway rules of
-// redocly.yaml fire: test/redocly/valid/ must pass all of them, and each document of
-// test/redocly/invalid/ must be reported with exactly the rules its comments name.
+// redocly.yaml fire: tests/redocly/valid/ must pass all of them, and each document of
+// tests/redocly/invalid/ must be reported with exactly the rules its comments name.
 
 /**
  * Interface Finding
@@ -133,9 +133,9 @@ describe('Redocly ruleset', () => {
   it(
     'accepts a nullable cursor schema referenced from a page',
     () => {
-      expect(cadenwayCodes('test/redocly/references/openapi/public/cursor-ref.yaml')).not.toContain(
-        'cadenway/pagination-cursor',
-      );
+      expect(
+        cadenwayCodes('tests/redocly/references/openapi/public/cursor-ref.yaml'),
+      ).not.toContain('cadenway/pagination-cursor');
     },
     TIMEOUT,
   );
@@ -144,7 +144,7 @@ describe('Redocly ruleset', () => {
     'checks the standard operation identifier rule',
     () => {
       const findings: Finding[] = lint(
-        'test/redocly/references/openapi/public/missing-operation-id.yaml',
+        'tests/redocly/references/openapi/public/missing-operation-id.yaml',
       );
       expect(findings.map((finding) => finding.ruleId)).toContain('operation-operationId');
     },
@@ -154,7 +154,7 @@ describe('Redocly ruleset', () => {
   it(
     'locates path diagnostics on the affected path',
     () => {
-      const findings: Finding[] = lint('test/redocly/invalid/openapi/public/style.yaml');
+      const findings: Finding[] = lint('tests/redocly/invalid/openapi/public/style.yaml');
       const finding: Finding | undefined = findings.find(
         (item) => item.ruleId === 'cadenway/path-kebab-case',
       );
@@ -166,7 +166,7 @@ describe('Redocly ruleset', () => {
   it(
     'reports malformed event payloads without crashing',
     () => {
-      expect(cadenwayCodes('test/redocly/references/asyncapi/malformed-payload.yaml')).toContain(
+      expect(cadenwayCodes('tests/redocly/references/asyncapi/malformed-payload.yaml')).toContain(
         'cadenway/event-payload',
       );
     },
@@ -176,7 +176,7 @@ describe('Redocly ruleset', () => {
   it(
     'reports dynamic references inside external schemas',
     () => {
-      expect(cadenwayCodes('test/redocly/references/openapi/public/external.yaml')).toContain(
+      expect(cadenwayCodes('tests/redocly/references/openapi/public/external.yaml')).toContain(
         'cadenway/openapi-no-dynamic-ref',
       );
     },
@@ -184,15 +184,16 @@ describe('Redocly ruleset', () => {
   );
 
   it.each([
-    'test/redocly/valid/openapi/public/tasks.yaml',
-    'test/redocly/valid/openapi/internal/task-service.yaml',
-    'test/redocly/valid/asyncapi/task-service.yaml',
+    'tests/redocly/valid/openapi/public/tasks.yaml',
+    'tests/redocly/valid/openapi/internal/task-service.yaml',
+    'tests/redocly/valid/asyncapi/task-service.yaml',
   ])(
     'accepts %s',
     (document) => {
       const findings: Finding[] = lint(document);
 
       expect(findings.filter((finding) => finding.severity === 'error')).toEqual([]);
+      expect(findings.filter((finding) => finding.severity === 'warn')).toEqual([]);
       expect(findings.filter((finding) => finding.ruleId.startsWith('cadenway/'))).toEqual([]);
     },
     TIMEOUT,
@@ -200,7 +201,7 @@ describe('Redocly ruleset', () => {
 
   it.each([
     [
-      'test/redocly/invalid/openapi/public/style.yaml',
+      'tests/redocly/invalid/openapi/public/style.yaml',
       [
         'cadenway/error-problem-json',
         'cadenway/error-status',
@@ -216,13 +217,13 @@ describe('Redocly ruleset', () => {
         'cadenway/problem-schema',
       ],
     ],
-    ['test/redocly/invalid/openapi/public/version.yaml', ['cadenway/openapi-version']],
-    ['test/redocly/invalid/openapi/internal/prefix.yaml', ['cadenway/path-prefix-internal']],
+    ['tests/redocly/invalid/openapi/public/version.yaml', ['cadenway/openapi-version']],
+    ['tests/redocly/invalid/openapi/internal/prefix.yaml', ['cadenway/path-prefix-internal']],
     [
-      'test/redocly/invalid/asyncapi/events.yaml',
+      'tests/redocly/invalid/asyncapi/events.yaml',
       ['cadenway/event-channel-address', 'cadenway/event-name', 'cadenway/event-payload'],
     ],
-    ['test/redocly/invalid/asyncapi/version.yaml', ['cadenway/asyncapi-version']],
+    ['tests/redocly/invalid/asyncapi/version.yaml', ['cadenway/asyncapi-version']],
   ])(
     'reports %s',
     (document, expected) => {
@@ -234,7 +235,7 @@ describe('Redocly ruleset', () => {
   it(
     'keeps the plural check a warning: a pattern cannot tell an irregular plural',
     () => {
-      const plural: Finding[] = lint('test/redocly/invalid/openapi/public/style.yaml').filter(
+      const plural: Finding[] = lint('tests/redocly/invalid/openapi/public/style.yaml').filter(
         (finding) => finding.ruleId === 'cadenway/path-plural-collection',
       );
 

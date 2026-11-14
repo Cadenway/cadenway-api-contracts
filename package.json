@@ -16,7 +16,7 @@
     "lint:code": "eslint .",
     "test:lint": "node --test rules/documentation.test.mjs",
     "test:architecture": "node --test tests/architecture/project.test.mjs",
-    "lint:specs": "redocly lint \"openapi/**/*.yaml\" \"asyncapi/**/*.yaml\" \"test/redocly/valid/**/*.yaml\"",
+    "lint:specs": "redocly lint \"openapi/**/*.yaml\" \"asyncapi/**/*.yaml\" \"tests/redocly/valid/**/*.yaml\"",
     "generate": "orval",
     "generate:events": "modelina generate typescript",
     "typecheck": "pnpm -r run typecheck",

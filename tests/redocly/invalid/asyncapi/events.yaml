@@ -1,4 +1,4 @@
-# Fixture of test/redocly/ruleset.spec.ts: every Cadenway rule on event names and payloads is
+# Fixture of tests/redocly/ruleset.spec.ts: every Cadenway rule on event names and payloads is
 # broken here once, on purpose. Not linted by `pnpm lint:specs`.
 asyncapi: 3.0.0
 info:
