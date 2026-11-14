@@ -6,6 +6,7 @@ cadenway-api-contracts is the common language of Cadenway: what the API gateway 
 openapi/public/      ← one file per domain (tasks.yaml, billing.yaml…)
 openapi/internal/    ← one file per service (task-service.yaml…)
 asyncapi/            ← one file per emitting service
+components/          ← what the specs share by `$ref` (problem, pagination, actor)
 packages/contracts/  → @cadenway/contracts
 packages/api-client/ → @cadenway/api-client (generated)
 ```

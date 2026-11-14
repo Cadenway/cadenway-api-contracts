@@ -4,7 +4,7 @@ Planned role: cadenway-api-contracts is the common language of Cadenway: what th
 
 ## Current status
 
-At the time this documentation was written, this checkout has no `package.json`, application source tree, or GitHub workflow files. The target architecture, scripts, and workflows in this guide must be created and verified during bootstrap.
+The tooling exists and runs: lint, generation, breaking-change check, build and CI. No Cadenway contract has been authored yet: `openapi/` and `asyncapi/` are empty, and the packages publish the shared enumerations only.
 
 ## Read the guides
 

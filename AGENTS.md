@@ -23,6 +23,7 @@ cadenway-api-contracts is intended to define what the API gateway exposes, what 
 openapi/public/      ← one file per domain (tasks.yaml, billing.yaml…)
 openapi/internal/    ← one file per service (task-service.yaml…)
 asyncapi/            ← one file per emitting service
+components/          ← what the specs share by `$ref` (problem, pagination, actor)
 packages/contracts/  → @cadenway/contracts
 packages/api-client/ → @cadenway/api-client (generated)
 ```
@@ -41,8 +42,10 @@ Implementation order after a release: producing service, then gateways and liste
 ## Architectural ownership
 
 - `openapi/` and `asyncapi/`: authored specs.
+- `components/`: authored components the specs share by `$ref`; no route and no event.
 - `packages/contracts/src/enums/`: authored shared enumerations.
-- `packages/*/src/generated/`: generated, never edited.
+- `packages/*/src/generated/` and `tests/codegen/generated/`: generated, never edited.
+- `scripts/`: the generation, spec shipping and breaking-change scripts behind the pnpm commands.
 
 ## Boundaries (hard rules)
 
@@ -76,6 +79,9 @@ narrowest check that covers the change first, then widen:
 | Shared enumerations             | `pnpm test`, `pnpm build`                                             |
 | Any change to a package         | a changeset                                                           |
 | Docs or agent instructions only | Scoped formatting and link review                                     |
+
+`pnpm breaking` compares OpenAPI only. No tool compares the events of `asyncapi/` with `main`: an
+event changes shape under a new versioned name, and the change is reviewed (`/cw-breaking-review`).
 
 Report the commands you actually ran and their results; a check you did not run is reported as not
 run.

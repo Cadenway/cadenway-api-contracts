@@ -2,7 +2,20 @@
 
 [Documentation index](README.md) · [Repository instructions](../AGENTS.md)
 
-**Status:** This page records the target design from repository instructions and skills. Its behavior has not been verified as implemented in this snapshot.
+**Status:** The contract style below is enforced by `pnpm lint:specs` where a rule exists and reviewed otherwise. No Cadenway contract has been authored yet; the generation is proven on the documents of `tests/redocly/valid/`.
+
+## What a consumer imports
+
+| Need                                               | Import                                                                                                               |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| A shared enumeration                               | `import { STATUS_KEYS, type StatusKey } from '@cadenway/contracts'`                                                  |
+| The type of a schema of a route                    | `import type { Task, Problem } from '@cadenway/contracts/types/public/tasks'`                                        |
+| The validator of a request or a response           | `import { UpdateTaskBody } from '@cadenway/contracts/validators/public/tasks'`                                       |
+| An event name, its payload type, its validator     | `import { TASK_UPDATED_V1, taskUpdatedV1Schema, type TaskUpdatedV1 } from '@cadenway/contracts/events/task-service'` |
+| Every event of a service by name                   | `eventSchemas`, `EventPayloads`, `EVENT_NAMES` and `EventName` of the same module                                    |
+| The spec, to generate a client for another service | `@cadenway/contracts/specs/openapi/internal/task-service.yaml`                                                       |
+
+The paths above are examples: each exists once the matching spec does. A service that calls another service generates its client in its own repository, from the shipped spec, with orval and the `fetch` client; the file is self-contained, so no option about references is needed. The Angular applications use `@cadenway/api-client` instead.
 
 ## Change sequence
 
@@ -12,15 +25,16 @@ Author the contract in this repository first. After a compatible release of the 
 
 Source: `cw-contract-style` ([Claude](../.claude/skills/cw-contract-style/SKILL.md), [Codex](../.codex/skills/cw-contract-style/SKILL.md)).
 
-| Concern            | Rule                                                                                                                                                           |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Fields             | camelCase                                                                                                                                                      |
-| Ids                | strings; tasks use the space prefix (`CAD-482`); every other entity id is a UUID v7                                                                            |
-| Dates              | ISO 8601; dates without time as `YYYY-MM-DD`                                                                                                                   |
-| Lists              | cursor pagination, `limit` ≤ 100                                                                                                                               |
-| Errors             | `application/problem+json` (RFC 9457): `type`, `title`, `status`, `detail`, `instance`, with the extensions `code` and `details`; `code` stable and documented |
-| Partial aggregates | `partial: string[]` naming the missing parts                                                                                                                   |
-| Enumerations       | `StatusKey`, `StatusCategory`, `MilestoneStatusKey`, `PriorityKey`, `CancelReason`, `Recurrence`                                                               |
+| Concern            | Rule                                                                                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fields             | camelCase                                                                                                                                                                                  |
+| Ids                | strings; tasks use the space prefix (`CAD-482`); every other entity id is a UUID v7                                                                                                        |
+| Dates              | ISO 8601; dates without time as `YYYY-MM-DD`                                                                                                                                               |
+| Lists              | cursor pagination, `limit` ≤ 100                                                                                                                                                           |
+| Errors             | `application/problem+json` (RFC 9457): `type`, `title`, `status`, `detail`, `instance`, with the extensions `code` and `details`; `code` stable and documented                             |
+| Partial aggregates | `partial: string[]` naming the missing parts                                                                                                                                               |
+| Enumerations       | `StatusKey`, `StatusCategory`, `MilestoneStatusKey`, `PriorityKey`, `CancelReason`, `Recurrence`                                                                                           |
+| Shared components  | `components/http.yaml` (problem schema and response, `cursor`, `limit`, `nextCursor`) and `components/events.yaml` (`actor`), referenced by a relative `$ref` and never copied into a spec |
 
 ### HTTP API
 
@@ -44,13 +58,15 @@ Source: `cw-contract-style` ([Claude](../.claude/skills/cw-contract-style/SKILL.
 
 ### Events
 
-| Concern      | Rule                                                                                                                |
-| ------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Spec version | AsyncAPI 3.0.0 exactly: the model generator does not read 3.1.0 and writes one untyped `Root` model without failing |
-| `version`    | the version of the aggregate, in every event; a consumer ignores a version it has already applied                   |
-| `actor`      | `{ type: 'user' \| 'automation' \| 'git' \| 'system', id }`                                                         |
-| Subject      | `evt.<name>`, the address of the channel                                                                            |
-| Trace        | `traceparent` (W3C Trace Context), in HTTP and in the message headers                                               |
+| Concern       | Rule                                                                                                                                                             |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spec version  | AsyncAPI 3.0.0 exactly: `pnpm generate:events` refuses any other version                                                                                         |
+| Payload       | declares `properties` and `required` itself, without `allOf`; uses the JSON Schema keywords the event generator turns into a validator, which refuses the others |
+| Compatibility | no tool compares events with `main`; a payload change other than an added optional member takes a new versioned name and is reviewed                             |
+| `version`     | the version of the aggregate, in every event; a consumer ignores a version it has already applied                                                                |
+| `actor`       | `{ type: 'user' \| 'automation' \| 'git' \| 'system', id }`                                                                                                      |
+| Subject       | `evt.<name>`, the address of the channel                                                                                                                         |
+| Trace         | `traceparent` (W3C Trace Context), in HTTP and in the message headers                                                                                            |
 
 ### Checked by `pnpm lint:specs`
 

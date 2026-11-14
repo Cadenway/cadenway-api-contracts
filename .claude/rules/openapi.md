@@ -17,4 +17,7 @@ paths:
 - `Idempotency-Key`: 422 when the key comes back with another body, 409 while the first request runs.
 - `pnpm lint:specs` checks what Redocly can; the `cw-contract-style` skill holds the whole table.
 - Reuse components; enumerations are referenced from the shared schemas.
+- The problem (schema and response), `cursor`, `limit` and `nextCursor` come from
+  `components/http.yaml` by a relative `$ref` (`../../components/http.yaml#/components/...`), never
+  copied. A file under `openapi/` is always a spec: a shared component does not live there.
 - Examples use mockup data.
