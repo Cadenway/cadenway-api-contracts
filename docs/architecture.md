@@ -24,6 +24,8 @@ Implementation order after a release: producing service, then gateways and liste
 
 ## Architectural ownership
 
+The [Angular architecture checker](https://github.com/Cadenway/cadenway-tooling/tree/main/packages/angular-testing) verifies authored source, file names and import boundaries. Once the package is published, add `@cadenway/angular-testing` as a development dependency and commit the updated lockfile. Run `pnpm install --frozen-lockfile` and `pnpm test:architecture`, then add the latter to `pnpm quality` and the blocking CI job. Use the library profile for the hand-written Angular client entry points. Generated sources are excluded.
+
 - `openapi/` and `asyncapi/`: authored specs.
 - `packages/contracts/src/enums/`: authored shared enumerations.
 - `packages/*/src/generated/`: generated, never edited.
