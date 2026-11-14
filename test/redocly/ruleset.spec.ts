@@ -131,6 +131,16 @@ const TIMEOUT: number = 60_000;
 
 describe('Redocly ruleset', () => {
   it(
+    'accepts a nullable cursor schema referenced from a page',
+    () => {
+      expect(cadenwayCodes('test/redocly/references/openapi/public/cursor-ref.yaml')).not.toContain(
+        'cadenway/pagination-cursor',
+      );
+    },
+    TIMEOUT,
+  );
+
+  it(
     'checks the standard operation identifier rule',
     () => {
       const findings: Finding[] = lint(

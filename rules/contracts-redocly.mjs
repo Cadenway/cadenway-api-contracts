@@ -231,7 +231,7 @@ const openapi = {
         if (!names.includes('cursor') && !names.includes('limit')) return false;
         const response = resolve(operation.responses?.['200'], context);
         const schema = resolve(response?.content?.['application/json']?.schema, context);
-        const types = schema?.properties?.nextCursor?.type;
+        const types = resolve(schema?.properties?.nextCursor, context)?.type;
         return (
           !names.includes('cursor') ||
           !names.includes('limit') ||
@@ -253,7 +253,7 @@ const asyncapi = {
       .map(([name, channel]) => ({ name, node: resolve(channel, context) }))
       .filter(
         ({ node }) =>
-          !/^evt\.[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+\.v[1-9][0-9]*$/.test(node.address ?? ''),
+          !/^evt\.[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+\.v[1-9][0-9]*$/.test(node?.address ?? ''),
       )
       .map(({ name }) => ({ message: 'Invalid event channel address.', path: ['channels', name] })),
   'event-name': (root, context) =>
