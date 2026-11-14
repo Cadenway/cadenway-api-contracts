@@ -208,6 +208,9 @@ importers:
       '@asyncapi/modelina-cli':
         specifier: ^5.10.1
         version: 5.10.1(@types/node@24.19.2)(supports-color@8.1.1)
+      '@cadenway/angular-testing':
+        specifier: 0.1.0
+        version: 0.1.0(typescript@6.0.3)
       '@changesets/cli':
         specifier: ^3.0.0
         version: 3.0.3
@@ -525,6 +528,11 @@ packages:
 
   '@bufbuild/protobuf@2.17.0':
     resolution: {integrity: sha512-hcPkSz6D7MiTU/5VBBhK+kxaYDoOdQ6yJRFJ3kS8Nydp+VZXfg1vrpABKPNod8bXMufsVCmiUJVIKFzCzta4uw==}
+
+  '@cadenway/angular-testing@0.1.0':
+    resolution: {integrity: sha512-eFvSdI1+T3TmOo0Yow0L6bnr5iPWkOAMJH4cfr1t0Tc1UfHfiJuyCmwaHO/e3UthSS7t5naDz+nBWzuX0/KVhA==, tarball: https://npm.pkg.github.com/download/@cadenway/angular-testing/0.1.0/03e19005355a43db6e3843b4f692b5a6decfdad3}
+    peerDependencies:
+      typescript: '>=6.0 <6.1'
 
   '@changesets/apply-release-plan@8.1.1':
     resolution: {integrity: sha512-nk2Hbq3M9NeHMdaIRBDvawKrQJzXB9sGyBUE5yWnIKtvdcNCPj75zBekJYr0gTT2ecJH3eFeTrc8eisPImcv0Q==}
@@ -5642,6 +5650,10 @@ snapshots:
       '@babel/helper-validator-identifier': 8.0.6
 
   '@bufbuild/protobuf@2.17.0': {}
+
+  '@cadenway/angular-testing@0.1.0(typescript@6.0.3)':
+    dependencies:
+      typescript: 6.0.3
 
   '@changesets/apply-release-plan@8.1.1':
     dependencies:

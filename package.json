@@ -33,6 +33,7 @@
     "@angular/compiler-cli": "^22.2.0",
     "@angular/core": "catalog:",
     "@asyncapi/modelina-cli": "^5.10.1",
+    "@cadenway/angular-testing": "0.1.0",
     "@changesets/cli": "^3.0.0",
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
