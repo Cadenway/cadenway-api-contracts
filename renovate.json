@@ -2,7 +2,6 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", ":semanticCommits", "helpers:pinGitHubActionDigests"],
   "labels": ["dependencies"],
-  "minimumReleaseAge": "2 days",
   "packageRules": [
     {
       "description": "Patch, pin and digest updates merge on their own once CI is green.",
@@ -10,10 +9,9 @@
       "automerge": true
     },
     {
-      "description": "Cadenway packages are proposed as soon as they are published.",
+      "description": "Group updates to Cadenway packages.",
       "matchPackageNames": ["@cadenway/**"],
-      "groupName": "cadenway packages",
-      "minimumReleaseAge": null
+      "groupName": "cadenway packages"
     },
     {
       "description": "TypeScript stays on 6.0: the Angular 22 compiler accepts >=6.0 <6.1 only.",

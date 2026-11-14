@@ -11,11 +11,9 @@ catalog:
   tslib: ^2.8.1
   zod: ^4.6.0
 
-# Supply chain: a version is installable two days after its publication (2880 minutes), and never
-# when its publisher trust is weaker than that of an earlier version of the same package.
-minimumReleaseAge: 2880
-minimumReleaseAgeExclude:
-  - '@cadenway/angular-testing@0.1.0'
+# Disable pnpm's default release-age delay.
+minimumReleaseAge: 0
+# Refuse a package version with weaker trust evidence than an earlier release.
 trustPolicy: no-downgrade
 
 # No `trustPolicyExclude` list: a version the policy rejects is replaced, not excepted.
