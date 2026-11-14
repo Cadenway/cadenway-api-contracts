@@ -15,7 +15,7 @@ it('enforces the configured JSDoc checks on authored TypeScript', async () => {
     ? 'src/main.ts'
     : existsSync('packages/nest-common/src/health/health.controller.ts')
       ? 'packages/nest-common/src/health/health.controller.ts'
-      : 'test/spectral/ruleset.spec.ts';
+      : 'test/redocly/ruleset.spec.ts';
   const config = await new ESLint().calculateConfigForFile(file);
   const rules = Object.fromEntries(
     Object.entries(config.rules).filter(([name]) => name.startsWith('jsdoc/')),

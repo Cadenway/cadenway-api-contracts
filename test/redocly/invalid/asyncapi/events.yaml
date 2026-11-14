@@ -1,13 +1,13 @@
-# Fixture of test/spectral/ruleset.spec.ts: every Cadenway rule on event names and payloads is
+# Fixture of test/redocly/ruleset.spec.ts: every Cadenway rule on event names and payloads is
 # broken here once, on purpose. Not linted by `pnpm lint:specs`.
 asyncapi: 3.0.0
 info:
   title: Contract style counter-example, events
   version: 1.0.0
-  description: Breaks the Spectral rules of this repository.
+  description: Breaks the Redocly rules of this repository.
 channels:
   taskUpdated:
-    # cadenway-event-channel-address: no `evt.` prefix and no version.
+    # cadenway/event-channel-address: no `evt.` prefix and no version.
     address: task.updated
     description: A task changed.
     messages:
@@ -24,11 +24,11 @@ operations:
 components:
   messages:
     taskUpdated:
-      # cadenway-event-name: not `<entity>.<fact>.v<n>`.
+      # cadenway/event-name: not `<entity>.<fact>.v<n>`.
       name: TaskUpdated
       title: Task updated
       summary: A task changed.
-      # cadenway-event-payload: no `version`, and an actor type outside the four.
+      # cadenway/event-payload: no `version`, and an actor type outside the four.
       payload:
         type: object
         required: [id, occurredAt, organizationId, actor]

@@ -16,15 +16,7 @@ minimumReleaseAge: 0
 # Refuse a package version with weaker trust evidence than an earlier release.
 trustPolicy: no-downgrade
 
-# No `trustPolicyExclude` list: a version the policy rejects is replaced, not excepted.
-# Spectral's ruleset bundler asks for rollup ^2.80.0, a maintenance line whose releases are
-# published by hand, without provenance: `trustPolicy` rejects rollup@2.80.0. The bundler runs on
-# rollup 4, published from GitHub Actions with provenance; test/spectral/ruleset.spec.ts runs it
-# on every rule. Remove this override when the bundler declares rollup 4 itself.
 overrides:
-  '@stoplight/spectral-ruleset-bundler>rollup': ^4.0.0
-  # Use the first CommonJS plugin release line compatible with Rollup 4.
-  '@stoplight/spectral-ruleset-bundler>@rollup/plugin-commonjs': ^25.0.8
   # Keep the Oxc WASI binding compatible with the emnapi alpha it pins.
   # Remove when Angular no longer ships this binding version.
   '@oxc-parser/binding-wasm32-wasi@0.156.0>@napi-rs/wasm-runtime': 1.2.5
@@ -41,7 +33,7 @@ allowBuilds:
   esbuild: false
   lmdb: false
   msgpackr-extract: false
-  # Usage telemetry of the Spectral packages.
+  # Usage telemetry included by a dependency.
   '@scarf/scarf': false
   # Carried by the plugin command of the Modelina CLI; its script only prints a notice.
   yarn: false

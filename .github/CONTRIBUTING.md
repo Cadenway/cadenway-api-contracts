@@ -70,7 +70,7 @@ published `@cadenway/*` packages.
 
 ```bash
 pnpm format:check
-pnpm lint:specs                # Spectral
+pnpm lint:specs                # Redocly
 pnpm breaking                  # oasdiff against main
 pnpm generate
 pnpm typecheck

@@ -1,0 +1,11 @@
+openapi: 3.1.0
+info:
+  title: Missing operation ID
+  version: 1.0.0
+paths:
+  /v1/tasks:
+    get:
+      summary: List tasks
+      responses:
+        '200':
+          description: Tasks

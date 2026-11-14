@@ -29,7 +29,7 @@ Run the narrowest check first; CI runs them all on every pull request.
 
 ```bash
 pnpm format:check
-pnpm lint:specs                # Spectral
+pnpm lint:specs                # Redocly
 pnpm breaking                  # oasdiff against main
 pnpm generate
 pnpm typecheck

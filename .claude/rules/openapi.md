@@ -15,6 +15,6 @@ paths:
 - The cursor is opaque, `limit` defaults to 50 and `nextCursor` is `null` on the last page.
 - An aggregate carries a `version`, returned as `ETag`; `If-Match` is optional, mandatory on long texts.
 - `Idempotency-Key`: 422 when the key comes back with another body, 409 while the first request runs.
-- `pnpm lint:specs` checks what Spectral can; the `cw-contract-style` skill holds the whole table.
+- `pnpm lint:specs` checks what Redocly can; the `cw-contract-style` skill holds the whole table.
 - Reuse components; enumerations are referenced from the shared schemas.
 - Examples use mockup data.

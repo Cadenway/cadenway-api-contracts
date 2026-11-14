@@ -18,7 +18,7 @@ check the actual files and scripts before relying on them, and report unavailabl
 2. Specs come first; `@cadenway/contracts` (types, event names, validators, enumerations) and `@cadenway/api-client` are generated from them and never edited by hand.
 3. Additive change = minor; removal or shape change = major with a deprecation period; an event changes shape by changing its versioned name.
 4. Every spec file has an owner in CODEOWNERS: the team of the service that implements it.
-5. CI lints (Spectral), detects breaking changes (oasdiff), regenerates and compiles the packages.
+5. CI lints (Redocly), detects breaking changes (oasdiff), regenerates and compiles the packages.
 
 ## Boundaries (hard rules)
 
@@ -35,7 +35,7 @@ and reports missing scripts as unavailable.
 pnpm format:check
 pnpm test:lint
 pnpm lint:code
-pnpm lint:specs                # Spectral
+pnpm lint:specs                # Redocly
 pnpm breaking                  # oasdiff against main
 pnpm generate
 pnpm typecheck
