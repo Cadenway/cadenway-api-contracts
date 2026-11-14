@@ -23,6 +23,9 @@ trustPolicy: no-downgrade
 # on every rule. Remove this override when the bundler declares rollup 4 itself.
 overrides:
   '@stoplight/spectral-ruleset-bundler>rollup': ^4.0.0
+  # Keep the Oxc WASI binding compatible with the emnapi alpha it pins.
+  # Remove when Angular no longer ships this binding version.
+  '@oxc-parser/binding-wasm32-wasi@0.156.0>@napi-rs/wasm-runtime': 1.2.5
 
 # Install scripts are reviewed one by one: pnpm refuses an install that would skip an unlisted one.
 allowBuilds:
