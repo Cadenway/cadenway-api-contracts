@@ -21,10 +21,11 @@
     "generate:events": "modelina generate typescript",
     "typecheck": "pnpm -r run typecheck",
     "test": "vitest run --passWithNoTests",
+    "test:architecture": "node --test tests/architecture/project.test.mjs",
     "build": "pnpm -r run build",
     "docs:build": "redocly build-docs",
     "changeset": "changeset",
-    "quality": "pnpm format:check && pnpm test:lint && pnpm lint:code && pnpm lint:specs && pnpm generate && pnpm typecheck && pnpm test && pnpm build",
+    "quality": "pnpm format:check && pnpm test:lint && pnpm lint:code && pnpm lint:specs && pnpm generate && pnpm typecheck && pnpm test:architecture && pnpm test && pnpm build",
     "release": "pnpm generate && pnpm build && changeset publish"
   },
   "devDependencies": {
@@ -35,6 +36,7 @@
     "@angular/compiler-cli": "^22.2.0",
     "@angular/core": "catalog:",
     "@asyncapi/modelina-cli": "^5.10.1",
+    "@cadenway/angular-testing": "0.1.0",
     "@changesets/cli": "^3.0.0",
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",

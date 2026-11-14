@@ -50,10 +50,13 @@ The following commands match the planned local gate. Run `/cw-quality` in Claude
 
 ```bash
 pnpm format:check
+pnpm test:lint
+pnpm lint:code
 pnpm lint:specs                # Spectral
 pnpm breaking                  # oasdiff against main
 pnpm generate
 pnpm typecheck
+pnpm test:architecture
 pnpm test
 pnpm build
 pnpm changeset status
