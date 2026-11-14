@@ -24,6 +24,8 @@ Implementation order after a release: producing service, then gateways and liste
 
 ## Architectural ownership
 
+The [Angular architecture checker](https://github.com/Cadenway/cadenway-tooling/tree/main/packages/angular-testing) uses its library profile to check the hand-written Angular client entry points. Generated sources are excluded. Run `pnpm test:architecture` to run it on its own. Both `pnpm quality` and the CI quality gate run it.
+
 - `openapi/` and `asyncapi/`: authored specs.
 - `packages/contracts/src/enums/`: authored shared enumerations.
 - `packages/*/src/generated/`: generated, never edited.

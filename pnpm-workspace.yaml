@@ -14,6 +14,8 @@ catalog:
 # Supply chain: a version is installable two days after its publication (2880 minutes), and never
 # when its publisher trust is weaker than that of an earlier version of the same package.
 minimumReleaseAge: 2880
+minimumReleaseAgeExclude:
+  - '@cadenway/angular-testing@0.1.0'
 trustPolicy: no-downgrade
 
 # No `trustPolicyExclude` list: a version the policy rejects is replaced, not excepted.
