@@ -18,6 +18,7 @@
     "generate:events": "modelina generate typescript",
     "typecheck": "pnpm -r run typecheck",
     "test": "vitest run --passWithNoTests",
+    "test:architecture": "node --test tests/architecture/project.test.mjs",
     "build": "pnpm -r run build",
     "docs:build": "redocly build-docs",
     "changeset": "changeset",
