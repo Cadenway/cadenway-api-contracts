@@ -1,5 +1,14 @@
 # @cadenway/contracts
 
+## 0.3.1
+
+### Patch Changes
+
+- d0be0f3: Declare `403 auth.csrf-rejected` on every public auth route that changes state, signed in or not, as
+  the gateway checks the `Origin` and `Content-Type` of all of them; sign-in lists it beside
+  `auth.email-not-verified`. The bad-request examples show `details.issues[].path` as the dotted string
+  the kit emits.
+
 ## 0.3.0
 
 ### Minor Changes
