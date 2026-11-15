@@ -8,6 +8,7 @@ description: "Which spec changes are minor or major, how deprecation works, and 
 | Change | Level |
 | --- | --- |
 | New route, new optional field, new enumeration value consumers can ignore | minor |
+| New value of a response value set | minor when the set is `x-extensible-enum`; a value added to a response `enum` is breaking for oasdiff |
 | Description, example | patch |
 | Removed or renamed field or route, new required input, narrowed type, changed code | major, after a deprecation in a minor |
 | Event payload change other than an added optional field | new versioned event name |

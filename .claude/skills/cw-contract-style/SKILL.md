@@ -13,7 +13,7 @@ description: "Naming, pagination, error, id and date conventions shared by every
 | Lists | cursor pagination, `limit` ≤ 100 |
 | Errors | `application/problem+json` (RFC 9457): `type`, `title`, `status`, `detail`, `instance`, with the extensions `code` and `details`; `code` stable and documented |
 | Partial aggregates | `partial: string[]` naming the missing parts |
-| Enumerations | `StatusKey`, `StatusCategory`, `MilestoneStatusKey`, `PriorityKey`, `CancelReason`, `Recurrence` |
+| Enumerations | `StatusKey`, `StatusCategory`, `MilestoneStatusKey`, `PriorityKey`, `CancelReason`, `Recurrence`; a response value set that will grow is `x-extensible-enum`, since oasdiff grades a value added to a response `enum` as breaking |
 | Shared components | `components/http.yaml` (problem schema and response, `cursor`, `limit`, `nextCursor`) and `components/events.yaml` (`actor`), referenced by a relative `$ref` and never copied into a spec |
 
 ## HTTP API
@@ -22,10 +22,10 @@ description: "Naming, pagination, error, id and date conventions shared by every
 | --- | --- |
 | Spec version | OpenAPI 3.1, without `$dynamicRef` or `components.pathItems`: oasdiff does not resolve them |
 | Paths | `/v1/...` in `openapi/public/`, `/internal/v1/...` in `openapi/internal/`; resources are plural and kebab-case; the organization is never in the path, it comes from the verified token |
-| Verbs | `POST` answers 201 with `Location`; `PATCH` is a JSON Merge Patch (RFC 7396); `DELETE` answers 204; an action is a sub-resource |
+| Verbs | a `POST` that creates a resource answers 201 with `Location`; a `POST` action answers 200, 202 or 204 and its spec says so; `PATCH` is a JSON Merge Patch (RFC 7396); `DELETE` answers 204; an action is a sub-resource |
 | Error statuses | 400, 401, 403, 404, 409, 412, 422, 429, 503 and no other |
 | Error codes | `<domain>.<reason>`, each part in kebab-case |
-| Problem members | `type`, `title`, `status` and `code` are required, `detail`, `instance` and `details` declared; every error response uses the one shared schema |
+| Problem members | `type`, `title`, `status` and `code` are required, `detail`, `instance` and `details` declared; every error response uses the one shared schema, through the shared response or a response of the spec that adds examples or headers |
 | Cursor | opaque; it encodes the sort key, the `id` and a fingerprint of the filters; `limit` defaults to 50; `nextCursor` is `null` on the last page |
 | Sort and filters | `sort=-dueDate`; several values separated by commas; an unknown parameter answers 400 |
 | Concurrent writes | each aggregate carries a `version`, returned as `ETag`; `If-Match` is optional, mandatory on long texts; a collection inside an aggregate changes through sub-resources |
@@ -45,7 +45,7 @@ description: "Naming, pagination, error, id and date conventions shared by every
 | Compatibility | no tool compares events with `main`; a payload change other than an added optional member takes a new versioned name and is reviewed |
 | `version` | the version of the aggregate, in every event; a consumer ignores a version it has already applied |
 | `actor` | `{ type: 'user' \| 'automation' \| 'git' \| 'system', id }` |
-| Subject | `evt.<name>`, the address of the channel |
+| Subject | `evt.<name>`, the address of the channel; `restricted.<name>` for a message marked `x-cadenway-restricted: true`, which carries a secret and is read by notification-service only |
 | Trace | `traceparent` (W3C Trace Context), in HTTP and in the message headers |
 
 ## Checked by `pnpm lint:specs`
@@ -62,5 +62,5 @@ description: "Naming, pagination, error, id and date conventions shared by every
 | `cadenway/error-status`, `cadenway/error-problem-json`, `cadenway/problem-schema` | the allowed error statuses, the media type and the members of the problem |
 | `cadenway/pagination-no-offset`, `cadenway/pagination-limit`, `cadenway/pagination-cursor` | no page or offset parameter; `limit` from 1 to 100, 50 by default; `cursor`, `limit` and a nullable `nextCursor` together |
 | `cadenway/asyncapi-version` | AsyncAPI 3.0.0 |
-| `cadenway/event-channel-address`, `cadenway/event-name` | `evt.<entity>.<fact>.v<n>` and `<entity>.<fact>.v<n>` |
+| `cadenway/event-channel-address`, `cadenway/event-name` | `evt.<name>`, or `restricted.<name>` when every message of the channel is marked restricted, `<name>` being the name of its message; and `<entity>.<fact>.v<n>` |
 | `cadenway/event-payload` | `id`, `occurredAt`, `organizationId`, `actor`, `version` required; the four actor types; an integer `version` |

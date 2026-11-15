@@ -19,5 +19,9 @@ paths:
 - Reuse components; enumerations are referenced from the shared schemas.
 - The problem (schema and response), `cursor`, `limit` and `nextCursor` come from
   `components/http.yaml` by a relative `$ref` (`../../components/http.yaml#/components/...`), never
-  copied. A file under `openapi/` is always a spec: a shared component does not live there.
+  copied. A spec may declare its own error responses, to carry per-code examples or headers
+  (`Retry-After`, `Set-Cookie`), but their schema is always the shared problem. A file under
+  `openapi/` is always a spec: a shared component does not live there.
+- A response value set that will grow (method types, token types) is `x-extensible-enum`, not
+  `enum`: oasdiff grades a value added to a response `enum` as breaking.
 - Examples use mockup data.

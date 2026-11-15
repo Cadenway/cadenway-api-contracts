@@ -4,7 +4,7 @@
 
 ## Bootstrap status
 
-The scripts below exist in `package.json`; `pnpm quality` runs them in order, except `pnpm changeset status`. Run Git, pnpm, build and test commands with this repository as the working directory, never from the parent workspace. `openapi/` and `asyncapi/` hold no contract yet, so the generation, the typecheck and the tests run on the documents of `tests/redocly/valid/`.
+The scripts below exist in `package.json`; `pnpm quality` runs them in order, except `pnpm changeset status`. Run Git, pnpm, build and test commands with this repository as the working directory, never from the parent workspace. The generation, the typecheck and the tests run on the contracts of `openapi/` and `asyncapi/` and on the documents of `tests/redocly/valid/`.
 
 ## Before making a change
 

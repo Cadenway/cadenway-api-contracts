@@ -4,8 +4,8 @@ import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-// The specs of this repository do not exist yet, so nothing else proves that the Cadenway rules of
-// redocly.yaml fire: tests/redocly/valid/ must pass all of them, and each document of
+// The specs of this repository pass the rules without proving that they fire: tests/redocly/valid/
+// and the specs must pass all of them without a warning, and each document of
 // tests/redocly/invalid/ must be reported with exactly the rules its comments name.
 // The documents of tests/redocly/valid/ take the problem, the pagination members and the actor from
 // components/, like a real spec: they also prove that the rules read through those references.
@@ -202,6 +202,9 @@ describe('Redocly ruleset', () => {
     'tests/redocly/valid/asyncapi/identity-service.yaml',
     'components/http.yaml',
     'components/events.yaml',
+    'openapi/public/auth.yaml',
+    'openapi/internal/identity-service.yaml',
+    'asyncapi/identity-service.yaml',
   ])(
     'accepts %s',
     (document) => {
