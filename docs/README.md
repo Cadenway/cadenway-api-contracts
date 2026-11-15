@@ -4,7 +4,7 @@ Planned role: cadenway-api-contracts is the common language of Cadenway: what th
 
 ## Current status
 
-The tooling exists and runs: lint, generation, breaking-change check, build and CI. No Cadenway contract has been authored yet: `openapi/` and `asyncapi/` are empty, and the packages publish the shared enumerations only.
+The tooling exists and runs: lint, generation, breaking-change check, build and CI. The first contracts are those of identity-service (sign-up, sign-in, sessions, the current user and their events); the packages publish them with the shared enumerations.
 
 ## Read the guides
 

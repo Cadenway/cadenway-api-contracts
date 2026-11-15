@@ -1,0 +1,883 @@
+# Internal routes of identity-service, called by cadenway-api-gateway: the authentication flows of
+# openapi/public/auth.yaml, the introspection of the session cookie, the revocation of a session
+# and the reading of a user.
+openapi: 3.1.0
+info:
+  title: identity-service internal routes
+  version: 1.0.0
+  description: |
+    What identity-service exposes to the API gateway for sign-up, sign-in, sessions and the current
+    user. The service has no public route: the gateway serves `openapi/public/auth.yaml` and calls
+    these routes.
+
+    | Public route | Internal call |
+    | --- | --- |
+    | `POST /v1/auth/sign-in-methods` | `POST /internal/v1/auth/sign-in-methods` |
+    | `POST /v1/auth/sign-up` | `POST /internal/v1/auth/sign-up` |
+    | `POST /v1/auth/sign-up/code` | `POST /internal/v1/auth/sign-up/code` |
+    | `POST /v1/auth/sign-up/verification` | `POST /internal/v1/auth/sign-up/verification` |
+    | `POST /v1/auth/sign-in` | `POST /internal/v1/auth/sign-in` |
+    | `POST /v1/auth/sign-in/code` | `POST /internal/v1/auth/sign-in/code` |
+    | `POST /v1/auth/sign-in/code/verification` | `POST /internal/v1/auth/sign-in/code/verification` |
+    | `POST /v1/auth/sign-out` | `DELETE /internal/v1/sessions/{sessionId}` with the session the introspection returned |
+    | `GET /v1/me` | `GET /internal/v1/users/{userId}` with the user the introspection returned |
+    | Any request with the session cookie | `POST /internal/v1/tokens/introspect`, before the route |
+
+    **Tokens.** A route that signs in returns the opaque session token once, in `token`: the gateway
+    writes it into the cookie `__Host-cw_session` and never logs it; identity-service keeps only its
+    SHA-256 hash. The gateway reads the browser's address and User-Agent and sends them in `client`:
+    identity-service never reads them from the headers of the internal call.
+
+    **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
+    (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `identity-service`). Every route accepts
+    the issuer `api-gateway` only, and no route requires an organization. Each operation says which
+    actor it accepts: `anonymous` for the flows that run before a session exists, `system` for the
+    introspection, `user` for the routes of the signed-in user. The guard of the kit answers
+    `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed` and
+    `403 auth.actor-not-allowed`.
+
+    **Errors.** The codes are those of the public routes; the gateway forwards the `code` and the
+    `details`, answers the French `title` of `openapi/public/auth.yaml`, and derives `Retry-After`
+    from `details` (the internal client does not carry headers of a problem). The titles here are
+    English. A refused password or code answers `422`, never `401`: the gateway's internal client
+    turns any `401` into `503 upstream.unauthorized`, a configuration defect. The gateway answers
+    `403 auth.issuer-not-allowed` and `403 auth.actor-not-allowed`, which are configuration defects
+    too, as `503 upstream.unauthorized`, never to the browser.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Calls every route through its generated client, for openapi/public/auth.yaml and for the session guard of every authenticated route.
+servers:
+  - url: http://identity-service:3010
+    description: identity-service on the internal network of each environment (`IDENTITY_SERVICE_URL`).
+security:
+  - internalToken: []
+tags:
+  - name: auth
+    description: Sign-up, email verification and sign-in, before a session exists.
+  - name: sessions
+    description: Introspection and revocation of sessions.
+  - name: users
+    description: Accounts.
+paths:
+  /internal/v1/auth/sign-in-methods:
+    post:
+      operationId: discoverSignInMethodsInternal
+      summary: Discover the sign-in methods of an address
+      description: |
+        Same answer for every address today: `password` and `email-code`. Internal token: actor
+        `anonymous`, no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInMethodsRequest'
+            example:
+              email: camille.martin@ateliernord.fr
+      responses:
+        '200':
+          description: The methods offered for the address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignInMethods'
+              example:
+                methods:
+                  - type: password
+                  - type: email-code
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+  /internal/v1/auth/sign-up:
+    post:
+      operationId: signUpInternal
+      summary: Create an account
+      description: |
+        Creates an unverified account, or replaces the name and password of an account whose
+        address is not verified yet, and issues an `email-verification` code
+        (`one-time-code.issued.v1`). The first sign-up of an address emits `user.signed-up.v1`; a
+        repeated one emits it again with the next version, and follows the 30-second throttle of the
+        codes. Internal token: actor `anonymous`, no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+            example:
+              name: Camille Martin
+              email: camille.martin@ateliernord.fr
+              password: atelier-nord-sprint-14
+              acceptTerms: true
+      responses:
+        '202':
+          description: The account exists, unverified, and a code was issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeSent'
+              example:
+                email: camille.martin@ateliernord.fr
+                expiresAt: '2026-11-08T13:17:00Z'
+                resendAvailableAt: '2026-11-08T13:07:30Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '409':
+          $ref: '#/components/responses/EmailTaken'
+        '422':
+          $ref: '#/components/responses/SignUpRefused'
+        '429':
+          $ref: '#/components/responses/CodeThrottled'
+  /internal/v1/auth/sign-up/code:
+    post:
+      operationId: resendSignUpCodeInternal
+      summary: Issue a new sign-up code
+      description: |
+        Issues a new `email-verification` code when an unverified account uses the address, and
+        invalidates the previous one; answers `202` without issuing anything otherwise. At most one
+        request every 30 seconds per address, account or not. Internal token: actor `anonymous`, no
+        organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CodeRequest'
+            example:
+              email: camille.martin@ateliernord.fr
+      responses:
+        '202':
+          description: Accepted, whether or not a code was issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeSent'
+              example:
+                email: camille.martin@ateliernord.fr
+                expiresAt: '2026-11-08T13:17:30Z'
+                resendAvailableAt: '2026-11-08T13:08:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '429':
+          $ref: '#/components/responses/CodeThrottled'
+  /internal/v1/auth/sign-up/verification:
+    post:
+      operationId: verifySignUpInternal
+      summary: Verify the address and open a session
+      description: |
+        Checks the `email-verification` code, verifies the address (`user.email-verified.v1`) and
+        opens a session for the `client`. Internal token: actor `anonymous`, no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CodeVerification'
+            example:
+              email: camille.martin@ateliernord.fr
+              code: '482913'
+              rememberMe: false
+              client:
+                ipAddress: 86.247.12.30
+                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0
+      responses:
+        '200':
+          $ref: '#/components/responses/SessionIssued'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '422':
+          $ref: '#/components/responses/CodeRefused'
+  /internal/v1/auth/sign-in:
+    post:
+      operationId: signInWithPasswordInternal
+      summary: Sign in with a password
+      description: |
+        Checks the address and the password, counting failures per address whether or not an
+        account uses it, and opens a session for the `client`. Internal token: actor `anonymous`,
+        no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordSignIn'
+            example:
+              email: camille.martin@ateliernord.fr
+              password: atelier-nord-sprint-14
+              rememberMe: true
+              client:
+                ipAddress: 86.247.12.30
+                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0
+      responses:
+        '200':
+          $ref: '#/components/responses/SessionIssued'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/SignInForbidden'
+        '422':
+          $ref: '#/components/responses/CredentialsRefused'
+        '429':
+          $ref: '#/components/responses/AccountLocked'
+  /internal/v1/auth/sign-in/code:
+    post:
+      operationId: requestSignInCodeInternal
+      summary: Issue a sign-in code
+      description: |
+        Issues a `sign-in` code (`one-time-code.issued.v1`) when a verified account uses the
+        address, invalidating the previous one; answers `202` the same way otherwise. At most one
+        request every 30 seconds per address, account or not. Internal token: actor `anonymous`,
+        no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CodeRequest'
+            example:
+              email: camille.martin@ateliernord.fr
+      responses:
+        '202':
+          description: Accepted, whether or not a code was issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeSent'
+              example:
+                email: camille.martin@ateliernord.fr
+                expiresAt: '2026-11-08T13:17:00Z'
+                resendAvailableAt: '2026-11-08T13:07:30Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '429':
+          $ref: '#/components/responses/CodeThrottled'
+  /internal/v1/auth/sign-in/code/verification:
+    post:
+      operationId: signInWithCodeInternal
+      summary: Sign in with a code
+      description: |
+        Checks the `sign-in` code and opens a session for the `client`. An address without a
+        verified account answers like a wrong code. Internal token: actor `anonymous`, no
+        organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CodeVerification'
+            example:
+              email: camille.martin@ateliernord.fr
+              code: '482913'
+              rememberMe: true
+              client:
+                ipAddress: 86.247.12.30
+                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0
+      responses:
+        '200':
+          $ref: '#/components/responses/SessionIssued'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '422':
+          $ref: '#/components/responses/CodeRefused'
+  /internal/v1/tokens/introspect:
+    post:
+      operationId: introspectToken
+      summary: Introspect a session token
+      description: |
+        Tells whether the token of a session cookie is active and, when it is, whose it is. The
+        gateway calls it on every request that carries the cookie, never caches the answer, and
+        gives the request its context from it (`setRequestOrganizationContext`).
+
+        A token that is unknown, expired, revoked or malformed answers `200` with
+        `active: false`, never an error. An active answer counts as activity: the inactivity
+        period of the session (12 hours by default) starts again. Calling it twice has the same
+        effect as once, so the call can be retried. Internal token: actor `system`, no
+        organization.
+      tags: [sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntrospectionRequest'
+            example:
+              token: example-session-token
+      responses:
+        '200':
+          description: Whether the token is active, and its subject when it is.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Introspection'
+              examples:
+                active:
+                  summary: Active session
+                  value:
+                    active: true
+                    tokenType: session
+                    sessionId: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
+                    userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    organizationId: null
+                    role: null
+                    scopes: []
+                    expiresAt: '2026-12-08T13:07:00Z'
+                inactive:
+                  summary: Unknown, expired or revoked token
+                  value:
+                    active: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+  /internal/v1/sessions/{sessionId}:
+    delete:
+      operationId: revokeSession
+      summary: Revoke a session
+      description: |
+        Ends a session of the actor: its token is no longer active from the next introspection and
+        `session.revoked.v1` is emitted. Revoking a session that already ended answers `204` and
+        emits nothing. A session of another user, or an unknown id, answers
+        `404 session.not-found`. Internal token: actor `user`, no organization.
+      tags: [sessions]
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Id of the session, as the introspection returned it.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60]
+      responses:
+        '204':
+          description: The session is revoked.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SessionNotFound'
+  /internal/v1/users/{userId}:
+    get:
+      operationId: getUser
+      summary: Read a user
+      description: |
+        Returns an account. A user actor reads its own account only: another id, or an unknown one,
+        answers `404 user.not-found`. Internal token: actor `user`, no organization.
+      tags: [users]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: Id of the account.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+      responses:
+        '200':
+          description: The account.
+          headers:
+            ETag:
+              description: Version of the account, `"<version>"`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              example:
+                id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                name: Camille Martin
+                email: camille.martin@ateliernord.fr
+                language: fr
+                version: 2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` = `identity-service`,
+        issuer `api-gateway`.
+  headers:
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110).
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    SessionIssued:
+      description: |
+        A session is open. `token` is returned here only, once: the gateway sets the cookie from it
+        and from `session` (`Max-Age` when `persistent`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SessionIssued'
+          example:
+            token: example-session-token
+            session:
+              id: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
+              expiresAt: '2026-12-08T13:07:00Z'
+              persistent: true
+            user:
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+              name: Camille Martin
+              email: camille.martin@ateliernord.fr
+              language: fr
+              version: 2
+    BadRequest:
+      description: '`request.invalid`: the request does not match the schema; one `details.issues` entry per issue.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: body
+                  path: [email]
+                  code: invalid_format
+                  message: Invalid email address
+    InternalTokenRefused:
+      description: |
+        The internal token is missing (`auth.token-missing`) or refused (`auth.token-invalid`, with
+        `details.reason`). The gateway's client reports it as `503 upstream.unauthorized`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unauthorized
+            status: 401
+            code: auth.token-invalid
+            details:
+              reason: expired
+    InternalAccessRefused:
+      description: |
+        The internal token is valid but the route does not accept its issuer
+        (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Forbidden
+            status: 403
+            code: auth.actor-not-allowed
+    SignInForbidden:
+      description: |
+        - `auth.email-not-verified`: the password is right but the address is not verified yet;
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`: see the internal token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            emailNotVerified:
+              summary: Address not verified
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.email-not-verified
+            actorNotAllowed:
+              summary: Actor not accepted
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.actor-not-allowed
+    EmailTaken:
+      description: '`auth.email-taken`: a verified account already uses the address.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            code: auth.email-taken
+    SignUpRefused:
+      description: |
+        `auth.terms-not-accepted`, `auth.password-too-short` (with `details.minLength`) or
+        `auth.password-compromised`; nothing is created.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: auth.password-too-short
+            details:
+              minLength: 12
+    CodeRefused:
+      description: |
+        `auth.code-invalid` (wrong code, or no account awaits one at the address) or
+        `auth.code-expired` (expired, used, replaced or too many wrong attempts).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: auth.code-invalid
+    CredentialsRefused:
+      description: |
+        `auth.invalid-credentials`, with `details.remainingAttempts` (at least 1); the same when no
+        account uses the address.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: auth.invalid-credentials
+            details:
+              remainingAttempts: 3
+    AccountLocked:
+      description: |
+        `auth.account-locked`: the password sign-in of the address is locked until
+        `details.lockedUntil`, 15 minutes after the failure that used the last attempt.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Too Many Requests
+            status: 429
+            code: auth.account-locked
+            details:
+              lockedUntil: '2026-11-08T13:22:00Z'
+    CodeThrottled:
+      description: |
+        `auth.code-throttled`: a code was issued for the address less than 30 seconds ago, with
+        `details.resendAvailableAt`.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Too Many Requests
+            status: 429
+            code: auth.code-throttled
+            details:
+              resendAvailableAt: '2026-11-08T13:07:30Z'
+    SessionNotFound:
+      description: '`session.not-found`: no session with this id belongs to the actor.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: session.not-found
+    UserNotFound:
+      description: '`user.not-found`: no account with this id is readable by the actor.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: user.not-found
+  schemas:
+    Email:
+      type: string
+      format: email
+      maxLength: 254
+      description: Email address, compared without regard to case.
+      examples: [camille.martin@ateliernord.fr]
+    Language:
+      type: string
+      description: BCP 47 language tag of the account, used for its emails. `fr` by default.
+      examples: [fr]
+    Client:
+      type: object
+      required: [ipAddress, userAgent]
+      description: |
+        The browser the session is opened for, as the gateway saw it. Stored with the session, to
+        show its device and place later; never logged with the token.
+      properties:
+        ipAddress:
+          type: string
+          minLength: 2
+          maxLength: 45
+          description: IPv4 or IPv6 address of the browser, from the one proxy hop the gateway trusts.
+          examples: [86.247.12.30]
+        userAgent:
+          type: [string, 'null']
+          maxLength: 1024
+          description: '`User-Agent` header of the browser, `null` when it sent none.'
+    SignInMethodsRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+    SignInMethods:
+      type: object
+      required: [methods]
+      properties:
+        methods:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignInMethod'
+    SignInMethod:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          description: |
+            `password` or `email-code` today. Later versions add other types without a new version
+            (`x-extensible-enum`); the gateway passes them on.
+          x-extensible-enum: [password, email-code]
+    SignUpRequest:
+      type: object
+      required: [name, email, password, acceptTerms]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          examples: [Camille Martin]
+        email:
+          $ref: '#/components/schemas/Email'
+        password:
+          type: string
+          maxLength: 256
+          description: At least 12 characters, checked here (`auth.password-too-short`). Never logged.
+        acceptTerms:
+          type: boolean
+    CodeRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+    CodeSent:
+      type: object
+      required: [email, expiresAt, resendAvailableAt]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        expiresAt:
+          type: string
+          format: date-time
+        resendAvailableAt:
+          type: string
+          format: date-time
+    CodeVerification:
+      type: object
+      required: [email, code, client]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: Never logged.
+          examples: ['482913']
+        rememberMe:
+          type: boolean
+          default: false
+        client:
+          $ref: '#/components/schemas/Client'
+    PasswordSignIn:
+      type: object
+      required: [email, password, client]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Never logged.
+        rememberMe:
+          type: boolean
+          default: false
+        client:
+          $ref: '#/components/schemas/Client'
+    SessionIssued:
+      type: object
+      required: [token, session, user]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: |
+            Opaque session token (256 random bits), returned once. A secret: never logged, never
+            stored by the gateway.
+        session:
+          $ref: '#/components/schemas/Session'
+        user:
+          $ref: '#/components/schemas/User'
+    Session:
+      type: object
+      required: [id, expiresAt, persistent]
+      properties:
+        id:
+          type: string
+          format: uuid
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the session ends at the latest, whatever its activity.
+        persistent:
+          type: boolean
+          description: '`true` when `rememberMe` was: the cookie lasts until `expiresAt`, else until the browser closes.'
+    IntrospectionRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Value of the session cookie. A secret, never logged.
+    Introspection:
+      oneOf:
+        - $ref: '#/components/schemas/ActiveToken'
+        - $ref: '#/components/schemas/InactiveToken'
+    ActiveToken:
+      type: object
+      required: [active, tokenType, sessionId, userId, organizationId, role, scopes, expiresAt]
+      properties:
+        active:
+          type: boolean
+          const: true
+        tokenType:
+          type: string
+          description: |
+            Kind of token: `session` today. Personal API tokens add `api-token` later, without a
+            new version (`x-extensible-enum`).
+          x-extensible-enum: [session]
+        sessionId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        organizationId:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            Organization of the session. Always `null` in this version: a session belongs to an
+            organization once the organization selection exists.
+        role:
+          type: [string, 'null']
+          description: Member role in that organization; always `null` in this version.
+        scopes:
+          type: array
+          description: Scopes the token grants; empty in this version, since no route needs one yet.
+          items:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the session ends at the latest.
+    InactiveToken:
+      type: object
+      required: [active]
+      properties:
+        active:
+          type: boolean
+          const: false
+    User:
+      type: object
+      required: [id, name, email, language, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples: [Camille Martin]
+        email:
+          $ref: '#/components/schemas/Email'
+        language:
+          $ref: '#/components/schemas/Language'
+        version:
+          type: integer
+          minimum: 1
+          description: Version of the account.

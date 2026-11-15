@@ -1,0 +1,373 @@
+# Events of identity-service: accounts, their verified address, sessions, and the restricted event
+# that carries a single-use code to cadenway-notification-service only.
+asyncapi: 3.0.0
+info:
+  title: identity-service events
+  version: 1.0.0
+  description: |
+    What identity-service tells the other services about accounts and sessions. Every event leaves
+    through the outbox of `@cadenway/nest-messaging` once its change is committed, at least once:
+    a consumer deduplicates on `id` and ignores a `version` of the aggregate it has already applied.
+
+    None of these events belongs to an organization yet: `organizationId` is always `null`, and the
+    events are appended in a system transaction.
+
+    **Restricted events.** A message marked `x-cadenway-restricted: true` carries a secret (a
+    single-use code). It is published on `restricted.<name>` instead of `evt.<name>`, stored in the
+    stream `EVENTS_RESTRICTED`, which only cadenway-notification-service may read, and its dead
+    letter keeps no body. The generated module lists these events in `RESTRICTED_EVENT_NAMES`:
+    identity-service and notification-service pass that list as `restrictedEvents` to the
+    `MessagingModule`. Nobody logs the payload of a restricted event.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  tags:
+    - name: users
+      description: Accounts.
+    - name: sessions
+      description: Sign-in sessions.
+    - name: one-time-codes
+      description: Single-use codes sent by email.
+  x-consumers:
+    - repository: cadenway-notification-service
+      uses: one-time-code.issued.v1, to send the verification and sign-in code emails. Planned, user.signed-up.v1 for its projection of user profiles.
+    - repository: cadenway-realtime-gateway
+      uses: Planned, session.revoked.v1, to close the sockets of the revoked session.
+    - repository: cadenway-organization-service
+      uses: Planned, user.signed-up.v1 and user.email-verified.v1, to match an invitation with the account that verified its address.
+servers:
+  nats:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream of each environment, on its internal network.
+channels:
+  userSignedUpV1:
+    address: evt.user.signed-up.v1
+    description: |
+      An account was created, not verified yet. Emitted by identity-service. Consumers: none yet;
+      planned, cadenway-notification-service and cadenway-organization-service.
+    messages:
+      userSignedUpV1:
+        $ref: '#/components/messages/userSignedUpV1'
+  userEmailVerifiedV1:
+    address: evt.user.email-verified.v1
+    description: |
+      The address of an account was proven with a code. Emitted by identity-service. Consumers:
+      none yet; planned, cadenway-organization-service.
+    messages:
+      userEmailVerifiedV1:
+        $ref: '#/components/messages/userEmailVerifiedV1'
+  sessionRevokedV1:
+    address: evt.session.revoked.v1
+    description: |
+      A session ended before its expiry. Emitted by identity-service. Consumers: none yet; planned,
+      cadenway-realtime-gateway.
+    messages:
+      sessionRevokedV1:
+        $ref: '#/components/messages/sessionRevokedV1'
+  oneTimeCodeIssuedV1:
+    address: restricted.one-time-code.issued.v1
+    description: |
+      A single-use code was issued and must be emailed. Restricted: stream `EVENTS_RESTRICTED`.
+      Emitted by identity-service. Consumer: cadenway-notification-service, the only one allowed.
+    messages:
+      oneTimeCodeIssuedV1:
+        $ref: '#/components/messages/oneTimeCodeIssuedV1'
+operations:
+  publishUserSignedUpV1:
+    action: send
+    summary: identity-service publishes the creation of an account.
+    description: Sent from the outbox of identity-service once the sign-up is committed.
+    channel:
+      $ref: '#/channels/userSignedUpV1'
+    messages:
+      - $ref: '#/channels/userSignedUpV1/messages/userSignedUpV1'
+  publishUserEmailVerifiedV1:
+    action: send
+    summary: identity-service publishes the verification of an address.
+    description: Sent from the outbox of identity-service once the verification is committed.
+    channel:
+      $ref: '#/channels/userEmailVerifiedV1'
+    messages:
+      - $ref: '#/channels/userEmailVerifiedV1/messages/userEmailVerifiedV1'
+  publishSessionRevokedV1:
+    action: send
+    summary: identity-service publishes the revocation of a session.
+    description: Sent from the outbox of identity-service once the revocation is committed.
+    channel:
+      $ref: '#/channels/sessionRevokedV1'
+    messages:
+      - $ref: '#/channels/sessionRevokedV1/messages/sessionRevokedV1'
+  publishOneTimeCodeIssuedV1:
+    action: send
+    summary: identity-service publishes a code to email.
+    description: |
+      Sent from the outbox of identity-service, on the restricted route the outbox row stores,
+      once the code is committed.
+    channel:
+      $ref: '#/channels/oneTimeCodeIssuedV1'
+    messages:
+      - $ref: '#/channels/oneTimeCodeIssuedV1/messages/oneTimeCodeIssuedV1'
+components:
+  schemas:
+    EventHeaders:
+      type: object
+      properties:
+        traceparent:
+          type: string
+          description: W3C Trace Context of the request that caused the event.
+  messages:
+    userSignedUpV1:
+      name: user.signed-up.v1
+      title: User signed up
+      summary: An account was created, not verified yet.
+      description: |
+        Emitted when an address is signed up. An address whose account is not verified yet can be
+        signed up again: the account keeps its `userId`, takes the new name and password, and the
+        event is emitted again with the next `version`. The account can sign in only once
+        `user.email-verified.v1` follows.
+
+        `actor` is the new user, `{ type: 'user', id: userId }`.
+
+        Personal data: `email` and `name`, so that a consumer knows the account by its address and
+        shows who it is without calling identity-service; `language`, so that a consumer writes to
+        the user in it. No password, hash or code.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, userId, email, name, language]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, an account belongs to no organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the account after the sign-up.
+          userId:
+            type: string
+            format: uuid
+          email:
+            type: string
+            format: email
+            maxLength: 254
+            description: Address signed up, not verified yet.
+            examples: [camille.martin@ateliernord.fr]
+          name:
+            type: string
+            minLength: 1
+            maxLength: 120
+            description: Full name typed at the sign-up.
+            examples: [Camille Martin]
+          language:
+            type: string
+            description: BCP 47 language tag of the account.
+            examples: [fr]
+    userEmailVerifiedV1:
+      name: user.email-verified.v1
+      title: User email verified
+      summary: The address of an account was proven with a code.
+      description: |
+        Emitted when a code proves the address: today, the verification that completes a sign-up.
+        `actor` is the user.
+
+        Personal data: `email`, the address now verified, so that a consumer that keeps it knows it
+        can be trusted.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, userId, email]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the address was verified.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, an account belongs to no organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the account after the verification.
+          userId:
+            type: string
+            format: uuid
+          email:
+            type: string
+            format: email
+            maxLength: 254
+            description: The verified address.
+            examples: [camille.martin@ateliernord.fr]
+    sessionRevokedV1:
+      name: session.revoked.v1
+      title: Session revoked
+      summary: A session ended before its expiry.
+      description: |
+        Emitted when a session is revoked: today, when the user signs out. A session that only
+        expires emits nothing. `actor` is the user who signed out.
+
+        Personal data: none beyond the ids. No token, address, device or IP address.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, sessionId, userId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the session was revoked.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: |
+              Organization of the session; always `null` in this version, since a session belongs
+              to no organization yet.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the session after the revocation, its last change.
+          sessionId:
+            type: string
+            format: uuid
+          userId:
+            type: string
+            format: uuid
+            description: Account of the session.
+    oneTimeCodeIssuedV1:
+      name: one-time-code.issued.v1
+      title: One-time code issued
+      summary: A single-use code was issued and must be emailed.
+      x-cadenway-restricted: true
+      description: |
+        Restricted: published on `restricted.one-time-code.issued.v1`, readable by
+        cadenway-notification-service only. Each event is one email with the code; the email is a
+        security email, always sent. Issuing a new code for the same account and purpose makes the
+        previous one stop working, so only the latest email holds a valid code. A consumer does not
+        send a code whose `expiresAt` has passed, and never logs the code nor keeps it in its send
+        log.
+
+        `actor` is `{ type: 'system', id: 'identity-service' }` for a code asked before any session
+        exists, and the user for a code asked from a session (`email-change`). Unlike the sign-up,
+        whose account is the actor of `user.signed-up.v1`, a code request credits nobody: anyone can
+        ask a sign-in code for any address.
+
+        Personal data and secrets: `code`, the secret itself, valid until `expiresAt`, so that the
+        email can show it; `recipient.email` and `recipient.name`, where to send it and how to greet
+        the person; `language`, the language of the email. The event names the account (`userId`)
+        and the code (`codeId`), so that the send log can refer to them instead of the code.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            codeId,
+            userId,
+            purpose,
+            code,
+            expiresAt,
+            recipient,
+            language,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key and the idempotency key of the email.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the code was issued.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, a code belongs to an account.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the code, always 1; a code never changes, a new code is a new `codeId`.
+          codeId:
+            type: string
+            format: uuid
+            description: Id of the code.
+          userId:
+            type: string
+            format: uuid
+            description: Account the code is for.
+          purpose:
+            type: string
+            description: |
+              What the code proves, which decides the template of the email:
+              `email-verification` confirms the address of a sign-up (10 minutes), `sign-in` signs
+              in without a password (10 minutes), `email-change` confirms a new address (15
+              minutes; emitted once address changes exist). Another purpose takes a new versioned
+              event name.
+            enum: [email-verification, sign-in, email-change]
+          code:
+            type: string
+            pattern: '^[0-9]{6}$'
+            description: The 6 digits, shown as `482 913` in the email. A secret, never logged.
+            examples: ['482913']
+          expiresAt:
+            type: string
+            format: date-time
+            description: When the code stops working.
+          recipient:
+            type: object
+            description: Who receives the email.
+            required: [email, name]
+            properties:
+              email:
+                type: string
+                format: email
+                maxLength: 254
+                description: |
+                  Address to send to: the address being verified or signed in with, or the new
+                  address for `email-change`.
+                examples: [camille.martin@ateliernord.fr]
+              name:
+                type: string
+                minLength: 1
+                maxLength: 120
+                description: Full name of the account, for the greeting.
+                examples: [Camille Martin]
+          language:
+            type: string
+            description: BCP 47 language tag of the email, the language of the account.
+            examples: [fr]

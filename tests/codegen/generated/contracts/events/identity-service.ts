@@ -4,6 +4,40 @@
  */
 import * as zod from 'zod';
 
+/** Name of the event `sign-in-code.sent.v1`. A sign-in code was sent. Restricted: published on `restricted.sign-in-code.sent.v1`. */
+export const SIGN_IN_CODE_SENT_V1 = 'sign-in-code.sent.v1';
+
+/** Payload of the event `sign-in-code.sent.v1`. */
+export interface SignInCodeSentV1 {
+  id: string;
+  occurredAt: string;
+  organizationId: string | null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  version: number;
+  userId: string;
+  code: string;
+}
+
+/** Validator of the payload of the event `sign-in-code.sent.v1`. */
+export const signInCodeSentV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().nullable(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int(),
+  userId: zod.uuid(),
+  code: zod.string().regex(new RegExp('^[0-9]{6}$')),
+}) satisfies zod.ZodType<SignInCodeSentV1>;
+
 /** Name of the event `user.signed-up.v1`. An account was created. */
 export const USER_SIGNED_UP_V1 = 'user.signed-up.v1';
 
@@ -67,17 +101,29 @@ export const userSignedUpV1Schema = zod.object({
 }) satisfies zod.ZodType<UserSignedUpV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [USER_SIGNED_UP_V1] as const;
+export const EVENT_NAMES = [SIGN_IN_CODE_SENT_V1, USER_SIGNED_UP_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
 
+/**
+ * Names of the restricted events of this document, published on `restricted.<name>` and stored
+ * in `EVENTS_RESTRICTED`: the `restrictedEvents` of the `MessagingModule` of
+ * `@cadenway/nest-messaging`.
+ */
+export const RESTRICTED_EVENT_NAMES = [SIGN_IN_CODE_SENT_V1] as const;
+
+/** Name of a restricted event of this document. */
+export type RestrictedEventName = (typeof RESTRICTED_EVENT_NAMES)[number];
+
 /** Payload type of each event of this document, by event name. */
 export interface EventPayloads {
+  'sign-in-code.sent.v1': SignInCodeSentV1;
   'user.signed-up.v1': UserSignedUpV1;
 }
 
 /** Payload validator of each event of this document, by event name. */
 export const eventSchemas = {
+  'sign-in-code.sent.v1': signInCodeSentV1Schema,
   'user.signed-up.v1': userSignedUpV1Schema,
 } as const satisfies { readonly [Name in EventName]: zod.ZodType<EventPayloads[Name]> };

@@ -182,6 +182,46 @@ describe('module of an AsyncAPI document', () => {
 
     expect(events.map((event) => event.name)).toEqual(['task.created.v1', 'task.updated.v1']);
     expect(events[0].summary).toBe('A task was created.');
+    expect(events.map((event) => event.restricted)).toEqual([false, false]);
+  });
+
+  it('marks an event restricted only when its message says true', () => {
+    const events = collectEvents(
+      documentWith({
+        code: { name: 'sign-in-code.sent.v1', 'x-cadenway-restricted': true, payload: envelope },
+        session: { name: 'session.revoked.v1', 'x-cadenway-restricted': false, payload: envelope },
+      }),
+    );
+
+    expect(events.map(({ name, restricted }) => [name, restricted])).toEqual([
+      ['session.revoked.v1', false],
+      ['sign-in-code.sent.v1', true],
+    ]);
+  });
+
+  it('lists the restricted events, and none for a document without', () => {
+    const module = renderEventsModule({
+      source: 'asyncapi/identity-service.yaml',
+      document: documentWith({
+        code: { name: 'sign-in-code.sent.v1', 'x-cadenway-restricted': true, payload: envelope },
+        user: { name: 'user.signed-up.v1', payload: envelope },
+      }),
+    });
+
+    expect(module).toContain(
+      'export const RESTRICTED_EVENT_NAMES = [SIGN_IN_CODE_SENT_V1] as const;',
+    );
+    expect(module).toContain(
+      'export type RestrictedEventName = (typeof RESTRICTED_EVENT_NAMES)[number];',
+    );
+    expect(module).toContain('Restricted: published on `restricted.sign-in-code.sent.v1`.');
+    expect(module).not.toContain('`restricted.user.signed-up.v1`');
+    expect(
+      renderEventsModule({
+        source: 'asyncapi/task-service.yaml',
+        document: documentWith({ task: { name: 'task.updated.v1', payload: envelope } }),
+      }),
+    ).toContain('export const RESTRICTED_EVENT_NAMES = [] as const;');
   });
 
   it('writes the names, the payload types and the validators by event name', () => {
@@ -225,6 +265,21 @@ describe('module of an AsyncAPI document', () => {
         }),
       ),
     ).toThrow('declared twice with different payloads');
+    expect(() =>
+      collectEvents(
+        documentWith({
+          a: { name: 'sign-in-code.sent.v1', 'x-cadenway-restricted': 'yes', payload: envelope },
+        }),
+      ),
+    ).toThrow('#/components/messages/a: "x-cadenway-restricted" is true or false.');
+    expect(() =>
+      collectEvents(
+        documentWith({
+          a: { name: 'sign-in-code.sent.v1', 'x-cadenway-restricted': true, payload: envelope },
+          b: { name: 'sign-in-code.sent.v1', payload: envelope },
+        }),
+      ),
+    ).toThrow('is restricted in one declaration only');
     expect(() =>
       renderEventsModule({
         source: 'a.yaml',

@@ -47,6 +47,16 @@ export const EVENT_NAMES = [TASK_UPDATED_V1] as const;
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
 
+/**
+ * Names of the restricted events of this document, published on `restricted.<name>` and stored
+ * in `EVENTS_RESTRICTED`: the `restrictedEvents` of the `MessagingModule` of
+ * `@cadenway/nest-messaging`.
+ */
+export const RESTRICTED_EVENT_NAMES = [] as const;
+
+/** Name of a restricted event of this document. */
+export type RestrictedEventName = (typeof RESTRICTED_EVENT_NAMES)[number];
+
 /** Payload type of each event of this document, by event name. */
 export interface EventPayloads {
   'task.updated.v1': TaskUpdatedV1;

@@ -1,6 +1,11 @@
 const HTTP_METHODS = ['get', 'put', 'post', 'patch', 'delete'];
 const ERROR_STATUSES = new Set(['400', '401', '403', '404', '409', '412', '422', '429', '503']);
 const ACTORS = ['user', 'automation', 'git', 'system'];
+const EVENT_NAME = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+\.v[1-9][0-9]*$/;
+// Marks a message that carries a secret: @cadenway/nest-messaging publishes it on
+// `restricted.<name>`, in the stream only notification-service reads, instead of `evt.<name>`.
+// scripts/lib/events-module.mjs reads the same extension to write `RESTRICTED_EVENT_NAMES`.
+const RESTRICTED = 'x-cadenway-restricted';
 
 // Document each node reached through a `$ref` to another file was read from. A `$ref` written inside
 // a shared component (components/) points into that file, not into the spec being linted, so it is
@@ -264,19 +269,46 @@ const openapi = {
 const asyncapi = {
   'asyncapi-version': (root) =>
     invalid(root.asyncapi !== '3.0.0', 'AsyncAPI must use version 3.0.0.'),
+  // The address of a channel is the subject its event is published on: `evt.<name>`, or
+  // `restricted.<name>` when its messages are marked restricted, `<name>` being the name of each of
+  // its messages. A restricted address with an unmarked message, or the reverse, would publish a
+  // secret where every backend reads it, or an ordinary event where its consumers never look.
   'event-channel-address': (root, context) =>
-    Object.entries(root.channels ?? {})
-      .map(([name, channel]) => ({ name, node: resolve(channel, context) }))
-      .filter(
-        ({ node }) =>
-          !/^evt\.[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+\.v[1-9][0-9]*$/.test(node?.address ?? ''),
-      )
-      .map(({ name }) => ({ message: 'Invalid event channel address.', path: ['channels', name] })),
+    Object.entries(root.channels ?? {}).flatMap(([channelName, channel]) => {
+      const node = resolve(channel, context);
+      const path = ['channels', channelName];
+      const messages = Object.values(node?.messages ?? {}).map((message) =>
+        resolve(message, context),
+      );
+      const flags = messages.map((message) => message?.[RESTRICTED]);
+      if (flags.some((flag) => flag !== undefined && typeof flag !== 'boolean')) {
+        return [{ message: `${RESTRICTED} must be true or false.`, path }];
+      }
+      const restricted = flags.filter((flag) => flag === true).length;
+      if (restricted > 0 && restricted < messages.length) {
+        return [{ message: 'A channel cannot mix restricted and other messages.', path }];
+      }
+      const prefix = restricted > 0 ? 'restricted' : 'evt';
+      const address = String(node?.address ?? '');
+      const event = address.startsWith(`${prefix}.`) ? address.slice(prefix.length + 1) : '';
+      if (!EVENT_NAME.test(event)) {
+        return [
+          {
+            message:
+              restricted > 0
+                ? 'The address of a channel of restricted messages is restricted.<entity>.<fact>.v<n>.'
+                : 'Invalid event channel address: evt.<entity>.<fact>.v<n> expected.',
+            path,
+          },
+        ];
+      }
+      return messages.some((message) => typeof message?.name === 'string' && message.name !== event)
+        ? [{ message: `The address must be ${prefix}.<name of its message>.`, path }]
+        : [];
+    }),
   'event-name': (root, context) =>
     asyncMessages(root, context)
-      .filter(
-        ({ node }) => !/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+\.v[1-9][0-9]*$/.test(node?.name ?? ''),
-      )
+      .filter(({ node }) => !EVENT_NAME.test(node?.name ?? ''))
       .map(({ path }) => ({ message: 'Invalid event name.', path })),
   'event-payload': (root, context) =>
     asyncMessages(root, context)

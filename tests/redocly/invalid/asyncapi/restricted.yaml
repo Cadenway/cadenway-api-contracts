@@ -1,0 +1,74 @@
+# Fixture of tests/redocly/ruleset.spec.ts: each channel breaks cadenway/event-channel-address once,
+# on what a restricted message changes in its address. Not linted by `pnpm lint:specs`.
+asyncapi: 3.0.0
+info:
+  title: Contract style counter-example, restricted events
+  version: 1.0.0
+  description: Breaks the Redocly rules of this repository.
+channels:
+  # A restricted message on an `evt.` channel: every backend could read its secret.
+  codeOnEvents:
+    address: evt.sign-in-code.sent.v1
+    messages:
+      codeOnEvents:
+        $ref: '#/components/messages/restrictedCode'
+  # An unmarked message on a `restricted.` channel: its consumers would read another stream.
+  plainOnRestricted:
+    address: restricted.task.updated.v1
+    messages:
+      plainOnRestricted:
+        $ref: '#/components/messages/plainTask'
+  # A restricted and an unmarked message on one channel.
+  mixed:
+    address: restricted.sign-in-code.sent.v1
+    messages:
+      restrictedCode:
+        $ref: '#/components/messages/restrictedCode'
+      plainTask:
+        $ref: '#/components/messages/plainTask'
+  # A flag that is not a boolean.
+  notBoolean:
+    address: restricted.email-code.sent.v1
+    messages:
+      notBoolean:
+        $ref: '#/components/messages/notBoolean'
+  # An address that names another event than its message.
+  otherName:
+    address: restricted.email-code.sent.v1
+    messages:
+      otherName:
+        $ref: '#/components/messages/restrictedCode'
+components:
+  messages:
+    restrictedCode:
+      name: sign-in-code.sent.v1
+      x-cadenway-restricted: true
+      payload:
+        $ref: '#/components/schemas/Envelope'
+    plainTask:
+      name: task.updated.v1
+      payload:
+        $ref: '#/components/schemas/Envelope'
+    notBoolean:
+      name: email-code.sent.v1
+      x-cadenway-restricted: 'yes'
+      payload:
+        $ref: '#/components/schemas/Envelope'
+  schemas:
+    Envelope:
+      type: object
+      required: [id, occurredAt, organizationId, actor, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        organizationId:
+          type: [string, 'null']
+          format: uuid
+        actor:
+          $ref: '../../../../components/events.yaml#/components/schemas/Actor'
+        version:
+          type: integer
