@@ -10,9 +10,12 @@ import {
 } from '../../packages/contracts/src/generated/events/identity-service';
 import {
   IntrospectTokenResponse,
+  SignInWithCodeInternalBody,
   SignInWithPasswordInternalBody,
+  VerifySignUpInternalBody,
 } from '../../packages/contracts/src/generated/validators/internal/identity-service';
 import {
+  SignInWithCodeBody,
   SignUpBody,
   VerifySignUpBody,
 } from '../../packages/contracts/src/generated/validators/public/auth';
@@ -119,6 +122,50 @@ describe('routes of authentication', () => {
       VerifySignUpBody.safeParse({ email: 'camille.martin@ateliernord.fr', code: '482 913' })
         .success,
     ).toBe(false);
+  });
+
+  it('keeps the password of a sign-up verification so that the gateway can forward it', () => {
+    const verification: { email: string; code: string; password: string } = {
+      email: 'camille.martin@ateliernord.fr',
+      code: '482913',
+      password: 'atelier-nord-sprint-14',
+    };
+    const client: { ipAddress: string; userAgent: null } = {
+      ipAddress: '86.247.12.30',
+      userAgent: null,
+    };
+
+    expect(VerifySignUpBody.parse(verification)).toEqual({ ...verification, rememberMe: false });
+    expect(VerifySignUpInternalBody.parse({ ...verification, client })).toEqual({
+      ...verification,
+      rememberMe: false,
+      client,
+    });
+    expect(
+      VerifySignUpInternalBody.parse({
+        email: verification.email,
+        code: verification.code,
+        client,
+      }),
+    ).not.toHaveProperty('password');
+  });
+
+  it('leaves the password out of the sign-in code verification', () => {
+    expect(
+      SignInWithCodeBody.parse({
+        email: 'camille.martin@ateliernord.fr',
+        code: '482913',
+        password: 'atelier-nord-sprint-14',
+      }),
+    ).not.toHaveProperty('password');
+    expect(
+      SignInWithCodeInternalBody.parse({
+        email: 'camille.martin@ateliernord.fr',
+        code: '482913',
+        password: 'atelier-nord-sprint-14',
+        client: { ipAddress: '86.247.12.30', userAgent: null },
+      }),
+    ).not.toHaveProperty('password');
   });
 
   it('needs the client of the browser for every internal sign-in', () => {

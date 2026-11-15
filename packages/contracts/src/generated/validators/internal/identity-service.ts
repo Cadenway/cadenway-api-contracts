@@ -28,8 +28,14 @@ export const DiscoverSignInMethodsInternalResponse = zod.object({
  * Creates an unverified account, or replaces the name and password of an account whose
  * address is not verified yet, and issues an `email-verification` code
  * (`one-time-code.issued.v1`). The first sign-up of an address emits `user.signed-up.v1`; a
- * repeated one emits it again with the next version, and follows the 30-second throttle of the
- * codes. Internal token: actor `anonymous`, no organization.
+ * repeated one emits it again with the next version.
+ *
+ * The verification is bound to the password of the latest sign-up of the address:
+ * `POST /internal/v1/auth/sign-up/verification` answers `422 auth.sign-up-replaced` to a
+ * `password` that differs from it, and requires `password` once the address was signed up
+ * more than once, so that a replacement never lets the code verify a password the owner of
+ * the address did not choose. Every sign-up is a code request of the address and follows the
+ * throttle of `CodeThrottled`. Internal token: actor `anonymous`, no organization.
  * @summary Create an account
  */
 export const signUpInternalBodyNameMax = 120;
@@ -41,7 +47,7 @@ export const signUpInternalBodyPasswordMax = 256;
 
 
 export const SignUpInternalBody = zod.object({
-  "name": zod.string().min(1).max(signUpInternalBodyNameMax),
+  "name": zod.string().min(1).max(signUpInternalBodyNameMax).describe('Full name, as typed; surrounding spaces are removed, and a name made only of spaces is\nrefused with `400 request.invalid`.\n'),
   "email": zod.email().max(signUpInternalBodyEmailMax).describe('Email address, compared without regard to case.'),
   "password": zod.string().max(signUpInternalBodyPasswordMax).describe('At least 12 characters, checked here (`auth.password-too-short`). Never logged.'),
   "acceptTerms": zod.boolean()
@@ -60,9 +66,10 @@ export const SignUpInternalResponse = zod.object({
 
 /**
  * Issues a new `email-verification` code when an unverified account uses the address, and
- * invalidates the previous one; answers `202` without issuing anything otherwise. At most one
- * request every 30 seconds per address, account or not. Internal token: actor `anonymous`, no
- * organization.
+ * invalidates the previous one; answers `202` without issuing anything otherwise. Throttled
+ * per address, account or not, together with the sign-up and the sign-in codes: 30 seconds
+ * between two requests and at most 5 in an hour (`CodeThrottled`). Internal token: actor
+ * `anonymous`, no organization.
  * @summary Issue a new sign-up code
  */
 export const resendSignUpCodeInternalBodyEmailMax = 254;
@@ -85,14 +92,32 @@ export const ResendSignUpCodeInternalResponse = zod.object({
 
 
 /**
- * Checks the `email-verification` code, verifies the address (`user.email-verified.v1`) and
- * opens a session for the `client`. Internal token: actor `anonymous`, no organization.
+ * Checks the `email-verification` code, then the password of the sign-up, verifies the
+ * address (`user.email-verified.v1`) and opens a session for the `client`. The checks run in
+ * this order:
+ *
+ * 1. The code. A wrong code answers `422 auth.code-invalid` and a code no longer usable
+ *    `422 auth.code-expired`, with or without `password`.
+ * 2. With the right code, a `password` is compared with the password of the pending
+ *    sign-up, the latest one of the address. When it differs, the answer is
+ *    `422 auth.sign-up-replaced` and the code stops working.
+ * 3. When a later sign-up replaced the name and password of the pending account (the
+ *    address was signed up more than once before this verification), `password` is
+ *    required: without it the answer is `422 auth.sign-up-replaced` too, and the code stops
+ *    working. Only an accepted sign-up (`202`) counts: a refused one replaces nothing.
+ *
+ * Without `password`, an address signed up once is verified by its code alone.
+ * `auth.sign-up-replaced` needs the right code, so it tells a caller without the code
+ * nothing. The gateway forwards the `password` of the public request unchanged. Internal
+ * token: actor `anonymous`, no organization.
  * @summary Verify the address and open a session
  */
 export const verifySignUpInternalBodyEmailMax = 254;
 
 export const verifySignUpInternalBodyCodeRegExp = new RegExp('^[0-9]{6}$');
 export const verifySignUpInternalBodyRememberMeDefault = false;
+export const verifySignUpInternalBodyPasswordMax = 256;
+
 export const verifySignUpInternalBodyClientIpAddressMin = 2;
 export const verifySignUpInternalBodyClientIpAddressMax = 45;
 
@@ -104,11 +129,12 @@ export const VerifySignUpInternalBody = zod.object({
   "email": zod.email().max(verifySignUpInternalBodyEmailMax).describe('Email address, compared without regard to case.'),
   "code": zod.string().regex(verifySignUpInternalBodyCodeRegExp).describe('Never logged.'),
   "rememberMe": zod.boolean().default(verifySignUpInternalBodyRememberMeDefault),
+  "password": zod.string().max(verifySignUpInternalBodyPasswordMax).optional().describe('The password typed in the sign-up form, as the public request carried it. Once the code\nis right, it is compared with the password of the latest sign-up of the address: a\ndifferent one answers `422 auth.sign-up-replaced`. Required once the address was signed\nup more than once before the verification: without it the answer is the same. Never\nlogged.\n'),
   "client": zod.object({
   "ipAddress": zod.string().min(verifySignUpInternalBodyClientIpAddressMin).max(verifySignUpInternalBodyClientIpAddressMax).describe('IPv4 or IPv6 address of the browser, from the one proxy hop the gateway trusts.'),
   "userAgent": zod.string().max(verifySignUpInternalBodyClientUserAgentMax).nullable().describe('`User-Agent` header of the browser, `null` when it sent none.')
 }).describe('The browser the session is opened for, as the gateway saw it. Stored with the session, to\nshow its device and place later; never logged with the token.\n')
-})
+}).describe('The code of a sign-up and the password that binds the verification to that sign-up. See\n`POST /internal/v1/auth/sign-up/verification` for the order of the checks.\n')
 
 export const verifySignUpInternalResponseTokenMax = 256;
 
@@ -188,9 +214,10 @@ export const SignInWithPasswordInternalResponse = zod.object({
 
 /**
  * Issues a `sign-in` code (`one-time-code.issued.v1`) when a verified account uses the
- * address, invalidating the previous one; answers `202` the same way otherwise. At most one
- * request every 30 seconds per address, account or not. Internal token: actor `anonymous`,
- * no organization.
+ * address, invalidating the previous one; answers `202` the same way otherwise. Throttled per
+ * address, account or not, together with the sign-up codes: 30 seconds between two requests
+ * and at most 5 in an hour (`CodeThrottled`). Internal token: actor `anonymous`, no
+ * organization.
  * @summary Issue a sign-in code
  */
 export const requestSignInCodeInternalBodyEmailMax = 254;

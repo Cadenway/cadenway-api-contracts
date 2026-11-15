@@ -47,5 +47,7 @@ export type { SignInMethodsRequest } from './generated/public/auth/model/signInM
 export type { SignOutRequest } from './generated/public/auth/model/signOutRequest';
 export type { SignUpRefusedResponse } from './generated/public/auth/model/signUpRefusedResponse';
 export type { SignUpRequest } from './generated/public/auth/model/signUpRequest';
+export type { SignUpVerification } from './generated/public/auth/model/signUpVerification';
+export type { SignUpVerificationRefusedResponse } from './generated/public/auth/model/signUpVerificationRefusedResponse';
 export type { UnauthenticatedResponse } from './generated/public/auth/model/unauthenticatedResponse';
 export type { UnavailableResponse } from './generated/public/auth/model/unavailableResponse';

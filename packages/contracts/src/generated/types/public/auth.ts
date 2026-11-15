@@ -42,7 +42,8 @@ export type Password = string;
 
 export interface SignUpRequest {
   /**
-     * Full name, as typed; surrounding spaces are removed.
+     * Full name, as typed; surrounding spaces are removed, and a name made only of spaces is
+     * refused with `400 request.invalid`.
      * @minLength 1
      * @maxLength 120
      */
@@ -67,8 +68,34 @@ export interface CodeSent {
   email: Email;
   /** When a code sent now stops working, 10 minutes later. */
   expiresAt: string;
-  /** When another code can be asked for, 30 seconds later. */
+  /**
+     * When another code can be asked for: 30 seconds later, or the end of the hour once 5
+     * codes were asked for the address in it (see `CodeThrottled`).
+     */
   resendAvailableAt: string;
+}
+
+/**
+ * The code of a sign-up and the password that binds the verification to that sign-up. See
+ * `POST /v1/auth/sign-up/verification` for the order of the checks.
+ */
+export interface SignUpVerification {
+  email: Email;
+  /**
+     * The 6 digits of the email, without the space it is shown with. Never logged.
+     * @pattern ^[0-9]{6}$
+     */
+  code: string;
+  /** Keep the session for 30 days ("Rester connecté pendant 30 jours"). */
+  rememberMe?: boolean;
+  /**
+     * The password typed in the sign-up form; the web application always sends it. Once the
+     * code is right, it is compared with the password of the latest sign-up of the address:
+     * a different one answers `422 auth.sign-up-replaced`. Required once the address was
+     * signed up more than once before the verification: without it the answer is the same.
+     * Never logged.
+     */
+  password?: Password;
 }
 
 export interface CodeVerification {
@@ -193,6 +220,19 @@ export type SignUpRefusedResponse = Problem;
 export type CodeRefusedResponse = Problem;
 
 /**
+ * The verification of the sign-up is refused. The code is checked first:
+ *
+ * - `auth.code-invalid`: the code is wrong, or no account awaits a code at this address;
+ * - `auth.code-expired`: the code expired, was used, was replaced by a newer one, or took too
+ *   many wrong attempts. A new code is needed. The web application shows the same line for
+ *   both codes;
+ * - `auth.sign-up-replaced`, only with the right code: `password` differs from the password
+ *   of the latest sign-up of the address, or is missing while the address was signed up
+ *   more than once. The code stops working; the person signs up again.
+ */
+export type SignUpVerificationRefusedResponse = Problem;
+
+/**
  * `auth.invalid-credentials`: the address or the password is wrong. `details.remainingAttempts`
  * is the number of failures left before the lockout, at least 1. Answered the same way when no
  * account uses the address.
@@ -215,8 +255,13 @@ export type EmailNotVerifiedResponse = Problem;
 export type AccountLockedResponse = Problem;
 
 /**
- * - `auth.code-throttled`: a code was sent to this address less than 30 seconds ago;
- *   `details.resendAvailableAt` says when the next one can be.
+ * - `auth.code-throttled`: the code requests of this address are throttled whatever their
+ *   purpose, account or not: a sign-up, `POST /v1/auth/sign-up/code` and
+ *   `POST /v1/auth/sign-in/code` count together. A request is refused less than 30 seconds
+ *   after the last accepted one, and once 5 were accepted in the current hour, which starts
+ *   with the first request accepted after the previous hour ended.
+ *   `details.resendAvailableAt` says when the next one can be: 30 seconds after the last
+ *   accepted request, or the end of the hour.
  * - `rate-limit.exceeded`: the gateway's own limit.
  */
 export type CodeThrottledResponse = Problem;

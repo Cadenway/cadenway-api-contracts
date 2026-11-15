@@ -50,6 +50,8 @@ export interface SignInMethods {
 
 export interface SignUpRequest {
   /**
+     * Full name, as typed; surrounding spaces are removed, and a name made only of spaces is
+     * refused with `400 request.invalid`.
      * @minLength 1
      * @maxLength 120
      */
@@ -71,6 +73,30 @@ export interface CodeSent {
   email: Email;
   expiresAt: string;
   resendAvailableAt: string;
+}
+
+/**
+ * The code of a sign-up and the password that binds the verification to that sign-up. See
+ * `POST /internal/v1/auth/sign-up/verification` for the order of the checks.
+ */
+export interface SignUpVerification {
+  email: Email;
+  /**
+     * Never logged.
+     * @pattern ^[0-9]{6}$
+     */
+  code: string;
+  rememberMe?: boolean;
+  /**
+     * The password typed in the sign-up form, as the public request carried it. Once the code
+     * is right, it is compared with the password of the latest sign-up of the address: a
+     * different one answers `422 auth.sign-up-replaced`. Required once the address was signed
+     * up more than once before the verification: without it the answer is the same. Never
+     * logged.
+     * @maxLength 256
+     */
+  password?: string;
+  client: Client;
 }
 
 export interface CodeVerification {
@@ -248,6 +274,14 @@ export type SignUpRefusedResponse = Problem;
 export type CodeRefusedResponse = Problem;
 
 /**
+ * The code is checked first: `auth.code-invalid` or `auth.code-expired`, as in
+ * `CodeRefused`. Then, only with the right code, `auth.sign-up-replaced`: `password` differs
+ * from the password of the latest sign-up of the address, or is missing while the address
+ * was signed up more than once; the code stops working.
+ */
+export type SignUpVerificationRefusedResponse = Problem;
+
+/**
  * `auth.invalid-credentials`, with `details.remainingAttempts` (at least 1); the same when no
  * account uses the address.
  */
@@ -260,8 +294,12 @@ export type CredentialsRefusedResponse = Problem;
 export type AccountLockedResponse = Problem;
 
 /**
- * `auth.code-throttled`: a code was issued for the address less than 30 seconds ago, with
- * `details.resendAvailableAt`.
+ * `auth.code-throttled`, with `details.resendAvailableAt`: the code requests of the address
+ * are throttled whatever their purpose, account or not, so the sign-up, the sign-up code and
+ * the sign-in code routes count together. A request is refused less than 30 seconds after
+ * the last accepted one, and once 5 were accepted in the current hour, which starts with the
+ * first request accepted after the previous hour ended. `details.resendAvailableAt` is 30
+ * seconds after the last accepted request, or the end of the hour.
  */
 export type CodeThrottledResponse = Problem;
 
