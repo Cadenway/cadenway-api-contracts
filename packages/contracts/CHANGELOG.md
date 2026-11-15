@@ -1,5 +1,22 @@
 # @cadenway/contracts
 
+## 0.3.0
+
+### Minor Changes
+
+- 93cf3ae: Add the first domain contracts, those of identity-service: `types/public/auth` and
+  `validators/public/auth` for the public authentication routes (sign-in method discovery, sign-up,
+  email verification, sign-in by password or by email code, sign-out, `GET /v1/me`),
+  `types/internal/identity-service` and `validators/internal/identity-service` for the routes the API
+  gateway calls (the same flows, `POST /internal/v1/tokens/introspect`, session revocation, reading a
+  user), `events/identity-service` for `user.signed-up.v1`, `user.email-verified.v1`,
+  `session.revoked.v1` and the restricted `one-time-code.issued.v1`, and the three specs under
+  `specs/`.
+- 93cf3ae: Every module of `@cadenway/contracts/events/<spec>` now exports `RESTRICTED_EVENT_NAMES` and
+  `RestrictedEventName`: the events whose message is marked `x-cadenway-restricted: true`, published on
+  `restricted.<name>` in `EVENTS_RESTRICTED`. Pass the list as `restrictedEvents` to the
+  `MessagingModule` of `@cadenway/nest-messaging`; it is empty for a document without restricted events.
+
 ## 0.2.0
 
 ### Minor Changes
