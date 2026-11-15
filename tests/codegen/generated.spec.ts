@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  RESTRICTED_EVENT_NAMES as IDENTITY_RESTRICTED_EVENT_NAMES,
+  SIGN_IN_CODE_SENT_V1,
+  signInCodeSentV1Schema,
   userSignedUpV1Schema,
+  type RestrictedEventName,
   type UserSignedUpV1,
 } from './generated/contracts/events/identity-service';
 import {
   EVENT_NAMES,
+  RESTRICTED_EVENT_NAMES as TASK_RESTRICTED_EVENT_NAMES,
   TASK_UPDATED_V1,
   eventSchemas,
   taskUpdatedV1Schema,
@@ -138,6 +143,19 @@ describe('code generated from a fixture event', () => {
 
     expect(userSignedUpV1Schema.parse(userSignedUp)).toEqual(userSignedUp);
     expect(userSignedUpV1Schema.parse(complete)).toEqual(complete);
+  });
+
+  it('lists the restricted events of a document, and none for a document without', () => {
+    const restricted: RestrictedEventName = SIGN_IN_CODE_SENT_V1;
+
+    expect(IDENTITY_RESTRICTED_EVENT_NAMES).toEqual([restricted]);
+    expect(TASK_RESTRICTED_EVENT_NAMES).toEqual([]);
+    expect(signInCodeSentV1Schema.safeParse({ ...userSignedUp, code: '482913' }).success).toBe(
+      true,
+    );
+    expect(signInCodeSentV1Schema.safeParse({ ...userSignedUp, code: '482 913' }).success).toBe(
+      false,
+    );
   });
 
   it('refuses an instant that is not in UTC and a bound that is not met', () => {

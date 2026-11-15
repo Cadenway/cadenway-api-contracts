@@ -1,6 +1,7 @@
 # Fixture of tests/redocly/ruleset.spec.ts, of `pnpm lint:specs` and of the generated code checked by
-# tests/codegen/: an event outside any organization, with optional, nullable and nested members. It
-# is not a Cadenway contract; the contracts live in openapi/ and asyncapi/.
+# tests/codegen/: an event outside any organization, with optional, nullable and nested members, and
+# a restricted event on its `restricted.` channel. It is not a Cadenway contract; the contracts live
+# in openapi/ and asyncapi/.
 asyncapi: 3.0.0
 info:
   title: Contract style reference, events without an organization
@@ -27,6 +28,12 @@ channels:
     messages:
       userSignedUpV1:
         $ref: '#/components/messages/userSignedUpV1'
+  signInCodeSentV1:
+    address: restricted.sign-in-code.sent.v1
+    description: A sign-in code was sent. Restricted. Emitted by identity-service.
+    messages:
+      signInCodeSentV1:
+        $ref: '#/components/messages/signInCodeSentV1'
 operations:
   publishUserSignedUpV1:
     action: send
@@ -36,8 +43,43 @@ operations:
       $ref: '#/channels/userSignedUpV1'
     messages:
       - $ref: '#/channels/userSignedUpV1/messages/userSignedUpV1'
+  publishSignInCodeSentV1:
+    action: send
+    summary: identity-service publishes a sign-in code, on the restricted route.
+    channel:
+      $ref: '#/channels/signInCodeSentV1'
+    messages:
+      - $ref: '#/channels/signInCodeSentV1/messages/signInCodeSentV1'
 components:
   messages:
+    signInCodeSentV1:
+      name: sign-in-code.sent.v1
+      title: Sign-in code sent
+      summary: A sign-in code was sent.
+      x-cadenway-restricted: true
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, userId, code]
+        properties:
+          id:
+            type: string
+            format: uuid
+          occurredAt:
+            type: string
+            format: date-time
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+          actor:
+            $ref: '../../../../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+          userId:
+            type: string
+            format: uuid
+          code:
+            type: string
+            pattern: '^[0-9]{6}$'
     userSignedUpV1:
       name: user.signed-up.v1
       title: User signed up

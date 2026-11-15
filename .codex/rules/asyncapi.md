@@ -18,4 +18,7 @@ paths:
   the envelope may not. The generator refuses a keyword it cannot turn into a validator.
 - No tool compares events with `main`: `pnpm breaking` and the CI job read OpenAPI only. A changed
   payload is caught by review (`/cw-breaking-review`) and by the rule above on versioned names.
-- The address of a channel is the subject `evt.<name>`.
+- The address of a channel is the subject `evt.<name>`. A message that carries a secret (a single-use
+  code) is marked `x-cadenway-restricted: true` and its channel is `restricted.<name>`: the stream
+  `EVENTS_RESTRICTED`, read by notification-service only. The generated module lists those events in
+  `RESTRICTED_EVENT_NAMES`, the `restrictedEvents` of `@cadenway/nest-messaging`.

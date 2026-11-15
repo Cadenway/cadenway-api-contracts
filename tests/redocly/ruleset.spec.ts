@@ -239,10 +239,29 @@ describe('Redocly ruleset', () => {
       ['cadenway/event-channel-address', 'cadenway/event-name', 'cadenway/event-payload'],
     ],
     ['tests/redocly/invalid/asyncapi/version.yaml', ['cadenway/asyncapi-version']],
+    ['tests/redocly/invalid/asyncapi/restricted.yaml', ['cadenway/event-channel-address']],
   ])(
     'reports %s',
     (document, expected) => {
       expect(cadenwayCodes(document)).toEqual(expected);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'accepts a restricted channel only for restricted messages that it names',
+    () => {
+      const pointers: string[] = lint('tests/redocly/invalid/asyncapi/restricted.yaml')
+        .filter((finding) => finding.ruleId === 'cadenway/event-channel-address')
+        .map((finding) => finding.location[0]?.pointer ?? '');
+
+      expect(pointers.sort()).toEqual([
+        '#/channels/codeOnEvents',
+        '#/channels/mixed',
+        '#/channels/notBoolean',
+        '#/channels/otherName',
+        '#/channels/plainOnRestricted',
+      ]);
     },
     TIMEOUT,
   );
