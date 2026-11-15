@@ -7,7 +7,8 @@ import type { Password } from './password';
 
 export interface SignUpRequest {
   /**
-     * Full name, as typed; surrounding spaces are removed.
+     * Full name, as typed; surrounding spaces are removed, and a name made only of spaces is
+     * refused with `400 request.invalid`.
      * @minLength 1
      * @maxLength 120
      */

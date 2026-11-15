@@ -5,8 +5,13 @@
 import type { Problem } from './problem';
 
 /**
- * - `auth.code-throttled`: a code was sent to this address less than 30 seconds ago;
- *   `details.resendAvailableAt` says when the next one can be.
+ * - `auth.code-throttled`: the code requests of this address are throttled whatever their
+ *   purpose, account or not: a sign-up, `POST /v1/auth/sign-up/code` and
+ *   `POST /v1/auth/sign-in/code` count together. A request is refused less than 30 seconds
+ *   after the last accepted one, and once 5 were accepted in the current hour, which starts
+ *   with the first request accepted after the previous hour ended.
+ *   `details.resendAvailableAt` says when the next one can be: 30 seconds after the last
+ *   accepted request, or the end of the hour.
  * - `rate-limit.exceeded`: the gateway's own limit.
  */
 export type CodeThrottledResponse = Problem;

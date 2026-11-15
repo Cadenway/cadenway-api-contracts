@@ -11,6 +11,9 @@ export interface CodeSent {
   email: Email;
   /** When a code sent now stops working, 10 minutes later. */
   expiresAt: string;
-  /** When another code can be asked for, 30 seconds later. */
+  /**
+     * When another code can be asked for: 30 seconds later, or the end of the hour once 5
+     * codes were asked for the address in it (see `CodeThrottled`).
+     */
   resendAvailableAt: string;
 }

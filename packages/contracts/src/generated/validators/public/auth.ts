@@ -34,8 +34,15 @@ export const DiscoverSignInMethodsResponse = zod.object({
  *
  * - An address used by a verified account answers `409 auth.email-taken`.
  * - An address whose earlier sign-up was never verified is not taken: the new sign-up
- *   replaces its name and password, and the earlier code stops working. It sends a code, so
- *   it follows the 30-second throttle of the codes (`429 auth.code-throttled`).
+ *   replaces its name and password, and the earlier code stops working.
+ * - The verification is bound to the password of the latest sign-up of the address:
+ *   `POST /v1/auth/sign-up/verification` answers `422 auth.sign-up-replaced` to a `password`
+ *   that differs from it, and requires `password` once the address was signed up more than
+ *   once. A code sent to the address therefore never verifies an account whose password
+ *   someone else chose by signing up the same address.
+ * - A sign-up is a code request of the address, so it follows the throttle of the code
+ *   requests (`429 auth.code-throttled`), shared with `POST /v1/auth/sign-up/code` and
+ *   `POST /v1/auth/sign-in/code`: 30 seconds between two, at most 5 in an hour.
  * - The password has 12 characters (Unicode code points) at least, no composition rule, and
  *   is refused when it appears in the list of compromised passwords identity-service embeds.
  *
@@ -51,7 +58,7 @@ export const signUpBodyPasswordMax = 256;
 
 
 export const SignUpBody = zod.object({
-  "name": zod.string().min(1).max(signUpBodyNameMax).describe('Full name, as typed; surrounding spaces are removed.'),
+  "name": zod.string().min(1).max(signUpBodyNameMax).describe('Full name, as typed; surrounding spaces are removed, and a name made only of spaces is\nrefused with `400 request.invalid`.\n'),
   "email": zod.email().max(signUpBodyEmailMax).describe('Email address, compared without regard to case.'),
   "password": zod.string().max(signUpBodyPasswordMax).describe('At least 12 characters, no composition rule, not in the list of compromised passwords. The\nlength is checked by identity-service (`422 auth.password-too-short`), not by the schema.\nNever logged.\n'),
   "acceptTerms": zod.boolean().describe('The person accepts the terms of use and the privacy policy. `false` answers\n`422 auth.terms-not-accepted`.\n')
@@ -64,14 +71,15 @@ export const signUpResponseEmailMax = 254;
 export const SignUpResponse = zod.object({
   "email": zod.email().max(signUpResponseEmailMax).describe('Email address, compared without regard to case.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('When a code sent now stops working, 10 minutes later.'),
-  "resendAvailableAt": zod.iso.datetime({"offset":true}).describe('When another code can be asked for, 30 seconds later.')
+  "resendAvailableAt": zod.iso.datetime({"offset":true}).describe('When another code can be asked for: 30 seconds later, or the end of the hour once 5\ncodes were asked for the address in it (see `CodeThrottled`).\n')
 }).describe('Answered the same way whether or not a code was actually sent.')
 
 
 /**
  * Sends a new code for an account whose address is not verified yet; the previous code stops
- * working. Throttled per address, account or not: once every 30 seconds
- * (`resendAvailableAt`, else `429 auth.code-throttled`).
+ * working. Throttled per address, account or not, together with the sign-up and the sign-in
+ * codes: 30 seconds between two requests and at most 5 in an hour (`resendAvailableAt`, else
+ * `429 auth.code-throttled`).
  *
  * Answers `202` for any address, without sending anything when no unverified account uses
  * it. No session needed. Scopes: none.
@@ -92,30 +100,50 @@ export const resendSignUpCodeResponseEmailMax = 254;
 export const ResendSignUpCodeResponse = zod.object({
   "email": zod.email().max(resendSignUpCodeResponseEmailMax).describe('Email address, compared without regard to case.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('When a code sent now stops working, 10 minutes later.'),
-  "resendAvailableAt": zod.iso.datetime({"offset":true}).describe('When another code can be asked for, 30 seconds later.')
+  "resendAvailableAt": zod.iso.datetime({"offset":true}).describe('When another code can be asked for: 30 seconds later, or the end of the hour once 5\ncodes were asked for the address in it (see `CodeThrottled`).\n')
 }).describe('Answered the same way whether or not a code was actually sent.')
 
 
 /**
- * Checks the sign-up code. On success the address is verified, a session is opened and the
- * gateway sets the session cookie. The code is single-use and expires 10 minutes after it was
- * sent; after a few wrong attempts it stops working and a new one is needed.
+ * Checks the sign-up code, then the password of the sign-up. On success the address is
+ * verified, a session is opened and the gateway sets the session cookie. The code is
+ * single-use and expires 10 minutes after it was sent; after a few wrong attempts it stops
+ * working and a new one is needed.
  *
- * A wrong code answers `422 auth.code-invalid`; a code that expired, was used, was replaced
- * or took too many wrong attempts answers `422 auth.code-expired`. No session needed.
- * Scopes: none.
+ * The checks run in this order:
+ *
+ * 1. The code. A wrong code answers `422 auth.code-invalid`; a code that expired, was used,
+ *    was replaced or took too many wrong attempts answers `422 auth.code-expired`, with or
+ *    without `password`.
+ * 2. With the right code, a `password` is compared with the password of the pending
+ *    sign-up, the latest one of the address. When it differs, the answer is
+ *    `422 auth.sign-up-replaced` and the code stops working.
+ * 3. When a later sign-up replaced the name and password of the pending account (the
+ *    address was signed up more than once before this verification), `password` is
+ *    required: without it the answer is `422 auth.sign-up-replaced` too, and the code stops
+ *    working. Only an accepted sign-up (`202`) counts: a refused one replaces nothing.
+ *
+ * Without `password`, an address signed up once is verified by its code alone. The web
+ * application always sends `password`, the one typed in the sign-up form; on
+ * `auth.sign-up-replaced` the person signs up again (`POST /v1/auth/sign-up`), which
+ * replaces the pending sign-up and sends a new code. `auth.sign-up-replaced` needs the right
+ * code, so it tells a caller without the code nothing. No session needed. Scopes: none.
  * @summary Verify the address and sign in
  */
 export const verifySignUpBodyEmailMax = 254;
 
 export const verifySignUpBodyCodeRegExp = new RegExp('^[0-9]{6}$');
 export const verifySignUpBodyRememberMeDefault = false;
+export const verifySignUpBodyPasswordMax = 256;
+
+
 
 export const VerifySignUpBody = zod.object({
   "email": zod.email().max(verifySignUpBodyEmailMax).describe('Email address, compared without regard to case.'),
   "code": zod.string().regex(verifySignUpBodyCodeRegExp).describe('The 6 digits of the email, without the space it is shown with. Never logged.'),
-  "rememberMe": zod.boolean().default(verifySignUpBodyRememberMeDefault).describe('Keep the session for 30 days ("Rester connecté pendant 30 jours").')
-})
+  "rememberMe": zod.boolean().default(verifySignUpBodyRememberMeDefault).describe('Keep the session for 30 days ("Rester connecté pendant 30 jours").'),
+  "password": zod.string().max(verifySignUpBodyPasswordMax).optional().describe('The password typed in the sign-up form; the web application always sends it. Once the\ncode is right, it is compared with the password of the latest sign-up of the address:\na different one answers `422 auth.sign-up-replaced`. Required once the address was\nsigned up more than once before the verification: without it the answer is the same.\nNever logged.\n')
+}).describe('The code of a sign-up and the password that binds the verification to that sign-up. See\n`POST /v1/auth/sign-up/verification` for the order of the checks.\n')
 
 export const verifySignUpResponseUserEmailMax = 254;
 
@@ -187,9 +215,10 @@ export const SignInWithPasswordResponse = zod.object({
 /**
  * Sends a 6-digit sign-in code to the address when a verified account uses it, valid 10
  * minutes; a new request replaces the previous code. Always answers `202`, whether or not an
- * account uses the address. Throttled per address, account or not: once every 30 seconds
- * (`resendAvailableAt`, else `429 auth.code-throttled`). Asking again is how a code is
- * resent. No session needed. Scopes: none.
+ * account uses the address. Throttled per address, account or not, together with the sign-up
+ * codes: 30 seconds between two requests and at most 5 in an hour (`resendAvailableAt`, else
+ * `429 auth.code-throttled`). Asking again is how a code is resent. No session needed.
+ * Scopes: none.
  * @summary Request a sign-in code
  */
 export const requestSignInCodeBodyEmailMax = 254;
@@ -207,7 +236,7 @@ export const requestSignInCodeResponseEmailMax = 254;
 export const RequestSignInCodeResponse = zod.object({
   "email": zod.email().max(requestSignInCodeResponseEmailMax).describe('Email address, compared without regard to case.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('When a code sent now stops working, 10 minutes later.'),
-  "resendAvailableAt": zod.iso.datetime({"offset":true}).describe('When another code can be asked for, 30 seconds later.')
+  "resendAvailableAt": zod.iso.datetime({"offset":true}).describe('When another code can be asked for: 30 seconds later, or the end of the hour once 5\ncodes were asked for the address in it (see `CodeThrottled`).\n')
 }).describe('Answered the same way whether or not a code was actually sent.')
 
 

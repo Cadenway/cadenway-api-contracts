@@ -117,8 +117,15 @@ paths:
 
         - An address used by a verified account answers `409 auth.email-taken`.
         - An address whose earlier sign-up was never verified is not taken: the new sign-up
-          replaces its name and password, and the earlier code stops working. It sends a code, so
-          it follows the 30-second throttle of the codes (`429 auth.code-throttled`).
+          replaces its name and password, and the earlier code stops working.
+        - The verification is bound to the password of the latest sign-up of the address:
+          `POST /v1/auth/sign-up/verification` answers `422 auth.sign-up-replaced` to a `password`
+          that differs from it, and requires `password` once the address was signed up more than
+          once. A code sent to the address therefore never verifies an account whose password
+          someone else chose by signing up the same address.
+        - A sign-up is a code request of the address, so it follows the throttle of the code
+          requests (`429 auth.code-throttled`), shared with `POST /v1/auth/sign-up/code` and
+          `POST /v1/auth/sign-in/code`: 30 seconds between two, at most 5 in an hour.
         - The password has 12 characters (Unicode code points) at least, no composition rule, and
           is refused when it appears in the list of compromised passwords identity-service embeds.
 
@@ -165,8 +172,9 @@ paths:
       summary: Send a new sign-up code
       description: |
         Sends a new code for an account whose address is not verified yet; the previous code stops
-        working. Throttled per address, account or not: once every 30 seconds
-        (`resendAvailableAt`, else `429 auth.code-throttled`).
+        working. Throttled per address, account or not, together with the sign-up and the sign-in
+        codes: 30 seconds between two requests and at most 5 in an hour (`resendAvailableAt`, else
+        `429 auth.code-throttled`).
 
         Answers `202` for any address, without sending anything when no unverified account uses
         it. No session needed. Scopes: none.
@@ -204,13 +212,29 @@ paths:
       operationId: verifySignUp
       summary: Verify the address and sign in
       description: |
-        Checks the sign-up code. On success the address is verified, a session is opened and the
-        gateway sets the session cookie. The code is single-use and expires 10 minutes after it was
-        sent; after a few wrong attempts it stops working and a new one is needed.
+        Checks the sign-up code, then the password of the sign-up. On success the address is
+        verified, a session is opened and the gateway sets the session cookie. The code is
+        single-use and expires 10 minutes after it was sent; after a few wrong attempts it stops
+        working and a new one is needed.
 
-        A wrong code answers `422 auth.code-invalid`; a code that expired, was used, was replaced
-        or took too many wrong attempts answers `422 auth.code-expired`. No session needed.
-        Scopes: none.
+        The checks run in this order:
+
+        1. The code. A wrong code answers `422 auth.code-invalid`; a code that expired, was used,
+           was replaced or took too many wrong attempts answers `422 auth.code-expired`, with or
+           without `password`.
+        2. With the right code, a `password` is compared with the password of the pending
+           sign-up, the latest one of the address. When it differs, the answer is
+           `422 auth.sign-up-replaced` and the code stops working.
+        3. When a later sign-up replaced the name and password of the pending account (the
+           address was signed up more than once before this verification), `password` is
+           required: without it the answer is `422 auth.sign-up-replaced` too, and the code stops
+           working. Only an accepted sign-up (`202`) counts: a refused one replaces nothing.
+
+        Without `password`, an address signed up once is verified by its code alone. The web
+        application always sends `password`, the one typed in the sign-up form; on
+        `auth.sign-up-replaced` the person signs up again (`POST /v1/auth/sign-up`), which
+        replaces the pending sign-up and sends a new code. `auth.sign-up-replaced` needs the right
+        code, so it tells a caller without the code nothing. No session needed. Scopes: none.
       tags: [auth]
       security: []
       requestBody:
@@ -218,11 +242,12 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CodeVerification'
+              $ref: '#/components/schemas/SignUpVerification'
             example:
               email: camille.martin@ateliernord.fr
               code: '482913'
               rememberMe: false
+              password: atelier-nord-sprint-14
       responses:
         '200':
           $ref: '#/components/responses/SignedIn'
@@ -231,7 +256,7 @@ paths:
         '403':
           $ref: '#/components/responses/CrossSiteRefused'
         '422':
-          $ref: '#/components/responses/CodeRefused'
+          $ref: '#/components/responses/SignUpVerificationRefused'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -285,9 +310,10 @@ paths:
       description: |
         Sends a 6-digit sign-in code to the address when a verified account uses it, valid 10
         minutes; a new request replaces the previous code. Always answers `202`, whether or not an
-        account uses the address. Throttled per address, account or not: once every 30 seconds
-        (`resendAvailableAt`, else `429 auth.code-throttled`). Asking again is how a code is
-        resent. No session needed. Scopes: none.
+        account uses the address. Throttled per address, account or not, together with the sign-up
+        codes: 30 seconds between two requests and at most 5 in an hour (`resendAvailableAt`, else
+        `429 auth.code-throttled`). Asking again is how a code is resent. No session needed.
+        Scopes: none.
       tags: [auth]
       security: []
       requestBody:
@@ -547,19 +573,36 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           examples:
             codeInvalid:
-              summary: Wrong code
-              value:
-                type: about:blank
-                title: 'Code incorrect ou expiré : vérifiez le dernier e-mail reçu.'
-                status: 422
-                code: auth.code-invalid
+              $ref: '#/components/examples/CodeInvalid'
             codeExpired:
-              summary: Code no longer usable
+              $ref: '#/components/examples/CodeExpired'
+    SignUpVerificationRefused:
+      description: |
+        The verification of the sign-up is refused. The code is checked first:
+
+        - `auth.code-invalid`: the code is wrong, or no account awaits a code at this address;
+        - `auth.code-expired`: the code expired, was used, was replaced by a newer one, or took too
+          many wrong attempts. A new code is needed. The web application shows the same line for
+          both codes;
+        - `auth.sign-up-replaced`, only with the right code: `password` differs from the password
+          of the latest sign-up of the address, or is missing while the address was signed up
+          more than once. The code stops working; the person signs up again.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            codeInvalid:
+              $ref: '#/components/examples/CodeInvalid'
+            codeExpired:
+              $ref: '#/components/examples/CodeExpired'
+            signUpReplaced:
+              summary: Another sign-up of the address
               value:
                 type: about:blank
-                title: 'Code incorrect ou expiré : vérifiez le dernier e-mail reçu.'
+                title: 'Une autre inscription a été faite avec cette adresse : recommencez votre inscription.'
                 status: 422
-                code: auth.code-expired
+                code: auth.sign-up-replaced
     CredentialsRefused:
       description: |
         `auth.invalid-credentials`: the address or the password is wrong. `details.remainingAttempts`
@@ -627,8 +670,13 @@ components:
               $ref: '#/components/examples/RateLimited'
     CodeThrottled:
       description: |
-        - `auth.code-throttled`: a code was sent to this address less than 30 seconds ago;
-          `details.resendAvailableAt` says when the next one can be.
+        - `auth.code-throttled`: the code requests of this address are throttled whatever their
+          purpose, account or not: a sign-up, `POST /v1/auth/sign-up/code` and
+          `POST /v1/auth/sign-in/code` count together. A request is refused less than 30 seconds
+          after the last accepted one, and once 5 were accepted in the current hour, which starts
+          with the first request accepted after the previous hour ended.
+          `details.resendAvailableAt` says when the next one can be: 30 seconds after the last
+          accepted request, or the end of the hour.
         - `rate-limit.exceeded`: the gateway's own limit.
       headers:
         Retry-After:
@@ -639,7 +687,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           examples:
             codeThrottled:
-              summary: Code sent less than 30 seconds ago
+              summary: Code asked for less than 30 seconds ago
               value:
                 type: about:blank
                 title: 'Un code vient d’être envoyé : patientez avant d’en demander un nouveau.'
@@ -647,6 +695,15 @@ components:
                 code: auth.code-throttled
                 details:
                   resendAvailableAt: '2026-11-08T13:07:30Z'
+            hourlyCapReached:
+              summary: Five codes asked for in the hour
+              value:
+                type: about:blank
+                title: 'Un code vient d’être envoyé : patientez avant d’en demander un nouveau.'
+                status: 429
+                code: auth.code-throttled
+                details:
+                  resendAvailableAt: '2026-11-08T14:07:00Z'
             rateLimited:
               $ref: '#/components/examples/RateLimited'
     RateLimited:
@@ -715,6 +772,20 @@ components:
             details:
               service: identity-service
   examples:
+    CodeInvalid:
+      summary: Wrong code
+      value:
+        type: about:blank
+        title: 'Code incorrect ou expiré : vérifiez le dernier e-mail reçu.'
+        status: 422
+        code: auth.code-invalid
+    CodeExpired:
+      summary: Code no longer usable
+      value:
+        type: about:blank
+        title: 'Code incorrect ou expiré : vérifiez le dernier e-mail reçu.'
+        status: 422
+        code: auth.code-expired
     RateLimited:
       summary: Gateway limit reached
       value:
@@ -768,7 +839,9 @@ components:
           type: string
           minLength: 1
           maxLength: 120
-          description: Full name, as typed; surrounding spaces are removed.
+          description: |
+            Full name, as typed; surrounding spaces are removed, and a name made only of spaces is
+            refused with `400 request.invalid`.
           examples: [Camille Martin]
         email:
           $ref: '#/components/schemas/Email'
@@ -806,7 +879,35 @@ components:
         resendAvailableAt:
           type: string
           format: date-time
-          description: When another code can be asked for, 30 seconds later.
+          description: |
+            When another code can be asked for: 30 seconds later, or the end of the hour once 5
+            codes were asked for the address in it (see `CodeThrottled`).
+    SignUpVerification:
+      type: object
+      required: [email, code]
+      description: |
+        The code of a sign-up and the password that binds the verification to that sign-up. See
+        `POST /v1/auth/sign-up/verification` for the order of the checks.
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: The 6 digits of the email, without the space it is shown with. Never logged.
+          examples: ['482913']
+        rememberMe:
+          type: boolean
+          default: false
+          description: Keep the session for 30 days ("Rester connecté pendant 30 jours").
+        password:
+          $ref: '#/components/schemas/Password'
+          description: |
+            The password typed in the sign-up form; the web application always sends it. Once the
+            code is right, it is compared with the password of the latest sign-up of the address:
+            a different one answers `422 auth.sign-up-replaced`. Required once the address was
+            signed up more than once before the verification: without it the answer is the same.
+            Never logged.
     CodeVerification:
       type: object
       required: [email, code]

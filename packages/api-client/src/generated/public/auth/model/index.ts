@@ -32,5 +32,7 @@ export * from './signInMethodsRequest';
 export * from './signOutRequest';
 export * from './signUpRefusedResponse';
 export * from './signUpRequest';
+export * from './signUpVerification';
+export * from './signUpVerificationRefusedResponse';
 export * from './unauthenticatedResponse';
 export * from './unavailableResponse';

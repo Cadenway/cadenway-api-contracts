@@ -30,6 +30,7 @@ import type {
   SignInMethodsRequest,
   SignOutRequest,
   SignUpRequest,
+  SignUpVerification,
   SignedInResponse
 } from '../model';
 
@@ -134,8 +135,15 @@ export class AuthService {
  *
  * - An address used by a verified account answers `409 auth.email-taken`.
  * - An address whose earlier sign-up was never verified is not taken: the new sign-up
- *   replaces its name and password, and the earlier code stops working. It sends a code, so
- *   it follows the 30-second throttle of the codes (`429 auth.code-throttled`).
+ *   replaces its name and password, and the earlier code stops working.
+ * - The verification is bound to the password of the latest sign-up of the address:
+ *   `POST /v1/auth/sign-up/verification` answers `422 auth.sign-up-replaced` to a `password`
+ *   that differs from it, and requires `password` once the address was signed up more than
+ *   once. A code sent to the address therefore never verifies an account whose password
+ *   someone else chose by signing up the same address.
+ * - A sign-up is a code request of the address, so it follows the throttle of the code
+ *   requests (`429 auth.code-throttled`), shared with `POST /v1/auth/sign-up/code` and
+ *   `POST /v1/auth/sign-in/code`: 30 seconds between two, at most 5 in an hour.
  * - The password has 12 characters (Unicode code points) at least, no composition rule, and
  *   is refused when it appears in the list of compromised passwords identity-service embeds.
  *
@@ -177,8 +185,9 @@ export class AuthService {
   }
 /**
  * Sends a new code for an account whose address is not verified yet; the previous code stops
- * working. Throttled per address, account or not: once every 30 seconds
- * (`resendAvailableAt`, else `429 auth.code-throttled`).
+ * working. Throttled per address, account or not, together with the sign-up and the sign-in
+ * codes: 30 seconds between two requests and at most 5 in an hour (`resendAvailableAt`, else
+ * `429 auth.code-throttled`).
  *
  * Answers `202` for any address, without sending anything when no unverified account uses
  * it. No session needed. Scopes: none.
@@ -218,24 +227,40 @@ export class AuthService {
     );
   }
 /**
- * Checks the sign-up code. On success the address is verified, a session is opened and the
- * gateway sets the session cookie. The code is single-use and expires 10 minutes after it was
- * sent; after a few wrong attempts it stops working and a new one is needed.
+ * Checks the sign-up code, then the password of the sign-up. On success the address is
+ * verified, a session is opened and the gateway sets the session cookie. The code is
+ * single-use and expires 10 minutes after it was sent; after a few wrong attempts it stops
+ * working and a new one is needed.
  *
- * A wrong code answers `422 auth.code-invalid`; a code that expired, was used, was replaced
- * or took too many wrong attempts answers `422 auth.code-expired`. No session needed.
- * Scopes: none.
+ * The checks run in this order:
+ *
+ * 1. The code. A wrong code answers `422 auth.code-invalid`; a code that expired, was used,
+ *    was replaced or took too many wrong attempts answers `422 auth.code-expired`, with or
+ *    without `password`.
+ * 2. With the right code, a `password` is compared with the password of the pending
+ *    sign-up, the latest one of the address. When it differs, the answer is
+ *    `422 auth.sign-up-replaced` and the code stops working.
+ * 3. When a later sign-up replaced the name and password of the pending account (the
+ *    address was signed up more than once before this verification), `password` is
+ *    required: without it the answer is `422 auth.sign-up-replaced` too, and the code stops
+ *    working. Only an accepted sign-up (`202`) counts: a refused one replaces nothing.
+ *
+ * Without `password`, an address signed up once is verified by its code alone. The web
+ * application always sends `password`, the one typed in the sign-up form; on
+ * `auth.sign-up-replaced` the person signs up again (`POST /v1/auth/sign-up`), which
+ * replaces the pending sign-up and sends a new code. `auth.sign-up-replaced` needs the right
+ * code, so it tells a caller without the code nothing. No session needed. Scopes: none.
  * @summary Verify the address and sign in
  */
- verifySignUp<TData = SignedInResponse>(codeVerification: CodeVerification, options?: HttpClientBodyOptions): Observable<TData>;
- verifySignUp<TData = SignedInResponse>(codeVerification: CodeVerification, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
- verifySignUp<TData = SignedInResponse>(codeVerification: CodeVerification, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+ verifySignUp<TData = SignedInResponse>(signUpVerification: SignUpVerification, options?: HttpClientBodyOptions): Observable<TData>;
+ verifySignUp<TData = SignedInResponse>(signUpVerification: SignUpVerification, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ verifySignUp<TData = SignedInResponse>(signUpVerification: SignUpVerification, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
   verifySignUp<TData = SignedInResponse>(
-    codeVerification: CodeVerification, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    signUpVerification: SignUpVerification, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
     if (options?.observe === 'events') {
       return this.http.post<TData>(
       `/v1/auth/sign-up/verification`,
-      codeVerification,{
+      signUpVerification,{
         ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'events',
       }
@@ -245,7 +270,7 @@ export class AuthService {
     if (options?.observe === 'response') {
       return this.http.post<TData>(
       `/v1/auth/sign-up/verification`,
-      codeVerification,{
+      signUpVerification,{
         ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'response',
       }
@@ -254,7 +279,7 @@ export class AuthService {
 
     return this.http.post<TData>(
       `/v1/auth/sign-up/verification`,
-      codeVerification,{
+      signUpVerification,{
         ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
       }
@@ -311,9 +336,10 @@ export class AuthService {
 /**
  * Sends a 6-digit sign-in code to the address when a verified account uses it, valid 10
  * minutes; a new request replaces the previous code. Always answers `202`, whether or not an
- * account uses the address. Throttled per address, account or not: once every 30 seconds
- * (`resendAvailableAt`, else `429 auth.code-throttled`). Asking again is how a code is
- * resent. No session needed. Scopes: none.
+ * account uses the address. Throttled per address, account or not, together with the sign-up
+ * codes: 30 seconds between two requests and at most 5 in an hour (`resendAvailableAt`, else
+ * `429 auth.code-throttled`). Asking again is how a code is resent. No session needed.
+ * Scopes: none.
  * @summary Request a sign-in code
  */
  requestSignInCode<TData = CodeSent>(codeRequest: CodeRequest, options?: HttpClientBodyOptions): Observable<TData>;
