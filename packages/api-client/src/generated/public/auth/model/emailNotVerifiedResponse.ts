@@ -5,7 +5,8 @@
 import type { Problem } from './problem';
 
 /**
- * `auth.email-not-verified`: the password is right but the address of the account is not
- * verified yet. No code is sent: `POST /v1/auth/sign-up/code` sends one.
+ * - `auth.email-not-verified`: the password is right but the address of the account is not
+ *   verified yet. No code is sent: `POST /v1/auth/sign-up/code` sends one.
+ * - `auth.csrf-rejected`: see `CrossSiteRefused`.
  */
 export type EmailNotVerifiedResponse = Problem;

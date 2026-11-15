@@ -17,10 +17,11 @@ info:
     sign in and `GET /v1/me` carry `Cache-Control: no-store`. Personal API tokens, sent as a bearer
     token, come in a later version of this document.
 
-    **Cross-site requests.** A request with an unsafe method that the session cookie authenticates
+    **Cross-site requests.** Every request with an unsafe method on these routes, signed in or not,
     carries an `Origin` equal to one of the gateway's allowed origins (the web application, the
     website) and `Content-Type: application/json`; the gateway refuses any other before the route
-    runs (`403 auth.csrf-rejected`).
+    runs (`403 auth.csrf-rejected`). Signing in and signing up are covered too, so that another
+    site cannot sign a browser in to an account of its choosing.
 
     **Account enumeration.** Only the sign-up says whether an address is taken, as the mockup does.
     Every other route answers the same way whether or not an account uses the address: the method
@@ -100,6 +101,8 @@ paths:
                   - type: email-code
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -146,6 +149,8 @@ paths:
                 resendAvailableAt: '2026-11-08T13:07:30Z'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
         '409':
           $ref: '#/components/responses/EmailTaken'
         '422':
@@ -188,6 +193,8 @@ paths:
                 resendAvailableAt: '2026-11-08T13:08:00Z'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
         '429':
           $ref: '#/components/responses/CodeThrottled'
         '503':
@@ -221,6 +228,8 @@ paths:
           $ref: '#/components/responses/SignedIn'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
         '422':
           $ref: '#/components/responses/CodeRefused'
         '429':
@@ -302,6 +311,8 @@ paths:
                 resendAvailableAt: '2026-11-08T13:07:30Z'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
         '429':
           $ref: '#/components/responses/CodeThrottled'
         '503':
@@ -332,6 +343,8 @@ paths:
           $ref: '#/components/responses/SignedIn'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
         '422':
           $ref: '#/components/responses/CodeRefused'
         '429':
@@ -459,7 +472,7 @@ components:
     BadRequest:
       description: |
         The body does not match the schema: `request.invalid`, with one `details.issues` entry per
-        failed member.
+        failed member (`path` is the dotted path of the member, empty for the body itself).
       content:
         application/problem+json:
           schema:
@@ -472,7 +485,7 @@ components:
             details:
               issues:
                 - in: body
-                  path: [email]
+                  path: email
                   code: invalid_format
                   message: Invalid email address
     EmailTaken:
@@ -565,17 +578,28 @@ components:
               remainingAttempts: 3
     EmailNotVerified:
       description: |
-        `auth.email-not-verified`: the password is right but the address of the account is not
-        verified yet. No code is sent: `POST /v1/auth/sign-up/code` sends one.
+        - `auth.email-not-verified`: the password is right but the address of the account is not
+          verified yet. No code is sent: `POST /v1/auth/sign-up/code` sends one.
+        - `auth.csrf-rejected`: see `CrossSiteRefused`.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: Confirmez votre adresse e-mail pour vous connecter.
-            status: 403
-            code: auth.email-not-verified
+          examples:
+            emailNotVerified:
+              summary: Address not verified
+              value:
+                type: about:blank
+                title: Confirmez votre adresse e-mail pour vous connecter.
+                status: 403
+                code: auth.email-not-verified
+            crossSiteRefused:
+              summary: Request from another site
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.csrf-rejected
     AccountLocked:
       description: |
         - `auth.account-locked`: too many failed passwords for the address; the password sign-in
@@ -663,8 +687,8 @@ components:
                 code: auth.session-expired
     CrossSiteRefused:
       description: |
-        `auth.csrf-rejected`: the request is authenticated by the session cookie but its `Origin` is
-        not an allowed origin or its `Content-Type` is not `application/json`.
+        `auth.csrf-rejected`: the `Origin` of the request is not an allowed origin, or its
+        `Content-Type` is not `application/json`. Checked before the route runs, signed in or not.
       content:
         application/problem+json:
           schema:

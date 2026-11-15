@@ -492,7 +492,7 @@ components:
             details:
               issues:
                 - in: body
-                  path: [email]
+                  path: email
                   code: invalid_format
                   message: Invalid email address
     InternalTokenRefused:

@@ -165,7 +165,7 @@ export type SignedInResponse = SignedIn;
 
 /**
  * The body does not match the schema: `request.invalid`, with one `details.issues` entry per
- * failed member.
+ * failed member (`path` is the dotted path of the member, empty for the body itself).
  */
 export type BadRequestResponse = Problem;
 
@@ -200,8 +200,9 @@ export type CodeRefusedResponse = Problem;
 export type CredentialsRefusedResponse = Problem;
 
 /**
- * `auth.email-not-verified`: the password is right but the address of the account is not
- * verified yet. No code is sent: `POST /v1/auth/sign-up/code` sends one.
+ * - `auth.email-not-verified`: the password is right but the address of the account is not
+ *   verified yet. No code is sent: `POST /v1/auth/sign-up/code` sends one.
+ * - `auth.csrf-rejected`: see `CrossSiteRefused`.
  */
 export type EmailNotVerifiedResponse = Problem;
 
@@ -233,8 +234,8 @@ export type RateLimitedResponse = Problem;
 export type UnauthenticatedResponse = Problem;
 
 /**
- * `auth.csrf-rejected`: the request is authenticated by the session cookie but its `Origin` is
- * not an allowed origin or its `Content-Type` is not `application/json`.
+ * `auth.csrf-rejected`: the `Origin` of the request is not an allowed origin, or its
+ * `Content-Type` is not `application/json`. Checked before the route runs, signed in or not.
  */
 export type CrossSiteRefusedResponse = Problem;
 
