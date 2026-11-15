@@ -6,6 +6,6 @@ import type { Problem } from './problem';
 
 /**
  * The body does not match the schema: `request.invalid`, with one `details.issues` entry per
- * failed member.
+ * failed member (`path` is the dotted path of the member, empty for the body itself).
  */
 export type BadRequestResponse = Problem;

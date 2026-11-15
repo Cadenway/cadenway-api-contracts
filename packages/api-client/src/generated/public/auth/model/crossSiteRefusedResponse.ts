@@ -5,7 +5,7 @@
 import type { Problem } from './problem';
 
 /**
- * `auth.csrf-rejected`: the request is authenticated by the session cookie but its `Origin` is
- * not an allowed origin or its `Content-Type` is not `application/json`.
+ * `auth.csrf-rejected`: the `Origin` of the request is not an allowed origin, or its
+ * `Content-Type` is not `application/json`. Checked before the route runs, signed in or not.
  */
 export type CrossSiteRefusedResponse = Problem;
