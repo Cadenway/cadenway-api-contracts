@@ -7,6 +7,8 @@ import type { Problem } from './problem';
 /**
  * - `auth.session-required`: the request carries no session cookie;
  * - `auth.session-expired`: the cookie names a session that ended (expired, revoked or
- *   unknown). The web application signs the person in again.
+ *   unknown). The web application signs the person in again;
+ * - `auth.api-token-invalid`: the request carries a bearer token that is unknown, revoked or
+ *   expired, or whose user no longer belongs to its organization.
  */
 export type UnauthenticatedResponse = Problem;

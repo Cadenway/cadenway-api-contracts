@@ -126,12 +126,31 @@ export interface PasswordSignIn {
  */
 export interface SignOutRequest { [key: string]: never }
 
+/**
+ * IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person
+ * chooses another.
+ * @minLength 1
+ * @maxLength 64
+ */
+export type TimeZone = string;
+
 export interface CurrentUser {
   id: string;
-  /** Full name; the web application derives the initials from it. */
+  /** Full name ("Nom complet"); the web application derives the initials from it. */
   name: string;
   email: Email;
   language: Language;
+  /**
+     * "Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.
+     * @nullable
+     */
+  displayName: string | null;
+  /**
+     * "Poste (facultatif)"; `null` when there is none.
+     * @nullable
+     */
+  jobTitle: string | null;
+  timeZone: TimeZone;
   /**
      * Version of the account, also sent as `ETag`.
      * @minimum 1
@@ -152,6 +171,53 @@ export interface Session {
 export interface SignedIn {
   user: CurrentUser;
   session: Session;
+}
+
+/**
+ * Language of the account and of its emails ("Langue"), a BCP 47 tag: `fr` (Français),
+ * `en` (English), `de` (Deutsch) or `es` (Español). Later versions may accept more.
+ */
+export type ProfilePatchLanguage = typeof ProfilePatchLanguage[keyof typeof ProfilePatchLanguage];
+
+
+export const ProfilePatchLanguage = {
+  fr: 'fr',
+  en: 'en',
+  de: 'de',
+  es: 'es',
+} as const;
+
+/**
+ * JSON Merge Patch of the profile; at least one member.
+ */
+export interface ProfilePatch {
+  /**
+     * Full name ("Nom complet"), as typed; surrounding spaces are removed, and a name made only
+     * of spaces is refused with `400 request.invalid`.
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  /**
+     * "Nom affiché", as typed and trimmed; `null` clears it.
+     * @minLength 1
+     * @maxLength 60
+     * @nullable
+     */
+  displayName?: string | null;
+  /**
+     * "Poste (facultatif)", as typed and trimmed; `null` clears it.
+     * @minLength 1
+     * @maxLength 120
+     * @nullable
+     */
+  jobTitle?: string | null;
+  timeZone?: TimeZone;
+  /**
+     * Language of the account and of its emails ("Langue"), a BCP 47 tag: `fr` (Français),
+     * `en` (English), `de` (Deutsch) or `es` (Español). Later versions may accept more.
+     */
+  language?: ProfilePatchLanguage;
 }
 
 /**
@@ -274,9 +340,27 @@ export type RateLimitedResponse = Problem;
 /**
  * - `auth.session-required`: the request carries no session cookie;
  * - `auth.session-expired`: the cookie names a session that ended (expired, revoked or
- *   unknown). The web application signs the person in again.
+ *   unknown). The web application signs the person in again;
+ * - `auth.api-token-invalid`: the request carries a bearer token that is unknown, revoked or
+ *   expired, or whose user no longer belongs to its organization.
  */
 export type UnauthenticatedResponse = Problem;
+
+/**
+ * `auth.api-token-not-accepted`: a personal API token cannot call this route.
+ */
+export type ApiTokenNotAcceptedResponse = Problem;
+
+/**
+ * - `auth.csrf-rejected`: see `CrossSiteRefused`;
+ * - `auth.api-token-not-accepted`: a personal API token cannot change a profile.
+ */
+export type ProfileForbiddenResponse = Problem;
+
+/**
+ * `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+ */
+export type VersionMismatchResponse = Problem;
 
 /**
  * `auth.csrf-rejected`: the `Origin` of the request is not an allowed origin, or its

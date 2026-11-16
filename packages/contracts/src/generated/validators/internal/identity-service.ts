@@ -155,6 +155,9 @@ export const VerifySignUpInternalResponse = zod.object({
   "name": zod.string(),
   "email": zod.email().max(verifySignUpInternalResponseUserEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullable().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "version": zod.int().min(1).describe('Version of the account.')
 })
 })
@@ -207,6 +210,9 @@ export const SignInWithPasswordInternalResponse = zod.object({
   "name": zod.string(),
   "email": zod.email().max(signInWithPasswordInternalResponseUserEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullable().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "version": zod.int().min(1).describe('Version of the account.')
 })
 })
@@ -285,20 +291,26 @@ export const SignInWithCodeInternalResponse = zod.object({
   "name": zod.string(),
   "email": zod.email().max(signInWithCodeInternalResponseUserEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullable().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "version": zod.int().min(1).describe('Version of the account.')
 })
 })
 
 
 /**
- * Tells whether the token of a session cookie is active and, when it is, whose it is. The
- * gateway calls it on every request that carries the cookie, never caches the answer, and
- * gives the request its context from it (`setRequestOrganizationContext`).
+ * Tells whether the token of a session cookie is active and, when it is, whose it is and
+ * which organization it acts on. The gateway calls it on every request that carries the
+ * cookie, never caches the answer, and gives the request its context from it
+ * (`setRequestOrganizationContext`): `organizationId`, `role` and `scopes` go into the
+ * internal token of its calls.
  *
  * A token that is unknown, expired, revoked or malformed answers `200` with
- * `active: false`, never an error. An active answer counts as activity: the inactivity
- * period of the session (12 hours by default) starts again. Calling it twice has the same
- * effect as once, so the call can be retried. Internal token: actor `system`, no
+ * `active: false`, never an error; so does a personal API token, introspected by
+ * `POST /internal/v1/api-tokens/introspect`. An active answer counts as activity: the
+ * inactivity period of the session (12 hours by default) starts again. Calling it twice has
+ * the same effect as once, so the call can be retried. Internal token: actor `system`, no
  * organization.
  * @summary Introspect a session token
  */
@@ -312,12 +324,12 @@ export const IntrospectTokenBody = zod.object({
 
 export const IntrospectTokenResponse = zod.union([zod.object({
   "active": zod.literal(true),
-  "tokenType": zod.string().describe('Kind of token: `session` today. Personal API tokens add `api-token` later, without a\nnew version (`x-extensible-enum`).\n'),
+  "tokenType": zod.string().describe('Kind of token: always `session` on this route. A personal API token is introspected by\n`POST /internal/v1/api-tokens/introspect`, which answers `api-token`. Later versions\nmay add kinds without a new version (`x-extensible-enum`).\n'),
   "sessionId": zod.uuid(),
   "userId": zod.uuid(),
-  "organizationId": zod.uuid().nullable().describe('Organization of the session. Always `null` in this version: a session belongs to an\norganization once the organization selection exists.\n'),
-  "role": zod.string().nullable().describe('Member role in that organization; always `null` in this version.'),
-  "scopes": zod.array(zod.string()).describe('Scopes the token grants; empty in this version, since no route needs one yet.'),
+  "organizationId": zod.uuid().nullable().describe('Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);\n`null` when it has none, or when its user no longer belongs to it.\n'),
+  "role": zod.string().nullable().describe('Role of the user in that organization, from the copy of the memberships: `owner`,\n`admin`, `member` or `guest`; `null` without an organization. The gateway carries it\nin the internal token; organization-service decides from its own members.\n'),
+  "scopes": zod.array(zod.string()).describe('Scopes the token grants. A session holds every scope: `tasks:read`, `tasks:write`,\n`members:read` and `webhooks:manage` today, more as they are added.\n'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('When the session ends at the latest.')
 }),zod.object({
   "active": zod.literal(false)
@@ -357,5 +369,212 @@ export const GetUserResponse = zod.object({
   "name": zod.string(),
   "email": zod.email().max(getUserResponseEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullable().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "version": zod.int().min(1).describe('Version of the account.')
 })
+
+
+/**
+ * Applies a JSON Merge Patch to the profile of the account of the actor, as
+ * `PATCH /v1/me` says: another id, or an unknown one, answers `404 user.not-found`; a time
+ * zone that is not an IANA name answers `400 request.invalid`; `If-Match` is optional
+ * (`412 request.version-mismatch`). Emits `user.profile-updated.v1` when something changed.
+ * Internal token: actor `user`, no organization.
+ * @summary Update the profile of a user
+ */
+export const UpdateUserParams = zod.object({
+  "userId": zod.uuid().describe('Id of the account, the actor.')
+})
+
+export const UpdateUserHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const updateUserBodyNameMax = 120;
+
+export const updateUserBodyDisplayNameMax = 60;
+
+export const updateUserBodyJobTitleMax = 120;
+
+export const updateUserBodyTimeZoneMax = 64;
+
+
+
+export const UpdateUserBody = zod.object({
+  "name": zod.string().min(1).max(updateUserBodyNameMax).optional().describe('Full name, trimmed here; a name made only of spaces answers `400 request.invalid`.'),
+  "displayName": zod.string().min(1).max(updateUserBodyDisplayNameMax).nullish(),
+  "jobTitle": zod.string().min(1).max(updateUserBodyJobTitleMax).nullish(),
+  "timeZone": zod.string().min(1).max(updateUserBodyTimeZoneMax).optional().describe('IANA time zone name, checked here.'),
+  "language": zod.enum(['fr', 'en', 'de', 'es']).optional()
+}).describe('JSON Merge Patch of the profile, as the public request carried it.')
+
+export const updateUserResponseEmailMax = 254;
+
+
+
+
+export const UpdateUserResponse = zod.object({
+  "id": zod.uuid(),
+  "name": zod.string(),
+  "email": zod.email().max(updateUserResponseEmailMax).describe('Email address, compared without regard to case.'),
+  "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullable().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
+  "version": zod.int().min(1).describe('Version of the account.')
+})
+
+
+/**
+ * Makes an organization the current organization of a session of the actor, and the one the
+ * next sessions of the actor start in. The membership is checked against the copy of the
+ * memberships: an organization the actor does not belong to, or one whose
+ * `member.joined.v1` has not arrived yet, answers `404 organization.not-found`. A session of
+ * another user, or an unknown id, answers `404 session.not-found`. Choosing the current
+ * organization again answers `200` and changes nothing. From the next introspection the
+ * session carries the organization and the role. Internal token: actor `user`, no
+ * organization.
+ * @summary Choose the current organization of a session
+ */
+export const SwitchSessionOrganizationParams = zod.object({
+  "sessionId": zod.uuid().describe('Id of the session, as the introspection returned it.')
+})
+
+export const SwitchSessionOrganizationBody = zod.object({
+  "organizationId": zod.uuid()
+})
+
+export const SwitchSessionOrganizationResponse = zod.object({
+  "organizationId": zod.uuid(),
+  "role": zod.string().describe('Role of the actor in it, from the copy of the memberships.')
+})
+
+
+/**
+ * Creates a token of the actor in the organization of the internal token, the current
+ * organization of the session, as `POST /v1/api-tokens` says, and returns its secret once:
+ * `cw_pat_`, 30 base62 characters from `node:crypto`, then 6 characters of CRC32 check.
+ * identity-service keeps its SHA-256 hash and its first 11 characters, never the secret.
+ * Internal token: actor `user`, organization required.
+ * @summary Create a personal API token
+ */
+export const createApiTokenInternalBodyNameMax = 100;
+
+export const createApiTokenInternalBodyScopesMax = 4;
+
+export const createApiTokenInternalBodyExpirationDefault = `30-days`;
+
+export const CreateApiTokenInternalBody = zod.object({
+  "name": zod.string().min(1).max(createApiTokenInternalBodyNameMax).describe('Name as typed; trimmed here, a name made only of spaces answers `400 request.invalid`.'),
+  "scopes": zod.array(zod.enum(['tasks:read', 'tasks:write', 'members:read', 'webhooks:manage']).describe('A scope a personal API token can be given.')).min(1).max(createApiTokenInternalBodyScopesMax).describe('At least one; the same scope twice counts once.'),
+  "expiration": zod.enum(['30-days', '90-days', '1-year', 'never']).default(createApiTokenInternalBodyExpirationDefault).describe('Lifetime counted from the creation; `never` gives no expiry.')
+})
+
+export const createApiTokenInternalResponseApiTokenPrefixMin = 11;
+export const createApiTokenInternalResponseApiTokenPrefixMax = 11;
+
+export const createApiTokenInternalResponseSecretRegExp = new RegExp('^cw_pat_[0-9A-Za-z]{36}$');
+
+
+export const CreateApiTokenInternalResponse = zod.object({
+  "apiToken": zod.object({
+  "id": zod.uuid(),
+  "name": zod.string(),
+  "prefix": zod.string().min(createApiTokenInternalResponseApiTokenPrefixMin).max(createApiTokenInternalResponseApiTokenPrefixMax).describe('First 11 characters of the secret.'),
+  "scopes": zod.array(zod.string()),
+  "organizationId": zod.uuid(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "expiresAt": zod.iso.datetime({"offset":true}).nullable(),
+  "lastUsedAt": zod.iso.datetime({"offset":true}).nullable().describe('Recorded at most once a minute.')
+}),
+  "secret": zod.string().regex(createApiTokenInternalResponseSecretRegExp).describe('The token, returned once. A secret, never logged, never stored by the gateway.')
+})
+
+
+/**
+ * Lists the tokens of the actor in the organization of the internal token that are neither
+ * revoked nor expired, the most recently created first, never with their secret. Internal
+ * token: actor `user`, organization required.
+ * @summary List the personal API tokens
+ */
+export const listApiTokensInternalQueryLimitDefault = 50;
+export const listApiTokensInternalQueryLimitMax = 100;
+
+
+
+export const ListApiTokensInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.int().min(1).max(listApiTokensInternalQueryLimitMax).default(listApiTokensInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listApiTokensInternalResponseItemsItemPrefixMin = 11;
+export const listApiTokensInternalResponseItemsItemPrefixMax = 11;
+
+
+
+export const ListApiTokensInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "name": zod.string(),
+  "prefix": zod.string().min(listApiTokensInternalResponseItemsItemPrefixMin).max(listApiTokensInternalResponseItemsItemPrefixMax).describe('First 11 characters of the secret.'),
+  "scopes": zod.array(zod.string()),
+  "organizationId": zod.uuid(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "expiresAt": zod.iso.datetime({"offset":true}).nullable(),
+  "lastUsedAt": zod.iso.datetime({"offset":true}).nullable().describe('Recorded at most once a minute.')
+})),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})
+
+
+/**
+ * Revokes a token of the actor in the organization of the internal token: from the next
+ * introspection it is inactive. Revoking it again answers `204`; a token of another user or
+ * organization, or an unknown id, answers `404 api-token.not-found`. Internal token: actor
+ * `user`, organization required.
+ * @summary Revoke a personal API token
+ */
+export const RevokeApiTokenInternalParams = zod.object({
+  "apiTokenId": zod.uuid().describe('Id of the token.')
+})
+
+export const RevokeApiTokenInternalResponse = zod.void()
+
+
+/**
+ * Tells whether a personal API token, sent as `Authorization: Bearer`, is active and, when it
+ * is, whose it is, which organization it acts in and with which scopes. The gateway calls it
+ * on every request that carries a bearer token, never caches the answer, and gives the request
+ * its context from it, as for a session.
+ *
+ * A token is active when it is known by its hash, neither revoked nor expired, and its user
+ * still belongs to its organization in the copy of the memberships. Any other token,
+ * malformed ones and session tokens included, answers `200` with `active: false`, never an
+ * error. An active answer records the last use of the token, at most once a minute. The call
+ * can be retried. Separate from `POST /internal/v1/tokens/introspect`, whose active answer
+ * always names a session and an expiry: a personal token has neither a session nor, with
+ * `never`, an expiry. Internal token: actor `system`, no organization.
+ * @summary Introspect a personal API token
+ */
+export const introspectApiTokenBodyTokenMax = 256;
+
+
+
+export const IntrospectApiTokenBody = zod.object({
+  "token": zod.string().min(1).max(introspectApiTokenBodyTokenMax).describe('Value of the bearer token. A secret, never logged.')
+})
+
+export const IntrospectApiTokenResponse = zod.union([zod.object({
+  "active": zod.literal(true),
+  "tokenType": zod.string().describe('Always `api-token` on this route (`x-extensible-enum`).'),
+  "apiTokenId": zod.uuid().describe('Id of the token; the gateway counts its rate limit on it.'),
+  "userId": zod.uuid(),
+  "organizationId": zod.uuid().describe('Organization the token acts in, the one it was created in.'),
+  "role": zod.string().describe('Role of the user in it, from the copy of the memberships.'),
+  "scopes": zod.array(zod.string()).describe('Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a scope it lacks.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).nullable().describe('When the token stops working; `null` for a token without expiry.')
+}),zod.object({
+  "active": zod.literal(false)
+})])

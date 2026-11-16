@@ -1,14 +1,16 @@
 # Internal routes of identity-service, called by cadenway-api-gateway: the authentication flows of
-# openapi/public/auth.yaml, the introspection of the session cookie, the revocation of a session
-# and the reading of a user.
+# openapi/public/auth.yaml, the introspection of the session cookie and of a personal API token, the
+# revocation of a session and the choice of its organization, the reading and the profile update of
+# a user, and the personal API tokens of openapi/public/api-tokens.yaml.
 openapi: 3.1.0
 info:
   title: identity-service internal routes
   version: 1.0.0
   description: |
-    What identity-service exposes to the API gateway for sign-up, sign-in, sessions and the current
-    user. The service has no public route: the gateway serves `openapi/public/auth.yaml` and calls
-    these routes.
+    What identity-service exposes to the API gateway for sign-up, sign-in, sessions, the current
+    user and personal API tokens. The service has no public route: the gateway serves
+    `openapi/public/auth.yaml`, `openapi/public/api-tokens.yaml` and the choice of the current
+    organization of `openapi/public/organizations.yaml`, and calls these routes.
 
     | Public route | Internal call |
     | --- | --- |
@@ -21,7 +23,13 @@ info:
     | `POST /v1/auth/sign-in/code/verification` | `POST /internal/v1/auth/sign-in/code/verification` |
     | `POST /v1/auth/sign-out` | `DELETE /internal/v1/sessions/{sessionId}` with the session the introspection returned |
     | `GET /v1/me` | `GET /internal/v1/users/{userId}` with the user the introspection returned |
+    | `PATCH /v1/me` | `PATCH /internal/v1/users/{userId}` with the user the introspection returned |
+    | `PUT /v1/session/organization` | `PUT /internal/v1/sessions/{sessionId}/organization` with the session the introspection returned |
+    | `POST /v1/api-tokens` | `POST /internal/v1/api-tokens` |
+    | `GET /v1/api-tokens` | `GET /internal/v1/api-tokens` |
+    | `DELETE /v1/api-tokens/{apiTokenId}` | `DELETE /internal/v1/api-tokens/{apiTokenId}` |
     | Any request with the session cookie | `POST /internal/v1/tokens/introspect`, before the route |
+    | Any request with `Authorization: Bearer cw_pat_…` | `POST /internal/v1/api-tokens/introspect`, before the route |
 
     **Tokens.** A route that signs in returns the opaque session token once, in `token`: the gateway
     writes it into the cookie `__Host-cw_session` and never logs it; identity-service keeps only its
@@ -30,19 +38,28 @@ info:
 
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
     (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `identity-service`). Every route accepts
-    the issuer `api-gateway` only, and no route requires an organization. Each operation says which
-    actor it accepts: `anonymous` for the flows that run before a session exists, `system` for the
-    introspection, `user` for the routes of the signed-in user. The guard of the kit answers
-    `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed` and
-    `403 auth.actor-not-allowed`.
+    the issuer `api-gateway` only. Each operation says which actor it accepts: `anonymous` for the
+    flows that run before a session exists, `system` for the introspections, `user` for the routes
+    of the signed-in user; and whether it requires an organization: only the personal API token
+    routes do, the current organization of the session that calls them. The guard of the kit
+    answers `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
+    `403 auth.actor-not-allowed` and `403 auth.organization-required`. The gateway answers
+    `403 organization.not-selected` itself, before the call, when the session has no current
+    organization.
+
+    **Memberships.** identity-service keeps a copy of the memberships (organization, user, role)
+    from `member.joined.v1`, `member.role-changed.v1` and `member.removed.v1`
+    (`asyncapi/organization-service.yaml`). It checks the choice of an organization against it, and
+    fills the `organizationId` and the `role` of the introspections from it. A membership reaches
+    it within seconds of its creation.
 
     **Errors.** The codes are those of the public routes; the gateway forwards the `code` and the
     `details`, answers the French `title` of `openapi/public/auth.yaml`, and derives `Retry-After`
     from `details` (the internal client does not carry headers of a problem). The titles here are
     English. A refused password or code answers `422`, never `401`: the gateway's internal client
     turns any `401` into `503 upstream.unauthorized`, a configuration defect. The gateway answers
-    `403 auth.issuer-not-allowed` and `403 auth.actor-not-allowed`, which are configuration defects
-    too, as `503 upstream.unauthorized`, never to the browser.
+    `403 auth.issuer-not-allowed`, `403 auth.actor-not-allowed` and `403 auth.organization-required`,
+    which are configuration defects too, as `503 upstream.unauthorized`, never to the browser.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -51,7 +68,7 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Calls every route through its generated client, for openapi/public/auth.yaml and for the session guard of every authenticated route.
+      uses: Calls every route through its generated client, for openapi/public/auth.yaml, openapi/public/api-tokens.yaml, the choice of the current organization, and the guard of every authenticated route (session and personal API token introspection).
 servers:
   - url: http://identity-service:3010
     description: identity-service on the internal network of each environment (`IDENTITY_SERVICE_URL`).
@@ -63,7 +80,9 @@ tags:
   - name: sessions
     description: Introspection and revocation of sessions.
   - name: users
-    description: Accounts.
+    description: Accounts and their profile.
+  - name: api-tokens
+    description: Personal API tokens and their introspection.
 paths:
   /internal/v1/auth/sign-in-methods:
     post:
@@ -347,14 +366,17 @@ paths:
       operationId: introspectToken
       summary: Introspect a session token
       description: |
-        Tells whether the token of a session cookie is active and, when it is, whose it is. The
-        gateway calls it on every request that carries the cookie, never caches the answer, and
-        gives the request its context from it (`setRequestOrganizationContext`).
+        Tells whether the token of a session cookie is active and, when it is, whose it is and
+        which organization it acts on. The gateway calls it on every request that carries the
+        cookie, never caches the answer, and gives the request its context from it
+        (`setRequestOrganizationContext`): `organizationId`, `role` and `scopes` go into the
+        internal token of its calls.
 
         A token that is unknown, expired, revoked or malformed answers `200` with
-        `active: false`, never an error. An active answer counts as activity: the inactivity
-        period of the session (12 hours by default) starts again. Calling it twice has the same
-        effect as once, so the call can be retried. Internal token: actor `system`, no
+        `active: false`, never an error; so does a personal API token, introspected by
+        `POST /internal/v1/api-tokens/introspect`. An active answer counts as activity: the
+        inactivity period of the session (12 hours by default) starts again. Calling it twice has
+        the same effect as once, so the call can be retried. Internal token: actor `system`, no
         organization.
       tags: [sessions]
       requestBody:
@@ -374,7 +396,18 @@ paths:
                 $ref: '#/components/schemas/Introspection'
               examples:
                 active:
-                  summary: Active session
+                  summary: Active session in Atelier Nord
+                  value:
+                    active: true
+                    tokenType: session
+                    sessionId: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
+                    userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                    role: owner
+                    scopes: [tasks:read, tasks:write, members:read, webhooks:manage]
+                    expiresAt: '2026-12-08T13:07:00Z'
+                noOrganization:
+                  summary: Active session without a current organization
                   value:
                     active: true
                     tokenType: session
@@ -382,7 +415,7 @@ paths:
                     userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
                     organizationId: null
                     role: null
-                    scopes: []
+                    scopes: [tasks:read, tasks:write, members:read, webhooks:manage]
                     expiresAt: '2026-12-08T13:07:00Z'
                 inactive:
                   summary: Unknown, expired or revoked token
@@ -453,12 +486,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
-              example:
-                id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
-                name: Camille Martin
-                email: camille.martin@ateliernord.fr
-                language: fr
-                version: 2
+              examples:
+                camilleMartin:
+                  $ref: '#/components/examples/CamilleMartin'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -467,6 +497,285 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/UserNotFound'
+    patch:
+      operationId: updateUser
+      summary: Update the profile of a user
+      description: |
+        Applies a JSON Merge Patch to the profile of the account of the actor, as
+        `PATCH /v1/me` says: another id, or an unknown one, answers `404 user.not-found`; a time
+        zone that is not an IANA name answers `400 request.invalid`; `If-Match` is optional
+        (`412 request.version-mismatch`). Emits `user.profile-updated.v1` when something changed.
+        Internal token: actor `user`, no organization.
+      tags: [users]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: Id of the account, the actor.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+        - name: If-Match
+          in: header
+          required: false
+          description: '`"<version>"` the change was made from.'
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfilePatch'
+            example:
+              displayName: camille
+              jobTitle: Responsable produit
+              timeZone: Europe/Paris
+      responses:
+        '200':
+          description: The account after the change.
+          headers:
+            ETag:
+              description: Version of the account, `"<version>"`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              examples:
+                camilleMartin:
+                  $ref: '#/components/examples/CamilleMartin'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/sessions/{sessionId}/organization:
+    put:
+      operationId: switchSessionOrganization
+      summary: Choose the current organization of a session
+      description: |
+        Makes an organization the current organization of a session of the actor, and the one the
+        next sessions of the actor start in. The membership is checked against the copy of the
+        memberships: an organization the actor does not belong to, or one whose
+        `member.joined.v1` has not arrived yet, answers `404 organization.not-found`. A session of
+        another user, or an unknown id, answers `404 session.not-found`. Choosing the current
+        organization again answers `200` and changes nothing. From the next introspection the
+        session carries the organization and the role. Internal token: actor `user`, no
+        organization.
+      tags: [sessions]
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Id of the session, as the introspection returned it.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationChoice'
+            example:
+              organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+      responses:
+        '200':
+          description: The session acts on this organization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionOrganization'
+              example:
+                organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                role: owner
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SessionOrOrganizationNotFound'
+  /internal/v1/api-tokens:
+    post:
+      operationId: createApiTokenInternal
+      summary: Create a personal API token
+      description: |
+        Creates a token of the actor in the organization of the internal token, the current
+        organization of the session, as `POST /v1/api-tokens` says, and returns its secret once:
+        `cw_pat_`, 30 base62 characters from `node:crypto`, then 6 characters of CRC32 check.
+        identity-service keeps its SHA-256 hash and its first 11 characters, never the secret.
+        Internal token: actor `user`, organization required.
+      tags: [api-tokens]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiTokenCreation'
+            example:
+              name: Synchronisation GitLab
+              scopes: [tasks:read]
+              expiration: 30-days
+      responses:
+        '201':
+          description: The token exists; its secret is in `secret`, once.
+          headers:
+            Location:
+              description: '`/internal/v1/api-tokens/<apiTokenId>`.'
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiTokenCreated'
+              example:
+                apiToken:
+                  id: 019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e90
+                  name: Synchronisation GitLab
+                  prefix: cw_pat_Exam
+                  scopes: [tasks:read]
+                  organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                  createdAt: '2026-11-08T14:02:00Z'
+                  expiresAt: '2026-12-08T14:02:00Z'
+                  lastUsedAt: null
+                secret: cw_pat_ExampleOnlyNotARealToken000000000000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+    get:
+      operationId: listApiTokensInternal
+      summary: List the personal API tokens
+      description: |
+        Lists the tokens of the actor in the organization of the internal token that are neither
+        revoked nor expired, the most recently created first, never with their secret. Internal
+        token: actor `user`, organization required.
+      tags: [api-tokens]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of tokens.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiTokenPage'
+              example:
+                items:
+                  - id: 019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e90
+                    name: Synchronisation GitLab
+                    prefix: cw_pat_Exam
+                    scopes: [tasks:read]
+                    organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                    createdAt: '2026-11-08T14:02:00Z'
+                    expiresAt: '2026-12-08T14:02:00Z'
+                    lastUsedAt: '2026-11-08T14:10:00Z'
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+  /internal/v1/api-tokens/{apiTokenId}:
+    delete:
+      operationId: revokeApiTokenInternal
+      summary: Revoke a personal API token
+      description: |
+        Revokes a token of the actor in the organization of the internal token: from the next
+        introspection it is inactive. Revoking it again answers `204`; a token of another user or
+        organization, or an unknown id, answers `404 api-token.not-found`. Internal token: actor
+        `user`, organization required.
+      tags: [api-tokens]
+      parameters:
+        - name: apiTokenId
+          in: path
+          required: true
+          description: Id of the token.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e90]
+      responses:
+        '204':
+          description: The token is revoked.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ApiTokenNotFound'
+  /internal/v1/api-tokens/introspect:
+    post:
+      operationId: introspectApiToken
+      summary: Introspect a personal API token
+      description: |
+        Tells whether a personal API token, sent as `Authorization: Bearer`, is active and, when it
+        is, whose it is, which organization it acts in and with which scopes. The gateway calls it
+        on every request that carries a bearer token, never caches the answer, and gives the request
+        its context from it, as for a session.
+
+        A token is active when it is known by its hash, neither revoked nor expired, and its user
+        still belongs to its organization in the copy of the memberships. Any other token,
+        malformed ones and session tokens included, answers `200` with `active: false`, never an
+        error. An active answer records the last use of the token, at most once a minute. The call
+        can be retried. Separate from `POST /internal/v1/tokens/introspect`, whose active answer
+        always names a session and an expiry: a personal token has neither a session nor, with
+        `never`, an expiry. Internal token: actor `system`, no organization.
+      tags: [api-tokens]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiTokenIntrospectionRequest'
+            example:
+              token: cw_pat_ExampleOnlyNotARealToken000000000000
+      responses:
+        '200':
+          description: Whether the token is active, and its subject when it is.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiTokenIntrospection'
+              examples:
+                active:
+                  summary: Active token of Camille Martin in Atelier Nord
+                  value:
+                    active: true
+                    tokenType: api-token
+                    apiTokenId: 019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e90
+                    userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                    role: owner
+                    scopes: [tasks:read]
+                    expiresAt: '2026-12-08T14:02:00Z'
+                inactive:
+                  summary: Unknown, expired or revoked token, or user no longer a member
+                  value:
+                    active: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
 components:
   securitySchemes:
     internalToken:
@@ -482,6 +791,18 @@ components:
       schema:
         type: integer
         minimum: 1
+  examples:
+    CamilleMartin:
+      summary: Camille Martin, with the profile of the mockup
+      value:
+        id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+        name: Camille Martin
+        email: camille.martin@ateliernord.fr
+        language: fr
+        displayName: camille
+        jobTitle: Responsable produit
+        timeZone: Europe/Paris
+        version: 3
   responses:
     SessionIssued:
       description: |
@@ -502,6 +823,9 @@ components:
               name: Camille Martin
               email: camille.martin@ateliernord.fr
               language: fr
+              displayName: null
+              jobTitle: null
+              timeZone: Europe/Paris
               version: 2
     BadRequest:
       description: '`request.invalid`: the request does not match the schema; one `details.issues` entry per issue.'
@@ -538,7 +862,8 @@ components:
     InternalAccessRefused:
       description: |
         The internal token is valid but the route does not accept its issuer
-        (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`).
+        (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`), or the route requires
+        an organization the token does not carry (`auth.organization-required`).
       content:
         application/problem+json:
           schema:
@@ -712,6 +1037,54 @@ components:
             title: Not Found
             status: 404
             code: user.not-found
+    SessionOrOrganizationNotFound:
+      description: |
+        - `session.not-found`: no session with this id belongs to the actor;
+        - `organization.not-found`: the copy of the memberships holds no membership of the actor in
+          this organization, also for a few seconds after a creation or an acceptance.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationNotFound:
+              summary: Not a member, or not known yet
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: organization.not-found
+            sessionNotFound:
+              summary: Session of another user
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: session.not-found
+    ApiTokenNotFound:
+      description: '`api-token.not-found`: no token with this id belongs to the actor in the organization of the internal token.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: api-token.not-found
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version, with `details.version`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Precondition Failed
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 3
   schemas:
     Email:
       type: string
@@ -914,8 +1287,9 @@ components:
         tokenType:
           type: string
           description: |
-            Kind of token: `session` today. Personal API tokens add `api-token` later, without a
-            new version (`x-extensible-enum`).
+            Kind of token: always `session` on this route. A personal API token is introspected by
+            `POST /internal/v1/api-tokens/introspect`, which answers `api-token`. Later versions
+            may add kinds without a new version (`x-extensible-enum`).
           x-extensible-enum: [session]
         sessionId:
           type: string
@@ -927,14 +1301,20 @@ components:
           type: [string, 'null']
           format: uuid
           description: |
-            Organization of the session. Always `null` in this version: a session belongs to an
-            organization once the organization selection exists.
+            Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);
+            `null` when it has none, or when its user no longer belongs to it.
         role:
           type: [string, 'null']
-          description: Member role in that organization; always `null` in this version.
+          description: |
+            Role of the user in that organization, from the copy of the memberships: `owner`,
+            `admin`, `member` or `guest`; `null` without an organization. The gateway carries it
+            in the internal token; organization-service decides from its own members.
+          x-extensible-enum: [owner, admin, member, guest]
         scopes:
           type: array
-          description: Scopes the token grants; empty in this version, since no route needs one yet.
+          description: |
+            Scopes the token grants. A session holds every scope: `tasks:read`, `tasks:write`,
+            `members:read` and `webhooks:manage` today, more as they are added.
           items:
             type: string
         expiresAt:
@@ -950,7 +1330,7 @@ components:
           const: false
     User:
       type: object
-      required: [id, name, email, language, version]
+      required: [id, name, email, language, displayName, jobTitle, timeZone, version]
       properties:
         id:
           type: string
@@ -962,7 +1342,187 @@ components:
           $ref: '#/components/schemas/Email'
         language:
           $ref: '#/components/schemas/Language'
+        displayName:
+          type: [string, 'null']
+          description: Name used for the mentions; `null` until the person chooses one.
+          examples: [camille]
+        jobTitle:
+          type: [string, 'null']
+          description: Job title; `null` when there is none.
+          examples: [Responsable produit]
+        timeZone:
+          type: string
+          description: IANA time zone name; `Europe/Paris` until the person chooses another.
+          examples: [Europe/Paris]
         version:
           type: integer
           minimum: 1
           description: Version of the account.
+    ProfilePatch:
+      type: object
+      description: JSON Merge Patch of the profile, as the public request carried it.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Full name, trimmed here; a name made only of spaces answers `400 request.invalid`.
+        displayName:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 60
+        jobTitle:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 120
+        timeZone:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: IANA time zone name, checked here.
+        language:
+          type: string
+          enum: [fr, en, de, es]
+    OrganizationChoice:
+      type: object
+      required: [organizationId]
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+    SessionOrganization:
+      type: object
+      required: [organizationId, role]
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          description: Role of the actor in it, from the copy of the memberships.
+          x-extensible-enum: [owner, admin, member, guest]
+    ApiTokenScope:
+      type: string
+      description: A scope a personal API token can be given.
+      enum: [tasks:read, tasks:write, members:read, webhooks:manage]
+    ApiTokenCreation:
+      type: object
+      required: [name, scopes]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Name as typed; trimmed here, a name made only of spaces answers `400 request.invalid`.
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 4
+          description: At least one; the same scope twice counts once.
+          items:
+            $ref: '#/components/schemas/ApiTokenScope'
+        expiration:
+          type: string
+          default: 30-days
+          description: Lifetime counted from the creation; `never` gives no expiry.
+          enum: [30-days, 90-days, 1-year, never]
+    ApiToken:
+      type: object
+      required: [id, name, prefix, scopes, organizationId, createdAt, expiresAt, lastUsedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        prefix:
+          type: string
+          minLength: 11
+          maxLength: 11
+          description: First 11 characters of the secret.
+        scopes:
+          type: array
+          items:
+            type: string
+            x-extensible-enum: [tasks:read, tasks:write, members:read, webhooks:manage]
+        organizationId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+        lastUsedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Recorded at most once a minute.
+    ApiTokenCreated:
+      type: object
+      required: [apiToken, secret]
+      properties:
+        apiToken:
+          $ref: '#/components/schemas/ApiToken'
+        secret:
+          type: string
+          pattern: '^cw_pat_[0-9A-Za-z]{36}$'
+          description: The token, returned once. A secret, never logged, never stored by the gateway.
+    ApiTokenPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiToken'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    ApiTokenIntrospectionRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Value of the bearer token. A secret, never logged.
+    ApiTokenIntrospection:
+      oneOf:
+        - $ref: '#/components/schemas/ActiveApiToken'
+        - $ref: '#/components/schemas/InactiveToken'
+    ActiveApiToken:
+      type: object
+      required: [active, tokenType, apiTokenId, userId, organizationId, role, scopes, expiresAt]
+      properties:
+        active:
+          type: boolean
+          const: true
+        tokenType:
+          type: string
+          description: Always `api-token` on this route (`x-extensible-enum`).
+          x-extensible-enum: [api-token]
+        apiTokenId:
+          type: string
+          format: uuid
+          description: Id of the token; the gateway counts its rate limit on it.
+        userId:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+          description: Organization the token acts in, the one it was created in.
+        role:
+          type: string
+          description: Role of the user in it, from the copy of the memberships.
+          x-extensible-enum: [owner, admin, member, guest]
+        scopes:
+          type: array
+          description: Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a scope it lacks.
+          items:
+            type: string
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the token stops working; `null` for a token without expiry.

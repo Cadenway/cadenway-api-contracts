@@ -84,6 +84,7 @@ describe('events of identity-service', () => {
       'one-time-code.issued.v1',
       'session.revoked.v1',
       'user.email-verified.v1',
+      'user.profile-updated.v1',
       'user.signed-up.v1',
     ]);
   });

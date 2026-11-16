@@ -1,0 +1,889 @@
+# Public routes of organizations: create one, list those of the caller (the picker), read and update
+# the current organization, and choose the current organization of the session. Served by
+# cadenway-api-gateway, which calls openapi/internal/organization-service.yaml, and
+# openapi/internal/identity-service.yaml for the choice of the current organization.
+openapi: 3.1.0
+info:
+  title: Cadenway organizations
+  version: 1.0.0
+  description: |
+    How a signed-in person creates an organization, finds the organizations they belong to, reads
+    and changes the current one, and moves the session from one organization to another. The API
+    gateway serves these routes: organization-service answers the organizations, identity-service
+    keeps the current organization of the session.
+
+    **Current organization.** A session holds at most one current organization, chosen with
+    `PUT /v1/session/organization` and kept by identity-service. A new session starts in the
+    organization the person last chose, if they are still a member of it, else in none. Every
+    organization-scoped route acts on the current organization, never on one named in the path or
+    the body; without one it answers `403 organization.not-selected`, and the web application shows
+    the picker. A personal API token always acts on the organization it was created in.
+
+    **Right after a creation or an acceptance.** organization-service owns the members;
+    identity-service learns them from `member.joined.v1` within seconds. Until then, choosing the
+    new organization answers `404 organization.not-found`: the web application retries for a few
+    seconds before it shows the error.
+
+    **Roles.** `owner` ("Propriétaire", the creator, one per organization), `admin`
+    ("Administrateur"), `member` ("Membre") and `guest` ("Invité"). The owner and the admins update
+    the organization; the others get `403 organization.role-forbidden`. organization-service decides
+    from its own members, never from the token.
+
+    **Isolation.** An organization the caller does not belong to answers `404`, never `403`.
+
+    **Credentials and scopes.** Each operation declares in `security` what may call it. These
+    routes accept the session cookie only: a personal API token gets
+    `403 auth.api-token-not-accepted`. When a request carries `Authorization: Bearer`, the gateway
+    authenticates it with that token alone and ignores the cookie.
+
+    **Cross-site requests.** A request with an unsafe method authenticated by the cookie carries an
+    `Origin` equal to one of the gateway's allowed origins and `Content-Type: application/json`, as
+    in `openapi/public/auth.yaml`; the gateway refuses any other before the route runs
+    (`403 auth.csrf-rejected`). A `PATCH` is a JSON Merge Patch (RFC 7396) sent as
+    `application/json`, for the same reason.
+
+    **Rate limit.** 600 requests per minute per session or personal token, counted by the gateway;
+    beyond, `429 rate-limit.exceeded` with `Retry-After`.
+
+    **Errors.** Every error is an `application/problem+json` problem with a stable `code`, as in
+    `openapi/public/auth.yaml`: `title` is French text the web application may show as is for the
+    codes it shows to the person, the English reason phrase of the status otherwise.
+
+    **Later versions** add, without changing what is here: the logo (object storage), the plan,
+    seats and quotas (billing; `plan` is `free` until then), verified domains, the reusable
+    invitation link and auto-join, the transfer of ownership and the deletion of an organization.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves every route, through openapi/internal/organization-service.yaml and, for the current organization of the session, openapi/internal/identity-service.yaml.
+    - repository: cadenway-webapp
+      uses: Calls every route through @cadenway/api-client (picker, creation form, organization switcher, settings "Général").
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging. The local stack of cadenway-ops serves the same routes on `api.<DOMAIN>`.
+tags:
+  - name: organizations
+    description: Organizations of the caller and the current organization of the session.
+paths:
+  /v1/organizations:
+    post:
+      operationId: createOrganization
+      summary: Create an organization
+      description: |
+        Creates an organization whose owner is the caller ("Vous en serez propriétaire."), with
+        the plan `free`, and invites the addresses of `inviteEmails` as `member` in the same
+        transaction ("Inviter des collègues"). The session does not move to it: the web application
+        then calls `PUT /v1/session/organization`, retrying for a few seconds while the membership
+        reaches identity-service.
+
+        - `slug` ("Adresse") is derived from `name` when it is absent, as the creation form does:
+          accents removed, lowercase, every run of other characters turned into `-`, dashes
+          trimmed at both ends, cut to 63 characters. A derived address shorter than 2 characters
+          answers `422 organization.slug-invalid`.
+        - An address used by another organization answers `409 organization.slug-taken`, derived
+          or not.
+        - Each address of `inviteEmails` gets its own outcome in `invitations`, as
+          `POST /v1/invitations` does; an address of the caller answers `already-member`.
+        - organization-service knows the caller from the events of their sign-up, which precede
+          their first session. In the rare case it has not applied them yet, the creation answers
+          `404 user.not-found` and nothing is created: the web application retries after a second.
+
+        Emits `organization.created.v1`, `member.joined.v1` for the owner and one
+        `invitation.issued.v1` per invited address. Session only: a personal API token cannot call
+        it.
+      tags: [organizations]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreation'
+            example:
+              name: Atelier Nord
+              teamSize: 6-20
+              primaryUse: product-engineering
+              inviteEmails:
+                - ines.robert@ateliernord.fr
+                - hugo.dubois@ateliernord.fr
+      responses:
+        '201':
+          description: |
+            The organization exists, the caller is its owner, and the invitations are sent.
+          headers:
+            Location:
+              $ref: '#/components/headers/OrganizationLocation'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationCreated'
+              example:
+                organization:
+                  id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                  name: Atelier Nord
+                  slug: atelier-nord
+                  description: null
+                  website: null
+                  defaultLanguage: fr
+                  plan: free
+                  memberCount: 1
+                  role: owner
+                  createdAt: '2026-03-02T09:00:00Z'
+                  version: 1
+                invitations:
+                  - email: ines.robert@ateliernord.fr
+                    outcome: invited
+                    invitationId: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a73
+                  - email: hugo.dubois@ateliernord.fr
+                    outcome: invited
+                    invitationId: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a74
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SessionWriteForbidden'
+        '404':
+          $ref: '#/components/responses/CreatorUnknown'
+        '409':
+          $ref: '#/components/responses/SlugTaken'
+        '422':
+          $ref: '#/components/responses/SlugInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    get:
+      operationId: listMyOrganizations
+      summary: List the organizations of the caller
+      description: |
+        Lists the organizations the caller is a member of, whatever the current one, sorted by name
+        without regard to case or accents, then by id: the picker ("Vos organisations") and the
+        organization switcher. Works without a current organization. The last opening of each
+        organization ("Ouverte hier") is not in this version. Session only: a personal API token
+        cannot call it.
+      tags: [organizations]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the organizations of the caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyOrganizationPage'
+              example:
+                items:
+                  - id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                    name: Atelier Nord
+                    slug: atelier-nord
+                    role: owner
+                    memberCount: 18
+                    plan: free
+                    joinedAt: '2026-03-02T09:00:00Z'
+                  - id: 019a5f40-2b6d-7e1a-8c3f-5d7e9a1b3c50
+                    name: Studio Pivot
+                    slug: studio-pivot
+                    role: member
+                    memberCount: 6
+                    plan: free
+                    joinedAt: '2026-10-14T08:30:00Z'
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SessionReadForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/organization:
+    get:
+      operationId: getCurrentOrganization
+      summary: Read the current organization
+      description: |
+        Returns the current organization of the session ("Profil de l'organisation") with the role
+        of the caller in it. Without a current organization, `403 organization.not-selected`; an
+        organization the caller no longer belongs to, `404 organization.not-found`. Session only:
+        a personal API token cannot call it.
+      tags: [organizations]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The current organization.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+              examples:
+                atelierNord:
+                  $ref: '#/components/examples/AtelierNord'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateCurrentOrganization
+      summary: Update the current organization
+      description: |
+        Applies a JSON Merge Patch (RFC 7396) to the current organization: a member left out is
+        unchanged, `null` clears `description` or `website`. Owner and admins only
+        (`403 organization.role-forbidden`). The members see the new name and address at once
+        ("Les membres voient le nouveau nom et la nouvelle adresse.").
+
+        - An address used by another organization answers `409 organization.slug-taken`.
+        - `If-Match` is optional; a version that is no longer the current one answers
+          `412 request.version-mismatch`.
+
+        Emits `organization.updated.v1` when something changed; a patch that changes nothing
+        answers `200` with the same version and emits nothing. Session only: a personal API token
+        cannot call it.
+      tags: [organizations]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationPatch'
+            example:
+              description: Studio de conception de mobilier et d’aménagement, 18 personnes entre Lille et Lyon.
+              website: https://ateliernord.fr
+      responses:
+        '200':
+          description: The organization after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+              examples:
+                atelierNord:
+                  $ref: '#/components/examples/AtelierNord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/SlugTaken'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/session/organization:
+    put:
+      operationId: switchOrganization
+      summary: Choose the current organization of the session
+      description: |
+        Makes an organization the caller belongs to the current organization of this session
+        ("Organisation : {name}"), and the one the next sessions of the caller start in. Every
+        organization-scoped route of this session then acts on it. Answered by identity-service
+        from its own copy of the memberships.
+
+        - An organization the caller does not belong to answers `404 organization.not-found`, as
+          does, for a few seconds, an organization the caller has just created or joined: the web
+          application retries before it shows the error.
+        - Choosing the current organization again answers `200` and changes nothing.
+
+        Session only: a personal API token, bound to the organization it was created in, cannot
+        call it.
+      tags: [organizations]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationChoice'
+            example:
+              organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+      responses:
+        '200':
+          description: The session acts on this organization from the next request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionOrganization'
+              example:
+                organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                role: owner
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SessionWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: |
+        Opaque session token of `openapi/public/auth.yaml`, set by the gateway on sign-in and checked
+        with identity-service on every request. A session holds every scope.
+  parameters:
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: '`"<version>"` the change was made from, as the `ETag` gave it.'
+      schema:
+        type: string
+        examples: ['"3"']
+  headers:
+    ETag:
+      description: Version of the organization, `"<version>"`.
+      schema:
+        type: string
+    OrganizationLocation:
+      description: |
+        `/v1/organization`, where the organization reads once the session has chosen it
+        (`PUT /v1/session/organization`): the organization is never named in a path.
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110).
+      schema:
+        type: integer
+        minimum: 1
+  examples:
+    AtelierNord:
+      summary: Atelier Nord, read by its owner
+      value:
+        id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+        name: Atelier Nord
+        slug: atelier-nord
+        description: Studio de conception de mobilier et d’aménagement, 18 personnes entre Lille et Lyon.
+        website: https://ateliernord.fr
+        defaultLanguage: fr
+        plan: free
+        memberCount: 18
+        role: owner
+        createdAt: '2026-03-02T09:00:00Z'
+        version: 3
+    CrossSiteRefused:
+      summary: Request from another site
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.csrf-rejected
+    ApiTokenNotAccepted:
+      summary: Personal API token on a session-only route
+      value:
+        type: about:blank
+        title: Cette requête n’accepte pas de jeton d’API.
+        status: 403
+        code: auth.api-token-not-accepted
+    OrganizationNotSelected:
+      summary: No current organization
+      value:
+        type: about:blank
+        title: Choisissez une organisation pour continuer.
+        status: 403
+        code: organization.not-selected
+    RoleForbidden:
+      summary: Role not allowed
+      value:
+        type: about:blank
+        title: Votre rôle ne permet pas cette action.
+        status: 403
+        code: organization.role-forbidden
+    RateLimited:
+      summary: Gateway limit reached
+      value:
+        type: about:blank
+        title: 'Trop de requêtes : réessayez dans un instant.'
+        status: 429
+        code: rate-limit.exceeded
+  responses:
+    BadRequest:
+      description: |
+        The request does not match the schema: `request.invalid`, with one `details.issues` entry
+        per failed member (`path` is the dotted path of the member, empty for the body itself).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: body
+                  path: name
+                  code: too_small
+                  message: Too small
+    Unauthenticated:
+      description: |
+        - `auth.session-required`: the request carries neither a session cookie nor a bearer token;
+        - `auth.session-expired`: the cookie names a session that ended. The web application signs
+          the person in again;
+        - `auth.api-token-invalid`: the bearer token is unknown, revoked or expired, or its user
+          no longer belongs to its organization.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sessionRequired:
+              summary: No credential
+              value:
+                type: about:blank
+                title: Connectez-vous pour continuer.
+                status: 401
+                code: auth.session-required
+            sessionExpired:
+              summary: Session ended
+              value:
+                type: about:blank
+                title: Session expirée
+                status: 401
+                code: auth.session-expired
+            apiTokenInvalid:
+              summary: Personal API token no longer valid
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    SessionReadForbidden:
+      description: '`auth.api-token-not-accepted`: a personal API token cannot call this route.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    SessionWriteForbidden:
+      description: |
+        - `auth.csrf-rejected`: the `Origin` of the request is not an allowed origin, or its
+          `Content-Type` is not `application/json`;
+        - `auth.api-token-not-accepted`: a personal API token cannot call this route.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    OrganizationReadForbidden:
+      description: |
+        - `organization.not-selected`: the session has no current organization; the web
+          application shows the picker;
+        - `auth.api-token-not-accepted`: a personal API token cannot call this route.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    OrganizationWriteForbidden:
+      description: |
+        - `organization.not-selected`: the session has no current organization;
+        - `organization.role-forbidden`: only the owner and the admins change the organization;
+        - `auth.csrf-rejected`, `auth.api-token-not-accepted`: see `SessionWriteForbidden`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            roleForbidden:
+              $ref: '#/components/examples/RoleForbidden'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    OrganizationNotFound:
+      description: |
+        `organization.not-found`: the caller does not belong to this organization, or, for a few
+        seconds after a creation or an acceptance, identity-service does not know the membership
+        yet.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    CreatorUnknown:
+      description: |
+        `user.not-found`: organization-service has not applied the sign-up of the caller yet. It
+        does within seconds, before the account can even be verified in practice; the web
+        application retries after a second. Nothing was created.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Votre compte est en cours de préparation : réessayez dans un instant.'
+            status: 404
+            code: user.not-found
+    SlugTaken:
+      description: '`organization.slug-taken`: another organization already uses this address.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Cette adresse est déjà utilisée par une autre organisation.
+            status: 409
+            code: organization.slug-taken
+            details:
+              slug: atelier-nord
+    SlugInvalid:
+      description: |
+        `organization.slug-invalid`: the address derived from the name has fewer than 2 characters;
+        `details.slug` is what the derivation gave.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: L’adresse doit compter au moins 2 caractères.
+            status: 422
+            code: organization.slug-invalid
+            details:
+              slug: e
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 4
+    RateLimited:
+      description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    Unavailable:
+      description: |
+        organization-service or identity-service cannot answer: `upstream.unavailable`,
+        `upstream.unreachable`, `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`,
+        `upstream.unauthorized` or `upstream.deadline-exceeded`, with `details.service`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+            details:
+              service: organization-service
+  schemas:
+    Email:
+      type: string
+      format: email
+      maxLength: 254
+      description: Email address, compared without regard to case.
+      examples: [ines.robert@ateliernord.fr]
+    Role:
+      type: string
+      description: |
+        Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
+        ("Membre") or `guest` ("Invité").
+      enum: [owner, admin, member, guest]
+    OrganizationName:
+      type: string
+      minLength: 1
+      maxLength: 120
+      description: |
+        Name of the organization ("Nom"), as typed; surrounding spaces are removed, and a name made
+        only of spaces is refused with `400 request.invalid`.
+      examples: [Atelier Nord]
+    Slug:
+      type: string
+      minLength: 2
+      maxLength: 63
+      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+      description: |
+        Address of the organization ("Adresse", `app.cadenway.example/<slug>`): lowercase letters,
+        digits and single dashes, unique across organizations.
+      examples: [atelier-nord]
+    DefaultLanguage:
+      type: string
+      description: |
+        Default language of the organization ("Langue par défaut"), a BCP 47 tag: `fr` (Français),
+        `en` (English) or `de` (Deutsch). Later versions may accept more.
+      enum: [fr, en, de]
+    OrganizationCreation:
+      type: object
+      required: [name]
+      properties:
+        name:
+          $ref: '#/components/schemas/OrganizationName'
+        slug:
+          $ref: '#/components/schemas/Slug'
+          description: Address to use; derived from `name` when absent (see `POST /v1/organizations`).
+        teamSize:
+          type: string
+          default: 6-20
+          description: |
+            "Taille de l'équipe": `1-5` ("Petite équipe"), `6-20` ("Équipe"), `21-100` ("Plusieurs
+            équipes") or `over-100` ("Entreprise"). Kept with the organization; no route returns
+            it in this version.
+          enum: [1-5, 6-20, 21-100, over-100]
+        primaryUse:
+          type: string
+          default: product-engineering
+          description: |
+            "Usage principal": `product-engineering` ("Produit et ingénierie"),
+            `agency-client-projects` ("Agence et projets clients"), `marketing-content`
+            ("Marketing et contenus"), `operations-support` ("Opérations et support") or `other`
+            ("Autre"). Kept with the organization; no route returns it in this version.
+          enum:
+            [
+              product-engineering,
+              agency-client-projects,
+              marketing-content,
+              operations-support,
+              other,
+            ]
+        inviteEmails:
+          type: array
+          maxItems: 50
+          default: []
+          description: |
+            Addresses to invite as `member` ("Inviter des collègues", "rôle Membre par défaut"). The
+            same address twice counts once.
+          items:
+            $ref: '#/components/schemas/Email'
+    OrganizationPatch:
+      type: object
+      description: JSON Merge Patch of the organization; at least one member.
+      properties:
+        name:
+          $ref: '#/components/schemas/OrganizationName'
+        slug:
+          $ref: '#/components/schemas/Slug'
+        description:
+          type: [string, 'null']
+          maxLength: 280
+          description: '"Description (facultatif)", shown on the invitation page; `null` clears it.'
+        website:
+          type: [string, 'null']
+          format: uri
+          maxLength: 2048
+          description: '"Site web", an absolute `https` or `http` URL; `null` clears it.'
+        defaultLanguage:
+          $ref: '#/components/schemas/DefaultLanguage'
+    Organization:
+      type: object
+      required:
+        [
+          id,
+          name,
+          slug,
+          description,
+          website,
+          defaultLanguage,
+          plan,
+          memberCount,
+          role,
+          createdAt,
+          version,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples: [Atelier Nord]
+        slug:
+          type: string
+          examples: [atelier-nord]
+        description:
+          type: [string, 'null']
+          description: Up to 280 characters; `null` when there is none.
+        website:
+          type: [string, 'null']
+          description: Absolute URL; `null` when there is none.
+        defaultLanguage:
+          type: string
+          description: BCP 47 tag; `fr`, `en` or `de` today, more later (`x-extensible-enum`).
+          x-extensible-enum: [fr, en, de]
+        plan:
+          type: string
+          description: |
+            Plan of the organization: `free` ("Gratuit"), `team` ("Équipe") or `enterprise`
+            ("Entreprise"). Read-only, and always `free` until billing exists.
+          x-extensible-enum: [free, team, enterprise]
+        memberCount:
+          type: integer
+          minimum: 1
+          description: Members that take a seat (owner, admins and members); guests are not counted.
+        role:
+          $ref: '#/components/schemas/Role'
+          description: Role of the caller in this organization.
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+          description: Version of the organization, also sent as `ETag`.
+    InvitationResult:
+      type: object
+      required: [email, outcome, invitationId]
+      description: What became of one address of an invitation batch.
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        outcome:
+          type: string
+          description: |
+            `invited`: an invitation was created and its email sent. `already-member`: the address
+            is that of a member, nothing was sent. `already-invited`: a pending invitation of the
+            address exists, nothing was sent (`POST /v1/invitations/{invitationId}/resend` sends it
+            again). Later versions add outcomes (seats); a client counts an unknown one as not
+            sent.
+          x-extensible-enum: [invited, already-member, already-invited]
+        invitationId:
+          type: [string, 'null']
+          format: uuid
+          description: The invitation created, or the pending one for `already-invited`; `null` for `already-member`.
+    OrganizationCreated:
+      type: object
+      required: [organization, invitations]
+      properties:
+        organization:
+          $ref: '#/components/schemas/Organization'
+        invitations:
+          type: array
+          description: One entry per distinct address of `inviteEmails`, in their order.
+          items:
+            $ref: '#/components/schemas/InvitationResult'
+    MyOrganization:
+      type: object
+      required: [id, name, slug, role, memberCount, plan, joinedAt]
+      description: An organization of the caller, as the picker shows it ("{rôle} · {n} membres · plan {plan}").
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples: [Atelier Nord]
+        slug:
+          type: string
+          examples: [atelier-nord]
+        role:
+          $ref: '#/components/schemas/Role'
+          description: Role of the caller in it.
+        memberCount:
+          type: integer
+          minimum: 1
+          description: Members that take a seat; guests are not counted.
+        plan:
+          type: string
+          description: '`free`, `team` or `enterprise`; always `free` until billing exists.'
+          x-extensible-enum: [free, team, enterprise]
+        joinedAt:
+          type: string
+          format: date-time
+          description: When the caller joined it; the web application marks a recent one "Nouveau".
+    MyOrganizationPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MyOrganization'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    OrganizationChoice:
+      type: object
+      required: [organizationId]
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+          description: Organization to act on, one the caller belongs to.
+    SessionOrganization:
+      type: object
+      required: [organizationId, role]
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+          description: The current organization of the session from now on.
+        role:
+          $ref: '#/components/schemas/Role'
+          description: Role of the caller in it.
