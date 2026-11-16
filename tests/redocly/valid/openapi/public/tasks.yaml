@@ -23,6 +23,9 @@ paths:
       summary: List tasks
       description: Lists the tasks the caller can read, by cursor.
       tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
       parameters:
         - $ref: '../../../../../components/http.yaml#/components/parameters/Cursor'
         - $ref: '../../../../../components/http.yaml#/components/parameters/Limit'
@@ -59,6 +62,9 @@ paths:
       summary: Read a task
       description: Returns one task with the version of its aggregate.
       tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
       responses:
         '200':
           description: The task.
@@ -78,6 +84,9 @@ paths:
       summary: Update a task
       description: Applies a JSON Merge Patch (RFC 7396) to the task.
       tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
       parameters:
         - name: If-Match
           in: header
@@ -104,6 +113,16 @@ paths:
         '422':
           $ref: '../../../../../components/http.yaml#/components/responses/Problem'
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: Session of the web application; it holds every scope.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: Personal API token, limited to the scopes each operation lists.
   schemas:
     Task:
       type: object

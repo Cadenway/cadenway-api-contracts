@@ -6,6 +6,7 @@ paths:
   /v1/tasks:
     get:
       operationId: listTasks
+      security: []
       responses:
         '200':
           description: The tasks.

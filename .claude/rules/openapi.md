@@ -6,6 +6,11 @@ paths:
 # OpenAPI specs
 
 - `public/`: what the gateway exposes, with scopes. `internal/`: what each service exposes to the gateway.
+- Every public operation declares its own `security`: `[]` for no credential, `sessionCookie: []`
+  for a session (which holds every scope), and `apiToken: [<scope>]` beside it when a personal API
+  token with that scope may call it. A route without `apiToken` refuses every token. The scopes are
+  `tasks:read`, `tasks:write`, `members:read` and `webhooks:manage`; `cadenway/security-declared` and
+  `cadenway/security-scopes` check both.
 - camelCase fields, ISO 8601 dates, string ids (`CAD-482` for tasks), cursor pagination
   (`cursor`, `limit`, `nextCursor`), errors as `application/problem+json` (RFC 9457) from one shared
   schema, with a stable `code` and `details`.

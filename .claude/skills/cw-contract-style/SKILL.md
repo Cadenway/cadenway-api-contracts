@@ -30,6 +30,7 @@ description: "Naming, pagination, error, id and date conventions shared by every
 | Sort and filters | `sort=-dueDate`; several values separated by commas; an unknown parameter answers 400 |
 | Concurrent writes | each aggregate carries a `version`, returned as `ETag`; `If-Match` is optional, mandatory on long texts; a collection inside an aggregate changes through sub-resources |
 | Idempotency | `Idempotency-Key` (IETF draft 08): the key sent again with another body answers 422, a request still running 409; the response is replayed for 24 h |
+| Credentials and scopes | every public operation declares its own `security`: `[]` for none, `sessionCookie: []` for a session, which holds every scope, and `apiToken: [<scope>]` beside it for a personal API token with that scope; scopes `tasks:read`, `tasks:write`, `members:read`, `webhooks:manage` |
 | Rate limit | `RateLimit` and `RateLimit-Policy` response headers (IETF draft 11) |
 | Deprecation | `Deprecation` (RFC 9745) and `Sunset` (RFC 8594) response headers |
 | Limits | JSON body of 1 MB at most; 10 s budget per public route |
@@ -61,6 +62,7 @@ description: "Naming, pagination, error, id and date conventions shared by every
 | `cadenway/path-plural-collection` | warning only: a segment followed by a path parameter ends with `s` |
 | `cadenway/error-status`, `cadenway/error-problem-json`, `cadenway/problem-schema` | the allowed error statuses, the media type and the members of the problem |
 | `cadenway/pagination-no-offset`, `cadenway/pagination-limit`, `cadenway/pagination-cursor` | no page or offset parameter; `limit` from 1 to 100, 50 by default; `cursor`, `limit` and a nullable `nextCursor` together |
+| `cadenway/security-declared`, `cadenway/security-scopes` | every public operation declares its own `security`; each requirement names one of `sessionCookie` (no scope) and `apiToken` (known scopes, at least one, beside a session alternative), declared with its expected shape; an `ApiTokenScope` schema enumerates exactly the known scopes |
 | `cadenway/asyncapi-version` | AsyncAPI 3.0.0 |
 | `cadenway/event-channel-address`, `cadenway/event-name` | `evt.<name>`, or `restricted.<name>` when every message of the channel is marked restricted, `<name>` being the name of its message; and `<entity>.<fact>.v<n>` |
 | `cadenway/event-payload` | `id`, `occurredAt`, `organizationId`, `actor`, `version` required; the four actor types; an integer `version` |

@@ -21,6 +21,10 @@ paths:
       summary: List tasks
       description: Misses the version prefix, and pages by cursor without a limit.
       tags: [tasks]
+      # cadenway/security-scopes: an undeclared token scheme, an unknown scope and no session.
+      # cadenway/security-declared: every other operation of this document declares no security.
+      security:
+        - apiToken: [tasks:delete]
       parameters:
         # cadenway/pagination-cursor: `cursor` without `limit`, and `nextCursor` is never null.
         - name: cursor

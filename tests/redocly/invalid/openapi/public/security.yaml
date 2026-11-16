@@ -1,0 +1,127 @@
+# Fixture of tests/redocly/ruleset.spec.ts: breaks cadenway/security-declared once and each check of
+# cadenway/security-scopes once, one operation per check. Not linted by `pnpm lint:specs`.
+openapi: 3.1.0
+info:
+  title: Contract style counter-example, security of public routes
+  version: 1.0.0
+  description: Declares the credentials and scopes of public routes wrongly.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+servers:
+  - url: https://api.cadenway.com
+tags:
+  - name: members
+    description: Members of the organization.
+paths:
+  # cadenway/security-declared: no security of its own.
+  /v1/no-security:
+    get:
+      operationId: noSecurity
+      summary: Inherit the security
+      tags: [members]
+      responses:
+        '200':
+          description: Done.
+  # cadenway/security-scopes: a scheme that is not a public credential.
+  /v1/unknown-scheme:
+    get:
+      operationId: unknownScheme
+      summary: Name another scheme
+      tags: [members]
+      security:
+        - oauth: []
+      responses:
+        '200':
+          description: Done.
+  # cadenway/security-scopes: the cookie with a scope.
+  /v1/cookie-scope:
+    get:
+      operationId: cookieScope
+      summary: Give the cookie a scope
+      tags: [members]
+      security:
+        - sessionCookie: [members:read]
+      responses:
+        '200':
+          description: Done.
+  # cadenway/security-scopes: a token without a scope.
+  /v1/empty-token:
+    get:
+      operationId: emptyToken
+      summary: Accept any token
+      tags: [members]
+      security:
+        - sessionCookie: []
+        - apiToken: []
+      responses:
+        '200':
+          description: Done.
+  # cadenway/security-scopes: a scope outside the known set.
+  /v1/unknown-scope:
+    get:
+      operationId: unknownScope
+      summary: Need an unknown scope
+      tags: [members]
+      security:
+        - sessionCookie: []
+        - apiToken: [members:write]
+      responses:
+        '200':
+          description: Done.
+  # cadenway/security-scopes: a scope listed twice.
+  /v1/duplicate-scope:
+    get:
+      operationId: duplicateScope
+      summary: Need a scope twice
+      tags: [members]
+      security:
+        - sessionCookie: []
+        - apiToken: [members:read, members:read]
+      responses:
+        '200':
+          description: Done.
+  # cadenway/security-scopes: a token without the session alternative.
+  /v1/token-only:
+    get:
+      operationId: tokenOnly
+      summary: Refuse the session
+      tags: [members]
+      security:
+        - apiToken: [members:read]
+      responses:
+        '200':
+          description: Done.
+  # cadenway/security-scopes: two schemes in one requirement, which would need both at once, and so
+  # no session alternative either.
+  /v1/combined:
+    get:
+      operationId: combined
+      summary: Need both credentials at once
+      tags: [members]
+      security:
+        - sessionCookie: []
+          apiToken: [members:read]
+      responses:
+        '200':
+          description: Done.
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+    apiToken:
+      type: http
+      scheme: bearer
+    oauth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://api.cadenway.com/oauth/token
+          scopes: {}
+  schemas:
+    # cadenway/security-scopes: an enumeration of the scopes that misses some.
+    ApiTokenScope:
+      type: string
+      enum: [tasks:read, members:read]
