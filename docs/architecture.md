@@ -4,7 +4,7 @@
 
 ## Status
 
-The tooling described here exists and runs: lint, generation, breaking-change check, build and CI. The first contracts are those of identity-service (sign-up, sign-in, sessions, the current user and their events); the two packages publish them with the shared enumerations. Each section says what is checked by a fixture and what is still a target.
+The tooling described here exists and runs: lint, generation, breaking-change check, build and CI. The contracts are those of identity-service (sign-up, sign-in, sessions, the current user and its profile, personal API tokens, and their events) and of organization-service (organizations, members, invitations and their events); the two packages publish them with the shared enumerations. Each section says what is checked by a fixture and what is still a target.
 
 ## Purpose and target structure
 

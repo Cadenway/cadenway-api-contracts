@@ -1,0 +1,1330 @@
+# Public routes of the members of the current organization and of invitations: list, read, change
+# the role of and remove members; invite, list, resend and revoke invitations; and, for the invitee,
+# list, accept and refuse the invitations addressed to them. Served by cadenway-api-gateway, which
+# calls openapi/internal/organization-service.yaml for each of them.
+openapi: 3.1.0
+info:
+  title: Cadenway members and invitations
+  version: 1.0.0
+  description: |
+    Who belongs to the current organization, with which role, and how a person is invited to join
+    it. The API gateway serves these routes and answers them through organization-service.
+
+    **Current organization.** The member and invitation routes act on the current organization of
+    the session (`PUT /v1/session/organization`, `openapi/public/organizations.yaml`) or on the
+    organization of the personal API token; without one they answer
+    `403 organization.not-selected`. The routes under `/v1/me/invitations` act on the invitations
+    addressed to the caller, whatever the current organization.
+
+    **Roles.** `owner` ("Propriétaire"), `admin` ("Administrateur"), `member` ("Membre"), `guest`
+    ("Invité"). The owner, the creator of the organization, is the only one; nobody changes the
+    role of the owner or removes them, and nobody becomes owner by a change of role. The owner and
+    the admins invite, change roles and remove members; owner, admins and members read the member
+    list; guests do not. Pending invitations are visible to the owner and the admins only. A
+    refusal answers `403 organization.role-forbidden`. organization-service decides all of this
+    from its own members, never from the token.
+
+    **Isolation.** A member or an invitation of another organization answers `404`, never `403`.
+
+    **Invitations.** An invitation is valid 7 days ("Elles expirent dans 7 jours."); a resend
+    sends the email again and starts the 7 days again. The email links to
+    `<web application>/invite/<invitationId>`. The id is not a secret: only a session whose
+    verified address is the invited address can accept it (`403 invitation.email-mismatch`
+    otherwise). An expired invitation stays in the pending list ("Expirée le {date}") until it is
+    resent or revoked. The personal message of the invitation email has no field in this version.
+
+    **Right after a sign-up.** organization-service learns the verified address of an account from
+    identity-service within seconds of its verification. Until then, `GET /v1/me/invitations`
+    lists nothing and an acceptance or a refusal answers `404 invitation.not-found`: the web
+    application retries for a few seconds. After an acceptance, the membership reaches
+    identity-service within seconds too: see `PUT /v1/session/organization`.
+
+    **Credentials and scopes.** Each operation declares in `security` what may call it. Reading
+    the members accepts a personal API token with the scope `members:read`
+    (`403 auth.scope-missing` without it); every other route accepts the session cookie only
+    (`403 auth.api-token-not-accepted`). A token acts with the rights of its user: a scope never
+    grants what the role refuses. When a request carries `Authorization: Bearer`, the gateway
+    authenticates it with that token alone and ignores the cookie.
+
+    **Cross-site requests.** A request with an unsafe method authenticated by the cookie carries an
+    `Origin` equal to one of the gateway's allowed origins and, when it has a body,
+    `Content-Type: application/json` (`403 auth.csrf-rejected` otherwise). A `DELETE` has no
+    body: a browser sends one only after a CORS preflight, so its `Origin` is the check. A request
+    authenticated by a personal token carries no ambient credential and needs no `Origin`. A
+    `PATCH` is a JSON Merge Patch (RFC 7396) sent as `application/json`.
+
+    **Rate limit.** 600 requests per minute per session or personal token; beyond,
+    `429 rate-limit.exceeded` with `Retry-After`.
+
+    **Errors.** As in `openapi/public/auth.yaml`: a stable `code`, a French `title` for the codes
+    the web application shows to the person, the English reason phrase otherwise.
+
+    **Later versions** add, without changing what is here: seats and their checks (billing),
+    presence and last activity (realtime), the two-step column, verified domains, auto-join and the
+    reusable invitation link, and the transfer of ownership.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves every route, through openapi/internal/organization-service.yaml.
+    - repository: cadenway-webapp
+      uses: Calls every route through @cadenway/api-client (settings "Membres", invite dialog, pending invitations, picker "Invitation en attente").
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging. The local stack of cadenway-ops serves the same routes on `api.<DOMAIN>`.
+tags:
+  - name: members
+    description: Members of the current organization.
+  - name: invitations
+    description: Invitations of the current organization, and those addressed to the caller.
+paths:
+  /v1/members:
+    get:
+      operationId: listMembers
+      summary: List the members
+      description: |
+        Lists the members of the current organization, sorted by name without regard to case or
+        accents, then by id. `search` matches the name and the address the same way
+        ("Rechercher un membre"); `role` keeps the given roles (the tab "Administrateurs" is
+        `role=owner,admin`). `total` counts the members that match, for "{a}–{b} sur {n}
+        personnes"; `counts` counts every member by role, whatever the filters, for the tabs and
+        the summary. Owner, admins and members only: a guest gets
+        `403 organization.role-forbidden`.
+
+        Scope `members:read` for a personal API token.
+      tags: [members]
+      security:
+        - sessionCookie: []
+        - apiToken: [members:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+        - name: search
+          in: query
+          required: false
+          description: Text to find in the name or the address, without regard to case or accents.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+            examples: [ines]
+        - name: role
+          in: query
+          required: false
+          description: Roles to keep, separated by commas; every role when absent.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 4
+            items:
+              $ref: '#/components/schemas/Role'
+            examples: [[owner, admin]]
+      responses:
+        '200':
+          description: One page of members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberPage'
+              example:
+                items:
+                  - id: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e40
+                    userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    name: Camille Martin
+                    email: camille.martin@ateliernord.fr
+                    role: owner
+                    joinedAt: '2026-03-02T09:00:00Z'
+                    version: 1
+                  - id: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e42
+                    userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                    name: Hugo Dubois
+                    email: hugo.dubois@ateliernord.fr
+                    role: admin
+                    joinedAt: '2026-03-03T10:12:00Z'
+                    version: 2
+                  - id: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41
+                    userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    name: Inès Robert
+                    email: ines.robert@ateliernord.fr
+                    role: admin
+                    joinedAt: '2026-03-03T09:40:00Z'
+                    version: 2
+                nextCursor: null
+                total: 3
+                counts:
+                  owner: 1
+                  admin: 2
+                  member: 15
+                  guest: 4
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/MembersReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/members/{memberId}:
+    parameters:
+      - $ref: '#/components/parameters/MemberId'
+    get:
+      operationId: getMember
+      summary: Read a member
+      description: |
+        Returns one member of the current organization. A member of another organization, or an
+        unknown id, answers `404 member.not-found`. Owner, admins and members only: a guest gets
+        `403 organization.role-forbidden`.
+
+        Scope `members:read` for a personal API token.
+      tags: [members]
+      security:
+        - sessionCookie: []
+        - apiToken: [members:read]
+      responses:
+        '200':
+          description: The member.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+              examples:
+                inesRobert:
+                  $ref: '#/components/examples/InesRobert'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/MembersReadForbidden'
+        '404':
+          $ref: '#/components/responses/MemberNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: changeMemberRole
+      summary: Change the role of a member
+      description: |
+        Gives a member another role, at once and without a seat check ("Rôle modifié", "{name} est
+        maintenant {rôle}."). Owner and admins only. The role of the owner never changes and
+        nobody becomes owner: `422 member.owner-protected` for the owner, `400 request.invalid`
+        for `role: owner`. `If-Match` is optional (`412 request.version-mismatch`).
+
+        Emits `member.role-changed.v1` when the role changes; the same role answers `200` and
+        emits nothing. Session only.
+      tags: [members]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberPatch'
+            example:
+              role: admin
+      responses:
+        '200':
+          description: The member with their new role.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+              examples:
+                inesRobert:
+                  $ref: '#/components/examples/InesRobert'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/MemberNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/OwnerProtected'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: removeMember
+      summary: Remove a member
+      description: |
+        Removes a member from the current organization ("Retirer le membre"): they lose access to
+        every space of it, their tasks stay assigned and a seat is freed. Owner and admins only; the
+        owner cannot be removed (`422 member.owner-protected`). Their sessions stop acting on this
+        organization and their personal API tokens of it stop working once identity-service has
+        applied `member.removed.v1`, within seconds.
+
+        Emits `member.removed.v1`. Session only.
+      tags: [members]
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: The member is removed.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/MemberNotFound'
+        '422':
+          $ref: '#/components/responses/OwnerProtected'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/invitations:
+    post:
+      operationId: inviteMembers
+      summary: Invite people
+      description: |
+        Invites one or more addresses with one role ("Inviter des membres"). The batch is not
+        refused as a whole because of one address: each distinct address gets its outcome, in the
+        order given (the same address twice counts once). An address of a member answers
+        `already-member`, an address with a pending invitation `already-invited`; nothing is sent
+        for either. The web application counts the `invited` outcomes ("{n} invitations
+        envoyées"). Owner and admins only. No seat check in this version.
+
+        A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
+        `invitation.issued.v1` per `invited` address. Session only.
+      tags: [invitations]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationBatch'
+            example:
+              emails:
+                - marc.roux@ateliernord.fr
+                - lucie@exemple.fr
+                - ines.robert@ateliernord.fr
+              role: member
+      responses:
+        '200':
+          description: The outcome of each address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationBatchResult'
+              example:
+                invitations:
+                  - email: marc.roux@ateliernord.fr
+                    outcome: invited
+                    invitationId: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a70
+                  - email: lucie@exemple.fr
+                    outcome: invited
+                    invitationId: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a75
+                  - email: ines.robert@ateliernord.fr
+                    outcome: already-member
+                    invitationId: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    get:
+      operationId: listInvitations
+      summary: List the pending invitations
+      description: |
+        Lists the invitations of the current organization that were neither accepted, refused nor
+        revoked, the expired ones included ("Invitations en attente {count}"), the most recently
+        sent first. `total` counts them all. Owner and admins only. Session only.
+      tags: [invitations]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of pending invitations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPage'
+              example:
+                items:
+                  - id: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a70
+                    email: marc.roux@ateliernord.fr
+                    role: member
+                    invitedBy:
+                      userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                      name: Inès Robert
+                    status: pending
+                    sentAt: '2026-11-06T16:20:00Z'
+                    expiresAt: '2026-11-13T16:20:00Z'
+                    version: 1
+                  - id: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a71
+                    email: j.faure@cabinet-faure.fr
+                    role: guest
+                    invitedBy:
+                      userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                      name: Camille Martin
+                    status: pending
+                    sentAt: '2026-11-03T11:05:00Z'
+                    expiresAt: '2026-11-10T11:05:00Z'
+                    version: 1
+                  - id: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a72
+                    email: atelier@nordstudio.fr
+                    role: member
+                    invitedBy:
+                      userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                      name: Hugo Dubois
+                    status: expired
+                    sentAt: '2026-10-26T15:00:00Z'
+                    expiresAt: '2026-11-02T15:00:00Z'
+                    version: 1
+                nextCursor: null
+                total: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/invitations/{invitationId}:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    delete:
+      operationId: revokeInvitation
+      summary: Revoke an invitation
+      description: |
+        Revokes a pending invitation, expired or not ("Annuler", "Invitation annulée"): it leaves
+        the pending list and its link stops working (`409 invitation.revoked` for the invitee).
+        Revoking it again answers `204`; an invitation already accepted or refused answers
+        `409 invitation.answered`. Owner and admins only. Emits nothing. Session only.
+      tags: [invitations]
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: The invitation is revoked.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/InvitationNotFound'
+        '409':
+          $ref: '#/components/responses/InvitationAnswered'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/invitations/{invitationId}/resend:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      operationId: resendInvitation
+      summary: Send an invitation again
+      description: |
+        Sends the email of a pending invitation again, expired or not, and starts its 7 days again
+        ("Renvoyer", "Invitation renvoyée"). A revoked invitation answers `409 invitation.revoked`,
+        an accepted or refused one `409 invitation.answered`. Owner and admins only.
+
+        An action: answers `200` with the invitation. Emits `invitation.issued.v1` with the next
+        version. Session only.
+      tags: [invitations]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The invitation, with its new expiry.
+          headers:
+            ETag:
+              $ref: '#/components/headers/InvitationETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+              example:
+                id: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a72
+                email: atelier@nordstudio.fr
+                role: member
+                invitedBy:
+                  userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                  name: Hugo Dubois
+                status: pending
+                sentAt: '2026-11-08T09:30:00Z'
+                expiresAt: '2026-11-15T09:30:00Z'
+                version: 2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/InvitationNotFound'
+        '409':
+          $ref: '#/components/responses/InvitationClosed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/invitations:
+    get:
+      operationId: listReceivedInvitations
+      summary: List the invitations addressed to the caller
+      description: |
+        Lists the pending invitations, not expired, addressed to the verified address of the
+        caller, from every organization ("Invitation en attente"), the most recently sent first.
+        Works without a current organization. Session only.
+      tags: [invitations]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of invitations addressed to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceivedInvitationPage'
+              example:
+                items:
+                  - id: 019a6b20-5e6f-7a8b-9c0d-1e2f3a4b5c80
+                    organization:
+                      id: 019a5f41-7c2e-7a3b-9d4f-6e8a0b2c4d61
+                      name: Coopérative Lumen
+                      slug: lumen
+                      description: null
+                      memberCount: 41
+                    role: member
+                    invitedBy:
+                      userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                      name: Inès Robert
+                    expiresAt: '2026-11-15T10:00:00Z'
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SessionReadForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/invitations/{invitationId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      operationId: acceptInvitation
+      summary: Accept an invitation
+      description: |
+        Makes the caller a member of the organization of the invitation, with its role
+        ("Accepter"). The session does not move to it: the web application then calls
+        `PUT /v1/session/organization`, retrying for a few seconds.
+
+        The checks run in this order:
+
+        1. The invitation exists: `404 invitation.not-found` otherwise, also for a few seconds
+           after the verification of the address of the caller.
+        2. Its address is the verified address of the caller: `403 invitation.email-mismatch`
+           otherwise.
+        3. It is still pending: `409 invitation.revoked`, `409 invitation.answered` (accepted or
+           refused already) or `409 invitation.expired`.
+
+        An action: answers `200` with the organization as the picker lists it. Emits
+        `member.joined.v1`. Session only.
+      tags: [invitations]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The caller is a member of the organization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinedOrganization'
+              example:
+                id: 019a5f41-7c2e-7a3b-9d4f-6e8a0b2c4d61
+                name: Coopérative Lumen
+                slug: lumen
+                role: member
+                memberCount: 42
+                plan: free
+                joinedAt: '2026-11-08T10:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/InvitationForbidden'
+        '404':
+          $ref: '#/components/responses/InvitationNotFound'
+        '409':
+          $ref: '#/components/responses/InvitationNotPending'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/invitations/{invitationId}/refuse:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      operationId: refuseInvitation
+      summary: Refuse an invitation
+      description: |
+        Refuses an invitation addressed to the caller ("Refuser"): it leaves both lists, and the
+        person who invited can send a new one ("Inès Robert pourra vous en envoyer une nouvelle.").
+        Same checks as the acceptance. Emits nothing. Session only.
+      tags: [invitations]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '204':
+          description: The invitation is refused.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/InvitationForbidden'
+        '404':
+          $ref: '#/components/responses/InvitationNotFound'
+        '409':
+          $ref: '#/components/responses/InvitationNotPending'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: |
+        Opaque session token of `openapi/public/auth.yaml`, set by the gateway on sign-in and checked
+        with identity-service on every request. A session holds every scope.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: |
+        Personal API token (`cw_pat_…`) of `openapi/public/api-tokens.yaml`, sent as
+        `Authorization: Bearer`. It acts with the rights of its user in the organization it was
+        created in, within the scopes each operation lists.
+  parameters:
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      description: Id of the member, as the member list gives it; not the id of the account.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41]
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      description: Id of the invitation, as a list or the email link gives it.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a70]
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: '`"<version>"` the change was made from, as the `ETag` gave it.'
+      schema:
+        type: string
+        examples: ['"2"']
+  headers:
+    ETag:
+      description: Version of the member, `"<version>"`.
+      schema:
+        type: string
+    InvitationETag:
+      description: Version of the invitation, `"<version>"`.
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110).
+      schema:
+        type: integer
+        minimum: 1
+  examples:
+    InesRobert:
+      summary: Inès Robert, admin of Atelier Nord
+      value:
+        id: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41
+        userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+        name: Inès Robert
+        email: ines.robert@ateliernord.fr
+        role: admin
+        joinedAt: '2026-03-03T09:40:00Z'
+        version: 2
+    CrossSiteRefused:
+      summary: Request from another site
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.csrf-rejected
+    ApiTokenNotAccepted:
+      summary: Personal API token on a session-only route
+      value:
+        type: about:blank
+        title: Cette requête n’accepte pas de jeton d’API.
+        status: 403
+        code: auth.api-token-not-accepted
+    ScopeMissing:
+      summary: Personal API token without the scope
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [members:read]
+    OrganizationNotSelected:
+      summary: No current organization
+      value:
+        type: about:blank
+        title: Choisissez une organisation pour continuer.
+        status: 403
+        code: organization.not-selected
+    RoleForbidden:
+      summary: Role not allowed
+      value:
+        type: about:blank
+        title: Votre rôle ne permet pas cette action.
+        status: 403
+        code: organization.role-forbidden
+    InvitationRevoked:
+      summary: Invitation revoked
+      value:
+        type: about:blank
+        title: Cette invitation a été annulée.
+        status: 409
+        code: invitation.revoked
+    InvitationAnswered:
+      summary: Invitation accepted or refused already
+      value:
+        type: about:blank
+        title: Vous avez déjà répondu à cette invitation.
+        status: 409
+        code: invitation.answered
+        details:
+          status: accepted
+    InvitationExpired:
+      summary: Invitation expired
+      value:
+        type: about:blank
+        title: 'Cette invitation a expiré : demandez-en une nouvelle à un administrateur de l’organisation.'
+        status: 409
+        code: invitation.expired
+        details:
+          expiresAt: '2026-11-02T15:00:00Z'
+    RateLimited:
+      summary: Gateway limit reached
+      value:
+        type: about:blank
+        title: 'Trop de requêtes : réessayez dans un instant.'
+        status: 429
+        code: rate-limit.exceeded
+  responses:
+    BadRequest:
+      description: |
+        The request does not match the schema: `request.invalid`, with one `details.issues` entry
+        per failed member (`path` is the dotted path of the member, empty for the body itself).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: body
+                  path: emails.1
+                  code: invalid_format
+                  message: Invalid email address
+    Unauthenticated:
+      description: |
+        - `auth.session-required`: the request carries neither a session cookie nor a bearer token;
+        - `auth.session-expired`: the cookie names a session that ended;
+        - `auth.api-token-invalid`: the bearer token is unknown, revoked or expired, or its user
+          no longer belongs to its organization ("recevront une erreur 401 immédiatement").
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sessionRequired:
+              summary: No credential
+              value:
+                type: about:blank
+                title: Connectez-vous pour continuer.
+                status: 401
+                code: auth.session-required
+            sessionExpired:
+              summary: Session ended
+              value:
+                type: about:blank
+                title: Session expirée
+                status: 401
+                code: auth.session-expired
+            apiTokenInvalid:
+              summary: Personal API token no longer valid
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    MembersReadForbidden:
+      description: |
+        - `auth.scope-missing`: the personal API token lacks `members:read`;
+          `details.requiredScopes` lists what the route needs;
+        - `organization.not-selected`: the session has no current organization;
+        - `organization.role-forbidden`: guests do not read the member list.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissing'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            roleForbidden:
+              $ref: '#/components/examples/RoleForbidden'
+    OrganizationReadForbidden:
+      description: |
+        - `organization.not-selected`: the session has no current organization;
+        - `organization.role-forbidden`: only the owner and the admins see pending invitations;
+        - `auth.api-token-not-accepted`: a personal API token cannot call this route.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            roleForbidden:
+              $ref: '#/components/examples/RoleForbidden'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    OrganizationWriteForbidden:
+      description: |
+        - `organization.not-selected`: the session has no current organization;
+        - `organization.role-forbidden`: only the owner and the admins invite, change roles and
+          remove members;
+        - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
+        - `auth.api-token-not-accepted`: a personal API token cannot call this route.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            roleForbidden:
+              $ref: '#/components/examples/RoleForbidden'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    SessionReadForbidden:
+      description: '`auth.api-token-not-accepted`: a personal API token cannot call this route.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    InvitationForbidden:
+      description: |
+        - `invitation.email-mismatch`: the invitation was sent to another address than the verified
+          address of the caller;
+        - `auth.csrf-rejected`, `auth.api-token-not-accepted`: see `OrganizationWriteForbidden`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            emailMismatch:
+              summary: Invitation sent to another address
+              value:
+                type: about:blank
+                title: Cette invitation a été envoyée à une autre adresse e-mail.
+                status: 403
+                code: invitation.email-mismatch
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    OrganizationNotFound:
+      description: '`organization.not-found`: the caller no longer belongs to the current organization of the session.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    MemberNotFound:
+      description: '`member.not-found`: no member with this id in the current organization.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Membre introuvable.
+            status: 404
+            code: member.not-found
+    InvitationNotFound:
+      description: |
+        `invitation.not-found`: no invitation with this id in the current organization, or, for the
+        routes under `/v1/me/invitations`, none at all, also while organization-service does not
+        know the verified address of the caller yet.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Invitation introuvable.
+            status: 404
+            code: invitation.not-found
+    InvitationAnswered:
+      description: '`invitation.answered`: the invitation was accepted or refused already; `details.status` says which.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invitationAnswered:
+              $ref: '#/components/examples/InvitationAnswered'
+    InvitationClosed:
+      description: |
+        - `invitation.revoked`: the invitation was revoked;
+        - `invitation.answered`: it was accepted or refused already.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invitationRevoked:
+              $ref: '#/components/examples/InvitationRevoked'
+            invitationAnswered:
+              $ref: '#/components/examples/InvitationAnswered'
+    InvitationNotPending:
+      description: |
+        - `invitation.revoked`: the invitation was revoked;
+        - `invitation.answered`: it was accepted or refused already, `details.status` says which;
+        - `invitation.expired`: its 7 days are over, `details.expiresAt` says when they ended.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invitationRevoked:
+              $ref: '#/components/examples/InvitationRevoked'
+            invitationAnswered:
+              $ref: '#/components/examples/InvitationAnswered'
+            invitationExpired:
+              $ref: '#/components/examples/InvitationExpired'
+    OwnerProtected:
+      description: '`member.owner-protected`: the owner is neither removed nor given another role.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Le propriétaire de l’organisation ne peut être ni retiré ni changé de rôle.
+            status: 422
+            code: member.owner-protected
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 3
+    RateLimited:
+      description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    Unavailable:
+      description: |
+        organization-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+        `upstream.deadline-exceeded`, with `details.service`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+            details:
+              service: organization-service
+  schemas:
+    Email:
+      type: string
+      format: email
+      maxLength: 254
+      description: Email address, compared without regard to case.
+      examples: [marc.roux@ateliernord.fr]
+    Role:
+      type: string
+      description: |
+        Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
+        ("Membre") or `guest` ("Invité").
+      enum: [owner, admin, member, guest]
+    AssignableRole:
+      type: string
+      description: |
+        A role that can be given: `admin` ("Administrateur — gère membres et réglages"), `member`
+        ("Membre — accès aux espaces partagés") or `guest` ("Invité — accès à des listes précises,
+        gratuit"). Never `owner`.
+      enum: [admin, member, guest]
+    EmptyRequest:
+      type: object
+      additionalProperties: false
+      description: 'Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.'
+    Member:
+      type: object
+      required: [id, userId, name, email, role, joinedAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Id of the membership, the `memberId` of the routes.
+        userId:
+          type: string
+          format: uuid
+          description: Id of the account; the web application marks its own row "(vous)" with it.
+        name:
+          type: string
+          description: Full name of the account; the web application derives the initials from it.
+          examples: [Inès Robert]
+        email:
+          $ref: '#/components/schemas/Email'
+        role:
+          $ref: '#/components/schemas/Role'
+        joinedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+          description: Version of the membership, also sent as `ETag`.
+    RoleCounts:
+      type: object
+      required: [owner, admin, member, guest]
+      description: Members of the organization by role, whatever the filters of the request.
+      properties:
+        owner:
+          type: integer
+          minimum: 0
+        admin:
+          type: integer
+          minimum: 0
+        member:
+          type: integer
+          minimum: 0
+        guest:
+          type: integer
+          minimum: 0
+    MemberPage:
+      type: object
+      required: [items, nextCursor, total, counts]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Members that match `search` and `role`, on every page.
+        counts:
+          $ref: '#/components/schemas/RoleCounts'
+    MemberPatch:
+      type: object
+      required: [role]
+      description: JSON Merge Patch of a member; the role is the one member that changes.
+      properties:
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+    InvitationBatch:
+      type: object
+      required: [emails]
+      properties:
+        emails:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: |
+            Addresses to invite ("Adresses e-mail"); the web application splits what is typed on
+            spaces, commas and semicolons. The same address twice counts once.
+          items:
+            $ref: '#/components/schemas/Email'
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+          default: member
+          description: Role of every address of the batch ("Rôle"); `member` by default.
+    InvitationResult:
+      type: object
+      required: [email, outcome, invitationId]
+      description: What became of one address of an invitation batch.
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        outcome:
+          type: string
+          description: |
+            `invited`: an invitation was created and its email sent. `already-member`: the address
+            is that of a member, nothing was sent. `already-invited`: a pending invitation of the
+            address exists, nothing was sent (`POST /v1/invitations/{invitationId}/resend` sends it
+            again). Later versions add outcomes (seats); a client counts an unknown one as not
+            sent.
+          x-extensible-enum: [invited, already-member, already-invited]
+        invitationId:
+          type: [string, 'null']
+          format: uuid
+          description: The invitation created, or the pending one for `already-invited`; `null` for `already-member`.
+    InvitationBatchResult:
+      type: object
+      required: [invitations]
+      properties:
+        invitations:
+          type: array
+          description: One entry per distinct address of the request, in its order.
+          items:
+            $ref: '#/components/schemas/InvitationResult'
+    Inviter:
+      type: object
+      required: [userId, name]
+      description: Who sent the invitation ("Invité par {nom}").
+      properties:
+        userId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples: [Inès Robert]
+    Invitation:
+      type: object
+      required: [id, email, role, invitedBy, status, sentAt, expiresAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          $ref: '#/components/schemas/Email'
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+        invitedBy:
+          $ref: '#/components/schemas/Inviter'
+        status:
+          type: string
+          description: |
+            `pending` ("Expire dans {n} jours") or `expired` ("Expirée le {date}"); the list holds
+            no other. Later versions may add statuses (`x-extensible-enum`).
+          x-extensible-enum: [pending, expired]
+        sentAt:
+          type: string
+          format: date-time
+          description: When the email was last sent; a resend moves it.
+        expiresAt:
+          type: string
+          format: date-time
+          description: '`sentAt` plus 7 days.'
+        version:
+          type: integer
+          minimum: 1
+          description: Version of the invitation; a resend adds one.
+    InvitationPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Pending invitations of the organization, on every page.
+    InvitingOrganization:
+      type: object
+      required: [id, name, slug, description, memberCount]
+      description: The organization of an invitation, as the invitee sees it before joining.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples: [Coopérative Lumen]
+        slug:
+          type: string
+          examples: [lumen]
+        description:
+          type: [string, 'null']
+          description: The description of the organization ("Affichée sur la page d'invitation."), `null` when there is none.
+        memberCount:
+          type: integer
+          minimum: 1
+          description: Members that take a seat; guests are not counted.
+    ReceivedInvitation:
+      type: object
+      required: [id, organization, role, invitedBy, expiresAt]
+      description: An invitation addressed to the caller ("Inès Robert vous invite comme Membre · expire le 15 nov.").
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization:
+          $ref: '#/components/schemas/InvitingOrganization'
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+        invitedBy:
+          $ref: '#/components/schemas/Inviter'
+        expiresAt:
+          type: string
+          format: date-time
+    ReceivedInvitationPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceivedInvitation'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    JoinedOrganization:
+      type: object
+      required: [id, name, slug, role, memberCount, plan, joinedAt]
+      description: |
+        The organization just joined, with the members of `MyOrganization` of
+        `openapi/public/organizations.yaml`, so that the picker adds it ("Nouveau").
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples: [Coopérative Lumen]
+        slug:
+          type: string
+          examples: [lumen]
+        role:
+          $ref: '#/components/schemas/Role'
+          description: Role of the caller in it, the role of the invitation.
+        memberCount:
+          type: integer
+          minimum: 1
+          description: Members that take a seat, the caller included unless a guest.
+        plan:
+          type: string
+          description: '`free`, `team` or `enterprise`; always `free` until billing exists.'
+          x-extensible-enum: [free, team, enterprise]
+        joinedAt:
+          type: string
+          format: date-time

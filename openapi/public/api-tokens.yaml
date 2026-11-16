@@ -1,0 +1,456 @@
+# Public routes of personal API tokens: create one (its secret is shown once), list them and revoke
+# one. Served by cadenway-api-gateway, which calls openapi/internal/identity-service.yaml for each of
+# them.
+openapi: 3.1.0
+info:
+  title: Cadenway personal API tokens
+  version: 1.0.0
+  description: |
+    How a signed-in person creates the personal API tokens their scripts and integrations call the
+    API with ("Jetons d'API", "Jetons personnels pour l'API REST et les webhooks. Ils agissent avec
+    vos droits."), lists them and revokes them. The API gateway serves these routes and answers
+    them through identity-service.
+
+    **A token.** A token belongs to its user and to the current organization of the session that
+    created it, and acts with the rights of its user in that organization, within its scopes. It
+    is sent as `Authorization: Bearer <token>` to `https://api.cadenway.com/v1`. Its secret is
+    `cw_pat_` followed by 30 base62 characters and 6 characters of CRC32 check; identity-service
+    keeps only its SHA-256 hash and its first 11 characters, shown as `prefix`. A token stops
+    working when it is revoked, when it expires, or when its user no longer belongs to its
+    organization; a request with it then answers `401 auth.api-token-invalid`. Its last use is
+    recorded at most once a minute.
+
+    **Scopes.** `tasks:read` ("Lire les tâches, listes et espaces"), `tasks:write` ("Créer et
+    modifier des tâches"), `members:read` ("Lire les membres de l’organisation") and
+    `webhooks:manage` ("Créer et supprimer des webhooks"). Each public operation lists, in its
+    `security`, the scope a token needs (`apiToken: [members:read]`); an operation that lists the
+    session alone refuses every token (`403 auth.api-token-not-accepted`), and a token without the
+    scope gets `403 auth.scope-missing`. A session holds every scope.
+
+    **Session only.** Only a session creates, lists or revokes tokens, in its current organization
+    (`403 organization.not-selected` without one): a token never manages tokens.
+
+    **Cross-site requests.** A request with an unsafe method authenticated by the cookie carries an
+    `Origin` equal to one of the gateway's allowed origins and, when it has a body,
+    `Content-Type: application/json` (`403 auth.csrf-rejected` otherwise). A `DELETE` has no
+    body: a browser sends one only after a CORS preflight, so its `Origin` is the check.
+
+    **Rate limit.** 600 requests per minute per session or personal token, counted by the gateway;
+    beyond, `429 rate-limit.exceeded` with `Retry-After` ("600 requêtes par minute et par jeton").
+
+    **Errors.** As in `openapi/public/auth.yaml`: a stable `code`, a French `title` for the codes
+    the web application shows to the person, the English reason phrase otherwise.
+
+    **Later versions** add, without changing what is here: the API call counts of the
+    organization ("Appels d'API d'Atelier Nord ce mois", billing) and new scopes.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves every route, through openapi/internal/identity-service.yaml, and checks the scopes of every public operation.
+    - repository: cadenway-webapp
+      uses: Calls every route through @cadenway/api-client (account "Jetons d'API").
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging. The local stack of cadenway-ops serves the same routes on `api.<DOMAIN>`.
+tags:
+  - name: api-tokens
+    description: Personal API tokens of the caller in the current organization.
+paths:
+  /v1/api-tokens:
+    post:
+      operationId: createApiToken
+      summary: Create a personal API token
+      description: |
+        Creates a token of the caller in the current organization of the session ("Créer un
+        jeton", "Accordez seulement les portées nécessaires."). The answer carries the secret, the
+        only time it is ever returned ("Copiez-le maintenant : il ne sera plus affiché."): neither
+        the gateway nor identity-service log it, and no route gives it again. Session only.
+      tags: [api-tokens]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiTokenCreation'
+            example:
+              name: Synchronisation GitLab
+              scopes: [tasks:read]
+              expiration: 30-days
+      responses:
+        '201':
+          description: The token exists; its secret is in `secret`, once.
+          headers:
+            Location:
+              description: '`/v1/api-tokens/<apiTokenId>`, the URL that revokes the token.'
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiTokenCreated'
+              example:
+                apiToken:
+                  id: 019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e90
+                  name: Synchronisation GitLab
+                  prefix: cw_pat_Exam
+                  scopes: [tasks:read]
+                  organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                  createdAt: '2026-11-08T14:02:00Z'
+                  expiresAt: '2026-12-08T14:02:00Z'
+                  lastUsedAt: null
+                secret: cw_pat_ExampleOnlyNotARealToken000000000000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TokenWriteForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    get:
+      operationId: listApiTokens
+      summary: List the personal API tokens
+      description: |
+        Lists the tokens of the caller in the current organization that are neither revoked nor
+        expired ("Aucun jeton actif" when there is none), the most recently created first. A token
+        is never listed with its secret. Session only.
+      tags: [api-tokens]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of tokens.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiTokenPage'
+              example:
+                items:
+                  - id: 019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e90
+                    name: Synchronisation GitLab
+                    prefix: cw_pat_Exam
+                    scopes: [tasks:read]
+                    organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                    createdAt: '2026-11-08T14:02:00Z'
+                    expiresAt: '2026-12-08T14:02:00Z'
+                    lastUsedAt: '2026-11-08T14:10:00Z'
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TokenReadForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/api-tokens/{apiTokenId}:
+    delete:
+      operationId: revokeApiToken
+      summary: Revoke a personal API token
+      description: |
+        Revokes a token of the caller in the current organization ("Révoquer", "{nom} ne peut plus
+        appeler l’API."): the next request with it answers `401 auth.api-token-invalid`, since the
+        gateway checks every token with identity-service, without a cache. Revoking it again answers
+        `204`; a token of another user or organization, or an unknown id, answers
+        `404 api-token.not-found`. Session only.
+      tags: [api-tokens]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: apiTokenId
+          in: path
+          required: true
+          description: Id of the token, as the list gives it.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e90]
+      responses:
+        '204':
+          description: The token is revoked.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TokenWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ApiTokenNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: |
+        Opaque session token of `openapi/public/auth.yaml`, set by the gateway on sign-in and checked
+        with identity-service on every request. A session holds every scope.
+  headers:
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110).
+      schema:
+        type: integer
+        minimum: 1
+  examples:
+    ApiTokenNotAccepted:
+      summary: Personal API token on a session-only route
+      value:
+        type: about:blank
+        title: Cette requête n’accepte pas de jeton d’API.
+        status: 403
+        code: auth.api-token-not-accepted
+    OrganizationNotSelected:
+      summary: No current organization
+      value:
+        type: about:blank
+        title: Choisissez une organisation pour continuer.
+        status: 403
+        code: organization.not-selected
+    RateLimited:
+      summary: Gateway limit reached
+      value:
+        type: about:blank
+        title: 'Trop de requêtes : réessayez dans un instant.'
+        status: 429
+        code: rate-limit.exceeded
+  responses:
+    BadRequest:
+      description: |
+        The request does not match the schema: `request.invalid`, with one `details.issues` entry
+        per failed member (`path` is the dotted path of the member, empty for the body itself).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: body
+                  path: scopes
+                  code: too_small
+                  message: Too small
+    Unauthenticated:
+      description: |
+        - `auth.session-required`: the request carries neither a session cookie nor a bearer token;
+        - `auth.session-expired`: the cookie names a session that ended;
+        - `auth.api-token-invalid`: the bearer token is unknown, revoked or expired, or its user
+          no longer belongs to its organization.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sessionRequired:
+              summary: No credential
+              value:
+                type: about:blank
+                title: Connectez-vous pour continuer.
+                status: 401
+                code: auth.session-required
+            sessionExpired:
+              summary: Session ended
+              value:
+                type: about:blank
+                title: Session expirée
+                status: 401
+                code: auth.session-expired
+            apiTokenInvalid:
+              summary: Personal API token no longer valid
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    TokenReadForbidden:
+      description: |
+        - `organization.not-selected`: the session has no current organization;
+        - `auth.api-token-not-accepted`: a personal API token never manages tokens.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    TokenWriteForbidden:
+      description: |
+        - `organization.not-selected`: the session has no current organization;
+        - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
+        - `auth.api-token-not-accepted`: a personal API token never manages tokens.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            crossSiteRefused:
+              summary: Request from another site
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.csrf-rejected
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    ApiTokenNotFound:
+      description: '`api-token.not-found`: no token with this id belongs to the caller in the current organization.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Jeton introuvable.
+            status: 404
+            code: api-token.not-found
+    RateLimited:
+      description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    Unavailable:
+      description: |
+        identity-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+        `upstream.deadline-exceeded`, with `details.service`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+            details:
+              service: identity-service
+  schemas:
+    ApiTokenScope:
+      type: string
+      description: |
+        What a token may do: `tasks:read` ("Lire les tâches, listes et espaces"), `tasks:write`
+        ("Créer et modifier des tâches"), `members:read` ("Lire les membres de l’organisation") or
+        `webhooks:manage` ("Créer et supprimer des webhooks"). Later versions add scopes; this set
+        is also the one `cadenway/security-scopes` accepts in a security requirement.
+      enum: [tasks:read, tasks:write, members:read, webhooks:manage]
+    ApiTokenCreation:
+      type: object
+      required: [name, scopes]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: |
+            Name of the token ("Nom"), as typed; surrounding spaces are removed, and a name made
+            only of spaces is refused with `400 request.invalid`.
+          examples: [Synchronisation GitLab]
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 4
+          description: Scopes of the token ("Portées"), at least one; the same scope twice counts once.
+          items:
+            $ref: '#/components/schemas/ApiTokenScope'
+        expiration:
+          type: string
+          default: 30-days
+          description: |
+            "Expiration": `30-days` ("30 jours", by default), `90-days` ("90 jours"), `1-year`
+            ("1 an") or `never` ("Sans expiration"), counted from the creation.
+          enum: [30-days, 90-days, 1-year, never]
+    ApiToken:
+      type: object
+      required: [id, name, prefix, scopes, organizationId, createdAt, expiresAt, lastUsedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples: [Synchronisation GitLab]
+        prefix:
+          type: string
+          minLength: 11
+          maxLength: 11
+          description: First 11 characters of the secret, shown as `cw_pat_xxxx…` to recognize the token.
+          examples: [cw_pat_Exam]
+        scopes:
+          type: array
+          description: |
+            Scopes of the token. Later versions add scopes (`x-extensible-enum`); a client shows an
+            unknown one as is.
+          items:
+            type: string
+            x-extensible-enum: [tasks:read, tasks:write, members:read, webhooks:manage]
+        organizationId:
+          type: string
+          format: uuid
+          description: Organization the token acts in, the current one of the session that created it.
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the token stops working; `null` for `never` ("Sans expiration").
+        lastUsedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Last request made with it, to the minute; `null` before the first ("Jamais").
+    ApiTokenCreated:
+      type: object
+      required: [apiToken, secret]
+      properties:
+        apiToken:
+          $ref: '#/components/schemas/ApiToken'
+        secret:
+          type: string
+          pattern: '^cw_pat_[0-9A-Za-z]{36}$'
+          description: |
+            The token itself, returned here only, once: `cw_pat_`, 30 base62 characters and 6 of
+            CRC32 check. A secret: never logged, never stored in clear.
+    ApiTokenPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiToken'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'

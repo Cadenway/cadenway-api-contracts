@@ -9,6 +9,7 @@ import {
   type UserSignedUpV1,
 } from '../../packages/contracts/src/generated/events/identity-service';
 import {
+  GetUserResponse,
   IntrospectTokenResponse,
   SignInWithCodeInternalBody,
   SignInWithPasswordInternalBody,
@@ -84,6 +85,7 @@ describe('events of identity-service', () => {
       'one-time-code.issued.v1',
       'session.revoked.v1',
       'user.email-verified.v1',
+      'user.profile-updated.v1',
       'user.signed-up.v1',
     ]);
   });
@@ -175,6 +177,26 @@ describe('routes of authentication', () => {
         password: 'atelier-nord-sprint-14',
       }).success,
     ).toBe(false);
+  });
+
+  it('reads an account without the profile members, so that the gateway may move first', () => {
+    const account: Record<string, unknown> = {
+      id: USER_ID,
+      name: 'Camille Martin',
+      email: 'camille.martin@ateliernord.fr',
+      language: 'fr',
+      version: 2,
+    };
+
+    expect(GetUserResponse.parse(account)).toEqual(account);
+    expect(
+      GetUserResponse.parse({
+        ...account,
+        displayName: 'camille',
+        jobTitle: 'Responsable produit',
+        timeZone: 'Europe/Paris',
+      }),
+    ).toMatchObject({ displayName: 'camille', timeZone: 'Europe/Paris' });
   });
 
   it('introspects to an active session without organization, or to inactive only', () => {

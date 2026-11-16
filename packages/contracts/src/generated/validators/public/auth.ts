@@ -147,15 +147,20 @@ export const VerifySignUpBody = zod.object({
 
 export const verifySignUpResponseUserEmailMax = 254;
 
+export const verifySignUpResponseUserTimeZoneMax = 64;
+
 
 
 
 export const VerifySignUpResponse = zod.object({
   "user": zod.object({
   "id": zod.uuid(),
-  "name": zod.string().describe('Full name; the web application derives the initials from it.'),
+  "name": zod.string().describe('Full name ("Nom complet"); the web application derives the initials from it.'),
   "email": zod.email().max(verifySignUpResponseUserEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
+  "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "timeZone": zod.string().min(1).max(verifySignUpResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`.')
 }),
   "session": zod.object({
@@ -194,15 +199,20 @@ export const SignInWithPasswordBody = zod.object({
 
 export const signInWithPasswordResponseUserEmailMax = 254;
 
+export const signInWithPasswordResponseUserTimeZoneMax = 64;
+
 
 
 
 export const SignInWithPasswordResponse = zod.object({
   "user": zod.object({
   "id": zod.uuid(),
-  "name": zod.string().describe('Full name; the web application derives the initials from it.'),
+  "name": zod.string().describe('Full name ("Nom complet"); the web application derives the initials from it.'),
   "email": zod.email().max(signInWithPasswordResponseUserEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
+  "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "timeZone": zod.string().min(1).max(signInWithPasswordResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`.')
 }),
   "session": zod.object({
@@ -260,15 +270,20 @@ export const SignInWithCodeBody = zod.object({
 
 export const signInWithCodeResponseUserEmailMax = 254;
 
+export const signInWithCodeResponseUserTimeZoneMax = 64;
+
 
 
 
 export const SignInWithCodeResponse = zod.object({
   "user": zod.object({
   "id": zod.uuid(),
-  "name": zod.string().describe('Full name; the web application derives the initials from it.'),
+  "name": zod.string().describe('Full name ("Nom complet"); the web application derives the initials from it.'),
   "email": zod.email().max(signInWithCodeResponseUserEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
+  "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "timeZone": zod.string().min(1).max(signInWithCodeResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`.')
 }),
   "session": zod.object({
@@ -284,7 +299,7 @@ export const SignInWithCodeResponse = zod.object({
  * ended or no cookie came: signing out twice is not an error.
  *
  * The body is an empty JSON object: the cross-site check needs
- * `Content-Type: application/json`. Scopes: none.
+ * `Content-Type: application/json`. A bearer token, if any, is ignored. Scopes: none.
  * @summary Sign out of the current session
  */
 export const SignOutBody = zod.object({
@@ -295,19 +310,85 @@ export const SignOutResponse = zod.void()
 
 
 /**
- * Returns the account of the session. No organization yet: memberships and the current
- * organization come in a later version, as new members. Scopes: none.
+ * Returns the account of the session and its profile ("Profil"). The organizations of the
+ * account are listed by `GET /v1/organizations` and the current one is read by
+ * `GET /v1/organization` (`openapi/public/organizations.yaml`). Session only: a personal API
+ * token gets `403 auth.api-token-not-accepted`.
  * @summary Read the current user
  */
 export const getCurrentUserResponseEmailMax = 254;
+
+export const getCurrentUserResponseTimeZoneMax = 64;
 
 
 
 
 export const GetCurrentUserResponse = zod.object({
   "id": zod.uuid(),
-  "name": zod.string().describe('Full name; the web application derives the initials from it.'),
+  "name": zod.string().describe('Full name ("Nom complet"); the web application derives the initials from it.'),
   "email": zod.email().max(getCurrentUserResponseEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
+  "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "timeZone": zod.string().min(1).max(getCurrentUserResponseTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`.')
+})
+
+
+/**
+ * Applies a JSON Merge Patch (RFC 7396) to the profile of the account ("Informations
+ * personnelles" and "Langue"): a member left out is unchanged, `null` clears `displayName` or
+ * `jobTitle`. Colleagues see the change at once ("Vos collègues verront les changements tout
+ * de suite.").
+ *
+ * - `timeZone` is an IANA time zone name; a name identity-service does not know answers
+ *   `400 request.invalid` with an issue on `timeZone`.
+ * - `If-Match` is optional; a version that is no longer the current one answers
+ *   `412 request.version-mismatch`.
+ * - The address, the password and the photo do not change here: their own routes come in a
+ *   later version.
+ *
+ * Emits `user.profile-updated.v1` when something changed; a patch that changes nothing
+ * answers `200` with the same version and emits nothing. Session only: a personal API token
+ * gets `403 auth.api-token-not-accepted`.
+ * @summary Update the profile of the current user
+ */
+export const UpdateCurrentUserHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const updateCurrentUserBodyNameMax = 120;
+
+export const updateCurrentUserBodyDisplayNameMax = 60;
+
+export const updateCurrentUserBodyJobTitleMax = 120;
+
+export const updateCurrentUserBodyTimeZoneMax = 64;
+
+
+
+export const UpdateCurrentUserBody = zod.object({
+  "name": zod.string().min(1).max(updateCurrentUserBodyNameMax).optional().describe('Full name ("Nom complet"), as typed; surrounding spaces are removed, and a name made only\nof spaces is refused with `400 request.invalid`.\n'),
+  "displayName": zod.string().min(1).max(updateCurrentUserBodyDisplayNameMax).nullish().describe('"Nom affiché", as typed and trimmed; `null` clears it.'),
+  "jobTitle": zod.string().min(1).max(updateCurrentUserBodyJobTitleMax).nullish().describe('"Poste (facultatif)", as typed and trimmed; `null` clears it.'),
+  "timeZone": zod.string().min(1).max(updateCurrentUserBodyTimeZoneMax).optional().describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
+  "language": zod.enum(['fr', 'en', 'de', 'es']).optional().describe('Language of the account and of its emails ("Langue"), a BCP 47 tag: `fr` (Français),\n`en` (English), `de` (Deutsch) or `es` (Español). Later versions may accept more.\n')
+}).describe('JSON Merge Patch of the profile; an empty object changes nothing.')
+
+export const updateCurrentUserResponseEmailMax = 254;
+
+export const updateCurrentUserResponseTimeZoneMax = 64;
+
+
+
+
+export const UpdateCurrentUserResponse = zod.object({
+  "id": zod.uuid(),
+  "name": zod.string().describe('Full name ("Nom complet"); the web application derives the initials from it.'),
+  "email": zod.email().max(updateCurrentUserResponseEmailMax).describe('Email address, compared without regard to case.'),
+  "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
+  "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "timeZone": zod.string().min(1).max(updateCurrentUserResponseTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`.')
 })

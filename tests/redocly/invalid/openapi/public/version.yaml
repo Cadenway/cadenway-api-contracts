@@ -20,6 +20,7 @@ paths:
       summary: List tasks
       description: Lists tasks.
       tags: [tasks]
+      security: []
       responses:
         '200':
           description: The tasks.

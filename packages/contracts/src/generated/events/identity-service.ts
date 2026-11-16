@@ -157,6 +157,64 @@ export const userEmailVerifiedV1Schema = zod.object({
   email: zod.email().max(254),
 }) satisfies zod.ZodType<UserEmailVerifiedV1>;
 
+/** Name of the event `user.profile-updated.v1`. The profile of an account changed. */
+export const USER_PROFILE_UPDATED_V1 = 'user.profile-updated.v1';
+
+/** Payload of the event `user.profile-updated.v1`. */
+export interface UserProfileUpdatedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the change was committed. */
+  occurredAt: string;
+  /** Always `null`, an account belongs to no organization. */
+  organizationId: string | null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the account after the change. */
+  version: number;
+  userId: string;
+  /** Full name. */
+  name: string;
+  /** Name used for the mentions; `null` when the person has none. */
+  displayName: string | null;
+  /** Job title; `null` when there is none. */
+  jobTitle: string | null;
+  /** IANA time zone name. */
+  timeZone: string;
+  /** BCP 47 language tag of the account. */
+  language: string;
+  /**
+   * Members that changed: `name`, `displayName`, `jobTitle`, `timeZone` or `language`
+   * today; later versions may name members added to the profile, which a consumer
+   * ignores.
+   */
+  changed: string[];
+}
+
+/** Validator of the payload of the event `user.profile-updated.v1`. */
+export const userProfileUpdatedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().nullable(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  userId: zod.uuid(),
+  name: zod.string().min(1).max(120),
+  displayName: zod.string().max(60).nullable(),
+  jobTitle: zod.string().max(120).nullable(),
+  timeZone: zod.string().min(1).max(64),
+  language: zod.string(),
+  changed: zod.array(zod.string()).min(1),
+}) satisfies zod.ZodType<UserProfileUpdatedV1>;
+
 /** Name of the event `user.signed-up.v1`. An account was created, not verified yet. */
 export const USER_SIGNED_UP_V1 = 'user.signed-up.v1';
 
@@ -202,7 +260,7 @@ export const userSignedUpV1Schema = zod.object({
 }) satisfies zod.ZodType<UserSignedUpV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, SESSION_REVOKED_V1, USER_EMAIL_VERIFIED_V1, USER_SIGNED_UP_V1] as const;
+export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, SESSION_REVOKED_V1, USER_EMAIL_VERIFIED_V1, USER_PROFILE_UPDATED_V1, USER_SIGNED_UP_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -222,6 +280,7 @@ export interface EventPayloads {
   'one-time-code.issued.v1': OneTimeCodeIssuedV1;
   'session.revoked.v1': SessionRevokedV1;
   'user.email-verified.v1': UserEmailVerifiedV1;
+  'user.profile-updated.v1': UserProfileUpdatedV1;
   'user.signed-up.v1': UserSignedUpV1;
 }
 
@@ -230,5 +289,6 @@ export const eventSchemas = {
   'one-time-code.issued.v1': oneTimeCodeIssuedV1Schema,
   'session.revoked.v1': sessionRevokedV1Schema,
   'user.email-verified.v1': userEmailVerifiedV1Schema,
+  'user.profile-updated.v1': userProfileUpdatedV1Schema,
   'user.signed-up.v1': userSignedUpV1Schema,
 } as const satisfies { readonly [Name in EventName]: zod.ZodType<EventPayloads[Name]> };

@@ -4,6 +4,7 @@
  */
 
 export * from './accountLockedResponse';
+export * from './apiTokenNotAcceptedResponse';
 export * from './badRequestResponse';
 export * from './codeRefusedResponse';
 export * from './codeRequest';
@@ -22,6 +23,9 @@ export * from './password';
 export * from './passwordSignIn';
 export * from './problem';
 export * from './problemDetails';
+export * from './profileForbiddenResponse';
+export * from './profilePatch';
+export * from './profilePatchLanguage';
 export * from './rateLimitedResponse';
 export * from './session';
 export * from './signedIn';
@@ -34,5 +38,7 @@ export * from './signUpRefusedResponse';
 export * from './signUpRequest';
 export * from './signUpVerification';
 export * from './signUpVerificationRefusedResponse';
+export * from './timeZone';
 export * from './unauthenticatedResponse';
 export * from './unavailableResponse';
+export * from './versionMismatchResponse';

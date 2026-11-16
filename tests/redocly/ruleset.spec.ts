@@ -203,8 +203,13 @@ describe('Redocly ruleset', () => {
     'components/http.yaml',
     'components/events.yaml',
     'openapi/public/auth.yaml',
+    'openapi/public/organizations.yaml',
+    'openapi/public/members.yaml',
+    'openapi/public/api-tokens.yaml',
     'openapi/internal/identity-service.yaml',
+    'openapi/internal/organization-service.yaml',
     'asyncapi/identity-service.yaml',
+    'asyncapi/organization-service.yaml',
   ])(
     'accepts %s',
     (document) => {
@@ -233,7 +238,13 @@ describe('Redocly ruleset', () => {
         'cadenway/path-plural-collection',
         'cadenway/path-prefix-public',
         'cadenway/problem-schema',
+        'cadenway/security-declared',
+        'cadenway/security-scopes',
       ],
+    ],
+    [
+      'tests/redocly/invalid/openapi/public/security.yaml',
+      ['cadenway/security-declared', 'cadenway/security-scopes'],
     ],
     ['tests/redocly/invalid/openapi/public/version.yaml', ['cadenway/openapi-version']],
     ['tests/redocly/invalid/openapi/internal/prefix.yaml', ['cadenway/path-prefix-internal']],
@@ -264,6 +275,29 @@ describe('Redocly ruleset', () => {
         '#/channels/notBoolean',
         '#/channels/otherName',
         '#/channels/plainOnRestricted',
+      ]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'reports each security check of a public operation where it fails',
+    () => {
+      const pointers: string[] = lint('tests/redocly/invalid/openapi/public/security.yaml')
+        .filter((finding) => finding.ruleId.startsWith('cadenway/security-'))
+        .map((finding) => `${finding.ruleId} ${finding.location[0]?.pointer ?? ''}`);
+
+      expect(pointers.sort()).toEqual([
+        'cadenway/security-declared #/paths/~1v1~1no-security/get',
+        'cadenway/security-scopes #/components/schemas/ApiTokenScope',
+        'cadenway/security-scopes #/paths/~1v1~1combined/get/security',
+        'cadenway/security-scopes #/paths/~1v1~1combined/get/security/0',
+        'cadenway/security-scopes #/paths/~1v1~1cookie-scope/get/security/0',
+        'cadenway/security-scopes #/paths/~1v1~1duplicate-scope/get/security/1',
+        'cadenway/security-scopes #/paths/~1v1~1empty-token/get/security/1',
+        'cadenway/security-scopes #/paths/~1v1~1token-only/get/security',
+        'cadenway/security-scopes #/paths/~1v1~1unknown-scheme/get/security/0',
+        'cadenway/security-scopes #/paths/~1v1~1unknown-scope/get/security/1',
       ]);
     },
     TIMEOUT,

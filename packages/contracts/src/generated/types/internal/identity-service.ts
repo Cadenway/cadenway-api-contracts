@@ -130,11 +130,29 @@ export interface Session {
   persistent: boolean;
 }
 
+/**
+ * An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this
+ * version on; they are optional here so that the API gateway can move to this version of the
+ * contracts before identity-service does. Until then the gateway answers them as `null`,
+ * `null` and `Europe/Paris`, their values for an account that never set them.
+ */
 export interface User {
   id: string;
   name: string;
   email: Email;
   language: Language;
+  /**
+     * Name used for the mentions; `null` until the person chooses one.
+     * @nullable
+     */
+  displayName?: string | null;
+  /**
+     * Job title; `null` when there is none.
+     * @nullable
+     */
+  jobTitle?: string | null;
+  /** IANA time zone name; `Europe/Paris` until the person chooses another. */
+  timeZone?: string;
   /**
      * Version of the account.
      * @minimum 1
@@ -166,24 +184,30 @@ export interface IntrospectionRequest {
 export interface ActiveToken {
   active: true;
   /**
-     * Kind of token: `session` today. Personal API tokens add `api-token` later, without a
-     * new version (`x-extensible-enum`).
+     * Kind of token: always `session` on this route. A personal API token is introspected by
+     * `POST /internal/v1/api-tokens/introspect`, which answers `api-token`. Later versions
+     * may add kinds without a new version (`x-extensible-enum`).
      */
   tokenType: string;
   sessionId: string;
   userId: string;
   /**
-     * Organization of the session. Always `null` in this version: a session belongs to an
-     * organization once the organization selection exists.
+     * Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);
+     * `null` when it has none, or when its user no longer belongs to it.
      * @nullable
      */
   organizationId: string | null;
   /**
-     * Member role in that organization; always `null` in this version.
+     * Role of the user in that organization, from the copy of the memberships: `owner`,
+     * `admin`, `member` or `guest`; `null` without an organization. The gateway carries it
+     * in the internal token; organization-service decides from its own members.
      * @nullable
      */
   role: string | null;
-  /** Scopes the token grants; empty in this version, since no route needs one yet. */
+  /**
+     * Scopes the token grants. A session holds every scope: `tasks:read`, `tasks:write`,
+     * `members:read` and `webhooks:manage` today, more as they are added.
+     */
   scopes: string[];
   /** When the session ends at the latest. */
   expiresAt: string;
@@ -197,10 +221,184 @@ export type InactiveToken = typeof InactiveTokenValue;
 export type Introspection = ActiveToken | InactiveToken;
 
 /**
+ * Role in an organization, as organization-service gives it: `owner`, `admin`, `member` or
+ * `guest`.
+ */
+export type Role = typeof Role[keyof typeof Role];
+
+
+export const Role = {
+  owner: 'owner',
+  admin: 'admin',
+  member: 'member',
+  guest: 'guest',
+} as const;
+
+export type ProfilePatchLanguage = typeof ProfilePatchLanguage[keyof typeof ProfilePatchLanguage];
+
+
+export const ProfilePatchLanguage = {
+  fr: 'fr',
+  en: 'en',
+  de: 'de',
+  es: 'es',
+} as const;
+
+/**
+ * JSON Merge Patch of the profile, as the public request carried it.
+ */
+export interface ProfilePatch {
+  /**
+     * Full name, trimmed here; a name made only of spaces answers `400 request.invalid`.
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  /**
+     * @minLength 1
+     * @maxLength 60
+     * @nullable
+     */
+  displayName?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @nullable
+     */
+  jobTitle?: string | null;
+  /**
+     * IANA time zone name, checked here.
+     * @minLength 1
+     * @maxLength 64
+     */
+  timeZone?: string;
+  language?: ProfilePatchLanguage;
+}
+
+export interface OrganizationChoice {
+  organizationId: string;
+}
+
+export interface SessionOrganization {
+  organizationId: string;
+  /** Role of the actor in it, from the copy of the memberships. */
+  role: Role;
+}
+
+/**
+ * A scope a personal API token can be given.
+ */
+export type ApiTokenScope = typeof ApiTokenScope[keyof typeof ApiTokenScope];
+
+
+export const ApiTokenScope = {
+  'tasks:read': 'tasks:read',
+  'tasks:write': 'tasks:write',
+  'members:read': 'members:read',
+  'webhooks:manage': 'webhooks:manage',
+} as const;
+
+/**
+ * Lifetime counted from the creation; `never` gives no expiry.
+ */
+export type ApiTokenCreationExpiration = typeof ApiTokenCreationExpiration[keyof typeof ApiTokenCreationExpiration];
+
+
+export const ApiTokenCreationExpiration = {
+  '30-days': '30-days',
+  '90-days': '90-days',
+  '1-year': '1-year',
+  never: 'never',
+} as const;
+
+export interface ApiTokenCreation {
+  /**
+     * Name as typed; trimmed here, a name made only of spaces answers `400 request.invalid`.
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /**
+     * At least one; the same scope twice counts once.
+     * @minItems 1
+     * @maxItems 4
+     */
+  scopes: ApiTokenScope[];
+  /** Lifetime counted from the creation; `never` gives no expiry. */
+  expiration?: ApiTokenCreationExpiration;
+}
+
+export interface ApiToken {
+  id: string;
+  name: string;
+  /**
+     * First 11 characters of the secret.
+     * @minLength 11
+     * @maxLength 11
+     */
+  prefix: string;
+  scopes: string[];
+  organizationId: string;
+  createdAt: string;
+  /** @nullable */
+  expiresAt: string | null;
+  /**
+     * Recorded at most once a minute.
+     * @nullable
+     */
+  lastUsedAt: string | null;
+}
+
+export interface ApiTokenCreated {
+  apiToken: ApiToken;
+  /**
+     * The token, returned once. A secret, never logged, never stored by the gateway.
+     * @pattern ^cw_pat_[0-9A-Za-z]{36}$
+     */
+  secret: string;
+}
+
+/**
  * Cursor of the next page; `null` on the last page.
  * @nullable
  */
 export type NextCursor = string | null;
+
+export interface ApiTokenPage {
+  items: ApiToken[];
+  nextCursor: NextCursor | null;
+}
+
+export interface ApiTokenIntrospectionRequest {
+  /**
+     * Value of the bearer token. A secret, never logged.
+     * @minLength 1
+     * @maxLength 256
+     */
+  token: string;
+}
+
+export interface ActiveApiToken {
+  active: true;
+  /** Always `api-token` on this route (`x-extensible-enum`). */
+  tokenType: string;
+  /** Id of the token; the gateway counts its rate limit on it. */
+  apiTokenId: string;
+  userId: string;
+  /** Organization the token acts in, the one it was created in. */
+  organizationId: string;
+  /** Role of the user in it, from the copy of the memberships. */
+  role: Role;
+  /** Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a scope it lacks. */
+  scopes: string[];
+  /**
+     * When the token stops working; `null` for a token without expiry.
+     * @nullable
+     */
+  expiresAt: string | null;
+}
+
+export type ApiTokenIntrospection = ActiveApiToken | InactiveToken;
 
 /**
  * Members specific to the code, for example the fields that failed validation.
@@ -246,7 +444,8 @@ export type InternalTokenRefusedResponse = Problem;
 
 /**
  * The internal token is valid but the route does not accept its issuer
- * (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`).
+ * (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`), or the route requires
+ * an organization the token does not carry (`auth.organization-required`).
  */
 export type InternalAccessRefusedResponse = Problem;
 
@@ -312,4 +511,32 @@ export type SessionNotFoundResponse = Problem;
  * `user.not-found`: no account with this id is readable by the actor.
  */
 export type UserNotFoundResponse = Problem;
+
+/**
+ * - `session.not-found`: no session with this id belongs to the actor;
+ * - `organization.not-found`: the copy of the memberships holds no membership of the actor in
+ *   this organization, also for a few seconds after a creation or an acceptance.
+ */
+export type SessionOrOrganizationNotFoundResponse = Problem;
+
+/**
+ * `api-token.not-found`: no token with this id belongs to the actor in the organization of the internal token.
+ */
+export type ApiTokenNotFoundResponse = Problem;
+
+/**
+ * `request.version-mismatch`: `If-Match` is not the current version, with `details.version`.
+ */
+export type VersionMismatchResponse = Problem;
+
+export type ListApiTokensInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
 

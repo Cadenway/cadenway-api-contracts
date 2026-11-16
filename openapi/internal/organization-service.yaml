@@ -1,0 +1,1422 @@
+# Internal routes of organization-service, called by cadenway-api-gateway: the organizations of
+# openapi/public/organizations.yaml (but the choice of the current organization, which belongs to
+# identity-service), and the members and invitations of openapi/public/members.yaml.
+openapi: 3.1.0
+info:
+  title: organization-service internal routes
+  version: 1.0.0
+  description: |
+    What organization-service exposes to the API gateway for organizations, members and
+    invitations. The service has no public route: the gateway serves
+    `openapi/public/organizations.yaml` and `openapi/public/members.yaml` and calls these routes.
+
+    | Public route | Internal call |
+    | --- | --- |
+    | `POST /v1/organizations` | `POST /internal/v1/organizations` |
+    | `GET /v1/organizations` | `GET /internal/v1/organizations` |
+    | `GET /v1/organization` | `GET /internal/v1/organization` |
+    | `PATCH /v1/organization` | `PATCH /internal/v1/organization` |
+    | `PUT /v1/session/organization` | `PUT /internal/v1/sessions/{sessionId}/organization` of identity-service |
+    | `GET /v1/members` | `GET /internal/v1/members` |
+    | `GET /v1/members/{memberId}` | `GET /internal/v1/members/{memberId}` |
+    | `PATCH /v1/members/{memberId}` | `PATCH /internal/v1/members/{memberId}` |
+    | `DELETE /v1/members/{memberId}` | `DELETE /internal/v1/members/{memberId}` |
+    | `POST /v1/invitations` | `POST /internal/v1/invitations` |
+    | `GET /v1/invitations` | `GET /internal/v1/invitations` |
+    | `DELETE /v1/invitations/{invitationId}` | `DELETE /internal/v1/invitations/{invitationId}` |
+    | `POST /v1/invitations/{invitationId}/resend` | `POST /internal/v1/invitations/{invitationId}/resend` |
+    | `GET /v1/me/invitations` | `GET /internal/v1/users/{userId}/invitations` with the user the introspection returned |
+    | `POST /v1/me/invitations/{invitationId}/accept` | `POST /internal/v1/users/{userId}/invitations/{invitationId}/accept` |
+    | `POST /v1/me/invitations/{invitationId}/refuse` | `POST /internal/v1/users/{userId}/invitations/{invitationId}/refuse` |
+
+    **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
+    (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `organization-service`). Every route
+    accepts the issuer `api-gateway` and the actor `user` only. Each operation says whether it
+    requires an organization: an organization-scoped route acts on the organization of the token,
+    the current organization of the session or the organization of the personal API token, and
+    runs in the tenant transaction of that organization. A route that requires no organization
+    ignores the one the token may carry, the current organization of the session, and opens no
+    tenant transaction from it. The guard of the kit answers
+    `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
+    `403 auth.actor-not-allowed` and `403 auth.organization-required`. The gateway answers
+    `403 organization.not-selected` itself, before the call, when the session has no current
+    organization.
+
+    **Roles.** organization-service reads the role of the actor in the organization from its own
+    members, never from the `role` of the token, and decides every role rule of
+    `openapi/public/members.yaml` itself. It does not check the scopes: the gateway does, from the
+    `security` of each public operation. An actor that does not belong to the organization of the
+    token, for example a member removed since the token was signed, gets
+    `404 organization.not-found`.
+
+    **Cross-organization reads.** Listing the organizations of the actor and the invitations
+    addressed to them read across organizations, with an explicit filter on the actor, outside a
+    tenant transaction.
+
+    **User directory.** organization-service keeps the id, name, address and verification of
+    every account from `user.signed-up.v1`, `user.email-verified.v1` and `user.profile-updated.v1`
+    (`asyncapi/identity-service.yaml`), to show names and addresses and to match an invitation
+    with the account that verified its address. It reads the whole history of these events, not
+    only those published after it subscribed, and applies each account by its `version`, so that
+    a late `user.signed-up.v1` never overwrites a newer profile.
+
+    **Errors.** The gateway forwards the `code` and the `details` and answers the French `title`
+    of the public spec; the titles here are English. The gateway's internal client turns any `401`
+    into `503 upstream.unauthorized`, and answers `403 auth.issuer-not-allowed`,
+    `403 auth.actor-not-allowed` and `403 auth.organization-required`, configuration defects, as
+    `503 upstream.unauthorized` too, never to the browser.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Calls every route through its generated client, for openapi/public/organizations.yaml and openapi/public/members.yaml.
+servers:
+  - url: http://organization-service:3011
+    description: organization-service on the internal network of each environment (`ORGANIZATION_SERVICE_URL`).
+security:
+  - internalToken: []
+tags:
+  - name: organizations
+    description: Organizations of the actor and the organization of the token.
+  - name: members
+    description: Members of the organization of the token.
+  - name: invitations
+    description: Invitations of the organization of the token, and those addressed to the actor.
+paths:
+  /internal/v1/organizations:
+    post:
+      operationId: createOrganizationInternal
+      summary: Create an organization
+      description: |
+        Creates an organization owned by the actor, with the plan `free`, its owner member and the
+        invitations of `inviteEmails` as `member`, in one transaction; derives the slug as
+        `POST /v1/organizations` says. Emits `organization.created.v1`, `member.joined.v1` and one
+        `invitation.issued.v1` per invited address.
+
+        An actor that is not in the user directory yet answers `404 user.not-synchronized` and
+        creates nothing. Internal token: actor `user`, no organization.
+      tags: [organizations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreation'
+            example:
+              name: Atelier Nord
+              teamSize: 6-20
+              primaryUse: product-engineering
+              inviteEmails:
+                - ines.robert@ateliernord.fr
+      responses:
+        '201':
+          description: The organization exists and the actor is its owner.
+          headers:
+            Location:
+              description: '`/internal/v1/organization`, where it reads with a token of this organization.'
+              schema:
+                type: string
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationCreated'
+              example:
+                organization:
+                  id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                  name: Atelier Nord
+                  slug: atelier-nord
+                  description: null
+                  website: null
+                  defaultLanguage: fr
+                  plan: free
+                  memberCount: 1
+                  role: owner
+                  createdAt: '2026-03-02T09:00:00Z'
+                  version: 1
+                invitations:
+                  - email: ines.robert@ateliernord.fr
+                    outcome: invited
+                    invitationId: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a73
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotSynchronized'
+        '409':
+          $ref: '#/components/responses/SlugTaken'
+        '422':
+          $ref: '#/components/responses/SlugInvalid'
+    get:
+      operationId: listMyOrganizationsInternal
+      summary: List the organizations of the actor
+      description: |
+        Lists the organizations the actor is a member of, sorted by name without regard to case or
+        accents, then by id. Reads across organizations with a filter on the actor. Internal token:
+        actor `user`, no organization.
+      tags: [organizations]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of organizations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyOrganizationPage'
+              example:
+                items:
+                  - id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                    name: Atelier Nord
+                    slug: atelier-nord
+                    role: owner
+                    memberCount: 18
+                    plan: free
+                    joinedAt: '2026-03-02T09:00:00Z'
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+  /internal/v1/organization:
+    get:
+      operationId: getOrganizationInternal
+      summary: Read the organization of the token
+      description: |
+        Returns the organization of the token with the role of the actor in it. An actor that does
+        not belong to it answers `404 organization.not-found`. Internal token: actor `user`,
+        organization required.
+      tags: [organizations]
+      responses:
+        '200':
+          description: The organization.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+              examples:
+                atelierNord:
+                  $ref: '#/components/examples/AtelierNord'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+    patch:
+      operationId: updateOrganizationInternal
+      summary: Update the organization of the token
+      description: |
+        Applies a JSON Merge Patch to the organization of the token. Owner and admins only
+        (`403 organization.role-forbidden`); `409 organization.slug-taken`; `If-Match` optional
+        (`412 request.version-mismatch`). Emits `organization.updated.v1` when something changed.
+        Internal token: actor `user`, organization required.
+      tags: [organizations]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationPatch'
+            example:
+              website: https://ateliernord.fr
+      responses:
+        '200':
+          description: The organization after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+              examples:
+                atelierNord:
+                  $ref: '#/components/examples/AtelierNord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/SlugTaken'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/members:
+    get:
+      operationId: listMembersInternal
+      summary: List the members
+      description: |
+        Lists the members of the organization of the token, with `total` and `counts` as
+        `GET /v1/members` says. A guest gets `403 organization.role-forbidden`. Internal token:
+        actor `user`, organization required.
+      tags: [members]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+        - name: search
+          in: query
+          required: false
+          description: Text to find in the name or the address, without regard to case or accents.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: role
+          in: query
+          required: false
+          description: Roles to keep, separated by commas.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 4
+            items:
+              $ref: '#/components/schemas/Role'
+      responses:
+        '200':
+          description: One page of members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberPage'
+              example:
+                items:
+                  - id: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41
+                    userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    name: Inès Robert
+                    email: ines.robert@ateliernord.fr
+                    role: admin
+                    joinedAt: '2026-03-03T09:40:00Z'
+                    version: 2
+                nextCursor: null
+                total: 1
+                counts:
+                  owner: 1
+                  admin: 2
+                  member: 15
+                  guest: 4
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/members/{memberId}:
+    parameters:
+      - $ref: '#/components/parameters/MemberId'
+    get:
+      operationId: getMemberInternal
+      summary: Read a member
+      description: |
+        Returns a member of the organization of the token; any other id answers
+        `404 member.not-found`. A guest gets `403 organization.role-forbidden`. Internal token:
+        actor `user`, organization required.
+      tags: [members]
+      responses:
+        '200':
+          description: The member.
+          headers:
+            ETag:
+              $ref: '#/components/headers/MemberETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+              examples:
+                inesRobert:
+                  $ref: '#/components/examples/InesRobert'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/MemberNotFound'
+    patch:
+      operationId: changeMemberRoleInternal
+      summary: Change the role of a member
+      description: |
+        Gives a member another role. Owner and admins only; `422 member.owner-protected` for the
+        owner; `If-Match` optional (`412 request.version-mismatch`). Emits
+        `member.role-changed.v1` when the role changes. Internal token: actor `user`, organization
+        required.
+      tags: [members]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberPatch'
+            example:
+              role: admin
+      responses:
+        '200':
+          description: The member with their new role.
+          headers:
+            ETag:
+              $ref: '#/components/headers/MemberETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+              examples:
+                inesRobert:
+                  $ref: '#/components/examples/InesRobert'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/MemberNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/OwnerProtected'
+    delete:
+      operationId: removeMemberInternal
+      summary: Remove a member
+      description: |
+        Removes a member of the organization of the token. Owner and admins only;
+        `422 member.owner-protected` for the owner. Emits `member.removed.v1`. Internal token:
+        actor `user`, organization required.
+      tags: [members]
+      responses:
+        '204':
+          description: The member is removed.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/MemberNotFound'
+        '422':
+          $ref: '#/components/responses/OwnerProtected'
+  /internal/v1/invitations:
+    post:
+      operationId: inviteMembersInternal
+      summary: Invite people
+      description: |
+        Invites the addresses of the batch with one role, one outcome per distinct address, as
+        `POST /v1/invitations` says. Owner and admins only. Emits one `invitation.issued.v1` per
+        `invited` address. Internal token: actor `user`, organization required.
+      tags: [invitations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationBatch'
+            example:
+              emails: [marc.roux@ateliernord.fr]
+              role: member
+      responses:
+        '200':
+          description: The outcome of each address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationBatchResult'
+              example:
+                invitations:
+                  - email: marc.roux@ateliernord.fr
+                    outcome: invited
+                    invitationId: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a70
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+    get:
+      operationId: listInvitationsInternal
+      summary: List the pending invitations
+      description: |
+        Lists the pending invitations of the organization of the token, the expired ones included,
+        the most recently sent first. Owner and admins only. Internal token: actor `user`,
+        organization required.
+      tags: [invitations]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of pending invitations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPage'
+              example:
+                items:
+                  - id: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a70
+                    email: marc.roux@ateliernord.fr
+                    role: member
+                    invitedBy:
+                      userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                      name: Inès Robert
+                    status: pending
+                    sentAt: '2026-11-06T16:20:00Z'
+                    expiresAt: '2026-11-13T16:20:00Z'
+                    version: 1
+                nextCursor: null
+                total: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/invitations/{invitationId}:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    delete:
+      operationId: revokeInvitationInternal
+      summary: Revoke an invitation
+      description: |
+        Revokes a pending invitation of the organization of the token; again answers `204`;
+        `409 invitation.answered` once accepted or refused. Owner and admins only. Emits nothing.
+        Internal token: actor `user`, organization required.
+      tags: [invitations]
+      responses:
+        '204':
+          description: The invitation is revoked.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/InvitationNotFound'
+        '409':
+          $ref: '#/components/responses/InvitationAnswered'
+  /internal/v1/invitations/{invitationId}/resend:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      operationId: resendInvitationInternal
+      summary: Send an invitation again
+      description: |
+        Starts the 7 days of a pending invitation again, expired or not, and emits
+        `invitation.issued.v1` with the next version; `409 invitation.revoked` or
+        `409 invitation.answered` otherwise. Owner and admins only. Internal token: actor `user`,
+        organization required.
+      tags: [invitations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The invitation, with its new expiry.
+          headers:
+            ETag:
+              $ref: '#/components/headers/InvitationETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+              examples:
+                marcRoux:
+                  $ref: '#/components/examples/MarcRoux'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/InvitationNotFound'
+        '409':
+          $ref: '#/components/responses/InvitationClosed'
+  /internal/v1/users/{userId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      operationId: listReceivedInvitationsInternal
+      summary: List the invitations addressed to the actor
+      description: |
+        Lists the pending invitations, not expired, addressed to the verified address the user
+        directory holds for the actor, from every organization, the most recently sent first.
+        Reads across organizations with a filter on that address. Without a verified address in the
+        directory yet, the list is empty. A `userId` other than the actor answers
+        `404 user.not-found`. Internal token: actor `user`, no organization.
+      tags: [invitations]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of invitations addressed to the actor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceivedInvitationPage'
+              example:
+                items:
+                  - id: 019a6b20-5e6f-7a8b-9c0d-1e2f3a4b5c80
+                    organization:
+                      id: 019a5f41-7c2e-7a3b-9d4f-6e8a0b2c4d61
+                      name: Coopérative Lumen
+                      slug: lumen
+                      description: null
+                      memberCount: 41
+                    role: member
+                    invitedBy:
+                      userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                      name: Inès Robert
+                    expiresAt: '2026-11-15T10:00:00Z'
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+  /internal/v1/users/{userId}/invitations/{invitationId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      operationId: acceptInvitationInternal
+      summary: Accept an invitation
+      description: |
+        Makes the actor a member of the organization of the invitation, with its role, in the
+        tenant transaction of that organization. Checks, in this order: the invitation exists
+        (`404 invitation.not-found`, also while the directory holds no verified address for the
+        actor); its address is the verified address of the actor (`403 invitation.email-mismatch`);
+        it is pending (`409 invitation.revoked`, `409 invitation.answered`,
+        `409 invitation.expired`). Emits `member.joined.v1`. A `userId` other than the actor
+        answers `404 user.not-found`. Internal token: actor `user`, no organization.
+      tags: [invitations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The actor is a member of the organization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyOrganization'
+              example:
+                id: 019a5f41-7c2e-7a3b-9d4f-6e8a0b2c4d61
+                name: Coopérative Lumen
+                slug: lumen
+                role: member
+                memberCount: 42
+                plan: free
+                joinedAt: '2026-11-08T10:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InvitationForbidden'
+        '404':
+          $ref: '#/components/responses/InvitationOrUserNotFound'
+        '409':
+          $ref: '#/components/responses/InvitationNotPending'
+  /internal/v1/users/{userId}/invitations/{invitationId}/refuse:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      operationId: refuseInvitationInternal
+      summary: Refuse an invitation
+      description: |
+        Refuses an invitation addressed to the actor, with the checks of the acceptance. Emits
+        nothing. Internal token: actor `user`, no organization.
+      tags: [invitations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '204':
+          description: The invitation is refused.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InvitationForbidden'
+        '404':
+          $ref: '#/components/responses/InvitationOrUserNotFound'
+        '409':
+          $ref: '#/components/responses/InvitationNotPending'
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` =
+        `organization-service`, issuer `api-gateway`.
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: Id of the account of the actor, as the introspection returned it.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      description: Id of the membership.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41]
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      description: Id of the invitation.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a70]
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: '`"<version>"` the change was made from.'
+      schema:
+        type: string
+  headers:
+    ETag:
+      description: Version of the organization, `"<version>"`.
+      schema:
+        type: string
+    MemberETag:
+      description: Version of the membership, `"<version>"`.
+      schema:
+        type: string
+    InvitationETag:
+      description: Version of the invitation, `"<version>"`.
+      schema:
+        type: string
+  examples:
+    AtelierNord:
+      summary: Atelier Nord, read by its owner
+      value:
+        id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+        name: Atelier Nord
+        slug: atelier-nord
+        description: Studio de conception de mobilier et d’aménagement, 18 personnes entre Lille et Lyon.
+        website: https://ateliernord.fr
+        defaultLanguage: fr
+        plan: free
+        memberCount: 18
+        role: owner
+        createdAt: '2026-03-02T09:00:00Z'
+        version: 3
+    InesRobert:
+      summary: Inès Robert, admin of Atelier Nord
+      value:
+        id: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41
+        userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+        name: Inès Robert
+        email: ines.robert@ateliernord.fr
+        role: admin
+        joinedAt: '2026-03-03T09:40:00Z'
+        version: 2
+    MarcRoux:
+      summary: Pending invitation of Marc Roux
+      value:
+        id: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a70
+        email: marc.roux@ateliernord.fr
+        role: member
+        invitedBy:
+          userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+          name: Inès Robert
+        status: pending
+        sentAt: '2026-11-06T16:20:00Z'
+        expiresAt: '2026-11-13T16:20:00Z'
+        version: 1
+    ActorNotAllowed:
+      summary: Actor not accepted
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.actor-not-allowed
+    RoleForbidden:
+      summary: Role not allowed
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: organization.role-forbidden
+    InvitationRevoked:
+      summary: Invitation revoked
+      value:
+        type: about:blank
+        title: Conflict
+        status: 409
+        code: invitation.revoked
+    InvitationAnswered:
+      summary: Invitation accepted or refused already
+      value:
+        type: about:blank
+        title: Conflict
+        status: 409
+        code: invitation.answered
+        details:
+          status: refused
+    InvitationExpired:
+      summary: Invitation expired
+      value:
+        type: about:blank
+        title: Conflict
+        status: 409
+        code: invitation.expired
+        details:
+          expiresAt: '2026-11-02T15:00:00Z'
+  responses:
+    BadRequest:
+      description: '`request.invalid`: the request does not match the schema; one `details.issues` entry per issue.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: body
+                  path: name
+                  code: too_small
+                  message: Too small
+    InternalTokenRefused:
+      description: |
+        The internal token is missing (`auth.token-missing`) or refused (`auth.token-invalid`, with
+        `details.reason`). The gateway's client reports it as `503 upstream.unauthorized`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unauthorized
+            status: 401
+            code: auth.token-invalid
+            details:
+              reason: expired
+    InternalAccessRefused:
+      description: |
+        The internal token is valid but the route does not accept its issuer
+        (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`), or the route requires
+        an organization the token does not carry (`auth.organization-required`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            actorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+    RoleForbidden:
+      description: |
+        - `organization.role-forbidden`: the role of the actor in the organization does not allow
+          the request;
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see the
+          internal token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roleForbidden:
+              $ref: '#/components/examples/RoleForbidden'
+            organizationRequired:
+              summary: Token without an organization
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.organization-required
+    InvitationForbidden:
+      description: |
+        - `invitation.email-mismatch`: the invitation was sent to another address than the verified
+          address of the actor;
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`: see the internal token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            emailMismatch:
+              summary: Invitation sent to another address
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: invitation.email-mismatch
+            actorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+    UserNotFound:
+      description: '`user.not-found`: the `userId` of the path is not the actor.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: user.not-found
+    UserNotSynchronized:
+      description: |
+        `user.not-synchronized`: the actor is not in the user directory yet; it is within seconds of
+        the sign-up.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: user.not-synchronized
+    OrganizationNotFound:
+      description: '`organization.not-found`: the actor does not belong to the organization of the token.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: organization.not-found
+    MemberNotFound:
+      description: |
+        - `member.not-found`: no member with this id in the organization of the token;
+        - `organization.not-found`: the actor does not belong to it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: member.not-found
+    InvitationNotFound:
+      description: |
+        - `invitation.not-found`: no invitation with this id in the organization of the token;
+        - `organization.not-found`: the actor does not belong to it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: invitation.not-found
+    InvitationOrUserNotFound:
+      description: |
+        - `invitation.not-found`: no invitation with this id, or no verified address of the actor in
+          the directory yet;
+        - `user.not-found`: the `userId` of the path is not the actor.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: invitation.not-found
+    InvitationAnswered:
+      description: '`invitation.answered`: the invitation was accepted or refused already, with `details.status`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invitationAnswered:
+              $ref: '#/components/examples/InvitationAnswered'
+    InvitationClosed:
+      description: '`invitation.revoked`, or `invitation.answered` with `details.status`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invitationRevoked:
+              $ref: '#/components/examples/InvitationRevoked'
+            invitationAnswered:
+              $ref: '#/components/examples/InvitationAnswered'
+    InvitationNotPending:
+      description: |
+        `invitation.revoked`, `invitation.answered` (with `details.status`, `accepted` or
+        `refused`) or `invitation.expired` (with `details.expiresAt`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invitationRevoked:
+              $ref: '#/components/examples/InvitationRevoked'
+            invitationAnswered:
+              $ref: '#/components/examples/InvitationAnswered'
+            invitationExpired:
+              $ref: '#/components/examples/InvitationExpired'
+    OwnerProtected:
+      description: '`member.owner-protected`: the owner is neither removed nor given another role.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: member.owner-protected
+    SlugTaken:
+      description: '`organization.slug-taken`: another organization uses the address, with `details.slug`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            code: organization.slug-taken
+            details:
+              slug: atelier-nord
+    SlugInvalid:
+      description: '`organization.slug-invalid`: the address derived from the name has fewer than 2 characters, with `details.slug`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: organization.slug-invalid
+            details:
+              slug: e
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version, with `details.version`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Precondition Failed
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 4
+  schemas:
+    Email:
+      type: string
+      format: email
+      maxLength: 254
+      description: Email address, compared without regard to case.
+      examples: [marc.roux@ateliernord.fr]
+    Role:
+      type: string
+      description: Role in an organization.
+      enum: [owner, admin, member, guest]
+    AssignableRole:
+      type: string
+      description: A role that can be given; never `owner`.
+      enum: [admin, member, guest]
+    EmptyRequest:
+      type: object
+      additionalProperties: false
+      description: Empty object `{}`, the body the public route carried.
+    OrganizationCreation:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Name as typed; trimmed here, a name made only of spaces answers `400 request.invalid`.
+          examples: [Atelier Nord]
+        slug:
+          type: string
+          minLength: 2
+          maxLength: 63
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          description: Address to use; derived from `name` when absent.
+        teamSize:
+          type: string
+          default: 6-20
+          enum: [1-5, 6-20, 21-100, over-100]
+        primaryUse:
+          type: string
+          default: product-engineering
+          enum:
+            [
+              product-engineering,
+              agency-client-projects,
+              marketing-content,
+              operations-support,
+              other,
+            ]
+        inviteEmails:
+          type: array
+          maxItems: 50
+          default: []
+          items:
+            $ref: '#/components/schemas/Email'
+    OrganizationPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        slug:
+          type: string
+          minLength: 2
+          maxLength: 63
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+        description:
+          type: [string, 'null']
+          maxLength: 280
+        website:
+          type: [string, 'null']
+          format: uri
+          maxLength: 2048
+        defaultLanguage:
+          type: string
+          enum: [fr, en, de]
+    Organization:
+      type: object
+      required:
+        [
+          id,
+          name,
+          slug,
+          description,
+          website,
+          defaultLanguage,
+          plan,
+          memberCount,
+          role,
+          createdAt,
+          version,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: [string, 'null']
+        website:
+          type: [string, 'null']
+        defaultLanguage:
+          type: string
+          x-extensible-enum: [fr, en, de]
+        plan:
+          type: string
+          description: Always `free` until billing exists.
+          x-extensible-enum: [free, team, enterprise]
+        memberCount:
+          type: integer
+          minimum: 1
+          description: Members that take a seat; guests are not counted.
+        role:
+          $ref: '#/components/schemas/Role'
+          description: Role of the actor in this organization, from the members of this service.
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+    InvitationResult:
+      type: object
+      required: [email, outcome, invitationId]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        outcome:
+          type: string
+          x-extensible-enum: [invited, already-member, already-invited]
+        invitationId:
+          type: [string, 'null']
+          format: uuid
+    OrganizationCreated:
+      type: object
+      required: [organization, invitations]
+      properties:
+        organization:
+          $ref: '#/components/schemas/Organization'
+        invitations:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvitationResult'
+    MyOrganization:
+      type: object
+      required: [id, name, slug, role, memberCount, plan, joinedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        memberCount:
+          type: integer
+          minimum: 1
+        plan:
+          type: string
+          x-extensible-enum: [free, team, enterprise]
+        joinedAt:
+          type: string
+          format: date-time
+    MyOrganizationPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MyOrganization'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    Member:
+      type: object
+      required: [id, userId, name, email, role, joinedAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: Full name, from the user directory.
+        email:
+          $ref: '#/components/schemas/Email'
+        role:
+          $ref: '#/components/schemas/Role'
+        joinedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+    MemberPage:
+      type: object
+      required: [items, nextCursor, total, counts]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+        counts:
+          $ref: '#/components/schemas/RoleCounts'
+    RoleCounts:
+      type: object
+      required: [owner, admin, member, guest]
+      description: Members of the organization by role, whatever the filters of the request.
+      properties:
+        owner:
+          type: integer
+          minimum: 0
+        admin:
+          type: integer
+          minimum: 0
+        member:
+          type: integer
+          minimum: 0
+        guest:
+          type: integer
+          minimum: 0
+    MemberPatch:
+      type: object
+      required: [role]
+      properties:
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+    InvitationBatch:
+      type: object
+      required: [emails]
+      properties:
+        emails:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/Email'
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+          default: member
+    InvitationBatchResult:
+      type: object
+      required: [invitations]
+      properties:
+        invitations:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvitationResult'
+    Inviter:
+      type: object
+      required: [userId, name]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        name:
+          type: string
+    Invitation:
+      type: object
+      required: [id, email, role, invitedBy, status, sentAt, expiresAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          $ref: '#/components/schemas/Email'
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+        invitedBy:
+          $ref: '#/components/schemas/Inviter'
+        status:
+          type: string
+          x-extensible-enum: [pending, expired]
+        sentAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+    InvitationPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+    InvitingOrganization:
+      type: object
+      required: [id, name, slug, description, memberCount]
+      description: The organization of an invitation, as the invitee sees it before joining.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: [string, 'null']
+        memberCount:
+          type: integer
+          minimum: 1
+    ReceivedInvitation:
+      type: object
+      required: [id, organization, role, invitedBy, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization:
+          $ref: '#/components/schemas/InvitingOrganization'
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+        invitedBy:
+          $ref: '#/components/schemas/Inviter'
+        expiresAt:
+          type: string
+          format: date-time
+    ReceivedInvitationPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceivedInvitation'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'

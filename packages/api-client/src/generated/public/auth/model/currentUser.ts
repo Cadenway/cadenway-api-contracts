@@ -4,13 +4,25 @@
  */
 import type { Email } from './email';
 import type { Language } from './language';
+import type { TimeZone } from './timeZone';
 
 export interface CurrentUser {
   id: string;
-  /** Full name; the web application derives the initials from it. */
+  /** Full name ("Nom complet"); the web application derives the initials from it. */
   name: string;
   email: Email;
   language: Language;
+  /**
+     * "Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.
+     * @nullable
+     */
+  displayName: string | null;
+  /**
+     * "Poste (facultatif)"; `null` when there is none.
+     * @nullable
+     */
+  jobTitle: string | null;
+  timeZone: TimeZone;
   /**
      * Version of the account, also sent as `ETag`.
      * @minimum 1

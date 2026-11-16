@@ -1,5 +1,5 @@
-# Events of identity-service: accounts, their verified address, sessions, and the restricted event
-# that carries a single-use code to cadenway-notification-service only.
+# Events of identity-service: accounts, their verified address and their profile, sessions, and the
+# restricted event that carries a single-use code to cadenway-notification-service only.
 asyncapi: 3.0.0
 info:
   title: identity-service events
@@ -33,11 +33,11 @@ info:
       description: Single-use codes sent by email.
   x-consumers:
     - repository: cadenway-notification-service
-      uses: one-time-code.issued.v1, to send the verification and sign-in code emails. Planned, user.signed-up.v1 for its projection of user profiles.
+      uses: one-time-code.issued.v1, to send the verification and sign-in code emails. Planned, user.signed-up.v1 and user.profile-updated.v1 for its projection of user profiles.
     - repository: cadenway-realtime-gateway
       uses: Planned, session.revoked.v1, to close the sockets of the revoked session.
     - repository: cadenway-organization-service
-      uses: Planned, user.signed-up.v1 and user.email-verified.v1, to match an invitation with the account that verified its address.
+      uses: user.signed-up.v1, user.email-verified.v1 and user.profile-updated.v1, for its user directory (names and addresses of the members, invitations matched with the account that verified their address).
 servers:
   nats:
     host: nats:4222
@@ -47,19 +47,27 @@ channels:
   userSignedUpV1:
     address: evt.user.signed-up.v1
     description: |
-      An account was created, not verified yet. Emitted by identity-service. Consumers: none yet;
-      planned, cadenway-notification-service and cadenway-organization-service.
+      An account was created, not verified yet. Emitted by identity-service. Consumer:
+      cadenway-organization-service; planned, cadenway-notification-service.
     messages:
       userSignedUpV1:
         $ref: '#/components/messages/userSignedUpV1'
   userEmailVerifiedV1:
     address: evt.user.email-verified.v1
     description: |
-      The address of an account was proven with a code. Emitted by identity-service. Consumers:
-      none yet; planned, cadenway-organization-service.
+      The address of an account was proven with a code. Emitted by identity-service. Consumer:
+      cadenway-organization-service.
     messages:
       userEmailVerifiedV1:
         $ref: '#/components/messages/userEmailVerifiedV1'
+  userProfileUpdatedV1:
+    address: evt.user.profile-updated.v1
+    description: |
+      The profile of an account changed. Emitted by identity-service. Consumer:
+      cadenway-organization-service; planned, cadenway-notification-service.
+    messages:
+      userProfileUpdatedV1:
+        $ref: '#/components/messages/userProfileUpdatedV1'
   sessionRevokedV1:
     address: evt.session.revoked.v1
     description: |
@@ -93,6 +101,14 @@ operations:
       $ref: '#/channels/userEmailVerifiedV1'
     messages:
       - $ref: '#/channels/userEmailVerifiedV1/messages/userEmailVerifiedV1'
+  publishUserProfileUpdatedV1:
+    action: send
+    summary: identity-service publishes a change of profile.
+    description: Sent from the outbox of identity-service once the change is committed.
+    channel:
+      $ref: '#/channels/userProfileUpdatedV1'
+    messages:
+      - $ref: '#/channels/userProfileUpdatedV1/messages/userProfileUpdatedV1'
   publishSessionRevokedV1:
     action: send
     summary: identity-service publishes the revocation of a session.
@@ -220,6 +236,96 @@ components:
             maxLength: 254
             description: The verified address.
             examples: [camille.martin@ateliernord.fr]
+    userProfileUpdatedV1:
+      name: user.profile-updated.v1
+      title: User profile updated
+      summary: The profile of an account changed.
+      description: |
+        Emitted when a change of the profile (`PATCH /v1/me`) is committed and changes something; a
+        change that changes nothing emits nothing. Carries the whole profile after the change, so
+        that a consumer keeps its copy without calling identity-service, and `changed`, the members
+        that moved. The address is not part of the profile: its change, in a later version, has its
+        own event. `actor` is the user.
+
+        Personal data: `name`, `displayName` and `jobTitle`, so that a consumer shows who the
+        account is; `timeZone` and `language`, so that a consumer writes to the user at the right
+        hour and in the right language. No address, password or code.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            userId,
+            name,
+            displayName,
+            jobTitle,
+            timeZone,
+            language,
+            changed,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, an account belongs to no organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the account after the change.
+          userId:
+            type: string
+            format: uuid
+          name:
+            type: string
+            minLength: 1
+            maxLength: 120
+            description: Full name.
+            examples: [Camille Martin]
+          displayName:
+            type: [string, 'null']
+            maxLength: 60
+            description: Name used for the mentions; `null` when the person has none.
+            examples: [camille]
+          jobTitle:
+            type: [string, 'null']
+            maxLength: 120
+            description: Job title; `null` when there is none.
+            examples: [Responsable produit]
+          timeZone:
+            type: string
+            minLength: 1
+            maxLength: 64
+            description: IANA time zone name.
+            examples: [Europe/Paris]
+          language:
+            type: string
+            description: BCP 47 language tag of the account.
+            examples: [fr]
+          changed:
+            type: array
+            minItems: 1
+            description: |
+              Members that changed: `name`, `displayName`, `jobTitle`, `timeZone` or `language`
+              today; later versions may name members added to the profile, which a consumer
+              ignores.
+            items:
+              type: string
     sessionRevokedV1:
       name: session.revoked.v1
       title: Session revoked

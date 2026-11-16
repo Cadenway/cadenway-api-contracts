@@ -1,0 +1,575 @@
+# Events of organization-service: organizations, their members and the invitations to join them.
+asyncapi: 3.0.0
+info:
+  title: organization-service events
+  version: 1.0.0
+  description: |
+    What organization-service tells the other services about organizations, members and
+    invitations. Every event leaves through the outbox of `@cadenway/nest-messaging` once its
+    change is committed, at least once: a consumer deduplicates on `id` and ignores a `version` of
+    the aggregate it has already applied.
+
+    Every event belongs to an organization: `organizationId` is never `null`, and the event is
+    appended in the tenant transaction of that organization.
+
+    **Memberships.** organization-service owns the members. identity-service keeps a copy of the
+    memberships from `member.joined.v1`, `member.role-changed.v1` and `member.removed.v1`, to check
+    the choice of an organization and to fill the introspections; the copy follows within seconds.
+    The aggregate of the three is the membership, `memberId`: its `version` orders them. The
+    events travel on separate subjects and may arrive out of order: a consumer applies a membership
+    by its `version` and keeps a removed one as removed, so that a late `member.joined.v1` or
+    `member.role-changed.v1` never brings it back. A person who joins again after a removal gets a
+    new `memberId`. A consumer that keeps a copy reads the whole history of the events, not only
+    those published after it subscribed.
+
+    **No restricted event.** `invitation.issued.v1` carries no secret: the invitation id of the
+    email link is not a capability, since only the account whose verified address is the invited
+    one can accept it. It travels on `evt.invitation.issued.v1`.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  tags:
+    - name: organizations
+      description: Organizations.
+    - name: members
+      description: Memberships of an organization.
+    - name: invitations
+      description: Invitations to join an organization.
+  x-consumers:
+    - repository: cadenway-identity-service
+      uses: member.joined.v1, member.role-changed.v1 and member.removed.v1, for its copy of the memberships (choice of the current organization, introspection of sessions and personal API tokens).
+    - repository: cadenway-notification-service
+      uses: invitation.issued.v1, to send the invitation email.
+    - repository: cadenway-billing-service
+      uses: Planned, organization.created.v1, member.joined.v1 and member.removed.v1, for the subscription and the seats.
+    - repository: cadenway-task-service
+      uses: Planned, member.removed.v1, to unassign a removed member.
+    - repository: cadenway-search-service
+      uses: Planned, member events, to filter results by membership.
+servers:
+  nats:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream of each environment, on its internal network.
+channels:
+  organizationCreatedV1:
+    address: evt.organization.created.v1
+    description: |
+      An organization was created. Emitted by organization-service. Consumers: none yet; planned,
+      cadenway-billing-service.
+    messages:
+      organizationCreatedV1:
+        $ref: '#/components/messages/organizationCreatedV1'
+  organizationUpdatedV1:
+    address: evt.organization.updated.v1
+    description: |
+      The name, the address, the description, the website or the default language of an
+      organization changed. Emitted by organization-service. Consumers: none yet.
+    messages:
+      organizationUpdatedV1:
+        $ref: '#/components/messages/organizationUpdatedV1'
+  memberJoinedV1:
+    address: evt.member.joined.v1
+    description: |
+      A person became a member of an organization. Emitted by organization-service. Consumer:
+      cadenway-identity-service; planned, cadenway-billing-service and cadenway-search-service.
+    messages:
+      memberJoinedV1:
+        $ref: '#/components/messages/memberJoinedV1'
+  memberRoleChangedV1:
+    address: evt.member.role-changed.v1
+    description: |
+      The role of a member changed. Emitted by organization-service. Consumer:
+      cadenway-identity-service; planned, cadenway-search-service.
+    messages:
+      memberRoleChangedV1:
+        $ref: '#/components/messages/memberRoleChangedV1'
+  memberRemovedV1:
+    address: evt.member.removed.v1
+    description: |
+      A member was removed from an organization. Emitted by organization-service. Consumer:
+      cadenway-identity-service; planned, cadenway-billing-service, cadenway-task-service and
+      cadenway-search-service.
+    messages:
+      memberRemovedV1:
+        $ref: '#/components/messages/memberRemovedV1'
+  invitationIssuedV1:
+    address: evt.invitation.issued.v1
+    description: |
+      An invitation was sent, or sent again, and its email must go out. Emitted by
+      organization-service. Consumer: cadenway-notification-service.
+    messages:
+      invitationIssuedV1:
+        $ref: '#/components/messages/invitationIssuedV1'
+operations:
+  publishOrganizationCreatedV1:
+    action: send
+    summary: organization-service publishes the creation of an organization.
+    description: Sent from the outbox of organization-service once the creation is committed.
+    channel:
+      $ref: '#/channels/organizationCreatedV1'
+    messages:
+      - $ref: '#/channels/organizationCreatedV1/messages/organizationCreatedV1'
+  publishOrganizationUpdatedV1:
+    action: send
+    summary: organization-service publishes a change of an organization.
+    description: Sent from the outbox of organization-service once the change is committed.
+    channel:
+      $ref: '#/channels/organizationUpdatedV1'
+    messages:
+      - $ref: '#/channels/organizationUpdatedV1/messages/organizationUpdatedV1'
+  publishMemberJoinedV1:
+    action: send
+    summary: organization-service publishes a new member.
+    description: Sent from the outbox of organization-service once the membership is committed.
+    channel:
+      $ref: '#/channels/memberJoinedV1'
+    messages:
+      - $ref: '#/channels/memberJoinedV1/messages/memberJoinedV1'
+  publishMemberRoleChangedV1:
+    action: send
+    summary: organization-service publishes a change of role.
+    description: Sent from the outbox of organization-service once the change is committed.
+    channel:
+      $ref: '#/channels/memberRoleChangedV1'
+    messages:
+      - $ref: '#/channels/memberRoleChangedV1/messages/memberRoleChangedV1'
+  publishMemberRemovedV1:
+    action: send
+    summary: organization-service publishes the removal of a member.
+    description: Sent from the outbox of organization-service once the removal is committed.
+    channel:
+      $ref: '#/channels/memberRemovedV1'
+    messages:
+      - $ref: '#/channels/memberRemovedV1/messages/memberRemovedV1'
+  publishInvitationIssuedV1:
+    action: send
+    summary: organization-service publishes an invitation to email.
+    description: Sent from the outbox of organization-service once the invitation or its resend is committed.
+    channel:
+      $ref: '#/channels/invitationIssuedV1'
+    messages:
+      - $ref: '#/channels/invitationIssuedV1/messages/invitationIssuedV1'
+components:
+  schemas:
+    EventHeaders:
+      type: object
+      properties:
+        traceparent:
+          type: string
+          description: W3C Trace Context of the request that caused the event.
+    Role:
+      type: string
+      description: |
+        Role in the organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
+        ("Membre") or `guest` ("Invité"). Another role takes a new versioned event name.
+      enum: [owner, admin, member, guest]
+    AssignableRole:
+      type: string
+      description: |
+        Role an invitation proposes ("Rôle proposé"): `admin`, `member` or `guest`, never `owner`.
+      enum: [admin, member, guest]
+  messages:
+    organizationCreatedV1:
+      name: organization.created.v1
+      title: Organization created
+      summary: An organization was created.
+      description: |
+        Emitted once per organization, in the transaction that creates it with its owner, followed
+        by the `member.joined.v1` of the owner. `actor` is the creator, `{ type: 'user', id }`, who is
+        also `ownerUserId`. `plan` is `free` until billing exists.
+
+        Personal data: none beyond the ids. `teamSize` and `primaryUse` are the answers of the
+        creation form.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            name,
+            slug,
+            defaultLanguage,
+            plan,
+            ownerUserId,
+            teamSize,
+            primaryUse,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the organization was created.
+          organizationId:
+            type: string
+            format: uuid
+            description: The new organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the organization after the creation, 1.
+          name:
+            type: string
+            minLength: 1
+            maxLength: 120
+            examples: [Atelier Nord]
+          slug:
+            type: string
+            minLength: 2
+            maxLength: 63
+            description: Address of the organization, unique across organizations.
+            examples: [atelier-nord]
+          defaultLanguage:
+            type: string
+            description: BCP 47 tag of the default language, `fr`, `en` or `de` today.
+            examples: [fr]
+          plan:
+            type: string
+            description: Plan of the organization, `free` until billing exists.
+            examples: [free]
+          ownerUserId:
+            type: string
+            format: uuid
+            description: Account of the owner, the creator.
+          teamSize:
+            type: string
+            description: |
+              "Taille de l'équipe" of the creation form: `1-5`, `6-20`, `21-100` or `over-100`
+              today. The form may gain an option without a new event version: a consumer treats an
+              unknown value as unknown.
+            examples: [6-20]
+          primaryUse:
+            type: string
+            description: |
+              "Usage principal" of the creation form: `product-engineering`,
+              `agency-client-projects`, `marketing-content`, `operations-support` or `other`
+              today. The form may gain an option without a new event version: a consumer treats an
+              unknown value as unknown.
+            examples: [product-engineering]
+    organizationUpdatedV1:
+      name: organization.updated.v1
+      title: Organization updated
+      summary: The profile of an organization changed.
+      description: |
+        Emitted when a change of the organization is committed and changes something; a change that
+        changes nothing emits nothing. Carries the whole profile after the change, so that a
+        consumer keeps a copy without reading it back, and `changed`, the members that moved.
+        `actor` is the owner or the admin who changed it.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            name,
+            slug,
+            description,
+            website,
+            defaultLanguage,
+            changed,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the organization after the change.
+          name:
+            type: string
+            minLength: 1
+            maxLength: 120
+            examples: [Atelier Nord]
+          slug:
+            type: string
+            minLength: 2
+            maxLength: 63
+            examples: [atelier-nord]
+          description:
+            type: [string, 'null']
+            maxLength: 280
+          website:
+            type: [string, 'null']
+            maxLength: 2048
+          defaultLanguage:
+            type: string
+            examples: [fr]
+          changed:
+            type: array
+            minItems: 1
+            description: |
+              Members that changed: `name`, `slug`, `description`, `website` or `defaultLanguage`
+              today; later versions may name members added to the profile, which a consumer
+              ignores.
+            items:
+              type: string
+    memberJoinedV1:
+      name: member.joined.v1
+      title: Member joined
+      summary: A person became a member of an organization.
+      description: |
+        Emitted when a membership is created: the owner at the creation of the organization
+        (`invitationId` is `null`), or the account that accepted an invitation. `actor` is the
+        account that joined, `{ type: 'user', id: userId }`.
+
+        Personal data: none beyond the ids. A consumer that needs the name or the address reads
+        them from `user.signed-up.v1` and `user.profile-updated.v1` of identity-service.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [id, occurredAt, organizationId, actor, version, memberId, userId, role, invitationId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the membership began.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the membership after its creation, 1.
+          memberId:
+            type: string
+            format: uuid
+            description: Id of the membership.
+          userId:
+            type: string
+            format: uuid
+            description: Account of the member.
+          role:
+            $ref: '#/components/schemas/Role'
+          invitationId:
+            type: [string, 'null']
+            format: uuid
+            description: Invitation accepted; `null` for the owner at the creation.
+    memberRoleChangedV1:
+      name: member.role-changed.v1
+      title: Member role changed
+      summary: The role of a member changed.
+      description: |
+        Emitted when an owner or an admin gives a member another role; the same role emits nothing.
+        The role never becomes nor stops being `owner`. `actor` is who changed it.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [id, occurredAt, organizationId, actor, version, memberId, userId, role, previousRole]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the membership after the change.
+          memberId:
+            type: string
+            format: uuid
+          userId:
+            type: string
+            format: uuid
+          role:
+            $ref: '#/components/schemas/Role'
+          previousRole:
+            $ref: '#/components/schemas/Role'
+    memberRemovedV1:
+      name: member.removed.v1
+      title: Member removed
+      summary: A member was removed from an organization.
+      description: |
+        Emitted when an owner or an admin removes a member; the owner is never removed. Its last
+        change: no event of the membership follows. `role` is the role the member had. On it,
+        identity-service marks the membership removed in its copy, so that the sessions of the
+        account stop acting on the organization and its personal API tokens of the organization stop
+        working. `actor` is who removed the member.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, memberId, userId, role]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the removal was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the membership after the removal, its last.
+          memberId:
+            type: string
+            format: uuid
+          userId:
+            type: string
+            format: uuid
+          role:
+            $ref: '#/components/schemas/Role'
+    invitationIssuedV1:
+      name: invitation.issued.v1
+      title: Invitation issued
+      summary: An invitation was sent, or sent again, and its email must go out.
+      description: |
+        Emitted when an invitation is created, by `POST /v1/invitations` or with the creation of an
+        organization, and again, with the next `version`, at each resend. Each event is one email:
+        "{inviter.name} vous invite à rejoindre l’organisation {organization.name} sur Cadenway,
+        avec le rôle {role}.", with the button to `<web application>/invite/<invitationId>` and the
+        expiry. A consumer sends nothing once `expiresAt` has passed, and sends an email only for
+        the latest `version` of an invitation it knows. `actor` is the owner or the admin who sent
+        it, also `inviter`.
+
+        Not restricted (see the description of this document). Personal data: `email`, the invited
+        address, where to send the email; `inviter.name`, shown in the email; `language`, the
+        default language of the organization, the language of the email since the invitee may have
+        no account yet.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            invitationId,
+            email,
+            role,
+            inviter,
+            organization,
+            expiresAt,
+            language,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key and the idempotency key of the email.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the invitation was sent.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization the invitee is invited to.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the invitation, 1 at its creation, one more at each resend.
+          invitationId:
+            type: string
+            format: uuid
+            description: Id of the invitation, the last segment of the link of the email.
+          email:
+            type: string
+            format: email
+            maxLength: 254
+            description: Invited address, where to send the email.
+            examples: [marc.roux@ateliernord.fr]
+          role:
+            $ref: '#/components/schemas/AssignableRole'
+          inviter:
+            type: object
+            description: Who sent the invitation.
+            required: [userId, name]
+            properties:
+              userId:
+                type: string
+                format: uuid
+              name:
+                type: string
+                minLength: 1
+                maxLength: 120
+                description: Full name of the inviter, for the subject and the body of the email.
+                examples: [Inès Robert]
+          organization:
+            type: object
+            description: What the header of the email shows of the organization.
+            required: [name, memberCount]
+            properties:
+              name:
+                type: string
+                minLength: 1
+                maxLength: 120
+                examples: [Atelier Nord]
+              memberCount:
+                type: integer
+                minimum: 1
+                description: Members that take a seat when the invitation was sent ("18 membres").
+          expiresAt:
+            type: string
+            format: date-time
+            description: When the invitation stops working, 7 days after it was sent.
+          language:
+            type: string
+            description: BCP 47 tag of the email, the default language of the organization.
+            examples: [fr]

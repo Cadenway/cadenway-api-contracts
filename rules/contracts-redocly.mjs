@@ -7,6 +7,30 @@ const EVENT_NAME = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+\.v[1-9][0-9]*$/;
 // scripts/lib/events-module.mjs reads the same extension to write `RESTRICTED_EVENT_NAMES`.
 const RESTRICTED = 'x-cadenway-restricted';
 
+// The credentials a public operation may accept, by the name of their security scheme: the session
+// cookie the gateway sets on sign-in, and a personal API token sent as `Authorization: Bearer`. The
+// gateway reads the `security` of each public operation to decide which credential may call it and
+// which scope a token needs.
+const PUBLIC_SCHEMES = {
+  sessionCookie: (scheme) =>
+    scheme?.type === 'apiKey' && scheme.in === 'cookie' && scheme.name === '__Host-cw_session',
+  apiToken: (scheme) => scheme?.type === 'http' && String(scheme.scheme).toLowerCase() === 'bearer',
+};
+
+/**
+ * The scopes a personal API token can hold, and so the only scopes an `apiToken` security
+ * requirement may list. A schema named `ApiTokenScope` in a document enumerates exactly these.
+ * A new scope is added here, to `ApiTokenScope` and to the `x-extensible-enum` of `ApiToken.scopes`
+ * in openapi/public/api-tokens.yaml and openapi/internal/identity-service.yaml, together; this rule
+ * checks the two `ApiTokenScope` enumerations, a review checks the two response lists.
+ */
+export const API_TOKEN_SCOPES = Object.freeze([
+  'tasks:read',
+  'tasks:write',
+  'members:read',
+  'webhooks:manage',
+]);
+
 // Document each node reached through a `$ref` to another file was read from. A `$ref` written inside
 // a shared component (components/) points into that file, not into the spec being linted, so it is
 // resolved from there.
@@ -119,6 +143,82 @@ function check(rule) {
 
 function invalid(condition, message) {
   return condition ? [message] : [];
+}
+
+function isPublicDocument(context) {
+  return String(context.location.source.absoluteRef)
+    .replaceAll('\\', '/')
+    .includes('/openapi/public/');
+}
+
+// Findings of one security requirement of a public operation: a requirement names one scheme of
+// PUBLIC_SCHEMES, declared with the expected shape; the cookie takes no scope; a token lists at
+// least one scope, each of API_TOKEN_SCOPES once. An empty requirement means no credential.
+function requirementFindings(requirement, index, root, context, path) {
+  const where = [...path, 'security', index];
+  if (!requirement || typeof requirement !== 'object' || Array.isArray(requirement)) {
+    return [{ message: 'A security requirement is an object.', path: where }];
+  }
+  const names = Object.keys(requirement);
+  if (names.length > 1) {
+    return [
+      {
+        message: 'A security requirement names one scheme: list the credentials as alternatives.',
+        path: where,
+      },
+    ];
+  }
+  const findings = [];
+  for (const name of names) {
+    if (!Object.hasOwn(PUBLIC_SCHEMES, name)) {
+      findings.push({
+        message: `Unknown security scheme ${name}: sessionCookie or apiToken expected.`,
+        path: where,
+      });
+      continue;
+    }
+    const scheme = resolve(root.components?.securitySchemes?.[name], context);
+    if (!PUBLIC_SCHEMES[name](scheme)) {
+      findings.push({
+        message:
+          name === 'sessionCookie'
+            ? 'sessionCookie must be declared as the apiKey cookie __Host-cw_session.'
+            : 'apiToken must be declared as an http bearer scheme.',
+        path: where,
+      });
+    }
+    const scopes = requirement[name];
+    if (!Array.isArray(scopes)) {
+      findings.push({ message: `The scopes of ${name} are a list.`, path: where });
+    } else if (name === 'sessionCookie' && scopes.length > 0) {
+      findings.push({
+        message: 'sessionCookie takes no scope: a session holds every scope.',
+        path: where,
+      });
+    } else if (name === 'apiToken') {
+      if (scopes.length === 0) {
+        findings.push({
+          message: 'apiToken lists the scope a personal API token needs.',
+          path: where,
+        });
+      }
+      for (const scope of scopes.filter((item) => !API_TOKEN_SCOPES.includes(item))) {
+        findings.push({ message: `Unknown scope: ${String(scope)}.`, path: where });
+      }
+      if (new Set(scopes).size !== scopes.length) {
+        findings.push({ message: 'A scope is listed twice.', path: where });
+      }
+    }
+  }
+  return findings;
+}
+
+function sameValues(values, expected) {
+  return (
+    Array.isArray(values) &&
+    values.length === expected.length &&
+    expected.every((value) => values.includes(value))
+  );
 }
 
 const openapi = {
@@ -264,6 +364,56 @@ const openapi = {
         );
       })
       .map(() => 'Invalid cursor pagination.'),
+  // Every public operation says itself who may call it, so that the gateway reads one place per
+  // route and no route inherits a credential by accident: `[]` for none, `sessionCookie: []` for a
+  // session, `apiToken: [<scope>]` for a personal API token with that scope.
+  'security-declared': (root, context) =>
+    isPublicDocument(context)
+      ? operations(root, context)
+          .filter(({ operation }) => !Array.isArray(operation.security))
+          .map(({ path, method }) => ({
+            message: `A public operation declares its own security: ${method.toUpperCase()} ${path}.`,
+            path: ['paths', path, method],
+            key: true,
+          }))
+      : [],
+  // The credentials and scopes of the public operations, and the enumeration of the scopes in any
+  // document that defines one.
+  'security-scopes': (root, context) => {
+    const findings = [];
+    const scopeSchema = resolve(root.components?.schemas?.ApiTokenScope, context);
+    if (scopeSchema && !sameValues(scopeSchema.enum, API_TOKEN_SCOPES)) {
+      findings.push({
+        message: `ApiTokenScope enumerates the scopes ${API_TOKEN_SCOPES.join(', ')}.`,
+        path: ['components', 'schemas', 'ApiTokenScope'],
+      });
+    }
+    if (!isPublicDocument(context)) return findings;
+    for (const { path, method, operation } of operations(root, context)) {
+      if (!Array.isArray(operation.security)) continue;
+      const where = ['paths', path, method];
+      operation.security.forEach((requirement, index) => {
+        findings.push(...requirementFindings(requirement, index, root, context, where));
+      });
+      const tokenOpen = operation.security.some(
+        (requirement) => requirement && Object.hasOwn(requirement, 'apiToken'),
+      );
+      const sessionOpen = operation.security.some(
+        (requirement) =>
+          requirement &&
+          Object.keys(requirement).length === 1 &&
+          Array.isArray(requirement.sessionCookie),
+      );
+      if (tokenOpen && !sessionOpen) {
+        findings.push({
+          message:
+            'A route open to a personal API token also accepts the session, which holds every scope.',
+          path: [...where, 'security'],
+        });
+      }
+    }
+    return findings;
+  },
 };
 
 const asyncapi = {

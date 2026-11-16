@@ -26,6 +26,7 @@ import type {
   CodeVerification,
   CurrentUser,
   PasswordSignIn,
+  ProfilePatch,
   SignInMethods,
   SignInMethodsRequest,
   SignOutRequest,
@@ -421,7 +422,7 @@ export class AuthService {
  * ended or no cookie came: signing out twice is not an error.
  *
  * The body is an empty JSON object: the cross-site check needs
- * `Content-Type: application/json`. Scopes: none.
+ * `Content-Type: application/json`. A bearer token, if any, is ignored. Scopes: none.
  * @summary Sign out of the current session
  */
  signOut<TData = void>(signOutRequest: SignOutRequest, options?: HttpClientBodyOptions): Observable<TData>;
@@ -458,8 +459,10 @@ export class AuthService {
     );
   }
 /**
- * Returns the account of the session. No organization yet: memberships and the current
- * organization come in a later version, as new members. Scopes: none.
+ * Returns the account of the session and its profile ("Profil"). The organizations of the
+ * account are listed by `GET /v1/organizations` and the current one is read by
+ * `GET /v1/organization` (`openapi/public/organizations.yaml`). Session only: a personal API
+ * token gets `403 auth.api-token-not-accepted`.
  * @summary Read the current user
  */
  getCurrentUser<TData = CurrentUser>( options?: HttpClientBodyOptions): Observable<TData>;
@@ -492,6 +495,57 @@ export class AuthService {
       }
     );
   }
+/**
+ * Applies a JSON Merge Patch (RFC 7396) to the profile of the account ("Informations
+ * personnelles" and "Langue"): a member left out is unchanged, `null` clears `displayName` or
+ * `jobTitle`. Colleagues see the change at once ("Vos collègues verront les changements tout
+ * de suite.").
+ *
+ * - `timeZone` is an IANA time zone name; a name identity-service does not know answers
+ *   `400 request.invalid` with an issue on `timeZone`.
+ * - `If-Match` is optional; a version that is no longer the current one answers
+ *   `412 request.version-mismatch`.
+ * - The address, the password and the photo do not change here: their own routes come in a
+ *   later version.
+ *
+ * Emits `user.profile-updated.v1` when something changed; a patch that changes nothing
+ * answers `200` with the same version and emits nothing. Session only: a personal API token
+ * gets `403 auth.api-token-not-accepted`.
+ * @summary Update the profile of the current user
+ */
+ updateCurrentUser<TData = CurrentUser>(profilePatch: ProfilePatch, options?: HttpClientBodyOptions): Observable<TData>;
+ updateCurrentUser<TData = CurrentUser>(profilePatch: ProfilePatch, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ updateCurrentUser<TData = CurrentUser>(profilePatch: ProfilePatch, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  updateCurrentUser<TData = CurrentUser>(
+    profilePatch: ProfilePatch, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.patch<TData>(
+      `/v1/me`,
+      profilePatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.patch<TData>(
+      `/v1/me`,
+      profilePatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.patch<TData>(
+      `/v1/me`,
+      profilePatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
 };
 
 export type DiscoverSignInMethodsClientResult = NonNullable<SignInMethods>
@@ -503,3 +557,4 @@ export type RequestSignInCodeClientResult = NonNullable<CodeSent>
 export type SignInWithCodeClientResult = NonNullable<SignedInResponse>
 export type SignOutClientResult = NonNullable<void>
 export type GetCurrentUserClientResult = NonNullable<CurrentUser>
+export type UpdateCurrentUserClientResult = NonNullable<CurrentUser>

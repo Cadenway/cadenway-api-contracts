@@ -1,5 +1,5 @@
 # Public routes of authentication: sign-up, email verification, sign-in by password or by email
-# code, sign-out and the current user. Served by cadenway-api-gateway, which calls
+# code, sign-out, and the current user and its profile. Served by cadenway-api-gateway, which calls
 # openapi/internal/identity-service.yaml for each of them.
 openapi: 3.1.0
 info:
@@ -13,15 +13,25 @@ info:
     responses that sign in (`Set-Cookie`) and cleared by the sign-out. The token is opaque: the
     gateway checks it on every request with identity-service, without a cache, so a revoked session
     stops at the next request. The web application never reads it (`HttpOnly`). A route without a
-    session (`security: []`) ignores the cookie: a stale one never makes it fail. The responses that
-    sign in and `GET /v1/me` carry `Cache-Control: no-store`. Personal API tokens, sent as a bearer
-    token, come in a later version of this document.
+    session (`security: []`) ignores the cookie and any bearer token: a stale one never makes it
+    fail. The responses that sign in and `GET /v1/me` carry `Cache-Control: no-store`.
+
+    **Credentials and scopes.** Every public operation of Cadenway declares in its own `security`
+    what may call it: `sessionCookie: []` for a session, `apiToken: [<scope>]` for a personal API
+    token (`openapi/public/api-tokens.yaml`) with that scope, `[]` for no credential. A session
+    holds every scope. The routes of this document accept no personal API token: one that calls
+    `GET /v1/me` or `PATCH /v1/me` gets `403 auth.api-token-not-accepted`. On a route that
+    needs a credential, a request that carries `Authorization: Bearer` is authenticated with that
+    token alone and its cookie is ignored. The routes without a session (`security: []`) and the
+    sign-out ignore any bearer token: the sign-out always closes the session of the cookie.
 
     **Cross-site requests.** Every request with an unsafe method on these routes, signed in or not,
     carries an `Origin` equal to one of the gateway's allowed origins (the web application, the
     website) and `Content-Type: application/json`; the gateway refuses any other before the route
     runs (`403 auth.csrf-rejected`). Signing in and signing up are covered too, so that another
-    site cannot sign a browser in to an account of its choosing.
+    site cannot sign a browser in to an account of its choosing. A `PATCH` is a JSON Merge Patch
+    (RFC 7396) sent as `application/json`, for the same reason. A request authenticated by a
+    personal API token carries no ambient credential and needs no `Origin`.
 
     **Account enumeration.** Only the sign-up says whether an address is taken, as the mockup does.
     Every other route answers the same way whether or not an account uses the address: the method
@@ -34,8 +44,8 @@ info:
     English reason phrase of the status. `details` carries the values the web application formats
     its own lines from.
     A failed password or code answers `422`, never `401`: `401` means that the session cookie is
-    missing or no longer active, and the web application sends the person to the sign-in screen on
-    it.
+    missing or no longer active, or that a bearer token is not valid, and the web application sends
+    the person to the sign-in screen on it.
 
     **Status codes of actions.** These routes are actions, not resources: none answers `201` with a
     `Location`. A route that sends a code answers `202`, one that signs in answers `200` with the
@@ -44,7 +54,10 @@ info:
     **Later versions** add, without changing what is here: OAuth providers and SAML single sign-on
     (new method types in the discovery, new routes), a second factor (a sign-in that needs one will
     answer another success status with a challenge: a `200` always carries a session), password
-    reset, organizations and memberships in the current user, sessions and API tokens.
+    reset, the change of address, the photo, the list of sessions and the deletion of the account.
+    The organizations, the current organization of the session and the personal API tokens are in
+    `openapi/public/organizations.yaml`, `openapi/public/members.yaml` and
+    `openapi/public/api-tokens.yaml`.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -55,7 +68,7 @@ info:
     - repository: cadenway-api-gateway
       uses: Serves every route, through openapi/internal/identity-service.yaml.
     - repository: cadenway-webapp
-      uses: Calls every route through @cadenway/api-client (sign-in, sign-up, code and sign-out screens).
+      uses: Calls every route through @cadenway/api-client (sign-in, sign-up, code and sign-out screens, account "Profil" and "Préférences").
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -65,7 +78,7 @@ security:
   - sessionCookie: []
 tags:
   - name: auth
-    description: Sign-up, email verification, sign-in, sign-out and the current user.
+    description: Sign-up, email verification, sign-in, sign-out, and the current user and its profile.
 paths:
   /v1/auth/sign-in-methods:
     post:
@@ -387,7 +400,7 @@ paths:
         ended or no cookie came: signing out twice is not an error.
 
         The body is an empty JSON object: the cross-site check needs
-        `Content-Type: application/json`. Scopes: none.
+        `Content-Type: application/json`. A bearer token, if any, is ignored. Scopes: none.
       tags: [auth]
       security:
         - sessionCookie: []
@@ -418,9 +431,13 @@ paths:
       operationId: getCurrentUser
       summary: Read the current user
       description: |
-        Returns the account of the session. No organization yet: memberships and the current
-        organization come in a later version, as new members. Scopes: none.
+        Returns the account of the session and its profile ("Profil"). The organizations of the
+        account are listed by `GET /v1/organizations` and the current one is read by
+        `GET /v1/organization` (`openapi/public/organizations.yaml`). Session only: a personal API
+        token gets `403 auth.api-token-not-accepted`.
       tags: [auth]
+      security:
+        - sessionCookie: []
       responses:
         '200':
           description: The signed-in user.
@@ -431,14 +448,78 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CurrentUser'
-              example:
-                id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
-                name: Camille Martin
-                email: camille.martin@ateliernord.fr
-                language: fr
-                version: 2
+              examples:
+                camilleMartin:
+                  $ref: '#/components/examples/CamilleMartin'
         '401':
           $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ApiTokenNotAccepted'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateCurrentUser
+      summary: Update the profile of the current user
+      description: |
+        Applies a JSON Merge Patch (RFC 7396) to the profile of the account ("Informations
+        personnelles" and "Langue"): a member left out is unchanged, `null` clears `displayName` or
+        `jobTitle`. Colleagues see the change at once ("Vos collègues verront les changements tout
+        de suite.").
+
+        - `timeZone` is an IANA time zone name; a name identity-service does not know answers
+          `400 request.invalid` with an issue on `timeZone`.
+        - `If-Match` is optional; a version that is no longer the current one answers
+          `412 request.version-mismatch`.
+        - The address, the password and the photo do not change here: their own routes come in a
+          later version.
+
+        Emits `user.profile-updated.v1` when something changed; a patch that changes nothing
+        answers `200` with the same version and emits nothing. Session only: a personal API token
+        gets `403 auth.api-token-not-accepted`.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: '`"<version>"` the change was made from, as the `ETag` gave it.'
+          schema:
+            type: string
+            examples: ['"2"']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfilePatch'
+            example:
+              displayName: camille
+              jobTitle: Responsable produit
+              timeZone: Europe/Paris
+      responses:
+        '200':
+          description: The account after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+              examples:
+                camilleMartin:
+                  $ref: '#/components/examples/CamilleMartin'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ProfileForbidden'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -491,6 +572,9 @@ components:
               name: Camille Martin
               email: camille.martin@ateliernord.fr
               language: fr
+              displayName: null
+              jobTitle: null
+              timeZone: Europe/Paris
               version: 2
             session:
               id: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
@@ -722,7 +806,9 @@ components:
       description: |
         - `auth.session-required`: the request carries no session cookie;
         - `auth.session-expired`: the cookie names a session that ended (expired, revoked or
-          unknown). The web application signs the person in again.
+          unknown). The web application signs the person in again;
+        - `auth.api-token-invalid`: the request carries a bearer token that is unknown, revoked or
+          expired, or whose user no longer belongs to its organization.
       content:
         application/problem+json:
           schema:
@@ -742,6 +828,53 @@ components:
                 title: Session expirée
                 status: 401
                 code: auth.session-expired
+            apiTokenInvalid:
+              summary: Personal API token no longer valid
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    ApiTokenNotAccepted:
+      description: '`auth.api-token-not-accepted`: a personal API token cannot call this route.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    ProfileForbidden:
+      description: |
+        - `auth.csrf-rejected`: see `CrossSiteRefused`;
+        - `auth.api-token-not-accepted`: a personal API token cannot change a profile.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            crossSiteRefused:
+              summary: Request from another site
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.csrf-rejected
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 3
     CrossSiteRefused:
       description: |
         `auth.csrf-rejected`: the `Origin` of the request is not an allowed origin, or its
@@ -772,6 +905,24 @@ components:
             details:
               service: identity-service
   examples:
+    CamilleMartin:
+      summary: Camille Martin, with the profile of the mockup
+      value:
+        id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+        name: Camille Martin
+        email: camille.martin@ateliernord.fr
+        language: fr
+        displayName: camille
+        jobTitle: Responsable produit
+        timeZone: Europe/Paris
+        version: 3
+    ApiTokenNotAccepted:
+      summary: Personal API token on a session-only route
+      value:
+        type: about:blank
+        title: Cette requête n’accepte pas de jeton d’API.
+        status: 403
+        code: auth.api-token-not-accepted
     CodeInvalid:
       summary: Wrong code
       value:
@@ -966,20 +1117,71 @@ components:
             also ends after 12 hours of inactivity by default.
     CurrentUser:
       type: object
-      required: [id, name, email, language, version]
+      required: [id, name, email, language, displayName, jobTitle, timeZone, version]
       properties:
         id:
           type: string
           format: uuid
         name:
           type: string
-          description: Full name; the web application derives the initials from it.
+          description: Full name ("Nom complet"); the web application derives the initials from it.
           examples: [Camille Martin]
         email:
           $ref: '#/components/schemas/Email'
         language:
           $ref: '#/components/schemas/Language'
+        displayName:
+          type: [string, 'null']
+          description: |
+            "Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.
+          examples: [camille]
+        jobTitle:
+          type: [string, 'null']
+          description: '"Poste (facultatif)"; `null` when there is none.'
+          examples: [Responsable produit]
+        timeZone:
+          $ref: '#/components/schemas/TimeZone'
         version:
           type: integer
           minimum: 1
           description: Version of the account, also sent as `ETag`.
+    TimeZone:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: |
+        IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person
+        chooses another.
+      examples: [Europe/Paris]
+    ProfilePatch:
+      type: object
+      description: JSON Merge Patch of the profile; an empty object changes nothing.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: |
+            Full name ("Nom complet"), as typed; surrounding spaces are removed, and a name made only
+            of spaces is refused with `400 request.invalid`.
+          examples: [Camille Martin]
+        displayName:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 60
+          description: '"Nom affiché", as typed and trimmed; `null` clears it.'
+          examples: [camille]
+        jobTitle:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 120
+          description: '"Poste (facultatif)", as typed and trimmed; `null` clears it.'
+          examples: [Responsable produit]
+        timeZone:
+          $ref: '#/components/schemas/TimeZone'
+        language:
+          type: string
+          description: |
+            Language of the account and of its emails ("Langue"), a BCP 47 tag: `fr` (Français),
+            `en` (English), `de` (Deutsch) or `es` (Español). Later versions may accept more.
+          enum: [fr, en, de, es]

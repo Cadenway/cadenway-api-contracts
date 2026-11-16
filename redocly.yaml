@@ -19,6 +19,8 @@ rules:
   cadenway/pagination-no-offset: error
   cadenway/pagination-limit: error
   cadenway/pagination-cursor: error
+  cadenway/security-declared: error
+  cadenway/security-scopes: error
   cadenway/asyncapi-version: error
   cadenway/event-channel-address: error
   cadenway/event-name: error
