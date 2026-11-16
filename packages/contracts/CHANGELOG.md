@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.5.1
+
+### Patch Changes
+
+- 2a0cf4d: Use a shared OpenAPI component for the organization role while preserving the generated name and values.
+
 ## 0.5.0
 
 ### Minor Changes
