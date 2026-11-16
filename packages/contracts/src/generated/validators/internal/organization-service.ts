@@ -90,7 +90,7 @@ export const ListMyOrganizationsInternalResponse = zod.object({
   "id": zod.uuid(),
   "name": zod.string(),
   "slug": zod.string(),
-  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization.'),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "memberCount": zod.int().min(1),
   "plan": zod.string(),
   "joinedAt": zod.iso.datetime({"offset":true})
@@ -194,7 +194,7 @@ export const ListMembersInternalQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.int().min(1).max(listMembersInternalQueryLimitMax).default(listMembersInternalQueryLimitDefault).describe('Page size.'),
   "search": zod.string().min(1).max(listMembersInternalQuerySearchMax).optional().describe('Text to find in the name or the address, without regard to case or accents.'),
-  "role": zod.array(zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization.')).min(1).max(listMembersInternalQueryRoleMax).optional().describe('Roles to keep, separated by commas.')
+  "role": zod.array(zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n')).min(1).max(listMembersInternalQueryRoleMax).optional().describe('Roles to keep, separated by commas.')
 })
 
 export const listMembersInternalResponseItemsItemEmailMax = 254;
@@ -218,7 +218,7 @@ export const ListMembersInternalResponse = zod.object({
   "userId": zod.uuid(),
   "name": zod.string().describe('Full name, from the user directory.'),
   "email": zod.email().max(listMembersInternalResponseItemsItemEmailMax).describe('Email address, compared without regard to case.'),
-  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization.'),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "joinedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().min(1)
 })),
@@ -253,7 +253,7 @@ export const GetMemberInternalResponse = zod.object({
   "userId": zod.uuid(),
   "name": zod.string().describe('Full name, from the user directory.'),
   "email": zod.email().max(getMemberInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
-  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization.'),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "joinedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().min(1)
 })
@@ -288,7 +288,7 @@ export const ChangeMemberRoleInternalResponse = zod.object({
   "userId": zod.uuid(),
   "name": zod.string().describe('Full name, from the user directory.'),
   "email": zod.email().max(changeMemberRoleInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
-  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization.'),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "joinedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().min(1)
 })
@@ -499,7 +499,7 @@ export const AcceptInvitationInternalResponse = zod.object({
   "id": zod.uuid(),
   "name": zod.string(),
   "slug": zod.string(),
-  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization.'),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "memberCount": zod.int().min(1),
   "plan": zod.string(),
   "joinedAt": zod.iso.datetime({"offset":true})

@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { STATUS_KEYS } from '@cadenway/contracts';
+import { SESSION_REVOKED_V1, sessionRevokedV1Schema } from '@cadenway/contracts/events/identity-service';
+import { DiscoverSignInMethodsBody } from '@cadenway/contracts/validators/public/auth';
+
+const { entries, specs } = JSON.parse(readFileSync(new URL('./runtime-entries.json', import.meta.url), 'utf8'));
+for (const entry of entries) await import(entry);
+assert.ok(STATUS_KEYS.length > 0);
+assert.deepEqual(DiscoverSignInMethodsBody.parse({ email: 'user@example.test' }), {
+  email: 'user@example.test',
+});
+assert.equal(DiscoverSignInMethodsBody.safeParse({ email: 'invalid' }).success, false);
+
+const id = '00000000-0000-4000-8000-000000000001';
+assert.equal(SESSION_REVOKED_V1, 'session.revoked.v1');
+assert.equal(
+  sessionRevokedV1Schema.safeParse({
+    id,
+    occurredAt: '2026-01-01T00:00:00Z',
+    organizationId: null,
+    actor: { type: 'system', id: 'identity-service' },
+    version: 1,
+    sessionId: id,
+    userId: id,
+  }).success,
+  true,
+);
+
+for (const prefix of ['openapi/public/', 'openapi/internal/', 'asyncapi/']) {
+  assert.ok(specs.some((specifier) => specifier.includes('/specs/' + prefix)));
+}
+for (const specifier of specs) {
+  const contents = readFileSync(new URL(import.meta.resolve(specifier)), 'utf8');
+  assert.match(contents, /^(?:openapi|asyncapi):/mu);
+}

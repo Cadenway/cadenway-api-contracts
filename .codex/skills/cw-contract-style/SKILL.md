@@ -43,7 +43,7 @@ description: "Naming, pagination, error, id and date conventions shared by every
 | --- | --- |
 | Spec version | AsyncAPI 3.0.0 exactly: `pnpm generate:events` refuses any other version |
 | Payload | declares `properties` and `required` itself, without `allOf`; uses the JSON Schema keywords the event generator turns into a validator, which refuses the others |
-| Compatibility | no tool compares events with `main`; a payload change other than an added optional member takes a new versioned name and is reviewed |
+| Compatibility | `pnpm breaking` compares events with `main`; incompatible changes, including optional additions to closed schemas, take a new versioned name |
 | `version` | the version of the aggregate, in every event; a consumer ignores a version it has already applied |
 | `actor` | `{ type: 'user' \| 'automation' \| 'git' \| 'system', id }` |
 | Subject | `evt.<name>`, the address of the channel; `restricted.<name>` for a message marked `x-cadenway-restricted: true`, which carries a secret and is read by notification-service only |

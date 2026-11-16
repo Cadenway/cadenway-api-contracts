@@ -80,8 +80,8 @@ narrowest check that covers the change first, then widen:
 | Any change to a package         | a changeset                                                           |
 | Docs or agent instructions only | Scoped formatting and link review                                     |
 
-`pnpm breaking` compares OpenAPI only. No tool compares the events of `asyncapi/` with `main`: an
-event changes shape under a new versioned name, and the change is reviewed (`/cw-breaking-review`).
+`pnpm breaking` compares OpenAPI and AsyncAPI with `main`. An incompatible event change uses a new
+versioned name while the previous version stays available.
 
 Report the commands you actually ran and their results; a check you did not run is reported as not
 run.

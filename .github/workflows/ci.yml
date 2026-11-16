@@ -24,6 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -40,6 +41,11 @@ jobs:
       - run: pnpm test:lint
       - run: pnpm lint:code
       - run: pnpm lint:specs
+      - name: Check AsyncAPI compatibility
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/breaking.mjs --events-only --base "$BASE_SHA"
       - run: pnpm generate
       # The generated trees are committed: a spec change without its regenerated code stops here.
       - run: git status --porcelain && test -z "$(git status --porcelain)"
@@ -47,6 +53,31 @@ jobs:
       - run: pnpm test:architecture
       - run: pnpm test
       - run: pnpm build
+      - run: pnpm test:packaging
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Find the minimum supported Node.js version
+        id: node-floor
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          const { engines } = JSON.parse(readFileSync('package.json', 'utf8'));
+          const version = /^\^(\d+\.\d+\.\d+)$/u.exec(engines.node)?.[1];
+          if (!version) throw new Error('Set the packaging Node.js floor for ' + engines.node);
+          if (process.versions.node !== version) {
+            appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + version + '\n');
+          }
+          JS
+      - if: steps.node-floor.outputs.version != ''
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.node-floor.outputs.version }}
+          registry-url: https://npm.pkg.github.com
+          scope: '@cadenway'
+      - if: steps.node-floor.outputs.version != ''
+        run: pnpm test:packaging
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   breaking:
     name: Breaking changes

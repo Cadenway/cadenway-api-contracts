@@ -7,36 +7,15 @@
  * conversion itself is scripts/lib/events-module.mjs. The folder is owned by this script: a module
  * whose document is gone is removed.
  */
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { dereference } from './lib/dereference.mjs';
 import { renderEventsModule } from './lib/events-module.mjs';
 import { ROOTS, listYaml } from './lib/roots.mjs';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const require = createRequire(import.meta.url);
-const redocly = path.join(path.dirname(require.resolve('@redocly/cli/package.json')), 'bin/cli.js');
-
-/**
- * Reads an AsyncAPI document with every `$ref` replaced by what it points to.
- *
- * @param {string} file Path of the document, relative to the repository root.
- * @returns {Record<string, unknown>} The dereferenced document.
- */
-function dereference(file) {
-  const run = spawnSync(
-    process.execPath,
-    [redocly, 'bundle', file, '--dereferenced', '--ext', 'json'],
-    { cwd: repository, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
-  );
-  if (run.status !== 0) {
-    throw new Error(`redocly could not read ${file}:\n${run.stderr || run.stdout}`);
-  }
-  return JSON.parse(run.stdout);
-}
 
 let failed = false;
 for (const root of ROOTS) {
@@ -47,7 +26,7 @@ for (const root of ROOTS) {
   for (const spec of specs) {
     const source = `${root.asyncapi}/${spec}.yaml`;
     try {
-      const module = renderEventsModule({ source, document: dereference(source) });
+      const module = renderEventsModule({ source, document: dereference(source, repository) });
       const target = path.join(output, `${spec}.ts`);
       mkdirSync(path.dirname(target), { recursive: true });
       writeFileSync(target, module);
