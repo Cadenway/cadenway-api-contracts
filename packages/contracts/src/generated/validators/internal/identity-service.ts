@@ -155,11 +155,11 @@ export const VerifySignUpInternalResponse = zod.object({
   "name": zod.string(),
   "email": zod.email().max(verifySignUpInternalResponseUserEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
-  "displayName": zod.string().nullable().describe('Name used for the mentions; `null` until the person chooses one.'),
-  "jobTitle": zod.string().nullable().describe('Job title; `null` when there is none.'),
-  "timeZone": zod.string().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
+  "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "version": zod.int().min(1).describe('Version of the account.')
-})
+}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
 })
 
 
@@ -210,11 +210,11 @@ export const SignInWithPasswordInternalResponse = zod.object({
   "name": zod.string(),
   "email": zod.email().max(signInWithPasswordInternalResponseUserEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
-  "displayName": zod.string().nullable().describe('Name used for the mentions; `null` until the person chooses one.'),
-  "jobTitle": zod.string().nullable().describe('Job title; `null` when there is none.'),
-  "timeZone": zod.string().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
+  "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "version": zod.int().min(1).describe('Version of the account.')
-})
+}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
 })
 
 
@@ -291,11 +291,11 @@ export const SignInWithCodeInternalResponse = zod.object({
   "name": zod.string(),
   "email": zod.email().max(signInWithCodeInternalResponseUserEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
-  "displayName": zod.string().nullable().describe('Name used for the mentions; `null` until the person chooses one.'),
-  "jobTitle": zod.string().nullable().describe('Job title; `null` when there is none.'),
-  "timeZone": zod.string().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
+  "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "version": zod.int().min(1).describe('Version of the account.')
-})
+}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
 })
 
 
@@ -369,11 +369,11 @@ export const GetUserResponse = zod.object({
   "name": zod.string(),
   "email": zod.email().max(getUserResponseEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
-  "displayName": zod.string().nullable().describe('Name used for the mentions; `null` until the person chooses one.'),
-  "jobTitle": zod.string().nullable().describe('Job title; `null` when there is none.'),
-  "timeZone": zod.string().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
+  "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "version": zod.int().min(1).describe('Version of the account.')
-})
+}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
 
 
 /**
@@ -420,11 +420,11 @@ export const UpdateUserResponse = zod.object({
   "name": zod.string(),
   "email": zod.email().max(updateUserResponseEmailMax).describe('Email address, compared without regard to case.'),
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
-  "displayName": zod.string().nullable().describe('Name used for the mentions; `null` until the person chooses one.'),
-  "jobTitle": zod.string().nullable().describe('Job title; `null` when there is none.'),
-  "timeZone": zod.string().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
+  "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "version": zod.int().min(1).describe('Version of the account.')
-})
+}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
 
 
 /**
@@ -432,9 +432,10 @@ export const UpdateUserResponse = zod.object({
  * next sessions of the actor start in. The membership is checked against the copy of the
  * memberships: an organization the actor does not belong to, or one whose
  * `member.joined.v1` has not arrived yet, answers `404 organization.not-found`. A session of
- * another user, or an unknown id, answers `404 session.not-found`. Choosing the current
- * organization again answers `200` and changes nothing. From the next introspection the
- * session carries the organization and the role. Internal token: actor `user`, no
+ * another user, or an unknown id, answers `404 session.not-found`, which the gateway answers
+ * as `401 auth.session-expired`: the session ended since its introspection. Choosing the
+ * current organization again answers `200` and changes nothing. From the next introspection
+ * the session carries the organization and the role. Internal token: actor `user`, no
  * organization.
  * @summary Choose the current organization of a session
  */
@@ -448,7 +449,7 @@ export const SwitchSessionOrganizationBody = zod.object({
 
 export const SwitchSessionOrganizationResponse = zod.object({
   "organizationId": zod.uuid(),
-  "role": zod.string().describe('Role of the actor in it, from the copy of the memberships.')
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role of the actor in it, from the copy of the memberships.')
 })
 
 
@@ -572,7 +573,7 @@ export const IntrospectApiTokenResponse = zod.union([zod.object({
   "apiTokenId": zod.uuid().describe('Id of the token; the gateway counts its rate limit on it.'),
   "userId": zod.uuid(),
   "organizationId": zod.uuid().describe('Organization the token acts in, the one it was created in.'),
-  "role": zod.string().describe('Role of the user in it, from the copy of the memberships.'),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role of the user in it, from the copy of the memberships.'),
   "scopes": zod.array(zod.string()).describe('Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a scope it lacks.'),
   "expiresAt": zod.iso.datetime({"offset":true}).nullable().describe('When the token stops working; `null` for a token without expiry.')
 }),zod.object({

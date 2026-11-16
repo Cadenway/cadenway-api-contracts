@@ -299,7 +299,7 @@ export const SignInWithCodeResponse = zod.object({
  * ended or no cookie came: signing out twice is not an error.
  *
  * The body is an empty JSON object: the cross-site check needs
- * `Content-Type: application/json`. Scopes: none.
+ * `Content-Type: application/json`. A bearer token, if any, is ignored. Scopes: none.
  * @summary Sign out of the current session
  */
 export const SignOutBody = zod.object({
@@ -373,7 +373,7 @@ export const UpdateCurrentUserBody = zod.object({
   "jobTitle": zod.string().min(1).max(updateCurrentUserBodyJobTitleMax).nullish().describe('"Poste (facultatif)", as typed and trimmed; `null` clears it.'),
   "timeZone": zod.string().min(1).max(updateCurrentUserBodyTimeZoneMax).optional().describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "language": zod.enum(['fr', 'en', 'de', 'es']).optional().describe('Language of the account and of its emails ("Langue"), a BCP 47 tag: `fr` (Français),\n`en` (English), `de` (Deutsch) or `es` (Español). Later versions may accept more.\n')
-}).describe('JSON Merge Patch of the profile; at least one member.')
+}).describe('JSON Merge Patch of the profile; an empty object changes nothing.')
 
 export const updateCurrentUserResponseEmailMax = 254;
 

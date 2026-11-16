@@ -31,8 +31,9 @@ info:
     (`403 organization.not-selected` without one): a token never manages tokens.
 
     **Cross-site requests.** A request with an unsafe method authenticated by the cookie carries an
-    `Origin` equal to one of the gateway's allowed origins and `Content-Type: application/json`
-    (`403 auth.csrf-rejected` otherwise).
+    `Origin` equal to one of the gateway's allowed origins and, when it has a body,
+    `Content-Type: application/json` (`403 auth.csrf-rejected` otherwise). A `DELETE` has no
+    body: a browser sends one only after a CORS preflight, so its `Origin` is the check.
 
     **Rate limit.** 600 requests per minute per session or personal token, counted by the gateway;
     beyond, `429 rate-limit.exceeded` with `Retry-After` ("600 requêtes par minute et par jeton").

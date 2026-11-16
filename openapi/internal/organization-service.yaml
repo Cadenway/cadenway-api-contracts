@@ -34,7 +34,9 @@ info:
     accepts the issuer `api-gateway` and the actor `user` only. Each operation says whether it
     requires an organization: an organization-scoped route acts on the organization of the token,
     the current organization of the session or the organization of the personal API token, and
-    runs in the tenant transaction of that organization. The guard of the kit answers
+    runs in the tenant transaction of that organization. A route that requires no organization
+    ignores the one the token may carry, the current organization of the session, and opens no
+    tenant transaction from it. The guard of the kit answers
     `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
     `403 auth.actor-not-allowed` and `403 auth.organization-required`. The gateway answers
     `403 organization.not-selected` itself, before the call, when the session has no current
@@ -54,7 +56,9 @@ info:
     **User directory.** organization-service keeps the id, name, address and verification of
     every account from `user.signed-up.v1`, `user.email-verified.v1` and `user.profile-updated.v1`
     (`asyncapi/identity-service.yaml`), to show names and addresses and to match an invitation
-    with the account that verified its address.
+    with the account that verified its address. It reads the whole history of these events, not
+    only those published after it subscribed, and applies each account by its `version`, so that
+    a late `user.signed-up.v1` never overwrites a newer profile.
 
     **Errors.** The gateway forwards the `code` and the `details` and answers the French `title`
     of the public spec; the titles here are English. The gateway's internal client turns any `401`
@@ -93,8 +97,8 @@ paths:
         `POST /v1/organizations` says. Emits `organization.created.v1`, `member.joined.v1` and one
         `invitation.issued.v1` per invited address.
 
-        An actor that is not in the user directory yet answers `404 user.not-found` and creates
-        nothing. Internal token: actor `user`, no organization.
+        An actor that is not in the user directory yet answers `404 user.not-synchronized` and
+        creates nothing. Internal token: actor `user`, no organization.
       tags: [organizations]
       requestBody:
         required: true
@@ -146,7 +150,7 @@ paths:
         '403':
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
-          $ref: '#/components/responses/UserNotFound'
+          $ref: '#/components/responses/UserNotSynchronized'
         '409':
           $ref: '#/components/responses/SlugTaken'
         '422':
@@ -518,7 +522,7 @@ paths:
         '404':
           $ref: '#/components/responses/InvitationNotFound'
         '409':
-          $ref: '#/components/responses/InvitationNotPending'
+          $ref: '#/components/responses/InvitationAnswered'
   /internal/v1/invitations/{invitationId}/resend:
     parameters:
       - $ref: '#/components/parameters/InvitationId'
@@ -541,6 +545,9 @@ paths:
       responses:
         '200':
           description: The invitation, with its new expiry.
+          headers:
+            ETag:
+              $ref: '#/components/headers/InvitationETag'
           content:
             application/json:
               schema:
@@ -557,7 +564,7 @@ paths:
         '404':
           $ref: '#/components/responses/InvitationNotFound'
         '409':
-          $ref: '#/components/responses/InvitationNotPending'
+          $ref: '#/components/responses/InvitationClosed'
   /internal/v1/users/{userId}/invitations:
     parameters:
       - $ref: '#/components/parameters/UserId'
@@ -736,6 +743,10 @@ components:
       description: Version of the membership, `"<version>"`.
       schema:
         type: string
+    InvitationETag:
+      description: Version of the invitation, `"<version>"`.
+      schema:
+        type: string
   examples:
     AtelierNord:
       summary: Atelier Nord, read by its owner
@@ -898,9 +909,7 @@ components:
             actorNotAllowed:
               $ref: '#/components/examples/ActorNotAllowed'
     UserNotFound:
-      description: |
-        `user.not-found`: the actor is not in the user directory yet, or the `userId` of the path
-        is not the actor.
+      description: '`user.not-found`: the `userId` of the path is not the actor.'
       content:
         application/problem+json:
           schema:
@@ -910,6 +919,19 @@ components:
             title: Not Found
             status: 404
             code: user.not-found
+    UserNotSynchronized:
+      description: |
+        `user.not-synchronized`: the actor is not in the user directory yet; it is within seconds of
+        the sign-up.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: user.not-synchronized
     OrganizationNotFound:
       description: '`organization.not-found`: the actor does not belong to the organization of the token.'
       content:
@@ -961,6 +983,26 @@ components:
             title: Not Found
             status: 404
             code: invitation.not-found
+    InvitationAnswered:
+      description: '`invitation.answered`: the invitation was accepted or refused already, with `details.status`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invitationAnswered:
+              $ref: '#/components/examples/InvitationAnswered'
+    InvitationClosed:
+      description: '`invitation.revoked`, or `invitation.answered` with `details.status`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invitationRevoked:
+              $ref: '#/components/examples/InvitationRevoked'
+            invitationAnswered:
+              $ref: '#/components/examples/InvitationAnswered'
     InvitationNotPending:
       description: |
         `invitation.revoked`, `invitation.answered` (with `details.status`, `accepted` or
@@ -1243,21 +1285,24 @@ components:
           type: integer
           minimum: 0
         counts:
-          type: object
-          required: [owner, admin, member, guest]
-          properties:
-            owner:
-              type: integer
-              minimum: 0
-            admin:
-              type: integer
-              minimum: 0
-            member:
-              type: integer
-              minimum: 0
-            guest:
-              type: integer
-              minimum: 0
+          $ref: '#/components/schemas/RoleCounts'
+    RoleCounts:
+      type: object
+      required: [owner, admin, member, guest]
+      description: Members of the organization by role, whatever the filters of the request.
+      properties:
+        owner:
+          type: integer
+          minimum: 0
+        admin:
+          type: integer
+          minimum: 0
+        member:
+          type: integer
+          minimum: 0
+        guest:
+          type: integer
+          minimum: 0
     MemberPatch:
       type: object
       required: [role]
@@ -1332,6 +1377,23 @@ components:
         total:
           type: integer
           minimum: 0
+    InvitingOrganization:
+      type: object
+      required: [id, name, slug, description, memberCount]
+      description: The organization of an invitation, as the invitee sees it before joining.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: [string, 'null']
+        memberCount:
+          type: integer
+          minimum: 1
     ReceivedInvitation:
       type: object
       required: [id, organization, role, invitedBy, expiresAt]
@@ -1340,21 +1402,7 @@ components:
           type: string
           format: uuid
         organization:
-          type: object
-          required: [id, name, slug, description, memberCount]
-          properties:
-            id:
-              type: string
-              format: uuid
-            name:
-              type: string
-            slug:
-              type: string
-            description:
-              type: [string, 'null']
-            memberCount:
-              type: integer
-              minimum: 1
+          $ref: '#/components/schemas/InvitingOrganization'
         role:
           $ref: '#/components/schemas/AssignableRole'
         invitedBy:

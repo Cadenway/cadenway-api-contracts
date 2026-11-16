@@ -20,9 +20,10 @@ info:
     what may call it: `sessionCookie: []` for a session, `apiToken: [<scope>]` for a personal API
     token (`openapi/public/api-tokens.yaml`) with that scope, `[]` for no credential. A session
     holds every scope. The routes of this document accept no personal API token: one that calls
-    `GET /v1/me` or `PATCH /v1/me` gets `403 auth.api-token-not-accepted`. When a request carries
-    `Authorization: Bearer`, the gateway authenticates it with that token alone and ignores the
-    cookie.
+    `GET /v1/me` or `PATCH /v1/me` gets `403 auth.api-token-not-accepted`. On a route that
+    needs a credential, a request that carries `Authorization: Bearer` is authenticated with that
+    token alone and its cookie is ignored. The routes without a session (`security: []`) and the
+    sign-out ignore any bearer token: the sign-out always closes the session of the cookie.
 
     **Cross-site requests.** Every request with an unsafe method on these routes, signed in or not,
     carries an `Origin` equal to one of the gateway's allowed origins (the web application, the
@@ -43,8 +44,8 @@ info:
     English reason phrase of the status. `details` carries the values the web application formats
     its own lines from.
     A failed password or code answers `422`, never `401`: `401` means that the session cookie is
-    missing or no longer active, and the web application sends the person to the sign-in screen on
-    it.
+    missing or no longer active, or that a bearer token is not valid, and the web application sends
+    the person to the sign-in screen on it.
 
     **Status codes of actions.** These routes are actions, not resources: none answers `201` with a
     `Location`. A route that sends a code answers `202`, one that signs in answers `200` with the
@@ -399,7 +400,7 @@ paths:
         ended or no cookie came: signing out twice is not an error.
 
         The body is an empty JSON object: the cross-site check needs
-        `Content-Type: application/json`. Scopes: none.
+        `Content-Type: application/json`. A bearer token, if any, is ignored. Scopes: none.
       tags: [auth]
       security:
         - sessionCookie: []
@@ -1154,7 +1155,7 @@ components:
       examples: [Europe/Paris]
     ProfilePatch:
       type: object
-      description: JSON Merge Patch of the profile; at least one member.
+      description: JSON Merge Patch of the profile; an empty object changes nothing.
       properties:
         name:
           type: string

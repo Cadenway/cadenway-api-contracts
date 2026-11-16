@@ -130,6 +130,12 @@ export interface Session {
   persistent: boolean;
 }
 
+/**
+ * An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this
+ * version on; they are optional here so that the API gateway can move to this version of the
+ * contracts before identity-service does. Until then the gateway answers them as `null`,
+ * `null` and `Europe/Paris`, their values for an account that never set them.
+ */
 export interface User {
   id: string;
   name: string;
@@ -139,14 +145,14 @@ export interface User {
      * Name used for the mentions; `null` until the person chooses one.
      * @nullable
      */
-  displayName: string | null;
+  displayName?: string | null;
   /**
      * Job title; `null` when there is none.
      * @nullable
      */
-  jobTitle: string | null;
+  jobTitle?: string | null;
   /** IANA time zone name; `Europe/Paris` until the person chooses another. */
-  timeZone: string;
+  timeZone?: string;
   /**
      * Version of the account.
      * @minimum 1
@@ -214,6 +220,20 @@ export type InactiveToken = typeof InactiveTokenValue;
 
 export type Introspection = ActiveToken | InactiveToken;
 
+/**
+ * Role in an organization, as organization-service gives it: `owner`, `admin`, `member` or
+ * `guest`.
+ */
+export type Role = typeof Role[keyof typeof Role];
+
+
+export const Role = {
+  owner: 'owner',
+  admin: 'admin',
+  member: 'member',
+  guest: 'guest',
+} as const;
+
 export type ProfilePatchLanguage = typeof ProfilePatchLanguage[keyof typeof ProfilePatchLanguage];
 
 
@@ -262,7 +282,7 @@ export interface OrganizationChoice {
 export interface SessionOrganization {
   organizationId: string;
   /** Role of the actor in it, from the copy of the memberships. */
-  role: string;
+  role: Role;
 }
 
 /**
@@ -368,7 +388,7 @@ export interface ActiveApiToken {
   /** Organization the token acts in, the one it was created in. */
   organizationId: string;
   /** Role of the user in it, from the copy of the memberships. */
-  role: string;
+  role: Role;
   /** Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a scope it lacks. */
   scopes: string[];
   /**

@@ -422,7 +422,7 @@ export class AuthService {
  * ended or no cookie came: signing out twice is not an error.
  *
  * The body is an empty JSON object: the cross-site check needs
- * `Content-Type: application/json`. Scopes: none.
+ * `Content-Type: application/json`. A bearer token, if any, is ignored. Scopes: none.
  * @summary Sign out of the current session
  */
  signOut<TData = void>(signOutRequest: SignOutRequest, options?: HttpClientBodyOptions): Observable<TData>;

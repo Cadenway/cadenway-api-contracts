@@ -47,10 +47,11 @@ info:
     authenticates it with that token alone and ignores the cookie.
 
     **Cross-site requests.** A request with an unsafe method authenticated by the cookie carries an
-    `Origin` equal to one of the gateway's allowed origins and `Content-Type: application/json`
-    (`403 auth.csrf-rejected` otherwise); a request authenticated by a personal token carries no
-    ambient credential and needs no `Origin`. A `PATCH` is a JSON Merge Patch (RFC 7396) sent as
-    `application/json`.
+    `Origin` equal to one of the gateway's allowed origins and, when it has a body,
+    `Content-Type: application/json` (`403 auth.csrf-rejected` otherwise). A `DELETE` has no
+    body: a browser sends one only after a CORS preflight, so its `Origin` is the check. A request
+    authenticated by a personal token carries no ambient credential and needs no `Origin`. A
+    `PATCH` is a JSON Merge Patch (RFC 7396) sent as `application/json`.
 
     **Rate limit.** 600 requests per minute per session or personal token; beyond,
     `429 rate-limit.exceeded` with `Retry-After`.
@@ -482,6 +483,9 @@ paths:
       responses:
         '200':
           description: The invitation, with its new expiry.
+          headers:
+            ETag:
+              $ref: '#/components/headers/InvitationETag'
           content:
             application/json:
               schema:
@@ -701,6 +705,10 @@ components:
   headers:
     ETag:
       description: Version of the member, `"<version>"`.
+      schema:
+        type: string
+    InvitationETag:
+      description: Version of the invitation, `"<version>"`.
       schema:
         type: string
     RetryAfter:

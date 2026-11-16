@@ -20,8 +20,9 @@ const PUBLIC_SCHEMES = {
 /**
  * The scopes a personal API token can hold, and so the only scopes an `apiToken` security
  * requirement may list. A schema named `ApiTokenScope` in a document enumerates exactly these.
- * A new scope is added here and to `ApiTokenScope` of openapi/public/api-tokens.yaml and
- * openapi/internal/identity-service.yaml together.
+ * A new scope is added here, to `ApiTokenScope` and to the `x-extensible-enum` of `ApiToken.scopes`
+ * in openapi/public/api-tokens.yaml and openapi/internal/identity-service.yaml, together; this rule
+ * checks the two `ApiTokenScope` enumerations, a review checks the two response lists.
  */
 export const API_TOKEN_SCOPES = Object.freeze([
   'tasks:read',

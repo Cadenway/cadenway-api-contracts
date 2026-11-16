@@ -10,8 +10,8 @@ import * as zod from 'zod';
  * `POST /v1/organizations` says. Emits `organization.created.v1`, `member.joined.v1` and one
  * `invitation.issued.v1` per invited address.
  *
- * An actor that is not in the user directory yet answers `404 user.not-found` and creates
- * nothing. Internal token: actor `user`, no organization.
+ * An actor that is not in the user directory yet answers `404 user.not-synchronized` and
+ * creates nothing. Internal token: actor `user`, no organization.
  * @summary Create an organization
  */
 export const createOrganizationInternalBodyNameMax = 120;
@@ -229,7 +229,7 @@ export const ListMembersInternalResponse = zod.object({
   "admin": zod.int().min(listMembersInternalResponseCountsAdminMin),
   "member": zod.int().min(listMembersInternalResponseCountsMemberMin),
   "guest": zod.int().min(listMembersInternalResponseCountsGuestMin)
-})
+}).describe('Members of the organization by role, whatever the filters of the request.')
 })
 
 
@@ -461,7 +461,7 @@ export const ListReceivedInvitationsInternalResponse = zod.object({
   "slug": zod.string(),
   "description": zod.string().nullable(),
   "memberCount": zod.int().min(1)
-}),
+}).describe('The organization of an invitation, as the invitee sees it before joining.'),
   "role": zod.enum(['admin', 'member', 'guest']).describe('A role that can be given; never `owner`.'),
   "invitedBy": zod.object({
   "userId": zod.uuid(),

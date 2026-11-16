@@ -6,7 +6,7 @@ import type { ProfilePatchLanguage } from './profilePatchLanguage';
 import type { TimeZone } from './timeZone';
 
 /**
- * JSON Merge Patch of the profile; at least one member.
+ * JSON Merge Patch of the profile; an empty object changes nothing.
  */
 export interface ProfilePatch {
   /**

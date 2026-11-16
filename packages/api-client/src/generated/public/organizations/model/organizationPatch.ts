@@ -7,7 +7,7 @@ import type { OrganizationName } from './organizationName';
 import type { Slug } from './slug';
 
 /**
- * JSON Merge Patch of the organization; at least one member.
+ * JSON Merge Patch of the organization; an empty object changes nothing.
  */
 export interface OrganizationPatch {
   name?: OrganizationName;

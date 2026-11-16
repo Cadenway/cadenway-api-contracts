@@ -28,7 +28,7 @@ export interface InvitationIssuedV1 {
   invitationId: string;
   /** Invited address, where to send the email. */
   email: string;
-  /** Role proposed ("Rôle proposé"), never `owner`. */
+  /** Role an invitation proposes ("Rôle proposé"): `admin`, `member` or `guest`, never `owner`. */
   role: 'admin' | 'member' | 'guest';
   /** Who sent the invitation. */
   inviter: {
@@ -242,10 +242,19 @@ export interface OrganizationCreatedV1 {
   plan: string;
   /** Account of the owner, the creator. */
   ownerUserId: string;
-  /** "Taille de l'équipe" of the creation form. */
-  teamSize: '1-5' | '6-20' | '21-100' | 'over-100';
-  /** "Usage principal" of the creation form. */
-  primaryUse: 'product-engineering' | 'agency-client-projects' | 'marketing-content' | 'operations-support' | 'other';
+  /**
+   * "Taille de l'équipe" of the creation form: `1-5`, `6-20`, `21-100` or `over-100`
+   * today. The form may gain an option without a new event version: a consumer treats an
+   * unknown value as unknown.
+   */
+  teamSize: string;
+  /**
+   * "Usage principal" of the creation form: `product-engineering`,
+   * `agency-client-projects`, `marketing-content`, `operations-support` or `other`
+   * today. The form may gain an option without a new event version: a consumer treats an
+   * unknown value as unknown.
+   */
+  primaryUse: string;
 }
 
 /** Validator of the payload of the event `organization.created.v1`. */
@@ -263,8 +272,8 @@ export const organizationCreatedV1Schema = zod.object({
   defaultLanguage: zod.string(),
   plan: zod.string(),
   ownerUserId: zod.uuid(),
-  teamSize: zod.enum(['1-5', '6-20', '21-100', 'over-100']),
-  primaryUse: zod.enum(['product-engineering', 'agency-client-projects', 'marketing-content', 'operations-support', 'other']),
+  teamSize: zod.string(),
+  primaryUse: zod.string(),
 }) satisfies zod.ZodType<OrganizationCreatedV1>;
 
 /** Name of the event `organization.updated.v1`. The profile of an organization changed. */

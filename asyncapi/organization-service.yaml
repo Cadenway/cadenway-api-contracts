@@ -15,7 +15,12 @@ info:
     **Memberships.** organization-service owns the members. identity-service keeps a copy of the
     memberships from `member.joined.v1`, `member.role-changed.v1` and `member.removed.v1`, to check
     the choice of an organization and to fill the introspections; the copy follows within seconds.
-    The aggregate of the three is the membership, `memberId`: its `version` orders them.
+    The aggregate of the three is the membership, `memberId`: its `version` orders them. The
+    events travel on separate subjects and may arrive out of order: a consumer applies a membership
+    by its `version` and keeps a removed one as removed, so that a late `member.joined.v1` or
+    `member.role-changed.v1` never brings it back. A person who joins again after a removal gets a
+    new `memberId`. A consumer that keeps a copy reads the whole history of the events, not only
+    those published after it subscribed.
 
     **No restricted event.** `invitation.issued.v1` carries no secret: the invitation id of the
     email link is not a capability, since only the account whose verified address is the invited
@@ -39,7 +44,7 @@ info:
     - repository: cadenway-notification-service
       uses: invitation.issued.v1, to send the invitation email.
     - repository: cadenway-billing-service
-      uses: Planned, member.joined.v1 and member.removed.v1, to count the seats.
+      uses: Planned, organization.created.v1, member.joined.v1 and member.removed.v1, for the subscription and the seats.
     - repository: cadenway-task-service
       uses: Planned, member.removed.v1, to unassign a removed member.
     - repository: cadenway-search-service
@@ -162,6 +167,11 @@ components:
         Role in the organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
         ("Membre") or `guest` ("Invité"). Another role takes a new versioned event name.
       enum: [owner, admin, member, guest]
+    AssignableRole:
+      type: string
+      description: |
+        Role an invitation proposes ("Rôle proposé"): `admin`, `member` or `guest`, never `owner`.
+      enum: [admin, member, guest]
   messages:
     organizationCreatedV1:
       name: organization.created.v1
@@ -237,19 +247,19 @@ components:
             description: Account of the owner, the creator.
           teamSize:
             type: string
-            description: '"Taille de l''équipe" of the creation form.'
-            enum: [1-5, 6-20, 21-100, over-100]
+            description: |
+              "Taille de l'équipe" of the creation form: `1-5`, `6-20`, `21-100` or `over-100`
+              today. The form may gain an option without a new event version: a consumer treats an
+              unknown value as unknown.
+            examples: [6-20]
           primaryUse:
             type: string
-            description: '"Usage principal" of the creation form.'
-            enum:
-              [
-                product-engineering,
-                agency-client-projects,
-                marketing-content,
-                operations-support,
-                other,
-              ]
+            description: |
+              "Usage principal" of the creation form: `product-engineering`,
+              `agency-client-projects`, `marketing-content`, `operations-support` or `other`
+              today. The form may gain an option without a new event version: a consumer treats an
+              unknown value as unknown.
+            examples: [product-engineering]
     organizationUpdatedV1:
       name: organization.updated.v1
       title: Organization updated
@@ -423,9 +433,10 @@ components:
       summary: A member was removed from an organization.
       description: |
         Emitted when an owner or an admin removes a member; the owner is never removed. Its last
-        change: no event of the membership follows. `role` is the role the member had. On it, identity-service drops the membership
-        from its copy, so that the sessions of the account stop acting on the organization and its
-        personal API tokens of the organization stop working. `actor` is who removed the member.
+        change: no event of the membership follows. `role` is the role the member had. On it,
+        identity-service marks the membership removed in its copy, so that the sessions of the
+        account stop acting on the organization and its personal API tokens of the organization stop
+        working. `actor` is who removed the member.
 
         Personal data: none beyond the ids.
       headers:
@@ -525,9 +536,7 @@ components:
             description: Invited address, where to send the email.
             examples: [marc.roux@ateliernord.fr]
           role:
-            type: string
-            description: Role proposed ("Rôle proposé"), never `owner`.
-            enum: [admin, member, guest]
+            $ref: '#/components/schemas/AssignableRole'
           inviter:
             type: object
             description: Who sent the invitation.

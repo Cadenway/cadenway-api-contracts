@@ -172,7 +172,8 @@ export class OrganizationsService {
  *   `POST /v1/invitations` does; an address of the caller answers `already-member`.
  * - organization-service knows the caller from the events of their sign-up, which precede
  *   their first session. In the rare case it has not applied them yet, the creation answers
- *   `404 user.not-found` and nothing is created: the web application retries after a second.
+ *   `404 user.not-synchronized` and nothing is created: the web application retries after a
+ *   second.
  *
  * Emits `organization.created.v1`, `member.joined.v1` for the owner and one
  * `invitation.issued.v1` per invited address. Session only: a personal API token cannot call
@@ -347,6 +348,7 @@ export class OrganizationsService {
  *   does, for a few seconds, an organization the caller has just created or joined: the web
  *   application retries before it shows the error.
  * - Choosing the current organization again answers `200` and changes nothing.
+ * - A session that ended meanwhile answers `401 auth.session-expired`.
  *
  * Session only: a personal API token, bound to the organization it was created in, cannot
  * call it.

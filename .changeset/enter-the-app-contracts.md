@@ -18,8 +18,10 @@ identity-service gains, additively: `PATCH /v1/me` and `PATCH /internal/v1/users
 profile members `displayName`, `jobTitle` and `timeZone` (now also in `CurrentUser` and `User`),
 `PUT /internal/v1/sessions/{sessionId}/organization`, the personal API token routes,
 `POST /internal/v1/api-tokens/introspect` for a bearer personal token, a session introspection that
-fills `organizationId`, `role` and `scopes`, and `user.profile-updated.v1`. The new response members
-are required: identity-service fills them before the API gateway moves to this version.
+fills `organizationId`, `role` and `scopes`, and `user.profile-updated.v1`. The three profile
+members are required in the public `CurrentUser` and optional in the internal `User` for this
+release, so that the API gateway can take this version before identity-service sends them (it then
+answers `null`, `null` and `Europe/Paris`).
 
 Every public operation now declares its own `security`: the session cookie, and `apiToken` with the
 scope a personal API token needs (`members:read` on the member reads); the routes of `auth.yaml` stay

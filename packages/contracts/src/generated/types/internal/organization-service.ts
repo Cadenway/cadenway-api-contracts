@@ -182,7 +182,10 @@ export interface Member {
   version: number;
 }
 
-export type MemberPageCounts = {
+/**
+ * Members of the organization by role, whatever the filters of the request.
+ */
+export interface RoleCounts {
   /** @minimum 0 */
   owner: number;
   /** @minimum 0 */
@@ -191,14 +194,14 @@ export type MemberPageCounts = {
   member: number;
   /** @minimum 0 */
   guest: number;
-};
+}
 
 export interface MemberPage {
   items: Member[];
   nextCursor: NextCursor | null;
   /** @minimum 0 */
   total: number;
-  counts: MemberPageCounts;
+  counts: RoleCounts;
 }
 
 export interface MemberPatch {
@@ -242,7 +245,10 @@ export interface InvitationPage {
   total: number;
 }
 
-export type ReceivedInvitationOrganization = {
+/**
+ * The organization of an invitation, as the invitee sees it before joining.
+ */
+export interface InvitingOrganization {
   id: string;
   name: string;
   slug: string;
@@ -250,11 +256,11 @@ export type ReceivedInvitationOrganization = {
   description: string | null;
   /** @minimum 1 */
   memberCount: number;
-};
+}
 
 export interface ReceivedInvitation {
   id: string;
-  organization: ReceivedInvitationOrganization;
+  organization: InvitingOrganization;
   role: AssignableRole;
   invitedBy: Inviter;
   expiresAt: string;
@@ -324,10 +330,15 @@ export type RoleForbiddenResponse = Problem;
 export type InvitationForbiddenResponse = Problem;
 
 /**
- * `user.not-found`: the actor is not in the user directory yet, or the `userId` of the path
- * is not the actor.
+ * `user.not-found`: the `userId` of the path is not the actor.
  */
 export type UserNotFoundResponse = Problem;
+
+/**
+ * `user.not-synchronized`: the actor is not in the user directory yet; it is within seconds of
+ * the sign-up.
+ */
+export type UserNotSynchronizedResponse = Problem;
 
 /**
  * `organization.not-found`: the actor does not belong to the organization of the token.
@@ -352,6 +363,16 @@ export type InvitationNotFoundResponse = Problem;
  * - `user.not-found`: the `userId` of the path is not the actor.
  */
 export type InvitationOrUserNotFoundResponse = Problem;
+
+/**
+ * `invitation.answered`: the invitation was accepted or refused already, with `details.status`.
+ */
+export type InvitationAnsweredResponse = Problem;
+
+/**
+ * `invitation.revoked`, or `invitation.answered` with `details.status`.
+ */
+export type InvitationClosedResponse = Problem;
 
 /**
  * `invitation.revoked`, `invitation.answered` (with `details.status`, `accepted` or

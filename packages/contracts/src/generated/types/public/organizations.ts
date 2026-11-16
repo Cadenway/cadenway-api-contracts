@@ -110,7 +110,7 @@ export interface OrganizationCreation {
 }
 
 /**
- * JSON Merge Patch of the organization; at least one member.
+ * JSON Merge Patch of the organization; an empty object changes nothing.
  */
 export interface OrganizationPatch {
   name?: OrganizationName;
@@ -309,8 +309,8 @@ export type OrganizationWriteForbiddenResponse = Problem;
 export type OrganizationNotFoundResponse = Problem;
 
 /**
- * `user.not-found`: organization-service has not applied the sign-up of the caller yet. It
- * does within seconds, before the account can even be verified in practice; the web
+ * `user.not-synchronized`: organization-service has not applied the sign-up of the caller
+ * yet. It does within seconds, before the account can even be verified in practice; the web
  * application retries after a second. Nothing was created.
  */
 export type CreatorUnknownResponse = Problem;

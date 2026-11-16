@@ -45,13 +45,15 @@ info:
     answers `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
     `403 auth.actor-not-allowed` and `403 auth.organization-required`. The gateway answers
     `403 organization.not-selected` itself, before the call, when the session has no current
-    organization.
+    organization. A route that requires no organization ignores the one the token may carry.
 
     **Memberships.** identity-service keeps a copy of the memberships (organization, user, role)
     from `member.joined.v1`, `member.role-changed.v1` and `member.removed.v1`
     (`asyncapi/organization-service.yaml`). It checks the choice of an organization against it, and
     fills the `organizationId` and the `role` of the introspections from it. A membership reaches
-    it within seconds of its creation.
+    it within seconds of its creation. It reads the whole history of these events, applies each
+    membership by its `version`, and keeps a removed membership as removed, so that a late
+    `member.joined.v1` or `member.role-changed.v1` never brings it back.
 
     **Errors.** The codes are those of the public routes; the gateway forwards the `code` and the
     `details`, answers the French `title` of `openapi/public/auth.yaml`, and derives `Retry-After`
@@ -566,9 +568,10 @@ paths:
         next sessions of the actor start in. The membership is checked against the copy of the
         memberships: an organization the actor does not belong to, or one whose
         `member.joined.v1` has not arrived yet, answers `404 organization.not-found`. A session of
-        another user, or an unknown id, answers `404 session.not-found`. Choosing the current
-        organization again answers `200` and changes nothing. From the next introspection the
-        session carries the organization and the role. Internal token: actor `user`, no
+        another user, or an unknown id, answers `404 session.not-found`, which the gateway answers
+        as `401 auth.session-expired`: the session ended since its introspection. Choosing the
+        current organization again answers `200` and changes nothing. From the next introspection
+        the session carries the organization and the role. Internal token: actor `user`, no
         organization.
       tags: [sessions]
       parameters:
@@ -1309,7 +1312,6 @@ components:
             Role of the user in that organization, from the copy of the memberships: `owner`,
             `admin`, `member` or `guest`; `null` without an organization. The gateway carries it
             in the internal token; organization-service decides from its own members.
-          x-extensible-enum: [owner, admin, member, guest]
         scopes:
           type: array
           description: |
@@ -1330,7 +1332,12 @@ components:
           const: false
     User:
       type: object
-      required: [id, name, email, language, displayName, jobTitle, timeZone, version]
+      required: [id, name, email, language, version]
+      description: |
+        An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this
+        version on; they are optional here so that the API gateway can move to this version of the
+        contracts before identity-service does. Until then the gateway answers them as `null`,
+        `null` and `Europe/Paris`, their values for an account that never set them.
       properties:
         id:
           type: string
@@ -1358,6 +1365,12 @@ components:
           type: integer
           minimum: 1
           description: Version of the account.
+    Role:
+      type: string
+      description: |
+        Role in an organization, as organization-service gives it: `owner`, `admin`, `member` or
+        `guest`.
+      enum: [owner, admin, member, guest]
     ProfilePatch:
       type: object
       description: JSON Merge Patch of the profile, as the public request carried it.
@@ -1398,9 +1411,8 @@ components:
           type: string
           format: uuid
         role:
-          type: string
+          $ref: '#/components/schemas/Role'
           description: Role of the actor in it, from the copy of the memberships.
-          x-extensible-enum: [owner, admin, member, guest]
     ApiTokenScope:
       type: string
       description: A scope a personal API token can be given.
@@ -1514,9 +1526,8 @@ components:
           format: uuid
           description: Organization the token acts in, the one it was created in.
         role:
-          type: string
+          $ref: '#/components/schemas/Role'
           description: Role of the user in it, from the copy of the memberships.
-          x-extensible-enum: [owner, admin, member, guest]
         scopes:
           type: array
           description: Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a scope it lacks.
