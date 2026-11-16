@@ -1,26 +1,26 @@
 #!/usr/bin/env node
 /**
- * `pnpm breaking`: compares the OpenAPI documents of the working tree with those of `main`, the way
- * the `breaking` job of .github/workflows/ci.yml does (oasdiff, composed mode, failure on ERR).
+ * `pnpm breaking`: compares the OpenAPI and AsyncAPI documents of the working tree with `main`.
  *
  * - The base is `origin/main` as this checkout knows it, else the local `main`; `--base <ref>`
  *   compares with another commit. Nothing is fetched.
  * - While the base holds no OpenAPI document the comparison is skipped, like in CI.
  * - oasdiff is taken from the PATH, else run from its container image with Docker.
- * - Only OpenAPI is compared. No tool checks the events: an event changes shape under a new
- *   versioned name, and the change is reviewed (`/cw-breaking-review`).
+ * - `--events-only` runs the AsyncAPI check without oasdiff, as on pull request CI.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { dereference } from './lib/dereference.mjs';
+import { compareEventExamples, compareEvents, eventExamples } from './lib/event-compatibility.mjs';
+import { renderEventsModule } from './lib/events-module.mjs';
 import { SHARED } from './lib/roots.mjs';
 
 // The oasdiff release the action pinned in ci.yml runs (oasdiff-action v0.1.23); move both together.
 const OASDIFF_IMAGE = 'tufin/oasdiff:v1.37.0';
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const cache = path.join(repository, '.cache/breaking');
 
 function git(...args) {
   return spawnSync('git', args, {
@@ -43,12 +43,12 @@ function baseRef() {
   throw new Error('neither origin/main nor main exists in this checkout.');
 }
 
-/** Writes the specs and the shared components of a commit under .cache/breaking/base/. */
-function exportBase(ref) {
-  const listing = git('ls-tree', '-r', '--name-only', ref, '--', 'openapi', SHARED);
+/** Writes the specs and shared components of a commit to the check's temporary directory. */
+function exportBase(ref, eventsOnly, cache) {
+  const directories = eventsOnly ? ['asyncapi', SHARED] : ['openapi', 'asyncapi', SHARED];
+  const listing = git('ls-tree', '-r', '--name-only', ref, '--', ...directories);
   if (listing.status !== 0) throw new Error(`git could not read ${ref}:\n${listing.stderr}`);
   const files = listing.stdout.split('\n').filter((file) => /\.ya?ml$/.test(file));
-  rmSync(cache, { recursive: true, force: true });
   for (const file of files) {
     const content = git('show', `${ref}:${file}`);
     if (content.status !== 0) throw new Error(`git could not read ${ref}:${file}.`);
@@ -56,7 +56,7 @@ function exportBase(ref) {
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, content.stdout);
   }
-  return files.filter((file) => file.startsWith('openapi/'));
+  return files;
 }
 
 /** Returns the command that runs oasdiff with the repository as working directory. */
@@ -76,25 +76,86 @@ function oasdiff() {
   );
 }
 
-function main() {
+async function loadValidators(file, content) {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, content);
+  const { eventSchemas } = await import(pathToFileURL(file).href);
+  return eventSchemas;
+}
+
+async function checkEvents(specs, commit, cache) {
+  const sources = specs.filter((file) => file.startsWith('asyncapi/'));
+  const problems = [];
+  for (const source of sources) {
+    if (!existsSync(path.join(repository, source))) {
+      problems.push(`${source}: the document with published events was removed.`);
+      continue;
+    }
+    const previous = dereference(source, path.join(cache, 'base'));
+    const next = dereference(source, repository);
+    const differences = compareEvents(previous, next);
+    problems.push(...differences.map((problem) => `${source}: ${problem}`));
+
+    // Exercise authored payload examples with the previous generated validator and a fresh one.
+    const previousExamples = eventExamples(previous);
+    const nextExamples = eventExamples(next);
+    if (differences.length > 0 || previousExamples.length + nextExamples.length === 0) continue;
+    const target = source.slice('asyncapi/'.length).replace(/\.ya?ml$/, '.ts');
+    const previousModule = git(
+      'show',
+      `${commit}:packages/contracts/src/generated/events/${target}`,
+    );
+    if (previousModule.status !== 0) {
+      throw new Error(`Missing generated event validators for ${source} at ${commit}.`);
+    }
+    const [previousValidators, nextValidators] = await Promise.all([
+      loadValidators(path.join(cache, 'validators/base', target), previousModule.stdout),
+      loadValidators(
+        path.join(cache, 'validators/head', target),
+        renderEventsModule({ source, document: next }),
+      ),
+    ]);
+    problems.push(
+      ...compareEventExamples(
+        { examples: previousExamples, validators: previousValidators },
+        { examples: nextExamples, validators: nextValidators },
+      ).map((problem) => `${source}: ${problem}`),
+    );
+  }
+
+  for (const problem of problems) console.error(`breaking: ${problem}`);
+  if (problems.length > 0) return false;
+  console.log(
+    `breaking: ${sources.length} AsyncAPI documents compatible with ${commit.slice(0, 12)}.`,
+  );
+  return true;
+}
+
+async function main(cache) {
   const ref = baseRef();
-  const commit = git('rev-parse', '--short', ref).stdout.trim();
-  const specs = exportBase(ref);
-  console.log('breaking: events are not compared by any tool; review them (/cw-breaking-review).');
-  if (specs.length === 0) {
-    console.log(`breaking: ${ref} (${commit}) holds no OpenAPI document, nothing to compare.`);
+  const resolved = git('rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`);
+  if (resolved.status !== 0) throw new Error(`could not resolve the base commit ${ref}.`);
+  const commit = resolved.stdout.trim();
+  const eventsOnly = process.argv.includes('--events-only');
+  const specs = exportBase(commit, eventsOnly, cache);
+  if (!(await checkEvents(specs, commit, cache))) return 1;
+  if (eventsOnly) return 0;
+  if (!specs.some((source) => source.startsWith('openapi/'))) {
+    console.log(`breaking: ${ref} holds no OpenAPI document, nothing to compare.`);
     return 0;
   }
 
   const { command, prefix } = oasdiff();
   console.log(`breaking: comparing openapi/ with ${ref} (${commit}), using ${command}.`);
   // The specs reference components/ by relative path; both trees are local files.
+  const baseGlob =
+    path.relative(repository, cache).split(path.sep).join('/') + '/base/openapi/**/*.yaml';
   const run = spawnSync(
     command,
     [
       ...prefix,
       'breaking',
-      '.cache/breaking/base/openapi/**/*.yaml',
+      baseGlob,
       'openapi/**/*.yaml',
       '--composed',
       '--allow-external-refs=true',
@@ -106,8 +167,25 @@ function main() {
   return run.status ?? 1;
 }
 
+async function run() {
+  const root = path.join(repository, '.cache');
+  mkdirSync(root, { recursive: true });
+  const resolvedRoot = realpathSync(root);
+  if (path.relative(realpathSync(repository), resolvedRoot) !== '.cache') {
+    throw new Error('the check cache must be inside the repository.');
+  }
+  const cache = mkdtempSync(path.join(resolvedRoot, 'breaking-'));
+  try {
+    return await main(cache);
+  } finally {
+    if (path.dirname(realpathSync(cache)) === resolvedRoot) {
+      rmSync(cache, { recursive: true, force: true });
+    }
+  }
+}
+
 try {
-  process.exitCode = main();
+  process.exitCode = await run();
 } catch (error) {
   console.error(`breaking: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 2;

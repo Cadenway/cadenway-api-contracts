@@ -1366,11 +1366,7 @@ components:
           minimum: 1
           description: Version of the account.
     Role:
-      type: string
-      description: |
-        Role in an organization, as organization-service gives it: `owner`, `admin`, `member` or
-        `guest`.
-      enum: [owner, admin, member, guest]
+      $ref: '../../components/organization.yaml#/components/schemas/Role'
     ProfilePatch:
       type: object
       description: JSON Merge Patch of the profile, as the public request carried it.

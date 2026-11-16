@@ -221,8 +221,8 @@ export type InactiveToken = typeof InactiveTokenValue;
 export type Introspection = ActiveToken | InactiveToken;
 
 /**
- * Role in an organization, as organization-service gives it: `owner`, `admin`, `member` or
- * `guest`.
+ * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
+ * ("Membre") or `guest` ("Invité").
  */
 export type Role = typeof Role[keyof typeof Role];
 

@@ -1,0 +1,20 @@
+# Components shared by the public and internal organization contracts.
+openapi: 3.1.0
+info:
+  title: Cadenway shared organization components
+  version: 1.0.0
+  description: The organization role used across identity, member and organization contracts.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    Role:
+      type: string
+      description: |
+        Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
+        ("Membre") or `guest` ("Invité").
+      enum: [owner, admin, member, guest]

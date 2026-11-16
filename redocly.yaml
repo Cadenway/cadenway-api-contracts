@@ -25,11 +25,15 @@ rules:
   cadenway/event-channel-address: error
   cadenway/event-name: error
   cadenway/event-payload: error
-# components/http.yaml is linted as a document of its own: it has no route, so no server, and its
-# components are used by the specs that reference them, not by itself.
+# Shared components have no routes or servers. Their members are used by specs in other files.
 apis:
   shared-http:
     root: components/http.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
+  shared-organization:
+    root: components/organization.yaml
     rules:
       no-empty-servers: off
       no-unused-components: off

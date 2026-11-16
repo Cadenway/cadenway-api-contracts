@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { Role as ClientRole } from '../../packages/api-client/src/generated/public/organizations/model/role';
 import {
   EVENT_NAMES as IDENTITY_EVENT_NAMES,
   eventSchemas as identityEventSchemas,
@@ -12,6 +13,10 @@ import {
   type InvitationIssuedV1,
   type MemberJoinedV1,
 } from '../../packages/contracts/src/generated/events/organization-service';
+import { Role as IdentityRole } from '../../packages/contracts/src/generated/types/internal/identity-service';
+import { Role as InternalOrganizationRole } from '../../packages/contracts/src/generated/types/internal/organization-service';
+import { Role as MembersRole } from '../../packages/contracts/src/generated/types/public/members';
+import { Role as OrganizationRole } from '../../packages/contracts/src/generated/types/public/organizations';
 import {
   CreateApiTokenInternalResponse,
   IntrospectApiTokenResponse,
@@ -184,6 +189,14 @@ describe('profile of an account', () => {
 });
 
 describe('routes of organizations and members', () => {
+  it('publishes the same organization role in the existing generated entry points', () => {
+    expect(Object.values(OrganizationRole)).toEqual(['owner', 'admin', 'member', 'guest']);
+    expect(IdentityRole).toEqual(OrganizationRole);
+    expect(InternalOrganizationRole).toEqual(OrganizationRole);
+    expect(MembersRole).toEqual(OrganizationRole);
+    expect(ClientRole).toEqual(OrganizationRole);
+  });
+
   it('fills the defaults of the creation form and checks an address given', () => {
     expect(CreateOrganizationBody.parse({ name: 'Atelier Nord' })).toEqual({
       name: 'Atelier Nord',

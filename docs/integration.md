@@ -64,7 +64,7 @@ Source: `cw-contract-style` ([Claude](../.claude/skills/cw-contract-style/SKILL.
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Spec version  | AsyncAPI 3.0.0 exactly: `pnpm generate:events` refuses any other version                                                                                                          |
 | Payload       | declares `properties` and `required` itself, without `allOf`; uses the JSON Schema keywords the event generator turns into a validator, which refuses the others                  |
-| Compatibility | no tool compares events with `main`; a payload change other than an added optional member takes a new versioned name and is reviewed                                              |
+| Compatibility | the AsyncAPI check compares event names, routing and payloads with `main`; incompatible changes, including optional additions to closed schemas, take a new versioned name        |
 | `version`     | the version of the aggregate, in every event; a consumer ignores a version it has already applied                                                                                 |
 | `actor`       | `{ type: 'user' \| 'automation' \| 'git' \| 'system', id }`                                                                                                                       |
 | Subject       | `evt.<name>`, the address of the channel; `restricted.<name>` for a message marked `x-cadenway-restricted: true`, which carries a secret and is read by notification-service only |
@@ -92,13 +92,13 @@ Source: `cw-contract-style` ([Claude](../.claude/skills/cw-contract-style/SKILL.
 
 Source: `cw-versioning-rules` ([Claude](../.claude/skills/cw-versioning-rules/SKILL.md), [Codex](../.codex/skills/cw-versioning-rules/SKILL.md)).
 
-| Change                                                                             | Level                                                                                                 |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| New route, new optional field, new enumeration value consumers can ignore          | minor                                                                                                 |
-| New value of a response value set                                                  | minor when the set is `x-extensible-enum`; a value added to a response `enum` is breaking for oasdiff |
-| Description, example                                                               | patch                                                                                                 |
-| Removed or renamed field or route, new required input, narrowed type, changed code | major, after a deprecation in a minor                                                                 |
-| Event payload change other than an added optional field                            | new versioned event name                                                                              |
+| Change                                                                               | Level                                                                                                 |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| New route, new optional field, new enumeration value consumers can ignore            | minor                                                                                                 |
+| New value of a response value set                                                    | minor when the set is `x-extensible-enum`; a value added to a response `enum` is breaking for oasdiff |
+| Description, example                                                                 | patch                                                                                                 |
+| Removed or renamed field or route, new required input, narrowed type, changed code   | major, after a deprecation in a minor                                                                 |
+| Incompatible event payload change, including an optional addition to a closed schema | new versioned event name                                                                              |
 
 ## References
 

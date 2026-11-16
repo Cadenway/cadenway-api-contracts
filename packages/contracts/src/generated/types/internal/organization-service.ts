@@ -9,7 +9,8 @@
 export type Email = string;
 
 /**
- * Role in an organization.
+ * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
+ * ("Membre") or `guest` ("Invité").
  */
 export type Role = typeof Role[keyof typeof Role];
 

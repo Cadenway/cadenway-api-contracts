@@ -61,10 +61,11 @@ Decisions and their reasons:
 
 What every spec uses with the same shape lives in `components/`, outside `openapi/` and `asyncapi/`, and is referenced by a relative `$ref`:
 
-| File                     | Holds                                                                                     | Referenced as                                         |
-| ------------------------ | ----------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `components/http.yaml`   | `Problem` (schema and response), `Cursor` and `Limit` (parameters), `NextCursor` (schema) | `../../components/http.yaml#/components/...`          |
-| `components/events.yaml` | `Actor` (schema)                                                                          | `../components/events.yaml#/components/schemas/Actor` |
+| File                           | Holds                                                                                     | Referenced as                                                 |
+| ------------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `components/http.yaml`         | `Problem` (schema and response), `Cursor` and `Limit` (parameters), `NextCursor` (schema) | `../../components/http.yaml#/components/...`                  |
+| `components/events.yaml`       | `Actor` (schema)                                                                          | `../components/events.yaml#/components/schemas/Actor`         |
+| `components/organization.yaml` | `Role` (schema)                                                                           | `../../components/organization.yaml#/components/schemas/Role` |
 
 Why a folder of its own and not a copy in each spec:
 
@@ -79,7 +80,9 @@ What the choice costs, each point handled in this repository:
 - an event payload still declares `properties` and `required` itself: a member may be a `$ref`, the envelope is never composed with `allOf`;
 - the shipped specs are bundled, so a consumer never sees the reference.
 
-Both files are valid documents and are linted like the specs. Not built yet: the shared enumerations are authored in TypeScript only. When the first spec needs one, its schema joins `components/` with a test that compares its values with `packages/contracts/src/enums/`.
+These component files are valid documents and are linted like the specs. When a spec needs one of
+the shared enumerations from TypeScript, its schema joins `components/` with a test that compares
+its values with `packages/contracts/src/enums/`.
 
 ## Cross-repository changes
 

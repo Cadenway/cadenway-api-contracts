@@ -1065,11 +1065,7 @@ components:
       description: Email address, compared without regard to case.
       examples: [marc.roux@ateliernord.fr]
     Role:
-      type: string
-      description: |
-        Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
-        ("Membre") or `guest` ("Invité").
-      enum: [owner, admin, member, guest]
+      $ref: '../../components/organization.yaml#/components/schemas/Role'
     AssignableRole:
       type: string
       description: |

@@ -51,7 +51,7 @@ pnpm format:check
 pnpm test:lint
 pnpm lint:code
 pnpm lint:specs                # Redocly
-pnpm breaking                  # oasdiff against main
+pnpm breaking                  # OpenAPI and AsyncAPI against main
 pnpm generate
 pnpm typecheck
 pnpm test:architecture
@@ -62,16 +62,20 @@ pnpm changeset status
 
 ## What each command covers
 
-| Command           | Does                                                                                                                                                                                                                                                                           |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pnpm lint:specs` | Redocly on `openapi/`, `asyncapi/`, `components/` and `tests/redocly/valid/`                                                                                                                                                                                                   |
-| `pnpm breaking`   | oasdiff between the OpenAPI documents of the working tree and `origin/main` (`--base <ref>` for another commit), like the CI job: composed mode, failure on `ERR`. Skipped while the base holds no spec. Uses `oasdiff` from the PATH, else its container image through Docker |
-| `pnpm generate`   | `generate:clean`, `generate:openapi` (orval), `generate:events`; the result is committed                                                                                                                                                                                       |
-| `pnpm typecheck`  | the two packages, the tests, and `tests/codegen/generated/` with the compiler options of each package                                                                                                                                                                          |
-| `pnpm test`       | the Redocly rules, the generators, the generated fixture code, the enumerations                                                                                                                                                                                                |
-| `pnpm build`      | both packages; the build of `@cadenway/contracts` also writes `packages/contracts/specs/`                                                                                                                                                                                      |
+| Command           | Does                                                                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm lint:specs` | Redocly on `openapi/`, `asyncapi/`, `components/` and `tests/redocly/valid/`                                                                                                          |
+| `pnpm breaking`   | OpenAPI and AsyncAPI compared with `origin/main` (`--base <ref>` for another commit). OpenAPI uses oasdiff in composed mode with failure on `ERR`, from the PATH or its Docker image. |
+| `pnpm generate`   | `generate:clean`, `generate:openapi` (orval), `generate:events`; the result is committed                                                                                              |
+| `pnpm typecheck`  | the two packages, the tests, and `tests/codegen/generated/` with the compiler options of each package                                                                                 |
+| `pnpm test`       | the Redocly rules, the generators, the generated fixture code, the enumerations                                                                                                       |
+| `pnpm build`      | both packages; the build of `@cadenway/contracts` also writes `packages/contracts/specs/`                                                                                             |
 
-**Events have no automated breaking-change check.** oasdiff reads OpenAPI only, here and in CI. A change to an event payload is caught by review (`/cw-breaking-review`) and by the rule that anything but an added optional member takes a new versioned event name.
+The AsyncAPI check compares the events of the working tree with the same base commit as oasdiff.
+It protects the event name, subject, restriction and payload schema, and tests authored payload
+examples against the baseline and candidate validators. An added optional field is compatible when
+the old validator strips unknown fields. A closed schema needs a new event version for the addition.
+Run `node scripts/breaking.mjs --events-only --base <ref>` to check AsyncAPI independently.
 
 ## Collaboration and release
 

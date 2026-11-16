@@ -1,0 +1,20 @@
+import { provideHttpClient } from '@angular/common/http';
+import { Component, inject, provideZonelessChangeDetection } from '@angular/core';
+import { bootstrapApplication } from '@angular/platform-browser';
+import { AuthService } from '@cadenway/api-client';
+import { STATUS_KEYS, type StatusKey } from '@cadenway/contracts';
+import type { CurrentUser } from '@cadenway/contracts/types/public/auth';
+
+@Component({
+  selector: 'smoke-root',
+  template: '<p>{{ status }} {{ auth }}</p>',
+})
+class SmokeRoot {
+  readonly auth = inject(AuthService);
+  readonly status: StatusKey = STATUS_KEYS[0];
+  readonly currentUser?: CurrentUser;
+}
+
+void bootstrapApplication(SmokeRoot, {
+  providers: [provideHttpClient(), provideZonelessChangeDetection()],
+});
