@@ -3,6 +3,4 @@ description: "Add or change an event."
 argument-hint: "<event>"
 ---
 
-Delegate to the **cw-contracts-asyncapi-author** subagent: $ARGUMENTS
-
-The agent carries its own procedure and rules; do not restate them.
+Delegate to subagent **cw-contracts-asyncapi-author** without restating its rules or procedure: $ARGUMENTS

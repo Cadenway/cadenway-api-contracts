@@ -5,28 +5,20 @@ paths:
 
 # OpenAPI specs
 
-- `public/`: what the gateway exposes, with scopes. `internal/`: what each service exposes to the gateway.
-- Every public operation declares its own `security`: `[]` for no credential, `sessionCookie: []`
-  for a session (which holds every scope), and `apiToken: [<scope>]` beside it when a personal API
-  token with that scope may call it. A route without `apiToken` refuses every token. The scopes are
-  `tasks:read`, `tasks:write`, `members:read` and `webhooks:manage`; `cadenway/security-declared` and
-  `cadenway/security-scopes` check both.
-- camelCase fields, ISO 8601 dates, string ids (`CAD-482` for tasks), cursor pagination
-  (`cursor`, `limit`, `nextCursor`), errors as `application/problem+json` (RFC 9457) from one shared
-  schema, with a stable `code` and `details`.
-- OpenAPI 3.1, without `$dynamicRef` or `components.pathItems`: oasdiff does not resolve them.
-- Paths start with `/v1/` in `public/` and `/internal/v1/` in `internal/`; resources are plural and
-  kebab-case; the organization is never in the path.
-- The cursor is opaque, `limit` defaults to 50 and `nextCursor` is `null` on the last page.
-- An aggregate carries a `version`, returned as `ETag`; `If-Match` is optional, mandatory on long texts.
-- `Idempotency-Key`: 422 when the key comes back with another body, 409 while the first request runs.
-- `pnpm lint:specs` checks what Redocly can; the `cw-contract-style` skill holds the whole table.
-- Reuse components; enumerations are referenced from the shared schemas.
-- The problem (schema and response), `cursor`, `limit` and `nextCursor` come from
-  `components/http.yaml` by a relative `$ref` (`../../components/http.yaml#/components/...`), never
-  copied. A spec may declare its own error responses, to carry per-code examples or headers
-  (`Retry-After`, `Set-Cookie`), but their schema is always the shared problem. A file under
-  `openapi/` is always a spec: a shared component does not live there.
-- A response value set that will grow (method types, token types) is `x-extensible-enum`, not
-  `enum`: oasdiff grades a value added to a response `enum` as breaking.
-- Examples use mockup data.
+Use `cw-contract-style` and the [HTTP API rules](../../docs/integration.md#http-api) for OpenAPI 3.1,
+paths, field types, pagination, concurrency, idempotency, security and errors. Public paths belong to
+the gateway and internal paths to services. Each public operation declares security. A route without
+`apiToken` refuses personal API tokens. Check the
+[Redocly coverage](../../docs/integration.md#checked-by-pnpm-lintspecs) with `pnpm lint:specs`.
+
+Use shared schemas for enumerations and relative references to `components/http.yaml` for the
+problem schema and response, `cursor`, `limit` and `nextCursor`. A spec may declare its own
+error responses for code examples or headers such as `Retry-After` and `Set-Cookie`; each uses the
+shared problem schema. Keep shared components outside `openapi/`. Use `x-extensible-enum` for
+response values that can grow and use mockup data in examples.
+
+## Review example
+
+For example, adding a required request field can reject requests from an older client. Run
+`pnpm lint:specs` and the existing breaking-change check, then inspect whether old requests and
+consumer handling of responses still work.

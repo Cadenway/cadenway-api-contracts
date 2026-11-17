@@ -3,6 +3,6 @@ name: cw-impact
 description: List affected repositories and their order.
 ---
 
-Use the **cw-contracts-consumer-impact-reviewer** specialist for this task when delegation is available and authorized; otherwise read `.codex/agents/cw-contracts-consumer-impact-reviewer.toml` and follow its instructions directly: the user-provided arguments
-
-The agent carries its own procedure and rules; do not restate them.
+Delegate the user's arguments to **cw-contracts-consumer-impact-reviewer** if delegation is available and authorized.
+Otherwise read and follow `.codex/agents/cw-contracts-consumer-impact-reviewer.toml` directly with those arguments.
+Do not restate its rules or procedure.

@@ -1,34 +1,24 @@
 # cadenway-api-contracts: agent instructions
 
-These instructions are mandatory for every AI assistant working in this repository, whatever the
-vendor. [CLAUDE.md](CLAUDE.md) imports them for Claude Code. Explicit user instructions take
-precedence over procedures, never over the hard limits below.
-
-This file states the **rules**. The tooling (agents, commands, skills, hooks) is described in
-[Claude Code](.claude/README.md) and [Codex](.codex/README.md).
+These shared instructions apply to every assistant. Explicit user instructions take precedence over
+procedures within the hard limits below. Claude Code imports this file through [CLAUDE.md](CLAUDE.md).
 
 ## First read
 
-- The spec file you change and its CODEOWNERS entry.
-- The consumers listed in the spec header (`x-consumers`).
-- The data model of the [integration guide](https://claude.ai/artifact/CpJHVCiFfF9j3KbHQ2S1Et).
-- `package.json` for versions and scripts once the repository is bootstrapped. Do not restate
-  versions elsewhere: a copy goes stale.
+- Before editing, read the spec, its CODEOWNERS entry and consumers listed in `x-consumers`.
+  The team that implements the spec owns its CODEOWNERS entry.
+- Consult "Modèle de données affiché" in the
+  [integration guide](https://claude.ai/artifact/CpJHVCiFfF9j3KbHQ2S1Et) and "Services NestJS" or
+  "cadenway-api-contracts" in the
+  [repositories document](https://claude.ai/artifact/BPinmYxoF3mbK8w9BMB43N) when relevant.
+- Read `package.json` for versions and scripts. Avoid restating versions.
 
 ## What this repository is
 
-cadenway-api-contracts is intended to define what the API gateway exposes, what each service exposes internally, and what the services say to each other. It is planned to publish `@cadenway/contracts` and `@cadenway/api-client`, generated from the specs. This checkout is being bootstrapped: inspect the actual files and scripts before relying on the target structure or checks below.
-
-```text
-openapi/public/      ← one file per domain (tasks.yaml, billing.yaml…)
-openapi/internal/    ← one file per service (task-service.yaml…)
-asyncapi/            ← one file per emitting service
-components/          ← what the specs share by `$ref` (problem, pagination, actor)
-packages/contracts/  → @cadenway/contracts
-packages/api-client/ → @cadenway/api-client (generated)
-```
-
-Implementation order after a release: producing service, then gateways and listening services, then the webapp. Each step only adds, so each repository ships alone.
+This repository is the sole source for public and internal OpenAPI routes and AsyncAPI events.
+It publishes `@cadenway/contracts` and `@cadenway/api-client` from the specs. Use the
+[ownership map](docs/architecture.md#architectural-ownership) for authored sources, shared
+components and enumerations, generated trees and tooling.
 
 ## Language
 
@@ -41,11 +31,15 @@ Implementation order after a release: producing service, then gateways and liste
 
 ## Architectural ownership
 
-- `openapi/` and `asyncapi/`: authored specs.
-- `components/`: authored components the specs share by `$ref`; no route and no event.
-- `packages/contracts/src/enums/`: authored shared enumerations.
-- `packages/*/src/generated/` and `tests/codegen/generated/`: generated, never edited.
-- `scripts/`: the generation, spec shipping and breaking-change scripts behind the pnpm commands.
+- Change the spec first. Use `cw-contract-style` for OpenAPI and AsyncAPI and
+  `cw-versioning-rules` before non-additive changes. The
+  [versioning rules](docs/integration.md#versioning-rules) cover compatible additions, deprecation
+  before breaking changes and new names for incompatible event versions.
+- Generate `@cadenway/contracts` types, event names and validators and the `@cadenway/api-client`
+  from their sources. CI checks Redocly lint, compatibility, generation and compilation. See
+  [what a spec becomes](docs/architecture.md#what-a-spec-becomes).
+- After release, implement compatible changes in the producing service, then the gateways and
+  listeners, then the webapp. Each step only adds, so each repository ships alone.
 
 ## Boundaries (hard rules)
 
@@ -55,23 +49,30 @@ Implementation order after a release: producing service, then gateways and liste
 
 ## GitHub files (`.github/`)
 
-This repository carries everything GitHub reads from it; Cadenway has no organization `.github`
-repository and nothing is inherited.
+Keep this repository's [README](.github/README.md), community files, templates, code owners and
+complete workflows in `.github/`. Cadenway has no organization-level files, cross-repository
+reusable workflows or shared Renovate preset. Use the paired `github.md` rules when editing
+GitHub files. Apply changes to shared material through separate pull requests in each owner.
 
-- [`.github/README.md`](.github/README.md) is the repository home page; `CONTRIBUTING.md`,
-  `CODE_OF_CONDUCT.md`, `SECURITY.md`, `SUPPORT.md`, `PULL_REQUEST_TEMPLATE.md`, `ISSUE_TEMPLATE/` and
-  `CODEOWNERS` sit next to it.
-- `.github/workflows/` holds this repository's complete CI, release workflows: no reusable
-  workflow from another repository. The Renovate configuration is complete here too, with no shared
-  preset.
-- The parts shared with the other repositories are duplicated on purpose; a change to them is repeated
-  in each repository through its own pull request.
+## Code quality
+
+- Read the affected entry point, its callers, and its relevant tests before editing.
+  Preserve the behavior callers rely on unless the task changes it.
+- Keep the diff focused. Use names that express intent and reuse existing code when
+  it preserves the required behavior. Extract code when it clarifies a responsibility.
+- Keep business decisions with their owning module. Validate external inputs at the
+  boundary and use documented public interfaces across modules and repositories.
+- For writes that can fail, overlap, or be retried, verify the resulting state.
+  Check transaction boundaries, tenant scope, and repeated delivery where relevant.
+- For collections and repeated work, check what grows with input size. Measure or
+  inspect the bottleneck before adding an index, cache, worker, or replica.
+- Run the repository checks that cover the affected behavior. Report the commands
+  and their results, including checks that did not run and tests that selected zero cases.
 
 ## Commands and quality gates
 
-The scripts below are this repository's contract. While the repository is being bootstrapped,
-create them with these exact names; afterwards, use them and never an ad-hoc equivalent. Run the
-narrowest check that covers the change first, then widen:
+Start with the smallest check that covers the change. See the
+[full local gate](docs/development.md#full-local-quality-gate) for the repository-wide sequence.
 
 | Changed                         | Minimum check                                                         |
 | ------------------------------- | --------------------------------------------------------------------- |
@@ -80,22 +81,18 @@ narrowest check that covers the change first, then widen:
 | Any change to a package         | a changeset                                                           |
 | Docs or agent instructions only | Scoped formatting and link review                                     |
 
-`pnpm breaking` compares OpenAPI and AsyncAPI with `main`. An incompatible event change uses a new
+`pnpm breaking` compares OpenAPI and AsyncAPI with the local `origin/main` ref, falling back to
+`main` when the remote-tracking ref is absent. An incompatible event change uses a new
 versioned name while the previous version stays available.
-
-Report the commands you actually ran and their results; a check you did not run is reported as not
-run.
 
 ## Git and branch flow
 
-- Trunk-based: work branches come from `main`, named `<type>/<lowercase-kebab-description>` with a
-  type among `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
-  `revert`; put the Cadenway task id first when there is one (`feat/cad-482-sso-screen`). Never an
-  agent name as a prefix. Validate with `git check-ref-format --branch <name>`.
-- Commits and PR titles follow Conventional Commits: `type(scope): subject`, English, imperative,
-  lowercase subject, no trailing period, at most 100 characters; `!` only for a breaking change.
-- Pull requests target `main` and are squash-merged after review and green CI. Changesets: each PR adds a changeset; the "Version Packages" pull request bumps versions; its merge publishes both packages from CI, and Renovate opens update PRs in every consumer.
-- Stage only the files of your task; preserve other people's changes in the working tree.
+Use the paired `git-and-commits.md` rule for trunk-based branches, Conventional Commits and
+staging only task files. Validate branch names with `git check-ref-format --branch <name>`.
+
+Pull requests target `main` and are squash-merged after review and green CI. Each PR adds a
+changeset. The Version Packages PR bumps versions and its merge publishes both packages in CI.
+Renovate opens consumer update PRs. See [collaboration and release](docs/development.md#collaboration-and-release).
 
 ## Hard limits (never without the user's explicit request in this conversation)
 
@@ -115,13 +112,11 @@ not to find another way around it.
 
 ## Agent tooling
 
-- **Claude Code**: [CLAUDE.md](CLAUDE.md) and [.claude/README.md](.claude/README.md): the
-  `cw-contracts-*` agents, the `/cw-*` commands (`/cw-quality` runs the whole local gate),
-  path-scoped rules and hooks.
-- **Builders** (assigned writes): `cw-contracts-openapi-author`, `cw-contracts-asyncapi-author`, `cw-contracts-enum-maintainer`, `cw-contracts-codegen-maintainer`, `cw-contracts-docs-maintainer`, `cw-contracts-release-manager`, `cw-contracts-github-maintainer`.
-- **Reviewers** (read-only): `cw-contracts-breaking-change-reviewer`, `cw-contracts-consistency-reviewer`, `cw-contracts-consumer-impact-reviewer`.
-- Specialists are available, not mandatory. Delegate a bounded responsibility with explicit files and
-  checks, assign disjoint files to parallel agents and integrate their results yourself.
+Use the [Claude](.claude/README.md#agents) or [Codex](.codex/README.md) guide for specialists,
+commands, skills, scoped rules and hooks. Read the active assistant's matching rules for every
+touched path and load skills relevant to the task. Specialists are available when needed.
+Give each delegate a bounded assignment, owning checkout, explicit files and checks. Keep
+parallel write scopes disjoint and integrate the results.
 
 ## Repository hygiene
 
@@ -137,5 +132,5 @@ not to find another way around it.
 
 ## References
 
-- [Interactive mockup](https://claude.ai/artifact/KYRM7AnsYLiBLBLKy8i4HE), [integration guide](https://claude.ai/artifact/CpJHVCiFfF9j3KbHQ2S1Et) and
-  [repositories and packages](https://claude.ai/artifact/BPinmYxoF3mbK8w9BMB43N) (living documents).
+Use the [documentation index](docs/README.md#sources-and-policy) for the mockup, integration
+guide and repositories document.

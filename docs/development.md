@@ -4,7 +4,7 @@
 
 ## Bootstrap status
 
-The scripts below exist in `package.json`; `pnpm quality` runs them in order, except `pnpm changeset status`. Run Git, pnpm, build and test commands with this repository as the working directory, never from the parent workspace. The generation, the typecheck and the tests run on the contracts of `openapi/` and `asyncapi/` and on the documents of `tests/redocly/valid/`.
+The local gate uses the scripts in `package.json`. Run Git, pnpm, build and test commands with this repository as the working directory, never from the parent workspace. The generation, the typecheck and the tests run on the contracts of `openapi/` and `asyncapi/` and on the documents of `tests/redocly/valid/`.
 
 ## Before making a change
 
@@ -27,38 +27,20 @@ Consumers install the published packages; never link this folder into another re
 
 ## Minimum checks by change
 
-The scripts below are this repository's contract. While the repository is being bootstrapped,
-create them with these exact names; afterwards, use them and never an ad-hoc equivalent. Run the
-narrowest check that covers the change first, then widen:
+Use the [checks by change in AGENTS.md](../AGENTS.md#commands-and-quality-gates) to select and report the smallest applicable verification.
 
-| Changed                         | Minimum check                                                         |
-| ------------------------------- | --------------------------------------------------------------------- |
-| A spec                          | `pnpm lint:specs`, `pnpm breaking`, `pnpm generate`, `pnpm typecheck` |
-| Shared enumerations             | `pnpm test`, `pnpm build`                                             |
-| Any change to a package         | a changeset                                                           |
-| Docs or agent instructions only | Scoped formatting and link review                                     |
+## Full local quality gate
 
-Report the commands you actually ran and their results; a check you did not run is reported as not
-run.
+Run these steps from the repository root. The same procedure backs `/cw-quality` in Claude Code
+and `$cw-quality` in Codex.
 
-## Full check list
+1. Run `pnpm quality`. The script in `package.json` runs formatting, lint-rule tests, code and
+   spec linting, compatibility checks, generation, type checks, architecture checks, tests, build,
+   and package archive verification.
+2. Run `pnpm changeset status` when checking a change to a published package.
 
-The following commands are the local gate. Run `/cw-quality` in Claude Code or `$cw-quality` in
-Codex without arguments. CI runs the same steps and fails when `pnpm generate` leaves a diff.
-
-```bash
-pnpm format:check
-pnpm test:lint
-pnpm lint:code
-pnpm lint:specs                # Redocly
-pnpm breaking                  # OpenAPI and AsyncAPI against main
-pnpm generate
-pnpm typecheck
-pnpm test:architecture
-pnpm test
-pnpm build
-pnpm changeset status
-```
+The gate regenerates tracked contract files. Review the generated diff against the intended spec
+change. CI requires the committed generated files to match regeneration.
 
 ## What each command covers
 
