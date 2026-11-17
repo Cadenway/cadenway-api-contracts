@@ -12,8 +12,12 @@
 // openapi/public/auth.yaml
 export {
   AuthService,
+  type ConfirmPasswordResetClientResult,
   type DiscoverSignInMethodsClientResult,
   type GetCurrentUserClientResult,
+  type InspectPasswordResetLinkClientResult,
+  type ReauthenticateClientResult,
+  type RequestPasswordResetClientResult,
   type RequestSignInCodeClientResult,
   type ResendSignUpCodeClientResult,
   type SignInWithCodeClientResult,
@@ -23,6 +27,19 @@ export {
   type UpdateCurrentUserClientResult,
   type VerifySignUpClientResult,
 } from './generated/public/auth/auth/auth.service';
+export {
+  AccountService,
+  type ChangePasswordClientResult,
+  type ConfirmEmailChangeClientResult,
+  type RequestEmailChangeClientResult,
+  type ScheduleAccountDeletionClientResult,
+} from './generated/public/auth/account/account.service';
+export {
+  SessionsService,
+  type ListSessionsClientResult,
+  type RevokeOtherSessionsClientResult,
+  type RevokeSessionClientResult,
+} from './generated/public/auth/sessions/sessions.service';
 export type { AccountLockedResponse } from './generated/public/auth/model/accountLockedResponse';
 export type { ApiTokenNotAcceptedResponse } from './generated/public/auth/model/apiTokenNotAcceptedResponse';
 export type { BadRequestResponse } from './generated/public/auth/model/badRequestResponse';
@@ -34,11 +51,34 @@ export type { CodeVerification } from './generated/public/auth/model/codeVerific
 export type { CredentialsRefusedResponse } from './generated/public/auth/model/credentialsRefusedResponse';
 export type { CrossSiteRefusedResponse } from './generated/public/auth/model/crossSiteRefusedResponse';
 export type { CurrentUser } from './generated/public/auth/model/currentUser';
+export type { DeletionScheduled } from './generated/public/auth/model/deletionScheduled';
+export type { Device } from './generated/public/auth/model/device';
 export type { Email } from './generated/public/auth/model/email';
+export type { EmailChangeCodeRefusedResponse } from './generated/public/auth/model/emailChangeCodeRefusedResponse';
+export type { EmailChangeCodeSent } from './generated/public/auth/model/emailChangeCodeSent';
+export type { EmailChangeConfirmation } from './generated/public/auth/model/emailChangeConfirmation';
+export type { EmailChangeRequest } from './generated/public/auth/model/emailChangeRequest';
 export type { EmailNotVerifiedResponse } from './generated/public/auth/model/emailNotVerifiedResponse';
 export type { EmailTakenResponse } from './generated/public/auth/model/emailTakenResponse';
+export type { EmailUnchangedResponse } from './generated/public/auth/model/emailUnchangedResponse';
+export type { EmptyRequest } from './generated/public/auth/model/emptyRequest';
 export type { Language } from './generated/public/auth/model/language';
+export type { ListSessionsParams } from './generated/public/auth/model/listSessionsParams';
+export type { NextCursor } from './generated/public/auth/model/nextCursor';
+export type { OpenSession } from './generated/public/auth/model/openSession';
+export type { OpenSessionPage } from './generated/public/auth/model/openSessionPage';
+export type { OrganizationOwnerResponse } from './generated/public/auth/model/organizationOwnerResponse';
 export type { Password } from './generated/public/auth/model/password';
+export type { PasswordChange } from './generated/public/auth/model/passwordChange';
+export type { PasswordChangeRefusedResponse } from './generated/public/auth/model/passwordChangeRefusedResponse';
+export type { PasswordRefusedResponse } from './generated/public/auth/model/passwordRefusedResponse';
+export type { PasswordResetCompleted } from './generated/public/auth/model/passwordResetCompleted';
+export type { PasswordResetConfirmation } from './generated/public/auth/model/passwordResetConfirmation';
+export type { PasswordResetLink } from './generated/public/auth/model/passwordResetLink';
+export type { PasswordResetLinkSent } from './generated/public/auth/model/passwordResetLinkSent';
+export type { PasswordResetRefusedResponse } from './generated/public/auth/model/passwordResetRefusedResponse';
+export type { PasswordResetRequest } from './generated/public/auth/model/passwordResetRequest';
+export type { PasswordResetToken } from './generated/public/auth/model/passwordResetToken';
 export type { PasswordSignIn } from './generated/public/auth/model/passwordSignIn';
 export type { Problem } from './generated/public/auth/model/problem';
 export type { ProblemDetails } from './generated/public/auth/model/problemDetails';
@@ -46,7 +86,16 @@ export type { ProfileForbiddenResponse } from './generated/public/auth/model/pro
 export type { ProfilePatch } from './generated/public/auth/model/profilePatch';
 export { ProfilePatchLanguage } from './generated/public/auth/model/profilePatchLanguage';
 export type { RateLimitedResponse } from './generated/public/auth/model/rateLimitedResponse';
+export type { ReauthenticationRequest } from './generated/public/auth/model/reauthenticationRequest';
+export type { RecentAuthentication } from './generated/public/auth/model/recentAuthentication';
+export type { RecentAuthenticationForbiddenResponse } from './generated/public/auth/model/recentAuthenticationForbiddenResponse';
+export type { ResetLinkExpiredResponse } from './generated/public/auth/model/resetLinkExpiredResponse';
+export type { ResetThrottledResponse } from './generated/public/auth/model/resetThrottledResponse';
+export type { ResetToken } from './generated/public/auth/model/resetToken';
+export type { RevokedSessions } from './generated/public/auth/model/revokedSessions';
 export type { Session } from './generated/public/auth/model/session';
+export type { SessionNotFoundResponse } from './generated/public/auth/model/sessionNotFoundResponse';
+export type { SessionWriteForbiddenResponse } from './generated/public/auth/model/sessionWriteForbiddenResponse';
 export type { SignedIn } from './generated/public/auth/model/signedIn';
 export type { SignedInResponse } from './generated/public/auth/model/signedInResponse';
 export type { SignInMethod } from './generated/public/auth/model/signInMethod';
@@ -78,7 +127,6 @@ export type { InvitationResult } from './generated/public/organizations/model/in
 export type { ListMyOrganizationsParams } from './generated/public/organizations/model/listMyOrganizationsParams';
 export type { MyOrganization } from './generated/public/organizations/model/myOrganization';
 export type { MyOrganizationPage } from './generated/public/organizations/model/myOrganizationPage';
-export type { NextCursor } from './generated/public/organizations/model/nextCursor';
 export type { Organization } from './generated/public/organizations/model/organization';
 export type { OrganizationChoice } from './generated/public/organizations/model/organizationChoice';
 export type { OrganizationCreated } from './generated/public/organizations/model/organizationCreated';
@@ -93,7 +141,6 @@ export type { OrganizationWriteForbiddenResponse } from './generated/public/orga
 export { Role } from './generated/public/organizations/model/role';
 export type { SessionOrganization } from './generated/public/organizations/model/sessionOrganization';
 export type { SessionReadForbiddenResponse } from './generated/public/organizations/model/sessionReadForbiddenResponse';
-export type { SessionWriteForbiddenResponse } from './generated/public/organizations/model/sessionWriteForbiddenResponse';
 export type { Slug } from './generated/public/organizations/model/slug';
 export type { SlugInvalidResponse } from './generated/public/organizations/model/slugInvalidResponse';
 export type { SlugTakenResponse } from './generated/public/organizations/model/slugTakenResponse';
@@ -117,7 +164,6 @@ export {
   type RemoveMemberClientResult,
 } from './generated/public/members/members/members.service';
 export { AssignableRole } from './generated/public/members/model/assignableRole';
-export type { EmptyRequest } from './generated/public/members/model/emptyRequest';
 export type { Invitation } from './generated/public/members/model/invitation';
 export type { InvitationAnsweredResponse } from './generated/public/members/model/invitationAnsweredResponse';
 export type { InvitationBatch } from './generated/public/members/model/invitationBatch';

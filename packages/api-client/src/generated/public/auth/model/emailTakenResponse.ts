@@ -5,6 +5,7 @@
 import type { Problem } from './problem';
 
 /**
- * `auth.email-taken`: a verified account already uses the address.
+ * `auth.email-taken`: a verified account already uses the address, the one of the sign-up or
+ * the new address of a change.
  */
 export type EmailTakenResponse = Problem;

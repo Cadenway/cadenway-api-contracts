@@ -1,44 +1,72 @@
 # Public routes of authentication: sign-up, email verification, sign-in by password or by email
-# code, sign-out, and the current user and its profile. Served by cadenway-api-gateway, which calls
-# openapi/internal/identity-service.yaml for each of them.
+# code, sign-out, password reset and recent re-authentication, the current user and its profile,
+# and the security of the account (password, address, open sessions, deletion). Served by
+# cadenway-api-gateway, which calls openapi/internal/identity-service.yaml for each of them.
 openapi: 3.1.0
 info:
   title: Cadenway authentication
   version: 1.0.0
   description: |
-    How a person creates an account, proves the address, signs in and out, and reads who they are.
-    The API gateway serves these routes and answers them through identity-service.
+    How a person creates an account, proves the address, signs in and out, reads who they are, and
+    keeps the account safe: the password, its reset, the open sessions, the address and the
+    deletion of the account. The API gateway serves these routes and answers them through
+    identity-service.
 
     **Sessions.** A session travels only in the cookie `__Host-cw_session`, set by the gateway on the
-    responses that sign in (`Set-Cookie`) and cleared by the sign-out. The token is opaque: the
-    gateway checks it on every request with identity-service, without a cache, so a revoked session
-    stops at the next request. The web application never reads it (`HttpOnly`). A route without a
-    session (`security: []`) ignores the cookie and any bearer token: a stale one never makes it
-    fail. The responses that sign in and `GET /v1/me` carry `Cache-Control: no-store`.
+    responses that sign in (`Set-Cookie`) and cleared by the sign-out and by the scheduling of the
+    deletion of the account. The token is opaque: the gateway checks it on every request with
+    identity-service, without a cache, so a revoked session stops at the next request. The web
+    application never reads it (`HttpOnly`). A route without a session (`security: []`) ignores the
+    cookie and any bearer token: a stale one never makes it fail. The responses that sign in,
+    `GET /v1/me` and the routes of the tags `account` and `sessions` carry
+    `Cache-Control: no-store`. The person lists their open sessions and closes them
+    (`GET /v1/sessions`, `DELETE /v1/sessions/{sessionId}`, `POST /v1/sessions/revoke-others`).
 
     **Credentials and scopes.** Every public operation of Cadenway declares in its own `security`
     what may call it: `sessionCookie: []` for a session, `apiToken: [<scope>]` for a personal API
     token (`openapi/public/api-tokens.yaml`) with that scope, `[]` for no credential. A session
-    holds every scope. The routes of this document accept no personal API token: one that calls
-    `GET /v1/me` or `PATCH /v1/me` gets `403 auth.api-token-not-accepted`. On a route that
-    needs a credential, a request that carries `Authorization: Bearer` is authenticated with that
-    token alone and its cookie is ignored. The routes without a session (`security: []`) and the
-    sign-out ignore any bearer token: the sign-out always closes the session of the cookie.
+    holds every scope. The routes of this document accept no personal API token: one that calls a
+    route that needs a session, such as `GET /v1/me`, gets `403 auth.api-token-not-accepted`. On a
+    route that needs a credential, a request that carries `Authorization: Bearer` is authenticated
+    with that token alone and its cookie is ignored. The routes without a session (`security: []`)
+    and the sign-out ignore any bearer token: the sign-out always closes the session of the cookie.
 
     **Cross-site requests.** Every request with an unsafe method on these routes, signed in or not,
     carries an `Origin` equal to one of the gateway's allowed origins (the web application, the
-    website) and, every one of them being a `POST` or a `PATCH`, `Content-Type: application/json`;
-    the gateway refuses any other before the route runs (`403 auth.csrf-rejected`). Signing in and
-    signing up are covered too, so that another site cannot sign a browser in to an account of its
-    choosing. A `PATCH` is a JSON Merge Patch (RFC 7396) sent as `application/json`, for the same
-    reason. The other documents apply the same rule to the requests the cookie authenticates,
-    where a bodiless `DELETE` passes on its `Origin` alone. A request authenticated by a personal
-    API token carries no ambient credential and needs no `Origin`.
+    website) and, for a `POST`, a `PUT` or a `PATCH`, `Content-Type: application/json`; a bodiless
+    `DELETE` passes on its `Origin` alone. The gateway refuses any other request before the route
+    runs (`403 auth.csrf-rejected`). Signing in, signing up and the password reset are covered too,
+    so that another site cannot sign a browser in to an account of its choosing. A `PATCH` is a
+    JSON Merge Patch (RFC 7396) sent as `application/json`, for the same reason. The other
+    documents apply the same rule to the requests the cookie authenticates. A request
+    authenticated by a personal API token carries no ambient credential and needs no `Origin`.
 
-    **Account enumeration.** Only the sign-up says whether an address is taken, as the mockup does.
-    Every other route answers the same way whether or not an account uses the address: the method
-    discovery, the code requests, the code checks, the password check and its lockout, which are
-    counted per address.
+    **Account enumeration.** Only the sign-up and the change of address say whether an address is
+    taken: the sign-up as the mockup does, the change of address only to a signed-in person who has
+    just confirmed their password. Every other route answers the same way whether or not an account
+    uses the address: the method discovery, the code requests, the password reset request, the code
+    checks, the password check and its lockout, which are counted per address. A reset link tells
+    its own account (`POST /v1/auth/password-reset/inspection`) to whoever holds it, the person who
+    received it at that address.
+
+    **Recent authentication.** Changing the address (`POST /v1/me/email-change`) and scheduling the
+    deletion of the account (`POST /v1/me/deletion`) need a session whose person proved who they
+    are in the last 10 minutes: the sign-in that opened the session, a password confirmed with
+    `POST /v1/auth/reauthentication`, or the current password of a password change
+    (`PUT /v1/me/password`). Otherwise they answer `403 auth.reauthentication-required`, with
+    `details.methods`, the ways the person can confirm (`password` today): the web application asks
+    for it, calls `POST /v1/auth/reauthentication`, then repeats the request. The window belongs to
+    one session: confirming in one browser does not open it in another. identity-service answers
+    this code, which the gateway forwards. Later versions add the routes of two-step verification
+    to the guarded ones and accept a two-step code as a confirmation.
+
+    **Security emails.** identity-service tells notification-service what happened, through the
+    events of `asyncapi/identity-service.yaml`, and notification-service sends the email, in French
+    under "Sécurité · toujours envoyé": the person cannot turn these emails off. The reset link
+    travels only in a restricted event (`password-reset-link.issued.v1`), the code of a change of
+    address in `one-time-code.issued.v1`; the other emails come from facts of the account
+    (`user.password-changed.v1`, `user.email-changed.v1`, `session.opened-on-new-device.v1`,
+    `user.deletion-scheduled.v1`, `user.deletion-cancelled.v1`).
 
     **Errors.** Every error is an `application/problem+json` problem with a stable `code`. The
     `code` is the contract. For a code the web application shows to the person, `title` is French
@@ -50,14 +78,18 @@ info:
     the person to the sign-in screen on it.
 
     **Status codes of actions.** These routes are actions, not resources: none answers `201` with a
-    `Location`. A route that sends a code answers `202`, one that signs in answers `200` with the
-    cookie, and the sign-out answers `204`.
+    `Location`. A route that sends a code or a link answers `202`, one that signs in answers `200`
+    with the cookie, the sign-out and the revocation of a session answer `204`, and the scheduling
+    of the deletion answers `202` and clears the cookie. No route here signs in other than the
+    sign-up verification and the two sign-ins: the password reset never does.
 
     **Later versions** add, without changing what is here: OAuth providers and SAML single sign-on
-    (new method types in the discovery, new routes), a second factor (a sign-in that needs one will
-    answer another success status with a challenge: a `200` always carries a session), password
-    reset, the change of address, the photo, the list of sessions and the deletion of the account.
-    The organizations, the current organization of the session and the personal API tokens are in
+    (new method types in the discovery, new routes); two-step verification, whose sign-in answers
+    `202` with a challenge and no cookie, a `200` always carrying a session, so that a client that
+    does not know the `202` never takes it for a sign-in; a two-step code as a confirmation of
+    `POST /v1/auth/reauthentication` (`password` then becomes optional beside it); the trusted
+    devices; the authentication policy of an organization; and the photo. The organizations, the
+    current organization of the session and the personal API tokens are in
     `openapi/public/organizations.yaml`, `openapi/public/members.yaml` and
     `openapi/public/api-tokens.yaml`.
   contact:
@@ -70,7 +102,7 @@ info:
     - repository: cadenway-api-gateway
       uses: Serves every route, through openapi/internal/identity-service.yaml.
     - repository: cadenway-webapp
-      uses: Calls every route through @cadenway/api-client (sign-in, sign-up, code and sign-out screens, account "Profil" and "Préférences").
+      uses: Calls every route through @cadenway/api-client (sign-in, sign-up, code, password reset and sign-out screens, account "Profil", "Préférences" and "Sécurité").
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -80,7 +112,13 @@ security:
   - sessionCookie: []
 tags:
   - name: auth
-    description: Sign-up, email verification, sign-in, sign-out, and the current user and its profile.
+    description: |
+      Sign-up, email verification, sign-in, sign-out, password reset, recent re-authentication, and
+      the current user and its profile.
+  - name: account
+    description: The security of the account of the signed-in person, its password, its address and its deletion.
+  - name: sessions
+    description: The open sessions of the signed-in person.
 paths:
   /v1/auth/sign-in-methods:
     post:
@@ -291,8 +329,15 @@ paths:
           `429 auth.account-locked` with `Retry-After` and `details.lockedUntil` (15 minutes).
         - The right password of an account whose address is not verified answers
           `403 auth.email-not-verified`; `POST /v1/auth/sign-up/code` sends a new code.
+        - A sign-in to an account whose deletion is scheduled (`POST /v1/me/deletion`) cancels the
+          deletion: the answer says so with `deletionCancelled: true`, and
+          `user.deletion-cancelled.v1` is emitted. Signing in is the only way to cancel it.
+        - A sign-in from a device the account did not use in the last 90 days (see
+          `session.opened-on-new-device.v1`) sends the email "Nouvelle connexion".
 
-        No session needed. Scopes: none.
+        Later versions add two-step verification: a sign-in that needs it answers `202` with a
+        challenge and no cookie, and only the `200` that completes it opens the session, cancels a
+        scheduled deletion and counts the device. No session needed. Scopes: none.
       tags: [auth]
       security: []
       requestBody:
@@ -366,7 +411,11 @@ paths:
         Checks a sign-in code. On success a session is opened and the gateway sets the session
         cookie. Same rules for the code as `POST /v1/auth/sign-up/verification`: single-use, 10
         minutes, a few wrong attempts. An address without an account answers like a wrong code.
-        No session needed. Scopes: none.
+
+        As with `POST /v1/auth/sign-in`, the sign-in cancels a scheduled deletion of the account
+        (`deletionCancelled: true`, `user.deletion-cancelled.v1`) and, from a device the account did
+        not use in the last 90 days, sends "Nouvelle connexion"; later versions answer `202` with a
+        two-step challenge when the account needs one. No session needed. Scopes: none.
       tags: [auth]
       security: []
       requestBody:
@@ -428,6 +477,215 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/auth/password-reset:
+    post:
+      operationId: requestPasswordReset
+      summary: Request a password reset link
+      description: |
+        Sends a link to choose a new password ("Mot de passe oublié") to the address when a
+        verified account uses it. Always answers `202` the same way, whether or not an account uses
+        the address ("Si un compte existe pour <email>, un lien de réinitialisation vient de
+        partir.").
+
+        - The link opens `<web application>/reset#token=<token>`: the token sits in the fragment,
+          which no server receives or logs. It works once, for 30 minutes (`expiresAt`), from any
+          browser: it is not bound to the browser that asked for it, so that the email can be
+          opened on another device.
+        - A new request makes the previous link stop working ("Un nouveau lien vient de partir ;
+          le précédent ne fonctionne plus."). Asking again is how the link is resent.
+        - Throttled per address, account or not, apart from the codes: a request is refused less
+          than 45 seconds after the last accepted one, and once 5 were accepted in the current
+          hour (`resendAvailableAt`, else `429 auth.reset-throttled`).
+        - The current password keeps working until a new one is chosen; asking for a link signs
+          nobody out. An account whose address is not verified gets no link: its sign-up code
+          verifies it (`POST /v1/auth/sign-up/code`).
+
+        Emits the restricted `password-reset-link.issued.v1`, from which notification-service sends
+        the email "Réinitialisez votre mot de passe Cadenway". No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+            example:
+              email: camille.martin@ateliernord.fr
+      responses:
+        '202':
+          description: The request is accepted; a link is on its way when a verified account uses the address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetLinkSent'
+              example:
+                email: camille.martin@ateliernord.fr
+                expiresAt: '2026-11-09T13:40:00Z'
+                resendAvailableAt: '2026-11-09T13:10:45Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
+        '429':
+          $ref: '#/components/responses/ResetThrottled'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/password-reset/inspection:
+    post:
+      operationId: inspectPasswordResetLink
+      summary: Read the account of a password reset link
+      description: |
+        Tells the reset screen ("Choisir un nouveau mot de passe") which account a link is for
+        ("Pour le compte <email>.") and how many sessions the reset would close ("3 appareils
+        connectés seront déconnectés"). The web application reads the token from the fragment of
+        the link and sends it in the body, never in a URL of the API. Reading a link does not use
+        it.
+
+        `sessionCount` counts every open session of the account: the reset runs without a session,
+        so none of them is "this device" (the mockup's "sauf celui-ci" does not apply). A link that
+        expired, was used, was replaced by a newer one or is unknown answers
+        `422 auth.reset-link-expired` ("Ce lien a expiré"): the web application offers to ask for a
+        new one. No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetToken'
+            example:
+              token: ExampleOnlyResetToken0000000000000000000000
+      responses:
+        '200':
+          description: The link works; the account it is for.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetLink'
+              example:
+                email: camille.martin@ateliernord.fr
+                expiresAt: '2026-11-09T13:40:00Z'
+                sessionCount: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
+        '422':
+          $ref: '#/components/responses/ResetLinkExpired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/password-reset/confirmation:
+    post:
+      operationId: confirmPasswordReset
+      summary: Choose a new password with a reset link
+      description: |
+        Sets the new password of the account of the link and uses the link up. Never signs in:
+        the web application then offers "Se connecter".
+
+        - `closeOtherSessions` ("Fermer mes autres sessions", ticked by default) closes every open
+          session of the account; unticked, they stay open. `closedSessionCount` says how many
+          closed ("Vos 3 autres sessions ont été fermées." or "Vos autres sessions restent
+          ouvertes.").
+        - The new password follows the rules of the sign-up: 12 characters at least, no
+          composition rule (the four rules of the mockup's reset screen do not apply), not in the
+          list of compromised passwords (`422 auth.password-too-short`,
+          `422 auth.password-compromised`). A refused password leaves the link usable.
+        - A link that expired, was used, was replaced or is unknown answers
+          `422 auth.reset-link-expired`.
+        - The reset ends the lockout of the password sign-in of the address, keeps the personal API
+          tokens, and does not cancel a scheduled deletion of the account: only a sign-in does.
+
+        Emits `user.password-changed.v1` (`method: reset`), from which notification-service sends
+        "Votre mot de passe a été modifié" to the address of the account ("Un e-mail de
+        confirmation vient de partir vers <email>."), and `session.revoked.v1` for each closed
+        session. No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmation'
+            example:
+              token: ExampleOnlyResetToken0000000000000000000000
+              newPassword: nord-atelier-sprint-15
+              closeOtherSessions: true
+      responses:
+        '200':
+          description: The password is changed; nobody is signed in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetCompleted'
+              example:
+                email: camille.martin@ateliernord.fr
+                closedSessionCount: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
+        '422':
+          $ref: '#/components/responses/PasswordResetRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/reauthentication:
+    post:
+      operationId: reauthenticate
+      summary: Confirm the password of the signed-in person
+      description: |
+        Opens the window of recent authentication of this session for 10 minutes (see "Recent
+        authentication" above). The web application calls it when a route answered
+        `403 auth.reauthentication-required`, then repeats that request.
+
+        - A wrong password answers `422 auth.password-incorrect` with
+          `details.remainingAttempts`. It counts with the failed sign-ins of the address of the
+          account: the failure that uses the last attempt, and every attempt during the lockout,
+          answer `429 auth.account-locked` (15 minutes). The lockout also refuses the password
+          sign-in of the address, but leaves this session open.
+        - Later versions accept a two-step code instead of the password: `password` then becomes
+          optional beside it.
+
+        Session only: a personal API token gets `403 auth.api-token-not-accepted`.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReauthenticationRequest'
+            example:
+              password: atelier-nord-sprint-14
+      responses:
+        '200':
+          description: The password is right; the guarded routes accept this session until `expiresAt`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecentAuthentication'
+              example:
+                authenticatedAt: '2026-11-09T13:12:00Z'
+                expiresAt: '2026-11-09T13:22:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SessionWriteForbidden'
+        '422':
+          $ref: '#/components/responses/PasswordRefused'
+        '429':
+          $ref: '#/components/responses/AccountLocked'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /v1/me:
     get:
       operationId: getCurrentUser
@@ -474,7 +732,8 @@ paths:
           `400 request.invalid` with an issue on `timeZone`.
         - `If-Match` is optional; a version that is no longer the current one answers
           `412 request.version-mismatch`.
-        - The address, the password and the photo do not change here: their own routes come in a
+        - The address, the password and the photo do not change here: the address changes with
+          `POST /v1/me/email-change`, the password with `PUT /v1/me/password`, and the photo in a
           later version.
 
         Emits `user.profile-updated.v1` when something changed; a patch that changes nothing
@@ -522,6 +781,427 @@ paths:
           $ref: '#/components/responses/ProfileForbidden'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/password:
+    put:
+      operationId: changePassword
+      summary: Change the password
+      description: |
+        Replaces the password of the account ("Modifier le mot de passe"). The other sessions stay
+        open ("Vos autres sessions resteront ouvertes."), and so do the personal API tokens.
+
+        The checks run in this order:
+
+        1. The new password, against the rules of the sign-up: 12 characters at least, no
+           composition rule, not in the list of compromised passwords
+           (`422 auth.password-too-short`, `422 auth.password-compromised`). No attempt is counted.
+        2. The current password. A wrong one answers `422 auth.password-incorrect` with
+           `details.remainingAttempts` and counts with the failed sign-ins of the address, as
+           `POST /v1/auth/reauthentication` says (`429 auth.account-locked`). A right one counts
+           as a recent authentication of this session.
+
+        Recent authentication is not required: the current password stands for it. Answers the
+        account, with its new `passwordChangedAt` ("Modifié aujourd’hui") and the next `version`.
+        Emits `user.password-changed.v1` (`method: change`, no session closed), from which
+        notification-service sends "Votre mot de passe a été modifié" to the address of the
+        account ("Un e-mail de confirmation vient de partir vers <email>."). Session only: a
+        personal API token gets `403 auth.api-token-not-accepted`.
+      tags: [account]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+            example:
+              currentPassword: atelier-nord-sprint-14
+              newPassword: nord-atelier-sprint-15
+      responses:
+        '200':
+          description: The account after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+              example:
+                id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                name: Camille Martin
+                email: camille.martin@ateliernord.fr
+                language: fr
+                displayName: camille
+                jobTitle: Responsable produit
+                timeZone: Europe/Paris
+                passwordChangedAt: '2026-11-09T13:16:00Z'
+                version: 4
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SessionWriteForbidden'
+        '422':
+          $ref: '#/components/responses/PasswordChangeRefused'
+        '429':
+          $ref: '#/components/responses/AccountLocked'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/email-change:
+    post:
+      operationId: requestEmailChange
+      summary: Ask to change the address
+      description: |
+        Sends a 6-digit code to the new address ("Un code à 6 chiffres y sera envoyé."), valid 15
+        minutes. The current address stays the address of the account, for the sign-in and the
+        emails, until the code is confirmed ("L'adresse actuelle reste active jusqu'à la
+        confirmation."). A new request replaces the pending change and makes its code stop
+        working; asking again for the same address is how the code is resent.
+
+        The checks run in this order:
+
+        1. Recent authentication of this session (`403 auth.reauthentication-required`).
+        2. `email` is the current address of the account: `422 auth.email-unchanged`.
+        3. A verified account uses `email`: `409 auth.email-taken`. An unverified sign-up of the
+           address does not make it taken.
+        4. The code requests of the new address are throttled with its other codes, account or
+           not (see `CodeThrottled`): 30 seconds between two and at most 5 in an hour
+           (`429 auth.code-throttled`).
+
+        Emits the restricted `one-time-code.issued.v1` with the purpose `email-change`, from
+        which notification-service sends the code to the new address. Session only: a personal
+        API token gets `403 auth.api-token-not-accepted`.
+      tags: [account]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailChangeRequest'
+            example:
+              email: camille@ateliernord.fr
+      responses:
+        '202':
+          description: The code is on its way to the new address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailChangeCodeSent'
+              example:
+                email: camille@ateliernord.fr
+                expiresAt: '2026-11-09T13:35:00Z'
+                resendAvailableAt: '2026-11-09T13:20:30Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/RecentAuthenticationForbidden'
+        '409':
+          $ref: '#/components/responses/EmailTaken'
+        '422':
+          $ref: '#/components/responses/EmailUnchanged'
+        '429':
+          $ref: '#/components/responses/CodeThrottled'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/email-change/confirmation:
+    post:
+      operationId: confirmEmailChange
+      summary: Confirm the new address with its code
+      description: |
+        Checks the code sent to the new address and makes it the address of the account, verified
+        ("<email> est vérifiée et reçoit désormais vos e-mails."). Same rules for the code as the
+        sign-in code, except its 15 minutes: single use, and the fifth wrong attempt stops it.
+
+        - Without a pending change, or with a wrong code: `422 auth.code-invalid`. A code that
+          expired, was used, was replaced or took too many wrong attempts:
+          `422 auth.code-expired`.
+        - An address a verified account took since the request: `409 auth.email-taken`, and the
+          change is dropped.
+        - Recent authentication is not required again: the request required it, and the code
+          proves the new address.
+
+        From then on the account signs in with the new address only. The codes and the reset link
+        issued to the previous address stop working, and an unverified sign-up of the new address
+        ends; the sessions and the personal API tokens stay. Emits `user.email-changed.v1`, from
+        which notification-service sends a notice to the previous address and organization-service
+        updates its directory. Answers the account. Session only: a personal API token gets
+        `403 auth.api-token-not-accepted`.
+      tags: [account]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailChangeConfirmation'
+            example:
+              code: '731406'
+      responses:
+        '200':
+          description: The account, with its new address.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+              example:
+                id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                name: Camille Martin
+                email: camille@ateliernord.fr
+                language: fr
+                displayName: camille
+                jobTitle: Responsable produit
+                timeZone: Europe/Paris
+                passwordChangedAt: '2026-08-12T09:30:00Z'
+                version: 5
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SessionWriteForbidden'
+        '409':
+          $ref: '#/components/responses/EmailTaken'
+        '422':
+          $ref: '#/components/responses/EmailChangeCodeRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/deletion:
+    post:
+      operationId: scheduleAccountDeletion
+      summary: Schedule the deletion of the account
+      description: |
+        Schedules the deletion of the account in 30 days ("Supprimer mon compte"). At once, every
+        session of the account, this one included, and every personal API token are revoked: the
+        gateway clears the session cookie and the web application shows the sign-out screen.
+
+        - Until `deleteAt`, signing in again cancels the deletion ("une connexion suffit pour
+          annuler"): `POST /v1/auth/sign-in` or `POST /v1/auth/sign-in/code/verification`, whose
+          answer then carries `deletionCancelled: true`. There is no other way to cancel it, since
+          no session or token of the account outlives the scheduling. A password reset does not
+          cancel it.
+        - At `deleteAt`, identity-service deletes the account (`user.deleted.v1`):
+          organization-service removes its memberships, and the tasks and documents stay in the
+          organizations, attributed to « Ancien membre ». The address is free again.
+
+        The checks run in this order:
+
+        1. The person owns an organization: `409 account.organization-owner`, with
+           `details.organizationIds`. identity-service answers it from its copy of the memberships
+           (`member.joined.v1` gives the owner of an organization at its creation), without calling
+           organization-service. An organization created in the seconds before may not be in the
+           copy yet: identity-service checks the copy again at `deleteAt` and does not delete an
+           account that owns an organization then.
+        2. Recent authentication of this session (`403 auth.reauthentication-required`).
+
+        Emits `user.deletion-scheduled.v1`, from which notification-service sends "La suppression
+        de votre compte est programmée", and `session.revoked.v1` for each session. The body is an
+        empty JSON object. Session only: a personal API token gets
+        `403 auth.api-token-not-accepted`.
+      tags: [account]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '202':
+          description: The deletion is scheduled; the sessions and tokens are revoked and the cookie is cleared.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/ClearSessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionScheduled'
+              example:
+                deleteAt: '2026-12-09T15:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/RecentAuthenticationForbidden'
+        '409':
+          $ref: '#/components/responses/OrganizationOwner'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/sessions:
+    get:
+      operationId: listSessions
+      summary: List the open sessions
+      description: |
+        Lists the open sessions of the account ("Sessions actives"): neither signed out, revoked,
+        expired nor closed for inactivity. The session of the request is among them, marked
+        `current` ("Cet appareil"). A session closes after 12 hours of inactivity by default
+        ("Une session inactive pendant 12 heures est fermée automatiquement.").
+
+        Sorted by sign-in, the most recent first, then by id: a session keeps its place whatever
+        its activity, so the pages hold still. The web application shows the current session
+        first, then the others by `lastActiveAt`. No place is given, only the address the session
+        was opened from. Session only: a personal API token gets
+        `403 auth.api-token-not-accepted`.
+      tags: [sessions]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the open sessions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenSessionPage'
+              example:
+                items:
+                  - id: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
+                    current: true
+                    device:
+                      type: desktop
+                      browser: Firefox
+                      browserVersion: '132'
+                      os: Windows
+                      osVersion: null
+                    ipAddress: 192.0.2.14
+                    signedInAt: '2026-11-09T07:58:00Z'
+                    lastActiveAt: '2026-11-09T13:24:00Z'
+                    expiresAt: '2026-12-09T07:58:00Z'
+                  - id: 019a6914-2f7a-7b3c-9d4e-5f6a7b8c9d01
+                    current: false
+                    device:
+                      type: mobile
+                      browser: Safari
+                      browserVersion: '18'
+                      os: iOS
+                      osVersion: '18.1'
+                    ipAddress: 198.51.100.7
+                    signedInAt: '2026-11-08T07:42:00Z'
+                    lastActiveAt: '2026-11-09T11:20:00Z'
+                    expiresAt: '2026-12-08T07:42:00Z'
+                  - id: 019a5f88-1c2d-7e3f-8a4b-6c7d8e9f0a12
+                    current: false
+                    device:
+                      type: desktop
+                      browser: Chrome
+                      browserVersion: '131'
+                      os: macOS
+                      osVersion: null
+                    ipAddress: 192.0.2.14
+                    signedInAt: '2026-11-06T08:15:00Z'
+                    lastActiveAt: '2026-11-08T17:40:00Z'
+                    expiresAt: '2026-12-06T08:15:00Z'
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ApiTokenNotAccepted'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/sessions/{sessionId}:
+    delete:
+      operationId: revokeSession
+      summary: Revoke a session
+      description: |
+        Closes a session of the account ("Révoquer"; "Cet appareil devra se reconnecter pour
+        accéder à Cadenway."): its next request answers `401 auth.session-expired`.
+
+        - Revoking a session that already ended answers `204`.
+        - A session of another account, or an unknown id, answers `404 session.not-found`.
+        - The current session can be revoked here too, but its cookie stays until the next request
+          finds it ended: the web application signs out with `POST /v1/auth/sign-out` instead.
+
+        Recent authentication is not required. Emits `session.revoked.v1`. Session only: a
+        personal API token gets `403 auth.api-token-not-accepted`.
+      tags: [sessions]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Id of the session, as `GET /v1/sessions` gave it.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a6914-2f7a-7b3c-9d4e-5f6a7b8c9d01]
+      responses:
+        '204':
+          description: The session is closed.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SessionWriteForbidden'
+        '404':
+          $ref: '#/components/responses/SessionNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/sessions/revoke-others:
+    post:
+      operationId: revokeOtherSessions
+      summary: Close every other session
+      description: |
+        Closes every open session of the account except the one of the request ("Déconnecter les
+        autres"; "Tous vos appareils sauf celui-ci seront déconnectés."). `revokedCount` gives the
+        confirmation ("3 sessions fermées", "Seul cet appareil reste connecté."). The personal API
+        tokens stay. Recent authentication is not required. Emits `session.revoked.v1` for each
+        closed session. The body is an empty JSON object. Session only: a personal API token gets
+        `403 auth.api-token-not-accepted`.
+      tags: [sessions]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The other sessions are closed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokedSessions'
+              example:
+                revokedCount: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SessionWriteForbidden'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -601,7 +1281,9 @@ components:
                   code: invalid_format
                   message: Invalid email address
     EmailTaken:
-      description: '`auth.email-taken`: a verified account already uses the address.'
+      description: |
+        `auth.email-taken`: a verified account already uses the address, the one of the sign-up or
+        the new address of a change.
       content:
         application/problem+json:
           schema:
@@ -733,7 +1415,9 @@ components:
       description: |
         - `auth.account-locked`: too many failed passwords for the address; the password sign-in
           is refused until `details.lockedUntil` (15 minutes), even with the right password.
-          Answered the same way when no account uses the address.
+          Answered the same way when no account uses the address. The failed passwords of
+          `POST /v1/auth/reauthentication` and `PUT /v1/me/password` count with those of the
+          sign-in, and both routes answer this code during the lockout.
         - `rate-limit.exceeded`: the gateway's own limit.
       headers:
         Retry-After:
@@ -757,8 +1441,9 @@ components:
     CodeThrottled:
       description: |
         - `auth.code-throttled`: the code requests of this address are throttled whatever their
-          purpose, account or not: a sign-up, `POST /v1/auth/sign-up/code` and
-          `POST /v1/auth/sign-in/code` count together. A request is refused less than 30 seconds
+          purpose, account or not: a sign-up, `POST /v1/auth/sign-up/code`,
+          `POST /v1/auth/sign-in/code` and `POST /v1/me/email-change`, which sends its code to the
+          new address, count together. A request is refused less than 30 seconds
           after the last accepted one, and once 5 were accepted in the current hour, which starts
           with the first request accepted after the previous hour ended.
           `details.resendAvailableAt` says when the next one can be: 30 seconds after the last
@@ -906,6 +1591,194 @@ components:
             code: upstream.unavailable
             details:
               service: identity-service
+    ResetThrottled:
+      description: |
+        - `auth.reset-throttled`: the password reset requests of this address are throttled,
+          account or not, apart from the code requests. A request is refused less than 45 seconds
+          after the last accepted one, and once 5 were accepted in the current hour, which starts
+          with the first request accepted after the previous hour ended.
+          `details.resendAvailableAt` says when the next one can be: 45 seconds after the last
+          accepted request, or the end of the hour.
+        - `rate-limit.exceeded`: the gateway's own limit.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            resetThrottled:
+              summary: Link asked for less than 45 seconds ago
+              value:
+                type: about:blank
+                title: 'Un lien vient d’être envoyé : patientez avant d’en demander un nouveau.'
+                status: 429
+                code: auth.reset-throttled
+                details:
+                  resendAvailableAt: '2026-11-09T13:10:45Z'
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    ResetLinkExpired:
+      description: |
+        `auth.reset-link-expired`: the link expired (30 minutes), was used, was replaced by a newer
+        one, or is unknown. The web application shows one state for all of them and offers to ask
+        for a new link.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            resetLinkExpired:
+              $ref: '#/components/examples/ResetLinkExpired'
+    PasswordResetRefused:
+      description: |
+        The new password is not set:
+
+        - `auth.reset-link-expired`: see `ResetLinkExpired`;
+        - `auth.password-too-short`: fewer than 12 characters, with `details.minLength`;
+        - `auth.password-compromised`: the password is in the list of compromised passwords.
+
+        A refused password leaves the link usable.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            resetLinkExpired:
+              $ref: '#/components/examples/ResetLinkExpired'
+            passwordTooShort:
+              $ref: '#/components/examples/PasswordTooShort'
+            passwordCompromised:
+              $ref: '#/components/examples/PasswordCompromised'
+    PasswordRefused:
+      description: |
+        `auth.password-incorrect`: the password is not the one of the account.
+        `details.remainingAttempts` is the number of failures left before the lockout of the
+        password sign-in of the address, at least 1.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            passwordIncorrect:
+              $ref: '#/components/examples/PasswordIncorrect'
+    PasswordChangeRefused:
+      description: |
+        The password is not changed. The new password is checked first:
+
+        - `auth.password-too-short`: fewer than 12 characters, with `details.minLength`;
+        - `auth.password-compromised`: the password is in the list of compromised passwords;
+        - `auth.password-incorrect`: the current password is wrong, with
+          `details.remainingAttempts` (see `PasswordRefused`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            passwordTooShort:
+              $ref: '#/components/examples/PasswordTooShort'
+            passwordCompromised:
+              $ref: '#/components/examples/PasswordCompromised'
+            passwordIncorrect:
+              $ref: '#/components/examples/PasswordIncorrect'
+    SessionWriteForbidden:
+      description: |
+        - `auth.csrf-rejected`: see `CrossSiteRefused`;
+        - `auth.api-token-not-accepted`: a personal API token cannot call this route.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    RecentAuthenticationForbidden:
+      description: |
+        - `auth.reauthentication-required`: the person of this session has not proved who they are
+          in the last 10 minutes (see "Recent authentication"). `details.methods` lists the ways
+          they can, in the order to offer them: `password` today, for
+          `POST /v1/auth/reauthentication`; later versions add two-step methods, and a client
+          ignores a method it does not know. The web application asks, confirms, then repeats the
+          request;
+        - `auth.csrf-rejected`: see `CrossSiteRefused`;
+        - `auth.api-token-not-accepted`: a personal API token cannot call this route.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            reauthenticationRequired:
+              summary: No recent authentication
+              value:
+                type: about:blank
+                title: Confirmez votre identité pour continuer.
+                status: 403
+                code: auth.reauthentication-required
+                details:
+                  methods: [password]
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    EmailUnchanged:
+      description: '`auth.email-unchanged`: the new address is the current address of the account.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'C’est déjà votre adresse actuelle : saisissez la nouvelle.'
+            status: 422
+            code: auth.email-unchanged
+    EmailChangeCodeRefused:
+      description: |
+        The code of the change of address is refused; the web application shows the same line for
+        both codes:
+
+        - `auth.code-invalid`: the code is wrong, or no change of address awaits a code;
+        - `auth.code-expired`: the code expired (15 minutes), was used, was replaced by a newer
+          request, or took too many wrong attempts. A new request is needed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            codeInvalid:
+              $ref: '#/components/examples/CodeInvalid'
+            codeExpired:
+              $ref: '#/components/examples/CodeExpired'
+    OrganizationOwner:
+      description: |
+        `account.organization-owner`: the person owns at least one organization, which must first
+        have another owner. `details.organizationIds` lists them, as identity-service's copy of
+        the memberships knows them; the web application names them from `GET /v1/organizations`
+        ("Atelier Nord doit d’abord avoir un autre propriétaire.").
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Chaque organisation dont vous êtes propriétaire doit d’abord avoir un autre propriétaire.
+            status: 409
+            code: account.organization-owner
+            details:
+              organizationIds: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f]
+    SessionNotFound:
+      description: '`session.not-found`: no session with this id belongs to the account.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Session introuvable.
+            status: 404
+            code: session.not-found
   examples:
     CamilleMartin:
       summary: Camille Martin, with the profile of the mockup
@@ -917,7 +1790,47 @@ components:
         displayName: camille
         jobTitle: Responsable produit
         timeZone: Europe/Paris
+        passwordChangedAt: '2026-08-12T09:30:00Z'
         version: 3
+    CrossSiteRefused:
+      summary: Request from another site
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.csrf-rejected
+    ResetLinkExpired:
+      summary: Reset link no longer usable
+      value:
+        type: about:blank
+        title: Ce lien a expiré
+        status: 422
+        code: auth.reset-link-expired
+    PasswordTooShort:
+      summary: Password too short
+      value:
+        type: about:blank
+        title: Le mot de passe doit compter 12 caractères minimum.
+        status: 422
+        code: auth.password-too-short
+        details:
+          minLength: 12
+    PasswordCompromised:
+      summary: Compromised password
+      value:
+        type: about:blank
+        title: 'Ce mot de passe figure parmi des mots de passe divulgués : choisissez-en un autre.'
+        status: 422
+        code: auth.password-compromised
+    PasswordIncorrect:
+      summary: Wrong password
+      value:
+        type: about:blank
+        title: Mot de passe incorrect.
+        status: 422
+        code: auth.password-incorrect
+        details:
+          remainingAttempts: 3
     ApiTokenNotAccepted:
       summary: Personal API token on a session-only route
       value:
@@ -1103,6 +2016,12 @@ components:
           $ref: '#/components/schemas/CurrentUser'
         session:
           $ref: '#/components/schemas/Session'
+        deletionCancelled:
+          type: boolean
+          description: |
+            `true` when this sign-in cancelled the scheduled deletion of the account
+            (`POST /v1/me/deletion`): the web application tells the person (new copy: "La
+            suppression de votre compte est annulée."). Absent or `false` otherwise.
     Session:
       type: object
       required: [id, expiresAt]
@@ -1143,10 +2062,19 @@ components:
           examples: [Responsable produit]
         timeZone:
           $ref: '#/components/schemas/TimeZone'
+        passwordChangedAt:
+          type: string
+          format: date-time
+          description: |
+            When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.
+            The "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the
+            gateway and identity-service run this version of the contracts.
         version:
           type: integer
           minimum: 1
-          description: Version of the account, also sent as `ETag`.
+          description: |
+            Version of the account, also sent as `ETag`. A change of the profile, of the password,
+            of the address or of the scheduled deletion makes it the next one.
     TimeZone:
       type: string
       minLength: 1
@@ -1187,3 +2115,243 @@ components:
             Language of the account and of its emails ("Langue"), a BCP 47 tag: `fr` (Français),
             `en` (English), `de` (Deutsch) or `es` (Español). Later versions may accept more.
           enum: [fr, en, de, es]
+    EmptyRequest:
+      type: object
+      additionalProperties: false
+      description: 'Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.'
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+    PasswordResetLinkSent:
+      type: object
+      required: [email, expiresAt, resendAvailableAt]
+      description: Answered the same way whether or not a link was actually sent.
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        expiresAt:
+          type: string
+          format: date-time
+          description: When a link sent now stops working, 30 minutes later ("Il reste valable 30 minutes.").
+        resendAvailableAt:
+          type: string
+          format: date-time
+          description: |
+            When another link can be asked for ("Renvoyer l'e-mail dans 0:45"): 45 seconds later,
+            or the end of the hour once 5 links were asked for the address in it (see
+            `ResetThrottled`).
+    PasswordResetToken:
+      type: object
+      required: [token]
+      properties:
+        token:
+          $ref: '#/components/schemas/ResetToken'
+    ResetToken:
+      type: string
+      minLength: 1
+      maxLength: 256
+      description: |
+        The token of the reset link, read from the fragment of `<web application>/reset#token=<token>`.
+        A secret: sent in the body only, never logged. A malformed token answers like an unknown one
+        (`422 auth.reset-link-expired`).
+    PasswordResetLink:
+      type: object
+      required: [email, expiresAt, sessionCount]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+          description: Address of the account of the link ("Pour le compte <email>.").
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the link stops working.
+        sessionCount:
+          type: integer
+          minimum: 0
+          description: |
+            Open sessions of the account, every one of which the reset closes unless the person
+            unticks "Fermer mes autres sessions" ("3 appareils connectés seront déconnectés").
+    PasswordResetConfirmation:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token:
+          $ref: '#/components/schemas/ResetToken'
+        newPassword:
+          $ref: '#/components/schemas/Password'
+        closeOtherSessions:
+          type: boolean
+          default: true
+          description: |
+            "Fermer mes autres sessions", ticked by default: closes every open session of the
+            account. `false` leaves them open.
+    PasswordResetCompleted:
+      type: object
+      required: [email, closedSessionCount]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+          description: Address of the account, where the confirmation email goes.
+        closedSessionCount:
+          type: integer
+          minimum: 0
+          description: Sessions the reset closed; 0 when `closeOtherSessions` was `false` or none was open.
+    ReauthenticationRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The current password of the account. Never logged.
+    RecentAuthentication:
+      type: object
+      required: [authenticatedAt, expiresAt]
+      properties:
+        authenticatedAt:
+          type: string
+          format: date-time
+          description: When the person last proved who they are in this session.
+        expiresAt:
+          type: string
+          format: date-time
+          description: |
+            When the window ends, 10 minutes later; the guarded routes then answer
+            `403 auth.reauthentication-required` again.
+    PasswordChange:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: '"Mot de passe actuel". Never logged.'
+        newPassword:
+          $ref: '#/components/schemas/Password'
+    EmailChangeRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+          description: '"Nouvelle adresse e-mail", where the code goes.'
+    EmailChangeCodeSent:
+      type: object
+      required: [email, expiresAt, resendAvailableAt]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+          description: The new address the code was sent to ("Code envoyé à <email>").
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the code stops working, 15 minutes later ("Le code est valable 15 minutes.").
+        resendAvailableAt:
+          type: string
+          format: date-time
+          description: |
+            When another code can be asked for the new address: 30 seconds later, or the end of the
+            hour once 5 codes were asked for it (see `CodeThrottled`).
+    EmailChangeConfirmation:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: The 6 digits sent to the new address, without the space they are shown with. Never logged.
+          examples: ['731406']
+    DeletionScheduled:
+      type: object
+      required: [deleteAt]
+      properties:
+        deleteAt:
+          type: string
+          format: date-time
+          description: When the account will be deleted, 30 days after the scheduling, unless a sign-in cancels it first.
+    Device:
+      type: object
+      required: [type, browser, browserVersion, os, osVersion]
+      description: |
+        The device a session runs on, as identity-service reads it from the `User-Agent` of its
+        sign-in ("Firefox 132 · Windows"). A member it cannot read is `null`.
+      properties:
+        type:
+          type: string
+          description: |
+            `desktop`, `mobile` or `tablet`, or `unknown` when the `User-Agent` does not tell.
+            Later versions may add types; a client shows an unknown one as `unknown`.
+          x-extensible-enum: [desktop, mobile, tablet, unknown]
+        browser:
+          type: [string, 'null']
+          description: Name of the browser or client.
+          examples: [Firefox]
+        browserVersion:
+          type: [string, 'null']
+          description: Major version of the browser.
+          examples: ['132']
+        os:
+          type: [string, 'null']
+          description: Name of the operating system.
+          examples: [Windows]
+        osVersion:
+          type: [string, 'null']
+          description: |
+            Version of the operating system, `null` when the `User-Agent` does not tell it
+            reliably: browsers report Windows 10 and 11 alike and freeze the version of macOS.
+          examples: ['18.1']
+    OpenSession:
+      type: object
+      required: [id, current, device, ipAddress, signedInAt, lastActiveAt, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        current:
+          type: boolean
+          description: '`true` for the session of the request ("Cet appareil").'
+        device:
+          $ref: '#/components/schemas/Device'
+        ipAddress:
+          type: string
+          description: |
+            IPv4 or IPv6 address the session was opened from, as the gateway saw it. No place is
+            derived from it.
+          examples: [192.0.2.14]
+        signedInAt:
+          type: string
+          format: date-time
+          description: When the sign-in opened the session.
+        lastActiveAt:
+          type: string
+          format: date-time
+          description: |
+            Last request of the session, recorded at most once a minute ("Actif maintenant", "Il y
+            a 2 h").
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the session ends at the latest, whatever its activity.
+    OpenSessionPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenSession'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    RevokedSessions:
+      type: object
+      required: [revokedCount]
+      properties:
+        revokedCount:
+          type: integer
+          minimum: 0
+          description: Sessions closed by the request ("3 sessions fermées").

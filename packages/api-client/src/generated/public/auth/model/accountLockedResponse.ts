@@ -7,7 +7,9 @@ import type { Problem } from './problem';
 /**
  * - `auth.account-locked`: too many failed passwords for the address; the password sign-in
  *   is refused until `details.lockedUntil` (15 minutes), even with the right password.
- *   Answered the same way when no account uses the address.
+ *   Answered the same way when no account uses the address. The failed passwords of
+ *   `POST /v1/auth/reauthentication` and `PUT /v1/me/password` count with those of the
+ *   sign-in, and both routes answer this code during the lockout.
  * - `rate-limit.exceeded`: the gateway's own limit.
  */
 export type AccountLockedResponse = Problem;

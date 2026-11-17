@@ -158,15 +158,26 @@ export const VerifySignUpInternalResponse = zod.object({
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
-  "version": zod.int().min(1).describe('Version of the account.')
-}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address or of\nthe scheduled deletion makes it the next one.\n')
+}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n'),
+  "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account; the gateway\npasses it on in the public answer. Absent or `false` otherwise.\n')
 })
 
 
 /**
  * Checks the address and the password, counting failures per address whether or not an
- * account uses it, and opens a session for the `client`. Internal token: actor `anonymous`,
- * no organization.
+ * account uses it, and opens a session for the `client`.
+ *
+ * - An account whose deletion is scheduled is signed in and its deletion cancelled:
+ *   `deletionCancelled: true` and `user.deletion-cancelled.v1`.
+ * - A session opened on a device the account did not use in the last 90 days emits
+ *   `session.opened-on-new-device.v1`.
+ * - Later versions answer `202` with a two-step challenge, no token and no session, to an
+ *   account that needs one; only the `200` opens a session, cancels a deletion and counts the
+ *   device.
+ *
+ * Internal token: actor `anonymous`, no organization.
  * @summary Sign in with a password
  */
 export const signInWithPasswordInternalBodyEmailMax = 254;
@@ -213,8 +224,10 @@ export const SignInWithPasswordInternalResponse = zod.object({
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
-  "version": zod.int().min(1).describe('Version of the account.')
-}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address or of\nthe scheduled deletion makes it the next one.\n')
+}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n'),
+  "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account; the gateway\npasses it on in the public answer. Absent or `false` otherwise.\n')
 })
 
 
@@ -247,8 +260,11 @@ export const RequestSignInCodeInternalResponse = zod.object({
 
 /**
  * Checks the `sign-in` code and opens a session for the `client`. An address without a
- * verified account answers like a wrong code. Internal token: actor `anonymous`, no
- * organization.
+ * verified account answers like a wrong code. As with `POST /internal/v1/auth/sign-in`, the
+ * session cancels a scheduled deletion (`deletionCancelled: true`,
+ * `user.deletion-cancelled.v1`), emits `session.opened-on-new-device.v1` on a device the
+ * account did not use in the last 90 days, and later versions answer `202` with a two-step
+ * challenge when the account needs one. Internal token: actor `anonymous`, no organization.
  * @summary Sign in with a code
  */
 export const signInWithCodeInternalBodyEmailMax = 254;
@@ -294,8 +310,10 @@ export const SignInWithCodeInternalResponse = zod.object({
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
-  "version": zod.int().min(1).describe('Version of the account.')
-}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address or of\nthe scheduled deletion makes it the next one.\n')
+}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n'),
+  "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account; the gateway\npasses it on in the public answer. Absent or `false` otherwise.\n')
 })
 
 
@@ -340,7 +358,9 @@ export const IntrospectTokenResponse = zod.union([zod.object({
  * Ends a session of the actor: its token is no longer active from the next introspection and
  * `session.revoked.v1` is emitted. Revoking a session that already ended answers `204` and
  * emits nothing. A session of another user, or an unknown id, answers
- * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * `404 session.not-found`. The gateway calls it for the sign-out, with the session of the
+ * cookie, and for `DELETE /v1/sessions/{sessionId}`, with the id of the path, which may be the
+ * session of the request too. Internal token: actor `user`, no organization.
  * @summary Revoke a session
  */
 export const RevokeSessionParams = zod.object({
@@ -372,7 +392,8 @@ export const GetUserResponse = zod.object({
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
-  "version": zod.int().min(1).describe('Version of the account.')
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address or of\nthe scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
 
 
@@ -423,7 +444,8 @@ export const UpdateUserResponse = zod.object({
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
-  "version": zod.int().min(1).describe('Version of the account.')
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address or of\nthe scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
 
 
@@ -452,6 +474,386 @@ export const SwitchSessionOrganizationBody = zod.object({
 export const SwitchSessionOrganizationResponse = zod.object({
   "organizationId": zod.uuid(),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role of the actor in it, from the copy of the memberships.')
+})
+
+
+/**
+ * Issues a reset link (`password-reset-link.issued.v1`, restricted) when a verified account
+ * uses the address, and makes the previous link of the account stop working; answers `202`
+ * the same way otherwise, an unverified account included. The link works once, for 30
+ * minutes, from any browser. Throttled per address, account or not, apart from the codes:
+ * 45 seconds between two requests and at most 5 in an hour (`ResetThrottled`). The `client`
+ * is the browser that asked, shown in the email. Internal token: actor `anonymous`, no
+ * organization.
+ * @summary Issue a password reset link
+ */
+export const requestPasswordResetInternalBodyEmailMax = 254;
+
+export const requestPasswordResetInternalBodyClientIpAddressMin = 2;
+export const requestPasswordResetInternalBodyClientIpAddressMax = 45;
+
+export const requestPasswordResetInternalBodyClientUserAgentMax = 1024;
+
+
+
+export const RequestPasswordResetInternalBody = zod.object({
+  "email": zod.email().max(requestPasswordResetInternalBodyEmailMax).describe('Email address, compared without regard to case.'),
+  "client": zod.object({
+  "ipAddress": zod.string().min(requestPasswordResetInternalBodyClientIpAddressMin).max(requestPasswordResetInternalBodyClientIpAddressMax).describe('IPv4 or IPv6 address of the browser, from the one proxy hop the gateway trusts.'),
+  "userAgent": zod.string().max(requestPasswordResetInternalBodyClientUserAgentMax).nullable().describe('`User-Agent` header of the browser, `null` when it sent none.')
+}).describe('The browser that asks for the link, shown in the email.')
+})
+
+export const requestPasswordResetInternalResponseEmailMax = 254;
+
+
+
+export const RequestPasswordResetInternalResponse = zod.object({
+  "email": zod.email().max(requestPasswordResetInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('When a link issued now stops working, 30 minutes later.'),
+  "resendAvailableAt": zod.iso.datetime({"offset":true}).describe('45 seconds later, or the end of the hour once 5 links were asked for the address in it.')
+}).describe('Answered the same way whether or not a link was issued.')
+
+
+/**
+ * Returns the address of the account of a usable link, when it expires and how many open
+ * sessions the account has, without using the link. A link that expired, was used, was
+ * replaced or is unknown, and a malformed token, answer `422 auth.reset-link-expired`.
+ * Internal token: actor `anonymous`, no organization.
+ * @summary Read the account of a password reset link
+ */
+export const inspectPasswordResetLinkInternalBodyTokenMax = 256;
+
+
+
+export const InspectPasswordResetLinkInternalBody = zod.object({
+  "token": zod.string().min(1).max(inspectPasswordResetLinkInternalBodyTokenMax).describe('The token of the reset link, as the public request carried it. A secret, never logged;\nidentity-service keeps only its SHA-256 hash.\n')
+})
+
+export const inspectPasswordResetLinkInternalResponseEmailMax = 254;
+
+export const inspectPasswordResetLinkInternalResponseSessionCountMin = 0;
+
+
+
+export const InspectPasswordResetLinkInternalResponse = zod.object({
+  "email": zod.email().max(inspectPasswordResetLinkInternalResponseEmailMax).describe('Address of the account of the link.'),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "sessionCount": zod.int().min(inspectPasswordResetLinkInternalResponseSessionCountMin).describe('Open sessions of the account.')
+})
+
+
+/**
+ * Sets the new password of the account of the link and uses the link up, as
+ * `POST /v1/auth/password-reset/confirmation` says. Never opens a session.
+ *
+ * - The link first: `422 auth.reset-link-expired`. Then the new password:
+ *   `422 auth.password-too-short` or `422 auth.password-compromised`, which leave the link
+ *   usable.
+ * - `closeOtherSessions` (`true` by default) revokes every open session of the account, each
+ *   with `session.revoked.v1`.
+ * - Ends the lockout of the password sign-in of the address; keeps the personal API tokens;
+ *   does not cancel a scheduled deletion.
+ *
+ * Emits `user.password-changed.v1` with `method: reset`, the number of closed sessions and
+ * the device of the `client`. Internal token: actor `anonymous`, no organization.
+ * @summary Set a new password with a reset link
+ */
+export const confirmPasswordResetInternalBodyTokenMax = 256;
+
+export const confirmPasswordResetInternalBodyNewPasswordMax = 256;
+
+export const confirmPasswordResetInternalBodyCloseOtherSessionsDefault = true;
+export const confirmPasswordResetInternalBodyClientIpAddressMin = 2;
+export const confirmPasswordResetInternalBodyClientIpAddressMax = 45;
+
+export const confirmPasswordResetInternalBodyClientUserAgentMax = 1024;
+
+
+
+export const ConfirmPasswordResetInternalBody = zod.object({
+  "token": zod.string().min(1).max(confirmPasswordResetInternalBodyTokenMax).describe('The token of the reset link, as the public request carried it. A secret, never logged;\nidentity-service keeps only its SHA-256 hash.\n'),
+  "newPassword": zod.string().max(confirmPasswordResetInternalBodyNewPasswordMax).describe('At least 12 characters, checked here (`auth.password-too-short`). Never logged.'),
+  "closeOtherSessions": zod.boolean().default(confirmPasswordResetInternalBodyCloseOtherSessionsDefault).describe('Revokes every open session of the account; `false` leaves them open.'),
+  "client": zod.object({
+  "ipAddress": zod.string().min(confirmPasswordResetInternalBodyClientIpAddressMin).max(confirmPasswordResetInternalBodyClientIpAddressMax).describe('IPv4 or IPv6 address of the browser, from the one proxy hop the gateway trusts.'),
+  "userAgent": zod.string().max(confirmPasswordResetInternalBodyClientUserAgentMax).nullable().describe('`User-Agent` header of the browser, `null` when it sent none.')
+}).describe('The browser the new password is chosen in, shown in the email.')
+})
+
+export const confirmPasswordResetInternalResponseEmailMax = 254;
+
+export const confirmPasswordResetInternalResponseClosedSessionCountMin = 0;
+
+
+
+export const ConfirmPasswordResetInternalResponse = zod.object({
+  "email": zod.email().max(confirmPasswordResetInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
+  "closedSessionCount": zod.int().min(confirmPasswordResetInternalResponseClosedSessionCountMin)
+})
+
+
+/**
+ * Checks the password of the actor and records a recent authentication of the session, which
+ * opens the 10-minute window of the guarded routes. A wrong password answers
+ * `422 auth.password-incorrect` and counts with the failed sign-ins of the address
+ * (`429 auth.account-locked` once locked); the session stays open. A session of another user,
+ * an unknown or an ended one, answers `404 session.not-found`. Internal token: actor `user`,
+ * no organization.
+ * @summary Confirm the password in a session
+ */
+export const ReauthenticateInternalParams = zod.object({
+  "sessionId": zod.uuid().describe('Id of the session of the public request, as the introspection returned it.')
+})
+
+export const reauthenticateInternalBodyPasswordMax = 256;
+
+
+
+export const ReauthenticateInternalBody = zod.object({
+  "password": zod.string().min(1).max(reauthenticateInternalBodyPasswordMax).describe('Never logged.')
+}).describe('Later versions add a two-step code; `password` then becomes optional beside it.')
+
+export const ReauthenticateInternalResponse = zod.object({
+  "authenticatedAt": zod.iso.datetime({"offset":true}).describe('The recent authentication recorded for the session.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('10 minutes later, when the guarded routes require it again.')
+})
+
+
+/**
+ * Revokes every open session of the actor except `sessionId`, each with
+ * `session.revoked.v1`, and says how many. The personal API tokens stay. A session of another
+ * user, an unknown or an ended one, answers `404 session.not-found` and revokes nothing.
+ * Internal token: actor `user`, no organization.
+ * @summary Revoke every other session of the actor
+ */
+export const RevokeOtherSessionsInternalParams = zod.object({
+  "sessionId": zod.uuid().describe('Id of the session of the public request, as the introspection returned it.')
+})
+
+export const revokeOtherSessionsInternalResponseRevokedCountMin = 0;
+
+
+
+export const RevokeOtherSessionsInternalResponse = zod.object({
+  "revokedCount": zod.int().min(revokeOtherSessionsInternalResponseRevokedCountMin).describe('Sessions revoked by the request.')
+})
+
+
+/**
+ * Lists the open sessions of the actor, sorted by sign-in, the most recent first, then by
+ * id, and marks `currentSessionId` as `current`. Another user id, or an unknown one, answers
+ * `404 user.not-found`; a `currentSessionId` that is not an open session of the actor answers
+ * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary List the open sessions of a user
+ */
+export const ListUserSessionsInternalParams = zod.object({
+  "userId": zod.uuid().describe('Id of the account, the actor.')
+})
+
+export const listUserSessionsInternalQueryLimitDefault = 50;
+export const listUserSessionsInternalQueryLimitMax = 100;
+
+
+
+export const ListUserSessionsInternalQueryParams = zod.object({
+  "currentSessionId": zod.uuid().describe('The session of the public request, as the introspection returned it.'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listUserSessionsInternalQueryLimitMax).default(listUserSessionsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const ListUserSessionsInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "current": zod.boolean().describe('`true` for `currentSessionId`.'),
+  "device": zod.object({
+  "type": zod.string().describe('`desktop`, `mobile`, `tablet` or `unknown` today; more later (`x-extensible-enum`).'),
+  "browser": zod.string().nullable(),
+  "browserVersion": zod.string().nullable().describe('Major version.'),
+  "os": zod.string().nullable(),
+  "osVersion": zod.string().nullable().describe('`null` when the `User-Agent` does not tell it reliably (Windows 10 and 11, macOS).')
+}).describe('The device of a session, read with `bowser` from the `User-Agent` of its `client`. A member\nthat cannot be read is `null`.\n'),
+  "ipAddress": zod.string().describe('Address of the `client` of the sign-in that opened the session.'),
+  "signedInAt": zod.iso.datetime({"offset":true}),
+  "lastActiveAt": zod.iso.datetime({"offset":true}).describe('Last active introspection, recorded at most once a minute.'),
+  "expiresAt": zod.iso.datetime({"offset":true})
+})),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})
+
+
+/**
+ * Replaces the password of the actor, as `PUT /v1/me/password` says: the new password is
+ * checked first (`422 auth.password-too-short`, `422 auth.password-compromised`), without
+ * counting an attempt; then the current one (`422 auth.password-incorrect`, counted with the
+ * failed sign-ins; `429 auth.account-locked`). A right current password records a recent
+ * authentication of `sessionId`. Every session stays open. Answers the account with the next
+ * `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
+ * `method: change`, no closed session and the device of the `client`. Another user id, or an
+ * unknown one, answers `404 user.not-found`; a `sessionId` that is not an open session of the
+ * actor, `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary Change the password of a user
+ */
+export const ChangePasswordInternalParams = zod.object({
+  "userId": zod.uuid().describe('Id of the account, the actor.')
+})
+
+export const changePasswordInternalBodyCurrentPasswordMax = 256;
+
+export const changePasswordInternalBodyNewPasswordMax = 256;
+
+export const changePasswordInternalBodyClientIpAddressMin = 2;
+export const changePasswordInternalBodyClientIpAddressMax = 45;
+
+export const changePasswordInternalBodyClientUserAgentMax = 1024;
+
+
+
+export const ChangePasswordInternalBody = zod.object({
+  "sessionId": zod.uuid().describe('The session of the public request, which the right current password authenticates again.'),
+  "currentPassword": zod.string().min(1).max(changePasswordInternalBodyCurrentPasswordMax).describe('Never logged.'),
+  "newPassword": zod.string().max(changePasswordInternalBodyNewPasswordMax).describe('At least 12 characters, checked here (`auth.password-too-short`). Never logged.'),
+  "client": zod.object({
+  "ipAddress": zod.string().min(changePasswordInternalBodyClientIpAddressMin).max(changePasswordInternalBodyClientIpAddressMax).describe('IPv4 or IPv6 address of the browser, from the one proxy hop the gateway trusts.'),
+  "userAgent": zod.string().max(changePasswordInternalBodyClientUserAgentMax).nullable().describe('`User-Agent` header of the browser, `null` when it sent none.')
+}).describe('The browser the password is changed in, shown in the email.')
+})
+
+export const changePasswordInternalResponseEmailMax = 254;
+
+
+
+
+export const ChangePasswordInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "name": zod.string(),
+  "email": zod.email().max(changePasswordInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
+  "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address or of\nthe scheduled deletion makes it the next one.\n')
+}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
+
+
+/**
+ * Records a pending change of address of the actor and issues an `email-change` code to the
+ * new address (`one-time-code.issued.v1`, 15 minutes); a new request replaces the pending
+ * change and its code. The checks run in this order: recent authentication of `sessionId`
+ * (`403 auth.reauthentication-required`), the current address (`422 auth.email-unchanged`),
+ * a verified account of the new address (`409 auth.email-taken`; an unverified sign-up does
+ * not count), then the throttle of the code requests of the new address
+ * (`429 auth.code-throttled`). Another user id, or an unknown one, answers
+ * `404 user.not-found`; a `sessionId` that is not an open session of the actor,
+ * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary Ask to change the address of a user
+ */
+export const RequestEmailChangeInternalParams = zod.object({
+  "userId": zod.uuid().describe('Id of the account, the actor.')
+})
+
+export const requestEmailChangeInternalBodyEmailMax = 254;
+
+
+
+export const RequestEmailChangeInternalBody = zod.object({
+  "sessionId": zod.uuid().describe('The session of the public request, whose recent authentication is checked.'),
+  "email": zod.email().max(requestEmailChangeInternalBodyEmailMax).describe('The new address.')
+})
+
+export const requestEmailChangeInternalResponseEmailMax = 254;
+
+
+
+export const RequestEmailChangeInternalResponse = zod.object({
+  "email": zod.email().max(requestEmailChangeInternalResponseEmailMax).describe('The new address.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('15 minutes after the code was issued.'),
+  "resendAvailableAt": zod.iso.datetime({"offset":true}).describe('30 seconds later, or the end of the hour once 5 codes were asked for the new address in it.')
+})
+
+
+/**
+ * Checks the `email-change` code of the pending change of the actor and makes the new
+ * address the address of the account, verified. Without a pending change, or with a wrong
+ * code: `422 auth.code-invalid`; a code no longer usable: `422 auth.code-expired`; a new
+ * address a verified account took since the request: `409 auth.email-taken`, and the change
+ * is dropped. Recent authentication is not required again. The codes and the reset link
+ * issued to the previous address stop working, an unverified sign-up of the new address
+ * ends, and the sessions and personal API tokens stay. Answers the account with the next
+ * `version`, and emits `user.email-changed.v1` with the device of the `client`. Another user
+ * id, or an unknown one, answers `404 user.not-found`; a `sessionId` that is not an open
+ * session of the actor, `404 session.not-found`. Internal token: actor `user`, no
+ * organization.
+ * @summary Confirm the new address of a user
+ */
+export const ConfirmEmailChangeInternalParams = zod.object({
+  "userId": zod.uuid().describe('Id of the account, the actor.')
+})
+
+export const confirmEmailChangeInternalBodyCodeRegExp = new RegExp('^[0-9]{6}$');
+export const confirmEmailChangeInternalBodyClientIpAddressMin = 2;
+export const confirmEmailChangeInternalBodyClientIpAddressMax = 45;
+
+export const confirmEmailChangeInternalBodyClientUserAgentMax = 1024;
+
+
+
+export const ConfirmEmailChangeInternalBody = zod.object({
+  "sessionId": zod.uuid().describe('The session of the public request.'),
+  "code": zod.string().regex(confirmEmailChangeInternalBodyCodeRegExp).describe('Never logged.'),
+  "client": zod.object({
+  "ipAddress": zod.string().min(confirmEmailChangeInternalBodyClientIpAddressMin).max(confirmEmailChangeInternalBodyClientIpAddressMax).describe('IPv4 or IPv6 address of the browser, from the one proxy hop the gateway trusts.'),
+  "userAgent": zod.string().max(confirmEmailChangeInternalBodyClientUserAgentMax).nullable().describe('`User-Agent` header of the browser, `null` when it sent none.')
+}).describe('The browser the address is confirmed in, shown in the notice to the previous address.')
+})
+
+export const confirmEmailChangeInternalResponseEmailMax = 254;
+
+
+
+
+export const ConfirmEmailChangeInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "name": zod.string(),
+  "email": zod.email().max(confirmEmailChangeInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
+  "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
+  "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address or of\nthe scheduled deletion makes it the next one.\n')
+}).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
+
+
+/**
+ * Schedules the deletion of the account of the actor in 30 days, as `POST /v1/me/deletion`
+ * says. The checks run in this order: an organization the actor owns in the copy of the
+ * memberships (`409 account.organization-owner`, with `details.organizationIds`), then the
+ * recent authentication of `sessionId` (`403 auth.reauthentication-required`).
+ *
+ * On success, in the same transaction: every session of the account, `sessionId` included,
+ * is revoked (`session.revoked.v1` each), every personal API token is revoked, a pending
+ * change of address is dropped, and `user.deletion-scheduled.v1` is emitted. The gateway
+ * then clears the session cookie. A sign-in before `deleteAt` cancels the deletion. At
+ * `deleteAt`, identity-service checks the copy of the memberships again: an account that owns
+ * an organization then (one whose creation reached the copy after the scheduling) is not
+ * deleted and stays scheduled until it no longer owns one or signs in; otherwise it is
+ * deleted and `user.deleted.v1` is emitted. Another user id, or an unknown one, answers
+ * `404 user.not-found`; a `sessionId` that is not an open session of the actor,
+ * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary Schedule the deletion of a user
+ */
+export const ScheduleAccountDeletionInternalParams = zod.object({
+  "userId": zod.uuid().describe('Id of the account, the actor.')
+})
+
+export const ScheduleAccountDeletionInternalBody = zod.object({
+  "sessionId": zod.uuid().describe('The session of the public request, whose recent authentication is checked; it is revoked too.')
+})
+
+export const ScheduleAccountDeletionInternalResponse = zod.object({
+  "deleteAt": zod.iso.datetime({"offset":true}).describe('30 days after the scheduling.')
 })
 
 

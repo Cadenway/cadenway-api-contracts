@@ -8,4 +8,10 @@ import type { Session } from './session';
 export interface SignedIn {
   user: CurrentUser;
   session: Session;
+  /**
+     * `true` when this sign-in cancelled the scheduled deletion of the account
+     * (`POST /v1/me/deletion`): the web application tells the person (new copy: "La
+     * suppression de votre compte est annulée."). Absent or `false` otherwise.
+     */
+  deletionCancelled?: boolean;
 }

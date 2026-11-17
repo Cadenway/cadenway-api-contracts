@@ -1,5 +1,6 @@
-# Events of identity-service: accounts, their verified address and their profile, sessions, and the
-# restricted event that carries a single-use code to cadenway-notification-service only.
+# Events of identity-service: accounts, their verified address, profile, password, address change
+# and deletion, sessions, and the restricted events that carry a single-use code or link to
+# cadenway-notification-service only.
 asyncapi: 3.0.0
 info:
   title: identity-service events
@@ -13,12 +14,26 @@ info:
     `session.revoked.v1` of a session that acts on an organization, and the events are appended in
     a system transaction.
 
+    **Aggregates.** An event of the account (`user.*`) carries the version of the account, which
+    the sign-up, the verification, a change of the profile, of the password or of the address, the
+    scheduling and the cancellation of the deletion, and the deletion each move to the next one. An
+    event of a session (`session.*`) carries the version of the session. A consumer that keeps
+    several parts of the account, as the directory of organization-service keeps the name and the
+    address, orders each part by the versions of the events that carry it.
+
     **Restricted events.** A message marked `x-cadenway-restricted: true` carries a secret (a
-    single-use code). It is published on `restricted.<name>` instead of `evt.<name>`, stored in the
-    stream `EVENTS_RESTRICTED`, which only cadenway-notification-service may read, and its dead
-    letter keeps no body. The generated module lists these events in `RESTRICTED_EVENT_NAMES`:
-    identity-service and notification-service pass that list as `restrictedEvents` to the
-    `MessagingModule`. Nobody logs the payload of a restricted event.
+    single-use code or link). It is published on `restricted.<name>` instead of `evt.<name>`,
+    stored in the stream `EVENTS_RESTRICTED`, which only cadenway-notification-service may read, and
+    its dead letter keeps no body. The generated module lists these events in
+    `RESTRICTED_EVENT_NAMES`: identity-service and notification-service pass that list as
+    `restrictedEvents` to the `MessagingModule`. Nobody logs the payload of a restricted event.
+
+    **Security emails.** The emails "Sécurité · toujours envoyé" come from facts of the account,
+    not from commands to send an email: each event carries what its email shows (the address it
+    goes to, the name to greet, the language, the time zone of the dates, and the device and
+    address of the browser where it applies) and nothing secret, except the restricted ones. The
+    device is what identity-service reads from the `User-Agent`; no place is derived from the
+    address. notification-service sends one email per event, whose `id` is the idempotency key.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -32,13 +47,15 @@ info:
       description: Sign-in sessions.
     - name: one-time-codes
       description: Single-use codes sent by email.
+    - name: password-reset-links
+      description: Single-use password reset links sent by email.
   x-consumers:
     - repository: cadenway-notification-service
-      uses: one-time-code.issued.v1, to send the verification and sign-in code emails. Planned, user.signed-up.v1 and user.profile-updated.v1 for its projection of user profiles.
+      uses: one-time-code.issued.v1, to send the verification, sign-in and change of address code emails; password-reset-link.issued.v1, user.password-changed.v1, user.email-changed.v1, session.opened-on-new-device.v1, user.deletion-scheduled.v1 and user.deletion-cancelled.v1, to send the security emails. Planned, user.signed-up.v1, user.profile-updated.v1, user.email-changed.v1 and user.deleted.v1 for its projection of user profiles.
     - repository: cadenway-realtime-gateway
       uses: Planned, session.revoked.v1, to close the sockets of the revoked session.
     - repository: cadenway-organization-service
-      uses: user.signed-up.v1, user.email-verified.v1 and user.profile-updated.v1, for its user directory (names and addresses of the members, invitations matched with the account that verified their address).
+      uses: user.signed-up.v1, user.email-verified.v1, user.profile-updated.v1 and user.email-changed.v1, for its user directory (names and addresses of the members, invitations matched with the account that verified their address); user.deleted.v1, to remove the memberships of a deleted account.
 servers:
   nats:
     host: nats:4222
@@ -69,6 +86,55 @@ channels:
     messages:
       userProfileUpdatedV1:
         $ref: '#/components/messages/userProfileUpdatedV1'
+  userPasswordChangedV1:
+    address: evt.user.password-changed.v1
+    description: |
+      The password of an account changed, from a session or with a reset link. Emitted by
+      identity-service. Consumer: cadenway-notification-service.
+    messages:
+      userPasswordChangedV1:
+        $ref: '#/components/messages/userPasswordChangedV1'
+  userEmailChangedV1:
+    address: evt.user.email-changed.v1
+    description: |
+      The address of an account changed to a new, verified one. Emitted by identity-service.
+      Consumers: cadenway-notification-service and cadenway-organization-service.
+    messages:
+      userEmailChangedV1:
+        $ref: '#/components/messages/userEmailChangedV1'
+  userDeletionScheduledV1:
+    address: evt.user.deletion-scheduled.v1
+    description: |
+      The deletion of an account was scheduled. Emitted by identity-service. Consumer:
+      cadenway-notification-service.
+    messages:
+      userDeletionScheduledV1:
+        $ref: '#/components/messages/userDeletionScheduledV1'
+  userDeletionCancelledV1:
+    address: evt.user.deletion-cancelled.v1
+    description: |
+      A sign-in cancelled the scheduled deletion of an account. Emitted by identity-service.
+      Consumer: cadenway-notification-service.
+    messages:
+      userDeletionCancelledV1:
+        $ref: '#/components/messages/userDeletionCancelledV1'
+  userDeletedV1:
+    address: evt.user.deleted.v1
+    description: |
+      An account was deleted, at the end of its scheduled deletion. Emitted by identity-service.
+      Consumer: cadenway-organization-service; planned, cadenway-notification-service and the other
+      services that keep data of a user.
+    messages:
+      userDeletedV1:
+        $ref: '#/components/messages/userDeletedV1'
+  sessionOpenedOnNewDeviceV1:
+    address: evt.session.opened-on-new-device.v1
+    description: |
+      A sign-in opened a session on a device the account had not used lately. Emitted by
+      identity-service. Consumer: cadenway-notification-service.
+    messages:
+      sessionOpenedOnNewDeviceV1:
+        $ref: '#/components/messages/sessionOpenedOnNewDeviceV1'
   sessionRevokedV1:
     address: evt.session.revoked.v1
     description: |
@@ -77,6 +143,15 @@ channels:
     messages:
       sessionRevokedV1:
         $ref: '#/components/messages/sessionRevokedV1'
+  passwordResetLinkIssuedV1:
+    address: restricted.password-reset-link.issued.v1
+    description: |
+      A single-use password reset link was issued and must be emailed. Restricted: stream
+      `EVENTS_RESTRICTED`. Emitted by identity-service. Consumer: cadenway-notification-service,
+      the only one allowed.
+    messages:
+      passwordResetLinkIssuedV1:
+        $ref: '#/components/messages/passwordResetLinkIssuedV1'
   oneTimeCodeIssuedV1:
     address: restricted.one-time-code.issued.v1
     description: |
@@ -110,6 +185,54 @@ operations:
       $ref: '#/channels/userProfileUpdatedV1'
     messages:
       - $ref: '#/channels/userProfileUpdatedV1/messages/userProfileUpdatedV1'
+  publishUserPasswordChangedV1:
+    action: send
+    summary: identity-service publishes a change of password.
+    description: Sent from the outbox of identity-service once the change or the reset is committed.
+    channel:
+      $ref: '#/channels/userPasswordChangedV1'
+    messages:
+      - $ref: '#/channels/userPasswordChangedV1/messages/userPasswordChangedV1'
+  publishUserEmailChangedV1:
+    action: send
+    summary: identity-service publishes a change of address.
+    description: Sent from the outbox of identity-service once the confirmation is committed.
+    channel:
+      $ref: '#/channels/userEmailChangedV1'
+    messages:
+      - $ref: '#/channels/userEmailChangedV1/messages/userEmailChangedV1'
+  publishUserDeletionScheduledV1:
+    action: send
+    summary: identity-service publishes the scheduling of a deletion.
+    description: Sent from the outbox of identity-service once the scheduling is committed.
+    channel:
+      $ref: '#/channels/userDeletionScheduledV1'
+    messages:
+      - $ref: '#/channels/userDeletionScheduledV1/messages/userDeletionScheduledV1'
+  publishUserDeletionCancelledV1:
+    action: send
+    summary: identity-service publishes the cancellation of a deletion.
+    description: Sent from the outbox of identity-service once the sign-in that cancels it is committed.
+    channel:
+      $ref: '#/channels/userDeletionCancelledV1'
+    messages:
+      - $ref: '#/channels/userDeletionCancelledV1/messages/userDeletionCancelledV1'
+  publishUserDeletedV1:
+    action: send
+    summary: identity-service publishes the deletion of an account.
+    description: Sent from the outbox of identity-service once the deletion is committed.
+    channel:
+      $ref: '#/channels/userDeletedV1'
+    messages:
+      - $ref: '#/channels/userDeletedV1/messages/userDeletedV1'
+  publishSessionOpenedOnNewDeviceV1:
+    action: send
+    summary: identity-service publishes a sign-in on a new device.
+    description: Sent from the outbox of identity-service once the session is committed.
+    channel:
+      $ref: '#/channels/sessionOpenedOnNewDeviceV1'
+    messages:
+      - $ref: '#/channels/sessionOpenedOnNewDeviceV1/messages/sessionOpenedOnNewDeviceV1'
   publishSessionRevokedV1:
     action: send
     summary: identity-service publishes the revocation of a session.
@@ -118,6 +241,16 @@ operations:
       $ref: '#/channels/sessionRevokedV1'
     messages:
       - $ref: '#/channels/sessionRevokedV1/messages/sessionRevokedV1'
+  publishPasswordResetLinkIssuedV1:
+    action: send
+    summary: identity-service publishes a password reset link to email.
+    description: |
+      Sent from the outbox of identity-service, on the restricted route the outbox row stores,
+      once the link is committed.
+    channel:
+      $ref: '#/channels/passwordResetLinkIssuedV1'
+    messages:
+      - $ref: '#/channels/passwordResetLinkIssuedV1/messages/passwordResetLinkIssuedV1'
   publishOneTimeCodeIssuedV1:
     action: send
     summary: identity-service publishes a code to email.
@@ -136,6 +269,73 @@ components:
         traceparent:
           type: string
           description: W3C Trace Context of the request that caused the event.
+    Recipient:
+      type: object
+      description: Who receives the email of the event.
+      required: [email, name]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Address to send to.
+          examples: [camille.martin@ateliernord.fr]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Full name of the account, for the greeting.
+          examples: [Camille Martin]
+    Device:
+      type: object
+      description: |
+        The device of a browser, as identity-service reads it from its `User-Agent` ("Firefox sur
+        Windows"). A member it cannot read is `null`.
+      required: [type, browser, browserVersion, os, osVersion]
+      properties:
+        type:
+          type: string
+          description: |
+            `desktop`, `mobile`, `tablet` or `unknown` today. Later versions may add types without
+            a new event version: a consumer treats an unknown value as `unknown`.
+          examples: [desktop]
+        browser:
+          type: [string, 'null']
+          maxLength: 60
+          description: Name of the browser or client.
+          examples: [Firefox]
+        browserVersion:
+          type: [string, 'null']
+          maxLength: 20
+          description: Major version of the browser.
+          examples: ['132']
+        os:
+          type: [string, 'null']
+          maxLength: 60
+          description: Name of the operating system.
+          examples: [Windows]
+        osVersion:
+          type: [string, 'null']
+          maxLength: 20
+          description: |
+            Version of the operating system; `null` when the `User-Agent` does not tell it
+            reliably (Windows 10 and 11 look alike, macOS is frozen).
+          examples: ['18.1']
+    Client:
+      type: object
+      description: |
+        The browser a request came from, shown in the rows "Appareil" and "Adresse IP" of the
+        email. No place ("Lieu (approximatif)") is derived from the address.
+      required: [device, ipAddress]
+      properties:
+        device:
+          $ref: '#/components/schemas/Device'
+        ipAddress:
+          type: string
+          minLength: 2
+          maxLength: 45
+          description: IPv4 or IPv6 address of the browser, as the gateway saw it.
+          examples: [86.247.12.30]
   messages:
     userSignedUpV1:
       name: user.signed-up.v1
@@ -200,7 +400,8 @@ components:
       summary: The address of an account was proven with a code.
       description: |
         Emitted when a code proves the address: today, the verification that completes a sign-up.
-        `actor` is the user.
+        A change of address has its own event, `user.email-changed.v1`, whose new address is
+        verified too. `actor` is the user.
 
         Personal data: `email`, the address now verified, so that a consumer that keeps it knows it
         can be trusted.
@@ -245,8 +446,8 @@ components:
         Emitted when a change of the profile (`PATCH /v1/me`) is committed and changes something; a
         change that changes nothing emits nothing. Carries the whole profile after the change, so
         that a consumer keeps its copy without calling identity-service, and `changed`, the members
-        that moved. The address is not part of the profile: its change, in a later version, has its
-        own event. `actor` is the user.
+        that moved. The address is not part of the profile: its change has its own event,
+        `user.email-changed.v1`. `actor` is the user.
 
         Personal data: `name`, `displayName` and `jobTitle`, so that a consumer shows who the
         account is; `timeZone` and `language`, so that a consumer writes to the user at the right
@@ -332,8 +533,11 @@ components:
       title: Session revoked
       summary: A session ended before its expiry.
       description: |
-        Emitted when a session is revoked: today, when the user signs out. A session that only
-        expires emits nothing. `actor` is the user who signed out.
+        Emitted when a session is revoked: when the user signs out, revokes it from the list of
+        sessions or closes every other session, and for each session that a password reset with
+        "Fermer mes autres sessions" or the scheduling of the deletion of the account closes. A
+        session that only expires, or closes for inactivity, emits nothing. `actor` is the user of
+        the session in every case.
 
         Personal data: none beyond the ids. No token, address, device or IP address.
       headers:
@@ -445,8 +649,9 @@ components:
               What the code proves, which decides the template of the email:
               `email-verification` confirms the address of a sign-up (10 minutes), `sign-in` signs
               in without a password (10 minutes), `email-change` confirms a new address (15
-              minutes; emitted once address changes exist). Another purpose takes a new versioned
-              event name.
+              minutes; `POST /v1/me/email-change`, sent to the new address). Another purpose takes
+              a new versioned event name: a password reset sends a link, in
+              `password-reset-link.issued.v1`, not a code.
             enum: [email-verification, sign-in, email-change]
           code:
             type: string
@@ -480,3 +685,676 @@ components:
             type: string
             description: BCP 47 language tag of the email, the language of the account.
             examples: [fr]
+    userPasswordChangedV1:
+      name: user.password-changed.v1
+      title: User password changed
+      summary: The password of an account changed, from a session or with a reset link.
+      description: |
+        Emitted when a new password is committed: by `PUT /v1/me/password` (`method: change`),
+        which keeps every session, or by `POST /v1/auth/password-reset/confirmation`
+        (`method: reset`), which closes them unless the person unticked "Fermer mes autres
+        sessions". `actor` is the user in both cases: the reset link proves the account.
+
+        On it, notification-service sends the security email "Votre mot de passe a été modifié" to
+        `recipient`, with the device rows of `client` and the date of `occurredAt` in `timeZone`.
+        The email states what happened to the sessions from `closedSessionCount` ("vos 3 autres
+        sessions ont été fermées", or that they stay open), instead of the mockup's fixed sentence.
+
+        Personal data: `recipient` (address and name of the account), `client` (device and IP
+        address of the browser), `language` and `timeZone`. No password, hash or link.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            userId,
+            method,
+            closedSessionCount,
+            client,
+            recipient,
+            language,
+            timeZone,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key and the idempotency key of the email.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the new password was committed.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, an account belongs to no organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the account after the change.
+          userId:
+            type: string
+            format: uuid
+          method:
+            type: string
+            description: |
+              `change`: the person changed it from a session, with the current password. `reset`:
+              with a reset link. Another way takes a new versioned event name.
+            enum: [change, reset]
+          closedSessionCount:
+            type: integer
+            minimum: 0
+            description: Sessions the change closed; always 0 for a `change`.
+          client:
+            $ref: '#/components/schemas/Client'
+          recipient:
+            $ref: '#/components/schemas/Recipient'
+          language:
+            type: string
+            description: BCP 47 language tag of the email, the language of the account.
+            examples: [fr]
+          timeZone:
+            type: string
+            minLength: 1
+            maxLength: 64
+            description: IANA time zone of the account, in which the email shows the date.
+            examples: [Europe/Paris]
+      examples:
+        - name: reset
+          summary: A reset that closed the 3 other sessions
+          payload:
+            id: 019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e01
+            occurredAt: '2026-11-09T13:16:00Z'
+            organizationId: null
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 4
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            method: reset
+            closedSessionCount: 3
+            client:
+              device:
+                type: desktop
+                browser: Firefox
+                browserVersion: '132'
+                os: Windows
+                osVersion: null
+              ipAddress: 86.247.12.30
+            recipient: { email: camille.martin@ateliernord.fr, name: Camille Martin }
+            language: fr
+            timeZone: Europe/Paris
+    userEmailChangedV1:
+      name: user.email-changed.v1
+      title: User email changed
+      summary: The address of an account changed to a new, verified one.
+      description: |
+        Emitted when the code sent to the new address confirms the change
+        (`POST /v1/me/email-change/confirmation`). From then on the account signs in with `email`,
+        which is verified, and receives its emails there. `actor` is the user.
+
+        - notification-service sends a notice to `previousEmail` (new template, new copy: the
+          address changed to `email`, with the device rows of `client` and the date of
+          `occurredAt` in `timeZone`, and what to do if it was not the person), and uses `email`
+          for the next emails of the account.
+        - organization-service updates the address of its directory by `version`, as with
+          `user.email-verified.v1`: the address is verified, so an invitation of `email` can be
+          accepted by the account.
+
+        Personal data: `email`, `previousEmail` and `name`, `client` (device and IP address of the
+        browser), `language` and `timeZone`. No code.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            userId,
+            email,
+            previousEmail,
+            name,
+            client,
+            language,
+            timeZone,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key and the idempotency key of the notice.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, an account belongs to no organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the account after the change.
+          userId:
+            type: string
+            format: uuid
+          email:
+            type: string
+            format: email
+            maxLength: 254
+            description: The new address, verified.
+            examples: [camille@ateliernord.fr]
+          previousEmail:
+            type: string
+            format: email
+            maxLength: 254
+            description: The address before the change, where the notice goes.
+            examples: [camille.martin@ateliernord.fr]
+          name:
+            type: string
+            minLength: 1
+            maxLength: 120
+            description: Full name of the account, for the greeting.
+            examples: [Camille Martin]
+          client:
+            $ref: '#/components/schemas/Client'
+          language:
+            type: string
+            description: BCP 47 language tag of the account.
+            examples: [fr]
+          timeZone:
+            type: string
+            minLength: 1
+            maxLength: 64
+            description: IANA time zone of the account.
+            examples: [Europe/Paris]
+      examples:
+        - name: changed
+          summary: Camille Martin moves to a shorter address
+          payload:
+            id: 019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e02
+            occurredAt: '2026-11-09T13:24:00Z'
+            organizationId: null
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 5
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            email: camille@ateliernord.fr
+            previousEmail: camille.martin@ateliernord.fr
+            name: Camille Martin
+            client:
+              device:
+                type: desktop
+                browser: Firefox
+                browserVersion: '132'
+                os: Windows
+                osVersion: null
+              ipAddress: 86.247.12.30
+            language: fr
+            timeZone: Europe/Paris
+    userDeletionScheduledV1:
+      name: user.deletion-scheduled.v1
+      title: User deletion scheduled
+      summary: The deletion of an account was scheduled.
+      description: |
+        Emitted when the person schedules the deletion of their account (`POST /v1/me/deletion`),
+        in the transaction that revokes its sessions and personal API tokens. `actor` is the user.
+
+        On it, notification-service sends the security email "La suppression de votre compte est
+        programmée" to `recipient`: the date of `deleteAt` in `timeZone`, and the button "Annuler
+        la suppression" to `<web application>/account`, where signing in cancels the deletion. The
+        memberships stay until `user.deleted.v1`.
+
+        Personal data: `recipient` (address and name of the account), `language` and `timeZone`.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            userId,
+            deleteAt,
+            recipient,
+            language,
+            timeZone,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key and the idempotency key of the email.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the deletion was scheduled.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, an account belongs to no organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the account after the scheduling.
+          userId:
+            type: string
+            format: uuid
+          deleteAt:
+            type: string
+            format: date-time
+            description: When the account will be deleted, 30 days later, unless a sign-in cancels it.
+          recipient:
+            $ref: '#/components/schemas/Recipient'
+          language:
+            type: string
+            description: BCP 47 language tag of the email, the language of the account.
+            examples: [fr]
+          timeZone:
+            type: string
+            minLength: 1
+            maxLength: 64
+            description: IANA time zone of the account, in which the email shows the date.
+            examples: [Europe/Paris]
+      examples:
+        - name: scheduled
+          summary: Deletion of the account of Camille Martin on 9 December
+          payload:
+            id: 019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e03
+            occurredAt: '2026-11-09T15:30:00Z'
+            organizationId: null
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 6
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            deleteAt: '2026-12-09T15:30:00Z'
+            recipient: { email: camille.martin@ateliernord.fr, name: Camille Martin }
+            language: fr
+            timeZone: Europe/Paris
+    userDeletionCancelledV1:
+      name: user.deletion-cancelled.v1
+      title: User deletion cancelled
+      summary: A sign-in cancelled the scheduled deletion of an account.
+      description: |
+        Emitted when a sign-in (by password or by code) opens a session of an account whose
+        deletion is scheduled: the deletion is cancelled in the same transaction. `actor` is the
+        user.
+
+        On it, notification-service sends a security email to `recipient` (new template, new copy:
+        the deletion is cancelled by the sign-in of `client` at `occurredAt`, and what to do if it
+        was not the person).
+
+        Personal data: `recipient` (address and name of the account), `client` (device and IP
+        address of the browser that signed in), `language` and `timeZone`.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            userId,
+            sessionId,
+            client,
+            recipient,
+            language,
+            timeZone,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key and the idempotency key of the email.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the sign-in cancelled the deletion.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, an account belongs to no organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 3
+            description: Version of the account after the cancellation.
+          userId:
+            type: string
+            format: uuid
+          sessionId:
+            type: string
+            format: uuid
+            description: The session the sign-in opened.
+          client:
+            $ref: '#/components/schemas/Client'
+          recipient:
+            $ref: '#/components/schemas/Recipient'
+          language:
+            type: string
+            description: BCP 47 language tag of the email, the language of the account.
+            examples: [fr]
+          timeZone:
+            type: string
+            minLength: 1
+            maxLength: 64
+            description: IANA time zone of the account, in which the email shows the date.
+            examples: [Europe/Paris]
+      examples:
+        - name: cancelled
+          summary: Camille Martin signs in again the next morning
+          payload:
+            id: 019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e04
+            occurredAt: '2026-11-10T08:05:00Z'
+            organizationId: null
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 7
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            sessionId: 019a6f02-3c4d-7e5f-8a6b-7c8d9e0f1a20
+            client:
+              device:
+                type: desktop
+                browser: Firefox
+                browserVersion: '132'
+                os: Windows
+                osVersion: null
+              ipAddress: 86.247.12.30
+            recipient: { email: camille.martin@ateliernord.fr, name: Camille Martin }
+            language: fr
+            timeZone: Europe/Paris
+    userDeletedV1:
+      name: user.deleted.v1
+      title: User deleted
+      summary: An account was deleted, at the end of its scheduled deletion.
+      description: |
+        Emitted when identity-service deletes an account, 30 days after the scheduling that no
+        sign-in cancelled. The last event of the account: no event of it follows, and a consumer
+        keeps the deletion so that a late event of a lower `version` never brings the account
+        back. Its address is free again: a later sign-up of the address creates another account,
+        with another `userId`. `actor` is `{ type: 'system', id: 'identity-service' }`.
+
+        identity-service does not delete an account that owns an organization in its copy of the
+        memberships at that time (see `POST /internal/v1/users/{userId}/deletion`): the account a
+        consumer receives here owns none.
+
+        - organization-service removes the memberships of the account, each with its
+          `member.removed.v1` (actor `system`), and keeps the account in its directory as a former
+          member without name or address, so that its tasks and documents show « Ancien membre ».
+        - notification-service, once it keeps a projection of the users, forgets the account.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, userId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the account was deleted.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, an account belongs to no organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 3
+            description: Version of the account after the deletion, its last.
+          userId:
+            type: string
+            format: uuid
+      examples:
+        - name: deleted
+          summary: The account of Camille Martin deleted on 9 December
+          payload:
+            id: 019af2a0-5b6c-7d8e-9f0a-1b2c3d4e5f60
+            occurredAt: '2026-12-09T15:30:00Z'
+            organizationId: null
+            actor: { type: system, id: identity-service }
+            version: 7
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+    sessionOpenedOnNewDeviceV1:
+      name: session.opened-on-new-device.v1
+      title: Session opened on a new device
+      summary: A sign-in opened a session on a device the account had not used lately.
+      description: |
+        Emitted when a sign-in by password or by code opens a session on a device that no session
+        of the account used in the 90 days before. Two devices are the same when their type, browser
+        and operating system are, whatever their versions and addresses. The session that the
+        sign-up verification opens, the first of the account, emits nothing. `actor` is the user.
+
+        On it, notification-service sends the security email "Nouvelle connexion depuis
+        <browser> sur <os>" to `recipient`, with the rows "Appareil", "Adresse IP" and "Date" from
+        `client` and `occurredAt` in `timeZone`, and the button "Vérifier mes sessions" to
+        `<web application>/account/security`. The row "Lieu (approximatif)" of the mockup is left
+        out: no place is derived from the address.
+
+        Personal data: `recipient` (address and name of the account), `client` (device and IP
+        address of the browser), `language` and `timeZone`. No token.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            sessionId,
+            userId,
+            client,
+            recipient,
+            language,
+            timeZone,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key and the idempotency key of the email.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the session was opened.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, the session of an account.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the session at its opening, 1.
+          sessionId:
+            type: string
+            format: uuid
+          userId:
+            type: string
+            format: uuid
+            description: Account of the session.
+          client:
+            $ref: '#/components/schemas/Client'
+          recipient:
+            $ref: '#/components/schemas/Recipient'
+          language:
+            type: string
+            description: BCP 47 language tag of the email, the language of the account.
+            examples: [fr]
+          timeZone:
+            type: string
+            minLength: 1
+            maxLength: 64
+            description: IANA time zone of the account, in which the email shows the date.
+            examples: [Europe/Paris]
+      examples:
+        - name: iphone
+          summary: Safari on an iPhone, the morning of 9 November
+          payload:
+            id: 019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e05
+            occurredAt: '2026-11-09T07:42:00Z'
+            organizationId: null
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 1
+            sessionId: 019a6914-2f7a-7b3c-9d4e-5f6a7b8c9d01
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            client:
+              device:
+                type: mobile
+                browser: Safari
+                browserVersion: '18'
+                os: iOS
+                osVersion: '18.1'
+              ipAddress: 86.247.12.30
+            recipient: { email: camille.martin@ateliernord.fr, name: Camille Martin }
+            language: fr
+            timeZone: Europe/Paris
+    passwordResetLinkIssuedV1:
+      name: password-reset-link.issued.v1
+      title: Password reset link issued
+      summary: A single-use password reset link was issued and must be emailed.
+      x-cadenway-restricted: true
+      description: |
+        Restricted: published on `restricted.password-reset-link.issued.v1`, readable by
+        cadenway-notification-service only. Emitted by `POST /v1/auth/password-reset` when a
+        verified account uses the address. Each event is one security email, "Réinitialisez votre
+        mot de passe Cadenway", always sent, to `recipient`: the button "Choisir un nouveau mot de
+        passe" opens `<web application>/reset#token=<token>`, the token in the fragment so that no
+        server receives or logs it; the rows "Appareil", "Adresse IP" and "Date" come from `client`
+        and `occurredAt` in `timeZone`; the note says the link expires in 30 minutes (the mockup's
+        "1 heure" is corrected). A new link of the account makes the previous one stop working, so
+        only the latest email holds a working link. A consumer does not send a link whose
+        `expiresAt` has passed, and never logs the token, the link nor keeps them in its send log.
+
+        `actor` is `{ type: 'system', id: 'identity-service' }`: anyone can ask a link for any
+        address, so the request credits nobody.
+
+        Personal data and secrets: `token`, the secret itself, valid until `expiresAt`, so that the
+        email can carry the link; `recipient` (address and name of the account), `client` (device
+        and IP address of the browser that asked), `language` and `timeZone`. The event names the
+        account (`userId`) and the link (`linkId`), so that the send log can refer to them instead
+        of the token.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            linkId,
+            userId,
+            token,
+            expiresAt,
+            client,
+            recipient,
+            language,
+            timeZone,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key and the idempotency key of the email.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the link was issued.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, a link belongs to an account.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the link, always 1; a link never changes, a new link is a new `linkId`.
+          linkId:
+            type: string
+            format: uuid
+            description: Id of the link.
+          userId:
+            type: string
+            format: uuid
+            description: Account the link is for.
+          token:
+            type: string
+            pattern: '^[A-Za-z0-9_-]{32,128}$'
+            description: |
+              The secret of the link, URL-safe (base64url without padding), to put after
+              `#token=`. identity-service keeps only its SHA-256 hash. Never logged.
+            examples: [ExampleOnlyResetToken0000000000000000000000]
+          expiresAt:
+            type: string
+            format: date-time
+            description: When the link stops working, 30 minutes after it was issued.
+          client:
+            $ref: '#/components/schemas/Client'
+          recipient:
+            $ref: '#/components/schemas/Recipient'
+          language:
+            type: string
+            description: BCP 47 language tag of the email, the language of the account.
+            examples: [fr]
+          timeZone:
+            type: string
+            minLength: 1
+            maxLength: 64
+            description: IANA time zone of the account, in which the email shows the date.
+            examples: [Europe/Paris]
+      examples:
+        - name: issued
+          summary: The reset link of the mockup email
+          payload:
+            id: 019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e06
+            occurredAt: '2026-11-09T13:10:00Z'
+            organizationId: null
+            actor: { type: system, id: identity-service }
+            version: 1
+            linkId: 019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e07
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            token: ExampleOnlyResetToken0000000000000000000000
+            expiresAt: '2026-11-09T13:40:00Z'
+            client:
+              device:
+                type: desktop
+                browser: Firefox
+                browserVersion: '132'
+                os: Windows
+                osVersion: null
+              ipAddress: 86.247.12.30
+            recipient: { email: camille.martin@ateliernord.fr, name: Camille Martin }
+            language: fr
+            timeZone: Europe/Paris

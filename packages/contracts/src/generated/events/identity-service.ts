@@ -32,8 +32,9 @@ export interface OneTimeCodeIssuedV1 {
    * What the code proves, which decides the template of the email:
    * `email-verification` confirms the address of a sign-up (10 minutes), `sign-in` signs
    * in without a password (10 minutes), `email-change` confirms a new address (15
-   * minutes; emitted once address changes exist). Another purpose takes a new versioned
-   * event name.
+   * minutes; `POST /v1/me/email-change`, sent to the new address). Another purpose takes
+   * a new versioned event name: a password reset sends a link, in
+   * `password-reset-link.issued.v1`, not a code.
    */
   purpose: 'email-verification' | 'sign-in' | 'email-change';
   /** The 6 digits, shown as `482 913` in the email. A secret, never logged. */
@@ -75,6 +76,208 @@ export const oneTimeCodeIssuedV1Schema = zod.object({
   }),
   language: zod.string(),
 }) satisfies zod.ZodType<OneTimeCodeIssuedV1>;
+
+/** Name of the event `password-reset-link.issued.v1`. A single-use password reset link was issued and must be emailed. Restricted: published on `restricted.password-reset-link.issued.v1`. */
+export const PASSWORD_RESET_LINK_ISSUED_V1 = 'password-reset-link.issued.v1';
+
+/** Payload of the event `password-reset-link.issued.v1`. */
+export interface PasswordResetLinkIssuedV1 {
+  /** Id of the event, the deduplication key and the idempotency key of the email. */
+  id: string;
+  /** When the link was issued. */
+  occurredAt: string;
+  /** Always `null`, a link belongs to an account. */
+  organizationId: string | null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the link, always 1; a link never changes, a new link is a new `linkId`. */
+  version: number;
+  /** Id of the link. */
+  linkId: string;
+  /** Account the link is for. */
+  userId: string;
+  /**
+   * The secret of the link, URL-safe (base64url without padding), to put after
+   * `#token=`. identity-service keeps only its SHA-256 hash. Never logged.
+   */
+  token: string;
+  /** When the link stops working, 30 minutes after it was issued. */
+  expiresAt: string;
+  /**
+   * The browser a request came from, shown in the rows "Appareil" and "Adresse IP" of the
+   * email. No place ("Lieu (approximatif)") is derived from the address.
+   */
+  client: {
+    /**
+     * The device of a browser, as identity-service reads it from its `User-Agent` ("Firefox sur
+     * Windows"). A member it cannot read is `null`.
+     */
+    device: {
+      /**
+       * `desktop`, `mobile`, `tablet` or `unknown` today. Later versions may add types without
+       * a new event version: a consumer treats an unknown value as `unknown`.
+       */
+      type: string;
+      /** Name of the browser or client. */
+      browser: string | null;
+      /** Major version of the browser. */
+      browserVersion: string | null;
+      /** Name of the operating system. */
+      os: string | null;
+      /**
+       * Version of the operating system; `null` when the `User-Agent` does not tell it
+       * reliably (Windows 10 and 11 look alike, macOS is frozen).
+       */
+      osVersion: string | null;
+    };
+    /** IPv4 or IPv6 address of the browser, as the gateway saw it. */
+    ipAddress: string;
+  };
+  /** Who receives the email of the event. */
+  recipient: {
+    /** Address to send to. */
+    email: string;
+    /** Full name of the account, for the greeting. */
+    name: string;
+  };
+  /** BCP 47 language tag of the email, the language of the account. */
+  language: string;
+  /** IANA time zone of the account, in which the email shows the date. */
+  timeZone: string;
+}
+
+/** Validator of the payload of the event `password-reset-link.issued.v1`. */
+export const passwordResetLinkIssuedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().nullable(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  linkId: zod.uuid(),
+  userId: zod.uuid(),
+  token: zod.string().regex(new RegExp('^[A-Za-z0-9_-]{32,128}$')),
+  expiresAt: zod.iso.datetime(),
+  client: zod.object({
+    device: zod.object({
+      type: zod.string(),
+      browser: zod.string().max(60).nullable(),
+      browserVersion: zod.string().max(20).nullable(),
+      os: zod.string().max(60).nullable(),
+      osVersion: zod.string().max(20).nullable(),
+    }),
+    ipAddress: zod.string().min(2).max(45),
+  }),
+  recipient: zod.object({
+    email: zod.email().max(254),
+    name: zod.string().min(1).max(120),
+  }),
+  language: zod.string(),
+  timeZone: zod.string().min(1).max(64),
+}) satisfies zod.ZodType<PasswordResetLinkIssuedV1>;
+
+/** Name of the event `session.opened-on-new-device.v1`. A sign-in opened a session on a device the account had not used lately. */
+export const SESSION_OPENED_ON_NEW_DEVICE_V1 = 'session.opened-on-new-device.v1';
+
+/** Payload of the event `session.opened-on-new-device.v1`. */
+export interface SessionOpenedOnNewDeviceV1 {
+  /** Id of the event, the deduplication key and the idempotency key of the email. */
+  id: string;
+  /** When the session was opened. */
+  occurredAt: string;
+  /** Always `null`, the session of an account. */
+  organizationId: string | null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the session at its opening, 1. */
+  version: number;
+  sessionId: string;
+  /** Account of the session. */
+  userId: string;
+  /**
+   * The browser a request came from, shown in the rows "Appareil" and "Adresse IP" of the
+   * email. No place ("Lieu (approximatif)") is derived from the address.
+   */
+  client: {
+    /**
+     * The device of a browser, as identity-service reads it from its `User-Agent` ("Firefox sur
+     * Windows"). A member it cannot read is `null`.
+     */
+    device: {
+      /**
+       * `desktop`, `mobile`, `tablet` or `unknown` today. Later versions may add types without
+       * a new event version: a consumer treats an unknown value as `unknown`.
+       */
+      type: string;
+      /** Name of the browser or client. */
+      browser: string | null;
+      /** Major version of the browser. */
+      browserVersion: string | null;
+      /** Name of the operating system. */
+      os: string | null;
+      /**
+       * Version of the operating system; `null` when the `User-Agent` does not tell it
+       * reliably (Windows 10 and 11 look alike, macOS is frozen).
+       */
+      osVersion: string | null;
+    };
+    /** IPv4 or IPv6 address of the browser, as the gateway saw it. */
+    ipAddress: string;
+  };
+  /** Who receives the email of the event. */
+  recipient: {
+    /** Address to send to. */
+    email: string;
+    /** Full name of the account, for the greeting. */
+    name: string;
+  };
+  /** BCP 47 language tag of the email, the language of the account. */
+  language: string;
+  /** IANA time zone of the account, in which the email shows the date. */
+  timeZone: string;
+}
+
+/** Validator of the payload of the event `session.opened-on-new-device.v1`. */
+export const sessionOpenedOnNewDeviceV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().nullable(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  sessionId: zod.uuid(),
+  userId: zod.uuid(),
+  client: zod.object({
+    device: zod.object({
+      type: zod.string(),
+      browser: zod.string().max(60).nullable(),
+      browserVersion: zod.string().max(20).nullable(),
+      os: zod.string().max(60).nullable(),
+      osVersion: zod.string().max(20).nullable(),
+    }),
+    ipAddress: zod.string().min(2).max(45),
+  }),
+  recipient: zod.object({
+    email: zod.email().max(254),
+    name: zod.string().min(1).max(120),
+  }),
+  language: zod.string(),
+  timeZone: zod.string().min(1).max(64),
+}) satisfies zod.ZodType<SessionOpenedOnNewDeviceV1>;
 
 /** Name of the event `session.revoked.v1`. A session ended before its expiry. */
 export const SESSION_REVOKED_V1 = 'session.revoked.v1';
@@ -120,6 +323,285 @@ export const sessionRevokedV1Schema = zod.object({
   userId: zod.uuid(),
 }) satisfies zod.ZodType<SessionRevokedV1>;
 
+/** Name of the event `user.deleted.v1`. An account was deleted, at the end of its scheduled deletion. */
+export const USER_DELETED_V1 = 'user.deleted.v1';
+
+/** Payload of the event `user.deleted.v1`. */
+export interface UserDeletedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the account was deleted. */
+  occurredAt: string;
+  /** Always `null`, an account belongs to no organization. */
+  organizationId: string | null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the account after the deletion, its last. */
+  version: number;
+  userId: string;
+}
+
+/** Validator of the payload of the event `user.deleted.v1`. */
+export const userDeletedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().nullable(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(3),
+  userId: zod.uuid(),
+}) satisfies zod.ZodType<UserDeletedV1>;
+
+/** Name of the event `user.deletion-cancelled.v1`. A sign-in cancelled the scheduled deletion of an account. */
+export const USER_DELETION_CANCELLED_V1 = 'user.deletion-cancelled.v1';
+
+/** Payload of the event `user.deletion-cancelled.v1`. */
+export interface UserDeletionCancelledV1 {
+  /** Id of the event, the deduplication key and the idempotency key of the email. */
+  id: string;
+  /** When the sign-in cancelled the deletion. */
+  occurredAt: string;
+  /** Always `null`, an account belongs to no organization. */
+  organizationId: string | null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the account after the cancellation. */
+  version: number;
+  userId: string;
+  /** The session the sign-in opened. */
+  sessionId: string;
+  /**
+   * The browser a request came from, shown in the rows "Appareil" and "Adresse IP" of the
+   * email. No place ("Lieu (approximatif)") is derived from the address.
+   */
+  client: {
+    /**
+     * The device of a browser, as identity-service reads it from its `User-Agent` ("Firefox sur
+     * Windows"). A member it cannot read is `null`.
+     */
+    device: {
+      /**
+       * `desktop`, `mobile`, `tablet` or `unknown` today. Later versions may add types without
+       * a new event version: a consumer treats an unknown value as `unknown`.
+       */
+      type: string;
+      /** Name of the browser or client. */
+      browser: string | null;
+      /** Major version of the browser. */
+      browserVersion: string | null;
+      /** Name of the operating system. */
+      os: string | null;
+      /**
+       * Version of the operating system; `null` when the `User-Agent` does not tell it
+       * reliably (Windows 10 and 11 look alike, macOS is frozen).
+       */
+      osVersion: string | null;
+    };
+    /** IPv4 or IPv6 address of the browser, as the gateway saw it. */
+    ipAddress: string;
+  };
+  /** Who receives the email of the event. */
+  recipient: {
+    /** Address to send to. */
+    email: string;
+    /** Full name of the account, for the greeting. */
+    name: string;
+  };
+  /** BCP 47 language tag of the email, the language of the account. */
+  language: string;
+  /** IANA time zone of the account, in which the email shows the date. */
+  timeZone: string;
+}
+
+/** Validator of the payload of the event `user.deletion-cancelled.v1`. */
+export const userDeletionCancelledV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().nullable(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(3),
+  userId: zod.uuid(),
+  sessionId: zod.uuid(),
+  client: zod.object({
+    device: zod.object({
+      type: zod.string(),
+      browser: zod.string().max(60).nullable(),
+      browserVersion: zod.string().max(20).nullable(),
+      os: zod.string().max(60).nullable(),
+      osVersion: zod.string().max(20).nullable(),
+    }),
+    ipAddress: zod.string().min(2).max(45),
+  }),
+  recipient: zod.object({
+    email: zod.email().max(254),
+    name: zod.string().min(1).max(120),
+  }),
+  language: zod.string(),
+  timeZone: zod.string().min(1).max(64),
+}) satisfies zod.ZodType<UserDeletionCancelledV1>;
+
+/** Name of the event `user.deletion-scheduled.v1`. The deletion of an account was scheduled. */
+export const USER_DELETION_SCHEDULED_V1 = 'user.deletion-scheduled.v1';
+
+/** Payload of the event `user.deletion-scheduled.v1`. */
+export interface UserDeletionScheduledV1 {
+  /** Id of the event, the deduplication key and the idempotency key of the email. */
+  id: string;
+  /** When the deletion was scheduled. */
+  occurredAt: string;
+  /** Always `null`, an account belongs to no organization. */
+  organizationId: string | null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the account after the scheduling. */
+  version: number;
+  userId: string;
+  /** When the account will be deleted, 30 days later, unless a sign-in cancels it. */
+  deleteAt: string;
+  /** Who receives the email of the event. */
+  recipient: {
+    /** Address to send to. */
+    email: string;
+    /** Full name of the account, for the greeting. */
+    name: string;
+  };
+  /** BCP 47 language tag of the email, the language of the account. */
+  language: string;
+  /** IANA time zone of the account, in which the email shows the date. */
+  timeZone: string;
+}
+
+/** Validator of the payload of the event `user.deletion-scheduled.v1`. */
+export const userDeletionScheduledV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().nullable(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  userId: zod.uuid(),
+  deleteAt: zod.iso.datetime(),
+  recipient: zod.object({
+    email: zod.email().max(254),
+    name: zod.string().min(1).max(120),
+  }),
+  language: zod.string(),
+  timeZone: zod.string().min(1).max(64),
+}) satisfies zod.ZodType<UserDeletionScheduledV1>;
+
+/** Name of the event `user.email-changed.v1`. The address of an account changed to a new, verified one. */
+export const USER_EMAIL_CHANGED_V1 = 'user.email-changed.v1';
+
+/** Payload of the event `user.email-changed.v1`. */
+export interface UserEmailChangedV1 {
+  /** Id of the event, the deduplication key and the idempotency key of the notice. */
+  id: string;
+  /** When the change was committed. */
+  occurredAt: string;
+  /** Always `null`, an account belongs to no organization. */
+  organizationId: string | null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the account after the change. */
+  version: number;
+  userId: string;
+  /** The new address, verified. */
+  email: string;
+  /** The address before the change, where the notice goes. */
+  previousEmail: string;
+  /** Full name of the account, for the greeting. */
+  name: string;
+  /**
+   * The browser a request came from, shown in the rows "Appareil" and "Adresse IP" of the
+   * email. No place ("Lieu (approximatif)") is derived from the address.
+   */
+  client: {
+    /**
+     * The device of a browser, as identity-service reads it from its `User-Agent` ("Firefox sur
+     * Windows"). A member it cannot read is `null`.
+     */
+    device: {
+      /**
+       * `desktop`, `mobile`, `tablet` or `unknown` today. Later versions may add types without
+       * a new event version: a consumer treats an unknown value as `unknown`.
+       */
+      type: string;
+      /** Name of the browser or client. */
+      browser: string | null;
+      /** Major version of the browser. */
+      browserVersion: string | null;
+      /** Name of the operating system. */
+      os: string | null;
+      /**
+       * Version of the operating system; `null` when the `User-Agent` does not tell it
+       * reliably (Windows 10 and 11 look alike, macOS is frozen).
+       */
+      osVersion: string | null;
+    };
+    /** IPv4 or IPv6 address of the browser, as the gateway saw it. */
+    ipAddress: string;
+  };
+  /** BCP 47 language tag of the account. */
+  language: string;
+  /** IANA time zone of the account. */
+  timeZone: string;
+}
+
+/** Validator of the payload of the event `user.email-changed.v1`. */
+export const userEmailChangedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().nullable(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  userId: zod.uuid(),
+  email: zod.email().max(254),
+  previousEmail: zod.email().max(254),
+  name: zod.string().min(1).max(120),
+  client: zod.object({
+    device: zod.object({
+      type: zod.string(),
+      browser: zod.string().max(60).nullable(),
+      browserVersion: zod.string().max(20).nullable(),
+      os: zod.string().max(60).nullable(),
+      osVersion: zod.string().max(20).nullable(),
+    }),
+    ipAddress: zod.string().min(2).max(45),
+  }),
+  language: zod.string(),
+  timeZone: zod.string().min(1).max(64),
+}) satisfies zod.ZodType<UserEmailChangedV1>;
+
 /** Name of the event `user.email-verified.v1`. The address of an account was proven with a code. */
 export const USER_EMAIL_VERIFIED_V1 = 'user.email-verified.v1';
 
@@ -158,6 +640,108 @@ export const userEmailVerifiedV1Schema = zod.object({
   userId: zod.uuid(),
   email: zod.email().max(254),
 }) satisfies zod.ZodType<UserEmailVerifiedV1>;
+
+/** Name of the event `user.password-changed.v1`. The password of an account changed, from a session or with a reset link. */
+export const USER_PASSWORD_CHANGED_V1 = 'user.password-changed.v1';
+
+/** Payload of the event `user.password-changed.v1`. */
+export interface UserPasswordChangedV1 {
+  /** Id of the event, the deduplication key and the idempotency key of the email. */
+  id: string;
+  /** When the new password was committed. */
+  occurredAt: string;
+  /** Always `null`, an account belongs to no organization. */
+  organizationId: string | null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the account after the change. */
+  version: number;
+  userId: string;
+  /**
+   * `change`: the person changed it from a session, with the current password. `reset`:
+   * with a reset link. Another way takes a new versioned event name.
+   */
+  method: 'change' | 'reset';
+  /** Sessions the change closed; always 0 for a `change`. */
+  closedSessionCount: number;
+  /**
+   * The browser a request came from, shown in the rows "Appareil" and "Adresse IP" of the
+   * email. No place ("Lieu (approximatif)") is derived from the address.
+   */
+  client: {
+    /**
+     * The device of a browser, as identity-service reads it from its `User-Agent` ("Firefox sur
+     * Windows"). A member it cannot read is `null`.
+     */
+    device: {
+      /**
+       * `desktop`, `mobile`, `tablet` or `unknown` today. Later versions may add types without
+       * a new event version: a consumer treats an unknown value as `unknown`.
+       */
+      type: string;
+      /** Name of the browser or client. */
+      browser: string | null;
+      /** Major version of the browser. */
+      browserVersion: string | null;
+      /** Name of the operating system. */
+      os: string | null;
+      /**
+       * Version of the operating system; `null` when the `User-Agent` does not tell it
+       * reliably (Windows 10 and 11 look alike, macOS is frozen).
+       */
+      osVersion: string | null;
+    };
+    /** IPv4 or IPv6 address of the browser, as the gateway saw it. */
+    ipAddress: string;
+  };
+  /** Who receives the email of the event. */
+  recipient: {
+    /** Address to send to. */
+    email: string;
+    /** Full name of the account, for the greeting. */
+    name: string;
+  };
+  /** BCP 47 language tag of the email, the language of the account. */
+  language: string;
+  /** IANA time zone of the account, in which the email shows the date. */
+  timeZone: string;
+}
+
+/** Validator of the payload of the event `user.password-changed.v1`. */
+export const userPasswordChangedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().nullable(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  userId: zod.uuid(),
+  method: zod.enum(['change', 'reset']),
+  closedSessionCount: zod.int().min(0),
+  client: zod.object({
+    device: zod.object({
+      type: zod.string(),
+      browser: zod.string().max(60).nullable(),
+      browserVersion: zod.string().max(20).nullable(),
+      os: zod.string().max(60).nullable(),
+      osVersion: zod.string().max(20).nullable(),
+    }),
+    ipAddress: zod.string().min(2).max(45),
+  }),
+  recipient: zod.object({
+    email: zod.email().max(254),
+    name: zod.string().min(1).max(120),
+  }),
+  language: zod.string(),
+  timeZone: zod.string().min(1).max(64),
+}) satisfies zod.ZodType<UserPasswordChangedV1>;
 
 /** Name of the event `user.profile-updated.v1`. The profile of an account changed. */
 export const USER_PROFILE_UPDATED_V1 = 'user.profile-updated.v1';
@@ -262,7 +846,7 @@ export const userSignedUpV1Schema = zod.object({
 }) satisfies zod.ZodType<UserSignedUpV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, SESSION_REVOKED_V1, USER_EMAIL_VERIFIED_V1, USER_PROFILE_UPDATED_V1, USER_SIGNED_UP_V1] as const;
+export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, PASSWORD_RESET_LINK_ISSUED_V1, SESSION_OPENED_ON_NEW_DEVICE_V1, SESSION_REVOKED_V1, USER_DELETED_V1, USER_DELETION_CANCELLED_V1, USER_DELETION_SCHEDULED_V1, USER_EMAIL_CHANGED_V1, USER_EMAIL_VERIFIED_V1, USER_PASSWORD_CHANGED_V1, USER_PROFILE_UPDATED_V1, USER_SIGNED_UP_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -272,7 +856,7 @@ export type EventName = (typeof EVENT_NAMES)[number];
  * in `EVENTS_RESTRICTED`: the `restrictedEvents` of the `MessagingModule` of
  * `@cadenway/nest-messaging`.
  */
-export const RESTRICTED_EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1] as const;
+export const RESTRICTED_EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, PASSWORD_RESET_LINK_ISSUED_V1] as const;
 
 /** Name of a restricted event of this document. */
 export type RestrictedEventName = (typeof RESTRICTED_EVENT_NAMES)[number];
@@ -280,8 +864,15 @@ export type RestrictedEventName = (typeof RESTRICTED_EVENT_NAMES)[number];
 /** Payload type of each event of this document, by event name. */
 export interface EventPayloads {
   'one-time-code.issued.v1': OneTimeCodeIssuedV1;
+  'password-reset-link.issued.v1': PasswordResetLinkIssuedV1;
+  'session.opened-on-new-device.v1': SessionOpenedOnNewDeviceV1;
   'session.revoked.v1': SessionRevokedV1;
+  'user.deleted.v1': UserDeletedV1;
+  'user.deletion-cancelled.v1': UserDeletionCancelledV1;
+  'user.deletion-scheduled.v1': UserDeletionScheduledV1;
+  'user.email-changed.v1': UserEmailChangedV1;
   'user.email-verified.v1': UserEmailVerifiedV1;
+  'user.password-changed.v1': UserPasswordChangedV1;
   'user.profile-updated.v1': UserProfileUpdatedV1;
   'user.signed-up.v1': UserSignedUpV1;
 }
@@ -289,8 +880,15 @@ export interface EventPayloads {
 /** Payload validator of each event of this document, by event name. */
 export const eventSchemas = {
   'one-time-code.issued.v1': oneTimeCodeIssuedV1Schema,
+  'password-reset-link.issued.v1': passwordResetLinkIssuedV1Schema,
+  'session.opened-on-new-device.v1': sessionOpenedOnNewDeviceV1Schema,
   'session.revoked.v1': sessionRevokedV1Schema,
+  'user.deleted.v1': userDeletedV1Schema,
+  'user.deletion-cancelled.v1': userDeletionCancelledV1Schema,
+  'user.deletion-scheduled.v1': userDeletionScheduledV1Schema,
+  'user.email-changed.v1': userEmailChangedV1Schema,
   'user.email-verified.v1': userEmailVerifiedV1Schema,
+  'user.password-changed.v1': userPasswordChangedV1Schema,
   'user.profile-updated.v1': userProfileUpdatedV1Schema,
   'user.signed-up.v1': userSignedUpV1Schema,
 } as const satisfies { readonly [Name in EventName]: zod.ZodType<EventPayloads[Name]> };
