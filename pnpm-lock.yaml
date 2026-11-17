@@ -206,8 +206,8 @@ importers:
         specifier: 'catalog:'
         version: 22.2.5(@angular/compiler@22.2.5)(rxjs@7.8.2)
       '@cadenway/angular-testing':
-        specifier: 0.1.0
-        version: 0.1.0(typescript@6.0.3)
+        specifier: 0.1.1
+        version: 0.1.1(typescript@6.0.3)
       '@changesets/cli':
         specifier: ^3.0.0
         version: 3.0.3
@@ -482,8 +482,8 @@ packages:
   '@cacheable/utils@2.5.0':
     resolution: {integrity: sha512-buipgOVDkkPXNR5+xBpDw7Zk2n1EvU7qBJCNUcL7rhQ//kfpOXPAvQ511Os0vpLYJ1pZnvudNytkQt2hst3wqA==}
 
-  '@cadenway/angular-testing@0.1.0':
-    resolution: {integrity: sha512-eFvSdI1+T3TmOo0Yow0L6bnr5iPWkOAMJH4cfr1t0Tc1UfHfiJuyCmwaHO/e3UthSS7t5naDz+nBWzuX0/KVhA==, tarball: https://npm.pkg.github.com/download/@cadenway/angular-testing/0.1.0/03e19005355a43db6e3843b4f692b5a6decfdad3}
+  '@cadenway/angular-testing@0.1.1':
+    resolution: {integrity: sha512-MU436Ysb/ywO5l7MPboPC9mgH822+Nh/8NpDGggfSiyUMQhOsOppLlnApQS7qvvTtuZfB9M0RTpJ+hp8SYNCRA==, tarball: https://npm.pkg.github.com/download/@cadenway/angular-testing/0.1.1/712f479a8369de83ecc4ced1869d03c949c16729}
     peerDependencies:
       typescript: '>=6.0 <6.1'
 
@@ -4190,7 +4190,7 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@cadenway/angular-testing@0.1.0(typescript@6.0.3)':
+  '@cadenway/angular-testing@0.1.1(typescript@6.0.3)':
     dependencies:
       typescript: 6.0.3
 
