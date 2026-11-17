@@ -866,7 +866,13 @@ export const ScheduleAccountDeletionInternalResponse = zod.object({
  * organization of the session, as `POST /v1/api-tokens` says, and returns its secret once:
  * `cw_pat_`, 30 base62 characters from `node:crypto`, then 6 characters of CRC32 check.
  * identity-service keeps its SHA-256 hash and its first 11 characters, never the secret.
- * Internal token: actor `user`, organization required.
+ *
+ * Requires a recent authentication of `sessionId`, the session of the public request: a
+ * session without one in the last 10 minutes, or a request without `sessionId`, answers
+ * `403 auth.reauthentication-required` with `details.methods` and creates nothing; a
+ * `sessionId` that is not an open session of the actor answers `404 session.not-found`, which
+ * the gateway answers as `401 auth.session-expired`. Internal token: actor `user`,
+ * organization required.
  * @summary Create a personal API token
  */
 export const createApiTokenInternalBodyNameMax = 100;
@@ -876,6 +882,7 @@ export const createApiTokenInternalBodyScopesMax = 4;
 export const createApiTokenInternalBodyExpirationDefault = `30-days`;
 
 export const CreateApiTokenInternalBody = zod.object({
+  "sessionId": zod.uuid().optional().describe('The session of the public request, as the introspection returned it, whose recent\nauthentication is checked. The gateway always sends it: without it the creation answers\n`403 auth.reauthentication-required`. It is optional in the schema only so that adding\nit changes no existing request.\n'),
   "name": zod.string().min(1).max(createApiTokenInternalBodyNameMax).describe('Name as typed; trimmed here, a name made only of spaces answers `400 request.invalid`.'),
   "scopes": zod.array(zod.enum(['tasks:read', 'tasks:write', 'members:read', 'webhooks:manage']).describe('A scope a personal API token can be given.')).min(1).max(createApiTokenInternalBodyScopesMax).describe('At least one; the same scope twice counts once.'),
   "expiration": zod.enum(['30-days', '90-days', '1-year', 'never']).default(createApiTokenInternalBodyExpirationDefault).describe('Lifetime counted from the creation; `never` gives no expiry.')

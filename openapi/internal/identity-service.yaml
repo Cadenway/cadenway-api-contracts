@@ -61,8 +61,9 @@ info:
     **Recent authentication.** identity-service records, per session, when its person last proved
     who they are: the sign-in that opened it, `POST /internal/v1/sessions/{sessionId}/reauthentication`
     or the right current password of `PUT /internal/v1/users/{userId}/password`. The request of a
-    change of address and the scheduling of the deletion require it within the last 10 minutes,
-    else they answer `403 auth.reauthentication-required` with `details.methods`. identity-service
+    change of address, the scheduling of the deletion and the creation of a personal API token
+    require it within the last 10 minutes, else they answer `403 auth.reauthentication-required`
+    with `details.methods`. identity-service
     answers this code itself; the gateway forwards it with its French title, unlike the refusals of
     the internal token.
 
@@ -1176,7 +1177,13 @@ paths:
         organization of the session, as `POST /v1/api-tokens` says, and returns its secret once:
         `cw_pat_`, 30 base62 characters from `node:crypto`, then 6 characters of CRC32 check.
         identity-service keeps its SHA-256 hash and its first 11 characters, never the secret.
-        Internal token: actor `user`, organization required.
+
+        Requires a recent authentication of `sessionId`, the session of the public request: a
+        session without one in the last 10 minutes, or a request without `sessionId`, answers
+        `403 auth.reauthentication-required` with `details.methods` and creates nothing; a
+        `sessionId` that is not an open session of the actor answers `404 session.not-found`, which
+        the gateway answers as `401 auth.session-expired`. Internal token: actor `user`,
+        organization required.
       tags: [api-tokens]
       requestBody:
         required: true
@@ -1185,6 +1192,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ApiTokenCreation'
             example:
+              sessionId: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
               name: Synchronisation GitLab
               scopes: [tasks:read]
               expiration: 30-days
@@ -1216,7 +1224,9 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/RecentAuthenticationRequired'
+        '404':
+          $ref: '#/components/responses/SessionNotFound'
     get:
       operationId: listApiTokensInternal
       summary: List the personal API tokens
@@ -1776,7 +1786,8 @@ components:
           minutes. `details.methods` lists the ways its person can confirm, `password` today; the
           gateway forwards the code, its `details` and the French title of
           `openapi/public/auth.yaml`;
-        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`: see the internal token.
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, and `auth.organization-required` on
+          a route that requires an organization: see the internal token.
       content:
         application/problem+json:
           schema:
@@ -2210,6 +2221,14 @@ components:
       type: object
       required: [name, scopes]
       properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: |
+            The session of the public request, as the introspection returned it, whose recent
+            authentication is checked. The gateway always sends it: without it the creation answers
+            `403 auth.reauthentication-required`. It is optional in the schema only so that adding
+            it changes no existing request.
         name:
           type: string
           minLength: 1

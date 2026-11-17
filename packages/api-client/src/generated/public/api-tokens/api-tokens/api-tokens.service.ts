@@ -155,7 +155,11 @@ export class ApiTokensService {
  * Creates a token of the caller in the current organization of the session ("Créer un
  * jeton", "Accordez seulement les portées nécessaires."). The answer carries the secret, the
  * only time it is ever returned ("Copiez-le maintenant : il ne sera plus affiché."): neither
- * the gateway nor identity-service log it, and no route gives it again. Session only.
+ * the gateway nor identity-service log it, and no route gives it again.
+ *
+ * Requires a recent authentication of the session (see "Recent authentication" above):
+ * outside the 10-minute window it answers `403 auth.reauthentication-required`, with
+ * `details.methods`, and creates nothing. Session only.
  * @summary Create a personal API token
  */
  createApiToken<TData = ApiTokenCreated>(apiTokenCreation: ApiTokenCreation, options?: HttpClientBodyOptions): Observable<TData>;

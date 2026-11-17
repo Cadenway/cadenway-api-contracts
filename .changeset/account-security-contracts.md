@@ -30,3 +30,12 @@ what its security email shows and nothing secret except the restricted one. `RES
 now lists `password-reset-link.issued.v1` too. The change of address reuses
 `one-time-code.issued.v1` with the purpose `email-change`. `member.removed.v1` is also emitted, by
 the system, for each membership of a deleted account.
+
+Creating a personal API token now requires a recent authentication, a tightening of behavior:
+`POST /v1/api-tokens` and `POST /internal/v1/api-tokens` answer
+`403 auth.reauthentication-required` (with `details.methods`) outside the 10-minute window, so a
+stolen session cannot mint a token that outlives the recovery of the account. The internal body
+gains an optional `sessionId`, which the gateway always sends: without it identity-service answers
+the same `403`. The schema stays compatible (`pnpm breaking` reports no breaking change), and no
+consumer ships token creation in the web application yet. A password reset or change keeps the
+existing tokens, so that integrations keep working.

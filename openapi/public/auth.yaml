@@ -50,10 +50,11 @@ info:
     its own account (`POST /v1/auth/password-reset/inspection`) to whoever holds it, the person who
     received it at that address.
 
-    **Recent authentication.** Changing the address (`POST /v1/me/email-change`) and scheduling the
-    deletion of the account (`POST /v1/me/deletion`) need a session whose person proved who they
-    are in the last 10 minutes: the sign-in that opened the session, a password confirmed with
-    `POST /v1/auth/reauthentication`, or the current password of a password change
+    **Recent authentication.** Changing the address (`POST /v1/me/email-change`), scheduling the
+    deletion of the account (`POST /v1/me/deletion`) and creating a personal API token
+    (`POST /v1/api-tokens`, `openapi/public/api-tokens.yaml`) need a session whose person proved
+    who they are in the last 10 minutes: the sign-in that opened the session, a password confirmed
+    with `POST /v1/auth/reauthentication`, or the current password of a password change
     (`PUT /v1/me/password`). Otherwise they answer `403 auth.reauthentication-required`, with
     `details.methods`, the ways the person can confirm (`password` today): the web application asks
     for it, calls `POST /v1/auth/reauthentication`, then repeats the request. The window belongs to

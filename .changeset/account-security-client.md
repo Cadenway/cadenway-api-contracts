@@ -12,3 +12,8 @@ its `…ClientResult` type, and the new models and error responses are exported 
 gains an optional `passwordChangedAt` and `SignedIn` an optional `deletionCancelled`. `EmptyRequest`,
 `SessionWriteForbiddenResponse` and `NextCursor` are now exported from the authentication document,
 the first that generates them, with the same shape.
+
+`ApiTokensService.createApiToken` documents `403 auth.reauthentication-required`, with the new
+`TokenCreationForbiddenResponse`. `InvitationBatchLimitedResponse` and
+`InvitationResendLimitedResponse`, generated since 0.5.0 but missing from the package entry, are
+now exported.

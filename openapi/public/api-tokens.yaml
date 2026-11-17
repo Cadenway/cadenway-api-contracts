@@ -32,6 +32,15 @@ info:
     **Session only.** Only a session creates, lists or revokes tokens, in its current organization
     (`403 organization.not-selected` without one): a token never manages tokens.
 
+    **Recent authentication.** Creating a token needs a session whose person proved who they are
+    in the last 10 minutes, as changing the address does ("Recent authentication" in
+    `openapi/public/auth.yaml`): otherwise `POST /v1/api-tokens` answers
+    `403 auth.reauthentication-required` with `details.methods`, and the web application asks for
+    the password (`POST /v1/auth/reauthentication`), then repeats the request. A stolen session
+    therefore cannot mint a token that outlives the recovery of the account: a password reset or
+    change keeps the existing tokens, so that integrations keep working. Listing and revoking
+    tokens need no recent authentication.
+
     **Cross-site requests.** A request with an unsafe method authenticated by the cookie carries an
     `Origin` equal to one of the gateway's allowed origins; a `POST`, `PUT` or `PATCH` also
     carries `Content-Type: application/json`. A `DELETE` has no body: a browser sends one
@@ -75,7 +84,11 @@ paths:
         Creates a token of the caller in the current organization of the session ("Créer un
         jeton", "Accordez seulement les portées nécessaires."). The answer carries the secret, the
         only time it is ever returned ("Copiez-le maintenant : il ne sera plus affiché."): neither
-        the gateway nor identity-service log it, and no route gives it again. Session only.
+        the gateway nor identity-service log it, and no route gives it again.
+
+        Requires a recent authentication of the session (see "Recent authentication" above):
+        outside the 10-minute window it answers `403 auth.reauthentication-required`, with
+        `details.methods`, and creates nothing. Session only.
       tags: [api-tokens]
       security:
         - sessionCookie: []
@@ -117,7 +130,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
-          $ref: '#/components/responses/TokenWriteForbidden'
+          $ref: '#/components/responses/TokenCreationForbidden'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -230,6 +243,15 @@ components:
         title: Choisissez une organisation pour continuer.
         status: 403
         code: organization.not-selected
+    ReauthenticationRequired:
+      summary: No recent authentication
+      value:
+        type: about:blank
+        title: Confirmez votre identité pour continuer.
+        status: 403
+        code: auth.reauthentication-required
+        details:
+          methods: [password]
     RateLimited:
       summary: Gateway limit reached
       value:
@@ -300,6 +322,32 @@ components:
           examples:
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    TokenCreationForbidden:
+      description: |
+        - `auth.reauthentication-required`: the person of this session has not proved who they are
+          in the last 10 minutes. `details.methods` lists the ways they can, `password` today
+          (`POST /v1/auth/reauthentication`); a client ignores a method it does not know;
+        - `organization.not-selected`: the session has no current organization;
+        - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
+        - `auth.api-token-not-accepted`: a personal API token never manages tokens.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            reauthenticationRequired:
+              $ref: '#/components/examples/ReauthenticationRequired'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            crossSiteRefused:
+              summary: Request from another site
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.csrf-rejected
             apiTokenNotAccepted:
               $ref: '#/components/examples/ApiTokenNotAccepted'
     TokenWriteForbidden:

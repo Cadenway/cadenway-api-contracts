@@ -167,12 +167,14 @@ export { AssignableRole } from './generated/public/members/model/assignableRole'
 export type { Invitation } from './generated/public/members/model/invitation';
 export type { InvitationAnsweredResponse } from './generated/public/members/model/invitationAnsweredResponse';
 export type { InvitationBatch } from './generated/public/members/model/invitationBatch';
+export type { InvitationBatchLimitedResponse } from './generated/public/members/model/invitationBatchLimitedResponse';
 export type { InvitationBatchResult } from './generated/public/members/model/invitationBatchResult';
 export type { InvitationClosedResponse } from './generated/public/members/model/invitationClosedResponse';
 export type { InvitationForbiddenResponse } from './generated/public/members/model/invitationForbiddenResponse';
 export type { InvitationNotFoundResponse } from './generated/public/members/model/invitationNotFoundResponse';
 export type { InvitationNotPendingResponse } from './generated/public/members/model/invitationNotPendingResponse';
 export type { InvitationPage } from './generated/public/members/model/invitationPage';
+export type { InvitationResendLimitedResponse } from './generated/public/members/model/invitationResendLimitedResponse';
 export type { Inviter } from './generated/public/members/model/inviter';
 export type { InvitingOrganization } from './generated/public/members/model/invitingOrganization';
 export type { JoinedOrganization } from './generated/public/members/model/joinedOrganization';
@@ -205,4 +207,5 @@ export type { ApiTokenPage } from './generated/public/api-tokens/model/apiTokenP
 export { ApiTokenScope } from './generated/public/api-tokens/model/apiTokenScope';
 export type { ListApiTokensParams } from './generated/public/api-tokens/model/listApiTokensParams';
 export type { TokenReadForbiddenResponse } from './generated/public/api-tokens/model/tokenReadForbiddenResponse';
+export type { TokenCreationForbiddenResponse } from './generated/public/api-tokens/model/tokenCreationForbiddenResponse';
 export type { TokenWriteForbiddenResponse } from './generated/public/api-tokens/model/tokenWriteForbiddenResponse';

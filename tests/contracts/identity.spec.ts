@@ -13,6 +13,7 @@ import {
 } from '../../packages/contracts/src/generated/events/identity-service';
 import {
   ChangePasswordInternalBody,
+  CreateApiTokenInternalBody,
   GetUserResponse,
   IntrospectTokenResponse,
   ListUserSessionsInternalQueryParams,
@@ -331,6 +332,24 @@ describe('routes of authentication', () => {
 });
 
 describe('routes of account security', () => {
+  it('carries the session of a token creation so that identity-service checks its recent authentication', () => {
+    const creation: { name: string; scopes: ['tasks:read'] } = {
+      name: 'Synchronisation GitLab',
+      scopes: ['tasks:read'],
+    };
+
+    expect(
+      CreateApiTokenInternalBody.parse({
+        ...creation,
+        sessionId: '019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60',
+      }),
+    ).toMatchObject({ sessionId: '019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60' });
+    expect(CreateApiTokenInternalBody.safeParse(creation).success).toBe(true);
+    expect(
+      CreateApiTokenInternalBody.safeParse({ ...creation, sessionId: 'current' }).success,
+    ).toBe(false);
+  });
+
   it('closes the other sessions of a reset unless the person unticks it', () => {
     const confirmation: { token: string; newPassword: string } = {
       token: resetLinkIssued.token,

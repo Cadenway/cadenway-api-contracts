@@ -331,6 +331,13 @@ export const ApiTokenCreationExpiration = {
 
 export interface ApiTokenCreation {
   /**
+     * The session of the public request, as the introspection returned it, whose recent
+     * authentication is checked. The gateway always sends it: without it the creation answers
+     * `403 auth.reauthentication-required`. It is optional in the schema only so that adding
+     * it changes no existing request.
+     */
+  sessionId?: string;
+  /**
      * Name as typed; trimmed here, a name made only of spaces answers `400 request.invalid`.
      * @minLength 1
      * @maxLength 100
@@ -770,7 +777,8 @@ export type PasswordChangeRefusedResponse = Problem;
  *   minutes. `details.methods` lists the ways its person can confirm, `password` today; the
  *   gateway forwards the code, its `details` and the French title of
  *   `openapi/public/auth.yaml`;
- * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`: see the internal token.
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, and `auth.organization-required` on
+ *   a route that requires an organization: see the internal token.
  */
 export type RecentAuthenticationRequiredResponse = Problem;
 
