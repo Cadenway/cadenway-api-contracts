@@ -14,8 +14,9 @@ export type Email = string;
 export type Language = string;
 
 /**
- * The browser the session is opened for, as the gateway saw it. Stored with the session, to
- * show its device and place later; never logged with the token.
+ * The browser a request came from, as the gateway saw it. Stored with the session it opens,
+ * to show its device and address; shown in the security email of the request. No place is
+ * derived from the address. Never logged with a token.
  */
 export interface Client {
   /**
@@ -154,7 +155,15 @@ export interface User {
   /** IANA time zone name; `Europe/Paris` until the person chooses another. */
   timeZone?: string;
   /**
-     * Version of the account.
+     * When the password was last set: at the sign-up, by a change or by a reset.
+     * identity-service always sends it from this version on; it is optional so that the
+     * gateway can move to this version first, and the gateway leaves it out of the public
+     * answer until identity-service sends it.
+     */
+  passwordChangedAt?: string;
+  /**
+     * Version of the account. A change of the profile, of the password, of the address or of
+     * the scheduled deletion makes it the next one.
      * @minimum 1
      */
   version: number;
@@ -170,6 +179,11 @@ export interface SessionIssued {
   token: string;
   session: Session;
   user: User;
+  /**
+     * `true` when this sign-in cancelled the scheduled deletion of the account; the gateway
+     * passes it on in the public answer. Absent or `false` otherwise.
+     */
+  deletionCancelled?: boolean;
 }
 
 export interface IntrospectionRequest {
@@ -317,6 +331,13 @@ export const ApiTokenCreationExpiration = {
 
 export interface ApiTokenCreation {
   /**
+     * The session of the public request, as the introspection returned it, whose recent
+     * authentication is checked. The gateway always sends it: without it the creation answers
+     * `403 auth.reauthentication-required`. It is optional in the schema only so that adding
+     * it changes no existing request.
+     */
+  sessionId?: string;
+  /**
      * Name as typed; trimmed here, a name made only of spaces answers `400 request.invalid`.
      * @minLength 1
      * @maxLength 100
@@ -403,6 +424,189 @@ export interface ActiveApiToken {
 }
 
 export type ApiTokenIntrospection = ActiveApiToken | InactiveToken;
+
+export interface PasswordResetRequest {
+  email: Email;
+  /** The browser that asks for the link, shown in the email. */
+  client: Client;
+}
+
+/**
+ * Answered the same way whether or not a link was issued.
+ */
+export interface PasswordResetLinkSent {
+  email: Email;
+  /** When a link issued now stops working, 30 minutes later. */
+  expiresAt: string;
+  /** 45 seconds later, or the end of the hour once 5 links were asked for the address in it. */
+  resendAvailableAt: string;
+}
+
+/**
+ * The token of the reset link, as the public request carried it. A secret, never logged;
+ * identity-service keeps only its SHA-256 hash.
+ * @minLength 1
+ * @maxLength 256
+ */
+export type ResetToken = string;
+
+export interface PasswordResetToken {
+  token: ResetToken;
+}
+
+export interface PasswordResetLink {
+  /** Address of the account of the link. */
+  email: Email;
+  expiresAt: string;
+  /**
+     * Open sessions of the account.
+     * @minimum 0
+     */
+  sessionCount: number;
+}
+
+export interface PasswordResetConfirmation {
+  token: ResetToken;
+  /**
+     * At least 12 characters, checked here (`auth.password-too-short`). Never logged.
+     * @maxLength 256
+     */
+  newPassword: string;
+  /** Revokes every open session of the account; `false` leaves them open. */
+  closeOtherSessions?: boolean;
+  /** The browser the new password is chosen in, shown in the email. */
+  client: Client;
+}
+
+export interface PasswordResetCompleted {
+  email: Email;
+  /** @minimum 0 */
+  closedSessionCount: number;
+}
+
+/**
+ * Later versions add a two-step code; `password` then becomes optional beside it.
+ */
+export interface ReauthenticationRequest {
+  /**
+     * Never logged.
+     * @minLength 1
+     * @maxLength 256
+     */
+  password: string;
+}
+
+export interface RecentAuthentication {
+  /** The recent authentication recorded for the session. */
+  authenticatedAt: string;
+  /** 10 minutes later, when the guarded routes require it again. */
+  expiresAt: string;
+}
+
+export interface PasswordChange {
+  /** The session of the public request, which the right current password authenticates again. */
+  sessionId: string;
+  /**
+     * Never logged.
+     * @minLength 1
+     * @maxLength 256
+     */
+  currentPassword: string;
+  /**
+     * At least 12 characters, checked here (`auth.password-too-short`). Never logged.
+     * @maxLength 256
+     */
+  newPassword: string;
+  /** The browser the password is changed in, shown in the email. */
+  client: Client;
+}
+
+export interface EmailChangeRequest {
+  /** The session of the public request, whose recent authentication is checked. */
+  sessionId: string;
+  /** The new address. */
+  email: Email;
+}
+
+export interface EmailChangeCodeSent {
+  /** The new address. */
+  email: Email;
+  /** 15 minutes after the code was issued. */
+  expiresAt: string;
+  /** 30 seconds later, or the end of the hour once 5 codes were asked for the new address in it. */
+  resendAvailableAt: string;
+}
+
+export interface EmailChangeConfirmation {
+  /** The session of the public request. */
+  sessionId: string;
+  /**
+     * Never logged.
+     * @pattern ^[0-9]{6}$
+     */
+  code: string;
+  /** The browser the address is confirmed in, shown in the notice to the previous address. */
+  client: Client;
+}
+
+export interface DeletionRequest {
+  /** The session of the public request, whose recent authentication is checked; it is revoked too. */
+  sessionId: string;
+}
+
+export interface DeletionScheduled {
+  /** 30 days after the scheduling. */
+  deleteAt: string;
+}
+
+/**
+ * The device of a session, read with `bowser` from the `User-Agent` of its `client`. A member
+ * that cannot be read is `null`.
+ */
+export interface Device {
+  /** `desktop`, `mobile`, `tablet` or `unknown` today; more later (`x-extensible-enum`). */
+  type: string;
+  /** @nullable */
+  browser: string | null;
+  /**
+     * Major version.
+     * @nullable
+     */
+  browserVersion: string | null;
+  /** @nullable */
+  os: string | null;
+  /**
+     * `null` when the `User-Agent` does not tell it reliably (Windows 10 and 11, macOS).
+     * @nullable
+     */
+  osVersion: string | null;
+}
+
+export interface OpenSession {
+  id: string;
+  /** `true` for `currentSessionId`. */
+  current: boolean;
+  device: Device;
+  /** Address of the `client` of the sign-in that opened the session. */
+  ipAddress: string;
+  signedInAt: string;
+  /** Last active introspection, recorded at most once a minute. */
+  lastActiveAt: string;
+  expiresAt: string;
+}
+
+export interface OpenSessionPage {
+  items: OpenSession[];
+  nextCursor: NextCursor | null;
+}
+
+export interface RevokedSessions {
+  /**
+     * Sessions revoked by the request.
+     * @minimum 0
+     */
+  revokedCount: number;
+}
 
 /**
  * Members specific to the code, for example the fields that failed validation.
@@ -498,8 +702,9 @@ export type AccountLockedResponse = Problem;
 
 /**
  * `auth.code-throttled`, with `details.resendAvailableAt`: the code requests of the address
- * are throttled whatever their purpose, account or not, so the sign-up, the sign-up code and
- * the sign-in code routes count together. A request is refused less than 30 seconds after
+ * are throttled whatever their purpose, account or not, so the sign-up, the sign-up code,
+ * the sign-in code and the change of address, counted on the new address, count together. A
+ * request is refused less than 30 seconds after
  * the last accepted one, and once 5 were accepted in the current hour, which starts with the
  * first request accepted after the previous hour ended. `details.resendAvailableAt` is 30
  * seconds after the last accepted request, or the end of the hour.
@@ -532,6 +737,87 @@ export type ApiTokenNotFoundResponse = Problem;
  * `request.version-mismatch`: `If-Match` is not the current version, with `details.version`.
  */
 export type VersionMismatchResponse = Problem;
+
+/**
+ * `auth.reset-throttled`, with `details.resendAvailableAt`: the password reset requests of
+ * the address are throttled, account or not, apart from the code requests. A request is
+ * refused less than 45 seconds after the last accepted one, and once 5 were accepted in the
+ * current hour, which starts with the first request accepted after the previous hour ended.
+ * `details.resendAvailableAt` is 45 seconds after the last accepted request, or the end of
+ * the hour.
+ */
+export type ResetThrottledResponse = Problem;
+
+/**
+ * `auth.reset-link-expired`: the link expired, was used, was replaced, or is unknown or malformed.
+ */
+export type ResetLinkExpiredResponse = Problem;
+
+/**
+ * `auth.reset-link-expired` (the link is checked first), then `auth.password-too-short`
+ * (with `details.minLength`) or `auth.password-compromised`, which leave the link usable.
+ */
+export type PasswordResetRefusedResponse = Problem;
+
+/**
+ * `auth.password-incorrect`, with `details.remainingAttempts` (at least 1): the failures left
+ * before the lockout of the password sign-in of the address of the account.
+ */
+export type PasswordRefusedResponse = Problem;
+
+/**
+ * The new password first: `auth.password-too-short` (with `details.minLength`) or
+ * `auth.password-compromised`, no attempt counted; then the current one:
+ * `auth.password-incorrect`, with `details.remainingAttempts`.
+ */
+export type PasswordChangeRefusedResponse = Problem;
+
+/**
+ * - `auth.reauthentication-required`: the session has no authentication in the last 10
+ *   minutes. `details.methods` lists the ways its person can confirm, `password` today; the
+ *   gateway forwards the code, its `details` and the French title of
+ *   `openapi/public/auth.yaml`;
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, and `auth.organization-required` on
+ *   a route that requires an organization: see the internal token.
+ */
+export type RecentAuthenticationRequiredResponse = Problem;
+
+/**
+ * `auth.email-unchanged`: the new address is the current address of the account.
+ */
+export type EmailUnchangedResponse = Problem;
+
+/**
+ * `auth.code-invalid` (wrong code, or no pending change of address) or `auth.code-expired`
+ * (expired, used, replaced by a newer request or too many wrong attempts).
+ */
+export type EmailChangeCodeRefusedResponse = Problem;
+
+/**
+ * `account.organization-owner`: the copy of the memberships holds a membership of the actor
+ * with the role `owner`, not removed. `details.organizationIds` lists those organizations.
+ */
+export type OrganizationOwnerResponse = Problem;
+
+/**
+ * - `user.not-found`: the user id is not the actor, or no account has it;
+ * - `session.not-found`: the session of the request is not an open session of the actor. The
+ *   gateway answers it as `401 auth.session-expired`.
+ */
+export type UserOrSessionNotFoundResponse = Problem;
+
+export type ListUserSessionsInternalParams = {
+  /** The session of the public request, as the introspection returned it. */
+  currentSessionId: string;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
 
 export type ListApiTokensInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */

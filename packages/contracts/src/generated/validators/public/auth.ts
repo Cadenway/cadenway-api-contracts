@@ -161,12 +161,14 @@ export const VerifySignUpResponse = zod.object({
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
   "timeZone": zod.string().min(1).max(verifySignUpResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`.')
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address or of the scheduled deletion makes it the next one.\n')
 }),
   "session": zod.object({
   "id": zod.uuid().describe('Id of the session; not its token.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('When the session ends at the latest: 30 days after the sign-in with `rememberMe`. It\nalso ends after 12 hours of inactivity by default.\n')
-})
+}),
+  "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account\n(`POST /v1/me/deletion`): the web application tells the person (new copy: "La\nsuppression de votre compte est annulée."). Absent or `false` otherwise.\n')
 })
 
 
@@ -181,8 +183,16 @@ export const VerifySignUpResponse = zod.object({
  *   `429 auth.account-locked` with `Retry-After` and `details.lockedUntil` (15 minutes).
  * - The right password of an account whose address is not verified answers
  *   `403 auth.email-not-verified`; `POST /v1/auth/sign-up/code` sends a new code.
+ * - A sign-in to an account whose deletion is scheduled (`POST /v1/me/deletion`) cancels the
+ *   deletion: the answer says so with `deletionCancelled: true`, and
+ *   `user.deletion-cancelled.v1` is emitted. Signing in is the only way to cancel it.
+ * - A sign-in from a device the account did not use in the last 90 days (see
+ *   `session.opened-on-new-device.v1`) sends the email "Nouvelle connexion".
  *
- * No session needed. Scopes: none.
+ * Later versions add two-step verification: a sign-in that needs it answers `202` with a
+ * challenge and no cookie, and only the `200` that completes it opens the session, cancels a
+ * scheduled deletion and counts the device. Only a `200` means signed in: a client checks the
+ * status, not merely a success. No session needed. Scopes: none.
  * @summary Sign in with a password
  */
 export const signInWithPasswordBodyEmailMax = 254;
@@ -213,12 +223,14 @@ export const SignInWithPasswordResponse = zod.object({
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
   "timeZone": zod.string().min(1).max(signInWithPasswordResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`.')
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address or of the scheduled deletion makes it the next one.\n')
 }),
   "session": zod.object({
   "id": zod.uuid().describe('Id of the session; not its token.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('When the session ends at the latest: 30 days after the sign-in with `rememberMe`. It\nalso ends after 12 hours of inactivity by default.\n')
-})
+}),
+  "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account\n(`POST /v1/me/deletion`): the web application tells the person (new copy: "La\nsuppression de votre compte est annulée."). Absent or `false` otherwise.\n')
 })
 
 
@@ -254,7 +266,12 @@ export const RequestSignInCodeResponse = zod.object({
  * Checks a sign-in code. On success a session is opened and the gateway sets the session
  * cookie. Same rules for the code as `POST /v1/auth/sign-up/verification`: single-use, 10
  * minutes, a few wrong attempts. An address without an account answers like a wrong code.
- * No session needed. Scopes: none.
+ *
+ * As with `POST /v1/auth/sign-in`, the sign-in cancels a scheduled deletion of the account
+ * (`deletionCancelled: true`, `user.deletion-cancelled.v1`) and, from a device the account did
+ * not use in the last 90 days, sends "Nouvelle connexion"; later versions answer `202` with a
+ * two-step challenge when the account needs one, and only a `200` means signed in. No session
+ * needed. Scopes: none.
  * @summary Sign in with a code
  */
 export const signInWithCodeBodyEmailMax = 254;
@@ -284,12 +301,14 @@ export const SignInWithCodeResponse = zod.object({
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
   "timeZone": zod.string().min(1).max(signInWithCodeResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`.')
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address or of the scheduled deletion makes it the next one.\n')
 }),
   "session": zod.object({
   "id": zod.uuid().describe('Id of the session; not its token.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('When the session ends at the latest: 30 days after the sign-in with `rememberMe`. It\nalso ends after 12 hours of inactivity by default.\n')
-})
+}),
+  "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account\n(`POST /v1/me/deletion`): the web application tells the person (new copy: "La\nsuppression de votre compte est annulée."). Absent or `false` otherwise.\n')
 })
 
 
@@ -307,6 +326,162 @@ export const SignOutBody = zod.object({
 }).describe('Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.')
 
 export const SignOutResponse = zod.void()
+
+
+/**
+ * Sends a link to choose a new password ("Mot de passe oublié") to the address when a
+ * verified account uses it. Always answers `202` the same way, whether or not an account uses
+ * the address ("Si un compte existe pour <email>, un lien de réinitialisation vient de
+ * partir.").
+ *
+ * - The link opens `<web application>/reset#token=<token>`: the token sits in the fragment,
+ *   which no server receives or logs. It works once, for 30 minutes (`expiresAt`), from any
+ *   browser: it is not bound to the browser that asked for it, so that the email can be
+ *   opened on another device.
+ * - A new request makes the previous link stop working ("Un nouveau lien vient de partir ;
+ *   le précédent ne fonctionne plus."). Asking again is how the link is resent.
+ * - Throttled per address, account or not, apart from the codes: a request is refused less
+ *   than 45 seconds after the last accepted one, and once 5 were accepted in the current
+ *   hour (`resendAvailableAt`, else `429 auth.reset-throttled`).
+ * - The current password keeps working until a new one is chosen; asking for a link signs
+ *   nobody out. An account whose address is not verified gets no link: its sign-up code
+ *   verifies it (`POST /v1/auth/sign-up/code`).
+ *
+ * Emits the restricted `password-reset-link.issued.v1`, from which notification-service sends
+ * the email "Réinitialisez votre mot de passe Cadenway". No session needed. Scopes: none.
+ * @summary Request a password reset link
+ */
+export const requestPasswordResetBodyEmailMax = 254;
+
+
+
+export const RequestPasswordResetBody = zod.object({
+  "email": zod.email().max(requestPasswordResetBodyEmailMax).describe('Email address, compared without regard to case.')
+})
+
+export const requestPasswordResetResponseEmailMax = 254;
+
+
+
+export const RequestPasswordResetResponse = zod.object({
+  "email": zod.email().max(requestPasswordResetResponseEmailMax).describe('Email address, compared without regard to case.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('When a link sent now stops working, 30 minutes later ("Il reste valable 30 minutes.").'),
+  "resendAvailableAt": zod.iso.datetime({"offset":true}).describe('When another link can be asked for ("Renvoyer l\'e-mail dans 0:45"): 45 seconds later,\nor the end of the hour once 5 links were asked for the address in it (see\n`ResetThrottled`).\n')
+}).describe('Answered the same way whether or not a link was actually sent.')
+
+
+/**
+ * Tells the reset screen ("Choisir un nouveau mot de passe") which account a link is for
+ * ("Pour le compte <email>.") and how many sessions the reset would close ("3 appareils
+ * connectés seront déconnectés"). The web application reads the token from the fragment of
+ * the link and sends it in the body, never in a URL of the API. Reading a link does not use
+ * it.
+ *
+ * `sessionCount` counts every open session of the account: the reset runs without a session,
+ * so none of them is "this device" (the mockup's "sauf celui-ci" does not apply). A link that
+ * expired, was used, was replaced by a newer one or is unknown answers
+ * `422 auth.reset-link-expired` ("Ce lien a expiré"): the web application offers to ask for a
+ * new one. No session needed. Scopes: none.
+ * @summary Read the account of a password reset link
+ */
+export const inspectPasswordResetLinkBodyTokenMax = 256;
+
+
+
+export const InspectPasswordResetLinkBody = zod.object({
+  "token": zod.string().min(1).max(inspectPasswordResetLinkBodyTokenMax).describe('The token of the reset link, read from the fragment of `<web application>/reset#token=<token>`.\nA secret: sent in the body only, never logged. A malformed token answers like an unknown one\n(`422 auth.reset-link-expired`).\n')
+})
+
+export const inspectPasswordResetLinkResponseEmailMax = 254;
+
+export const inspectPasswordResetLinkResponseSessionCountMin = 0;
+
+
+
+export const InspectPasswordResetLinkResponse = zod.object({
+  "email": zod.email().max(inspectPasswordResetLinkResponseEmailMax).describe('Address of the account of the link ("Pour le compte <email>.").'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('When the link stops working.'),
+  "sessionCount": zod.int().min(inspectPasswordResetLinkResponseSessionCountMin).describe('Open sessions of the account, every one of which the reset closes unless the person\nunticks "Fermer mes autres sessions" ("3 appareils connectés seront déconnectés").\n')
+})
+
+
+/**
+ * Sets the new password of the account of the link and uses the link up. Never signs in:
+ * the web application then offers "Se connecter".
+ *
+ * - `closeOtherSessions` ("Fermer mes autres sessions", ticked by default) closes every open
+ *   session of the account; unticked, they stay open. `closedSessionCount` says how many
+ *   closed ("Vos 3 autres sessions ont été fermées." or "Vos autres sessions restent
+ *   ouvertes.").
+ * - The new password follows the rules of the sign-up: 12 characters at least, no
+ *   composition rule (the four rules of the mockup's reset screen do not apply), not in the
+ *   list of compromised passwords (`422 auth.password-too-short`,
+ *   `422 auth.password-compromised`). A refused password leaves the link usable.
+ * - A link that expired, was used, was replaced or is unknown answers
+ *   `422 auth.reset-link-expired`.
+ * - The reset ends the lockout of the password sign-in of the address, drops a pending change
+ *   of address, ends the recent authentication of every session it leaves open, keeps the
+ *   personal API tokens, and does not cancel a scheduled deletion of the account: only a
+ *   sign-in does.
+ *
+ * Emits `user.password-changed.v1` (`method: reset`), from which notification-service sends
+ * "Votre mot de passe a été modifié" to the address of the account ("Un e-mail de
+ * confirmation vient de partir vers <email>."), and `session.revoked.v1` for each closed
+ * session. No session needed. Scopes: none.
+ * @summary Choose a new password with a reset link
+ */
+export const confirmPasswordResetBodyTokenMax = 256;
+
+export const confirmPasswordResetBodyNewPasswordMax = 256;
+
+export const confirmPasswordResetBodyCloseOtherSessionsDefault = true;
+
+export const ConfirmPasswordResetBody = zod.object({
+  "token": zod.string().min(1).max(confirmPasswordResetBodyTokenMax).describe('The token of the reset link, read from the fragment of `<web application>/reset#token=<token>`.\nA secret: sent in the body only, never logged. A malformed token answers like an unknown one\n(`422 auth.reset-link-expired`).\n'),
+  "newPassword": zod.string().max(confirmPasswordResetBodyNewPasswordMax).describe('At least 12 characters, no composition rule, not in the list of compromised passwords. The\nlength is checked by identity-service (`422 auth.password-too-short`), not by the schema.\nNever logged.\n'),
+  "closeOtherSessions": zod.boolean().default(confirmPasswordResetBodyCloseOtherSessionsDefault).describe('"Fermer mes autres sessions", ticked by default: closes every open session of the\naccount. `false` leaves them open.\n')
+})
+
+export const confirmPasswordResetResponseEmailMax = 254;
+
+export const confirmPasswordResetResponseClosedSessionCountMin = 0;
+
+
+
+export const ConfirmPasswordResetResponse = zod.object({
+  "email": zod.email().max(confirmPasswordResetResponseEmailMax).describe('Address of the account, where the confirmation email goes.'),
+  "closedSessionCount": zod.int().min(confirmPasswordResetResponseClosedSessionCountMin).describe('Sessions the reset closed; 0 when `closeOtherSessions` was `false` or none was open.')
+})
+
+
+/**
+ * Opens the window of recent authentication of this session for 10 minutes (see "Recent
+ * authentication" above). The web application calls it when a route answered
+ * `403 auth.reauthentication-required`, then repeats that request.
+ *
+ * - A wrong password answers `422 auth.password-incorrect` with
+ *   `details.remainingAttempts`. It counts with the failed sign-ins of the address of the
+ *   account: the failure that uses the last attempt, and every attempt during the lockout,
+ *   answer `429 auth.account-locked` (15 minutes). The lockout also refuses the password
+ *   sign-in of the address, but leaves this session open.
+ * - Later versions accept a two-step code instead of the password: `password` then becomes
+ *   optional beside it.
+ *
+ * Session only: a personal API token gets `403 auth.api-token-not-accepted`.
+ * @summary Confirm the password of the signed-in person
+ */
+export const reauthenticateBodyPasswordMax = 256;
+
+
+
+export const ReauthenticateBody = zod.object({
+  "password": zod.string().min(1).max(reauthenticateBodyPasswordMax).describe('The current password of the account. Never logged.')
+})
+
+export const ReauthenticateResponse = zod.object({
+  "authenticatedAt": zod.iso.datetime({"offset":true}).describe('When the person last proved who they are in this session.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('When the window ends, 10 minutes later; the guarded routes then answer\n`403 auth.reauthentication-required` again.\n')
+})
 
 
 /**
@@ -331,7 +506,8 @@ export const GetCurrentUserResponse = zod.object({
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
   "timeZone": zod.string().min(1).max(getCurrentUserResponseTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`.')
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address or of the scheduled deletion makes it the next one.\n')
 })
 
 
@@ -345,7 +521,8 @@ export const GetCurrentUserResponse = zod.object({
  *   `400 request.invalid` with an issue on `timeZone`.
  * - `If-Match` is optional; a version that is no longer the current one answers
  *   `412 request.version-mismatch`.
- * - The address, the password and the photo do not change here: their own routes come in a
+ * - The address, the password and the photo do not change here: the address changes with
+ *   `POST /v1/me/email-change`, the password with `PUT /v1/me/password`, and the photo in a
  *   later version.
  *
  * Emits `user.profile-updated.v1` when something changed; a patch that changes nothing
@@ -390,5 +567,276 @@ export const UpdateCurrentUserResponse = zod.object({
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
   "timeZone": zod.string().min(1).max(updateCurrentUserResponseTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`.')
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address or of the scheduled deletion makes it the next one.\n')
+})
+
+
+/**
+ * Replaces the password of the account ("Modifier le mot de passe"). The other sessions stay
+ * open ("Vos autres sessions resteront ouvertes."), and so do the personal API tokens.
+ *
+ * The checks run in this order:
+ *
+ * 1. The new password, against the rules of the sign-up: 12 characters at least, no
+ *    composition rule, not in the list of compromised passwords
+ *    (`422 auth.password-too-short`, `422 auth.password-compromised`). No attempt is counted.
+ * 2. The current password. A wrong one answers `422 auth.password-incorrect` with
+ *    `details.remainingAttempts` and counts with the failed sign-ins of the address, as
+ *    `POST /v1/auth/reauthentication` says (`429 auth.account-locked`). A right one counts
+ *    as a recent authentication of this session.
+ *
+ * Recent authentication is not required: the current password stands for it. The change
+ * drops a pending change of address and ends the recent authentication of every other
+ * session, which stay open. Answers the account, with its new `passwordChangedAt` ("Modifié
+ * aujourd’hui") and the next `version`.
+ * Emits `user.password-changed.v1` (`method: change`, no session closed), from which
+ * notification-service sends "Votre mot de passe a été modifié" to the address of the
+ * account ("Un e-mail de confirmation vient de partir vers <email>."). Session only: a
+ * personal API token gets `403 auth.api-token-not-accepted`.
+ * @summary Change the password
+ */
+export const changePasswordBodyCurrentPasswordMax = 256;
+
+export const changePasswordBodyNewPasswordMax = 256;
+
+
+
+export const ChangePasswordBody = zod.object({
+  "currentPassword": zod.string().min(1).max(changePasswordBodyCurrentPasswordMax).describe('"Mot de passe actuel". Never logged.'),
+  "newPassword": zod.string().max(changePasswordBodyNewPasswordMax).describe('At least 12 characters, no composition rule, not in the list of compromised passwords. The\nlength is checked by identity-service (`422 auth.password-too-short`), not by the schema.\nNever logged.\n')
+})
+
+export const changePasswordResponseEmailMax = 254;
+
+export const changePasswordResponseTimeZoneMax = 64;
+
+
+
+
+export const ChangePasswordResponse = zod.object({
+  "id": zod.uuid(),
+  "name": zod.string().describe('Full name ("Nom complet"); the web application derives the initials from it.'),
+  "email": zod.email().max(changePasswordResponseEmailMax).describe('Email address, compared without regard to case.'),
+  "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
+  "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "timeZone": zod.string().min(1).max(changePasswordResponseTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address or of the scheduled deletion makes it the next one.\n')
+})
+
+
+/**
+ * Sends a 6-digit code to the new address ("Un code à 6 chiffres y sera envoyé."), valid 15
+ * minutes. The current address stays the address of the account, for the sign-in and the
+ * emails, until the code is confirmed ("L'adresse actuelle reste active jusqu'à la
+ * confirmation."). A new request replaces the pending change and makes its code stop
+ * working; asking again for the same address is how the code is resent. The pending change
+ * belongs to this session: the end or the revocation of the session, and a change or a reset
+ * of the password, drop it.
+ *
+ * The checks run in this order:
+ *
+ * 1. Recent authentication of this session (`403 auth.reauthentication-required`).
+ * 2. `email` is the current address of the account: `422 auth.email-unchanged`.
+ * 3. A verified account uses `email`: `409 auth.email-taken`. An unverified sign-up of the
+ *    address does not make it taken.
+ * 4. The code requests of the new address are throttled with its other codes, account or
+ *    not (see `CodeThrottled`): 30 seconds between two and at most 5 in an hour
+ *    (`429 auth.code-throttled`).
+ *
+ * Emits the restricted `one-time-code.issued.v1` with the purpose `email-change`, from
+ * which notification-service sends the code to the new address. Session only: a personal
+ * API token gets `403 auth.api-token-not-accepted`.
+ * @summary Ask to change the address
+ */
+export const requestEmailChangeBodyEmailMax = 254;
+
+
+
+export const RequestEmailChangeBody = zod.object({
+  "email": zod.email().max(requestEmailChangeBodyEmailMax).describe('"Nouvelle adresse e-mail", where the code goes.')
+})
+
+export const requestEmailChangeResponseEmailMax = 254;
+
+
+
+export const RequestEmailChangeResponse = zod.object({
+  "email": zod.email().max(requestEmailChangeResponseEmailMax).describe('The new address the code was sent to ("Code envoyé à <email>").'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('When the code stops working, 15 minutes later ("Le code est valable 15 minutes.").'),
+  "resendAvailableAt": zod.iso.datetime({"offset":true}).describe('When another code can be asked for the new address: 30 seconds later, or the end of the\nhour once 5 codes were asked for it (see `CodeThrottled`).\n')
+})
+
+
+/**
+ * Checks the code sent to the new address and makes it the address of the account, verified
+ * ("<email> est vérifiée et reçoit désormais vos e-mails."). Same rules for the code as the
+ * sign-in code, except its 15 minutes: single use, and a few wrong attempts stop it.
+ *
+ * - The change belongs to the session that asked for it. From another session, without a
+ *   pending change, or with a wrong code: `422 auth.code-invalid`. A code that expired, was
+ *   used, was replaced or took too many wrong attempts: `422 auth.code-expired`.
+ * - An address a verified account took since the request: `409 auth.email-taken`, and the
+ *   change is dropped.
+ * - Recent authentication is not required again: the request required it, and the code
+ *   proves the new address.
+ *
+ * From then on the account signs in with the new address only. The codes and the reset link
+ * issued to the previous address stop working, and an unverified sign-up of the new address
+ * ends; the sessions and the personal API tokens stay. Emits `user.email-changed.v1`, from
+ * which notification-service sends a notice to the previous address and organization-service
+ * updates its directory. Answers the account. Session only: a personal API token gets
+ * `403 auth.api-token-not-accepted`.
+ * @summary Confirm the new address with its code
+ */
+export const confirmEmailChangeBodyCodeRegExp = new RegExp('^[0-9]{6}$');
+
+
+export const ConfirmEmailChangeBody = zod.object({
+  "code": zod.string().regex(confirmEmailChangeBodyCodeRegExp).describe('The 6 digits sent to the new address, without the space they are shown with. Never logged.')
+})
+
+export const confirmEmailChangeResponseEmailMax = 254;
+
+export const confirmEmailChangeResponseTimeZoneMax = 64;
+
+
+
+
+export const ConfirmEmailChangeResponse = zod.object({
+  "id": zod.uuid(),
+  "name": zod.string().describe('Full name ("Nom complet"); the web application derives the initials from it.'),
+  "email": zod.email().max(confirmEmailChangeResponseEmailMax).describe('Email address, compared without regard to case.'),
+  "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
+  "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "timeZone": zod.string().min(1).max(confirmEmailChangeResponseTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address or of the scheduled deletion makes it the next one.\n')
+})
+
+
+/**
+ * Schedules the deletion of the account in 30 days ("Supprimer mon compte"). At once, every
+ * session of the account, this one included, and every personal API token are revoked: the
+ * gateway clears the session cookie and the web application shows the sign-out screen.
+ *
+ * - Until `deleteAt`, signing in again cancels the deletion ("une connexion suffit pour
+ *   annuler"): `POST /v1/auth/sign-in` or `POST /v1/auth/sign-in/code/verification`, whose
+ *   answer then carries `deletionCancelled: true`. There is no other way to cancel it, since
+ *   no session or token of the account outlives the scheduling. A password reset does not
+ *   cancel it, and the cancellation does not bring back the revoked sessions and tokens.
+ * - At `deleteAt`, identity-service deletes the account (`user.deleted.v1`):
+ *   organization-service removes its memberships, and the tasks and documents stay in the
+ *   organizations, attributed to « Ancien membre ». The address is free again.
+ *
+ * The checks run in this order:
+ *
+ * 1. The person owns an organization: `409 account.organization-owner`, with
+ *    `details.organizationIds`. identity-service answers it from its copy of the memberships
+ *    (`member.joined.v1` gives the owner of an organization at its creation), without calling
+ *    organization-service. An organization created in the seconds before may not be in the
+ *    copy yet: identity-service checks the copy again at `deleteAt` and does not delete an
+ *    account that owns an organization then.
+ * 2. Recent authentication of this session (`403 auth.reauthentication-required`).
+ *
+ * Emits `user.deletion-scheduled.v1`, from which notification-service sends "La suppression
+ * de votre compte est programmée", and `session.revoked.v1` for each session. The body is an
+ * empty JSON object. Session only: a personal API token gets
+ * `403 auth.api-token-not-accepted`.
+ * @summary Schedule the deletion of the account
+ */
+export const ScheduleAccountDeletionBody = zod.object({
+
+}).describe('Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.')
+
+export const ScheduleAccountDeletionResponse = zod.object({
+  "deleteAt": zod.iso.datetime({"offset":true}).describe('When the account will be deleted, 30 days after the scheduling, unless a sign-in cancels it first.')
+})
+
+
+/**
+ * Lists the open sessions of the account ("Sessions actives"): neither signed out, revoked,
+ * expired nor closed for inactivity. The session of the request is among them, marked
+ * `current` ("Cet appareil"). A session closes after 12 hours of inactivity by default
+ * ("Une session inactive pendant 12 heures est fermée automatiquement.").
+ *
+ * Sorted by sign-in, the most recent first, then by id: a session keeps its place whatever
+ * its activity, so the pages hold still. The web application shows the current session
+ * first, then the others by `lastActiveAt`. No place is given, only the address the session
+ * was opened from. Session only: a personal API token gets
+ * `403 auth.api-token-not-accepted`.
+ * @summary List the open sessions
+ */
+export const listSessionsQueryLimitDefault = 50;
+export const listSessionsQueryLimitMax = 100;
+
+
+
+export const ListSessionsQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listSessionsQueryLimitMax).default(listSessionsQueryLimitDefault).describe('Page size.')
+})
+
+export const ListSessionsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "current": zod.boolean().describe('`true` for the session of the request ("Cet appareil").'),
+  "device": zod.object({
+  "type": zod.string().describe('`desktop`, `mobile` or `tablet`, or `unknown` when the `User-Agent` does not tell.\nLater versions may add types; a client shows an unknown one as `unknown`.\n'),
+  "browser": zod.string().nullable().describe('Name of the browser or client.'),
+  "browserVersion": zod.string().nullable().describe('Major version of the browser.'),
+  "os": zod.string().nullable().describe('Name of the operating system.'),
+  "osVersion": zod.string().nullable().describe('Version of the operating system, `null` when the `User-Agent` does not tell it\nreliably: browsers report Windows 10 and 11 alike and freeze the version of macOS.\n')
+}).describe('The device a session runs on, as identity-service reads it from the `User-Agent` of its\nsign-in ("Firefox 132 · Windows"). A member it cannot read is `null`.\n'),
+  "ipAddress": zod.string().describe('IPv4 or IPv6 address the session was opened from, as the gateway saw it. No place is\nderived from it.\n'),
+  "signedInAt": zod.iso.datetime({"offset":true}).describe('When the sign-in opened the session.'),
+  "lastActiveAt": zod.iso.datetime({"offset":true}).describe('Last request of the session, recorded at most once a minute ("Actif maintenant", "Il y\na 2 h").\n'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('When the session ends at the latest, whatever its activity.')
+})),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})
+
+
+/**
+ * Closes a session of the account ("Révoquer"; "Cet appareil devra se reconnecter pour
+ * accéder à Cadenway."): its next request answers `401 auth.session-expired`.
+ *
+ * - Revoking a session that already ended answers `204`.
+ * - A session of another account, or an unknown id, answers `404 session.not-found`.
+ * - The current session can be revoked here too, but its cookie stays until the next request
+ *   finds it ended: the web application signs out with `POST /v1/auth/sign-out` instead.
+ *
+ * Recent authentication is not required. Emits `session.revoked.v1`. Session only: a
+ * personal API token gets `403 auth.api-token-not-accepted`.
+ * @summary Revoke a session
+ */
+export const RevokeSessionParams = zod.object({
+  "sessionId": zod.uuid().describe('Id of the session, as `GET /v1/sessions` gave it.')
+})
+
+export const RevokeSessionResponse = zod.void()
+
+
+/**
+ * Closes every open session of the account except the one of the request ("Déconnecter les
+ * autres"; "Tous vos appareils sauf celui-ci seront déconnectés."). `revokedCount` gives the
+ * confirmation ("2 sessions fermées", "Seul cet appareil reste connecté."). The personal API
+ * tokens stay. Recent authentication is not required. Emits `session.revoked.v1` for each
+ * closed session. The body is an empty JSON object. Session only: a personal API token gets
+ * `403 auth.api-token-not-accepted`.
+ * @summary Close every other session
+ */
+export const RevokeOtherSessionsBody = zod.object({
+
+}).describe('Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.')
+
+export const revokeOtherSessionsResponseRevokedCountMin = 0;
+
+
+
+export const RevokeOtherSessionsResponse = zod.object({
+  "revokedCount": zod.int().min(revokeOtherSessionsResponseRevokedCountMin).describe('Sessions closed by the request ("2 sessions fermées").')
 })

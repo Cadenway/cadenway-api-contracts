@@ -1,7 +1,8 @@
 # Internal routes of identity-service, called by cadenway-api-gateway: the authentication flows of
 # openapi/public/auth.yaml, the introspection of the session cookie and of a personal API token, the
-# revocation of a session and the choice of its organization, the reading and the profile update of
-# a user, and the personal API tokens of openapi/public/api-tokens.yaml.
+# sessions of a user, their revocation and the choice of their organization, the password reset and
+# the recent re-authentication, the reading, the profile, the password, the address and the
+# deletion of a user, and the personal API tokens of openapi/public/api-tokens.yaml.
 openapi: 3.1.0
 info:
   title: identity-service internal routes
@@ -22,8 +23,19 @@ info:
     | `POST /v1/auth/sign-in/code` | `POST /internal/v1/auth/sign-in/code` |
     | `POST /v1/auth/sign-in/code/verification` | `POST /internal/v1/auth/sign-in/code/verification` |
     | `POST /v1/auth/sign-out` | `DELETE /internal/v1/sessions/{sessionId}` with the session the introspection returned |
+    | `POST /v1/auth/password-reset` | `POST /internal/v1/auth/password-reset` |
+    | `POST /v1/auth/password-reset/inspection` | `POST /internal/v1/auth/password-reset/inspection` |
+    | `POST /v1/auth/password-reset/confirmation` | `POST /internal/v1/auth/password-reset/confirmation` |
+    | `POST /v1/auth/reauthentication` | `POST /internal/v1/sessions/{sessionId}/reauthentication` with the session the introspection returned |
     | `GET /v1/me` | `GET /internal/v1/users/{userId}` with the user the introspection returned |
     | `PATCH /v1/me` | `PATCH /internal/v1/users/{userId}` with the user the introspection returned |
+    | `PUT /v1/me/password` | `PUT /internal/v1/users/{userId}/password` with the user and the session the introspection returned |
+    | `POST /v1/me/email-change` | `POST /internal/v1/users/{userId}/email-change` with the user and the session the introspection returned |
+    | `POST /v1/me/email-change/confirmation` | `POST /internal/v1/users/{userId}/email-change/confirmation` with the user and the session the introspection returned |
+    | `POST /v1/me/deletion` | `POST /internal/v1/users/{userId}/deletion` with the user and the session the introspection returned |
+    | `GET /v1/sessions` | `GET /internal/v1/users/{userId}/sessions` with the user and, as `currentSessionId`, the session the introspection returned |
+    | `DELETE /v1/sessions/{sessionId}` | `DELETE /internal/v1/sessions/{sessionId}` with the id of the path |
+    | `POST /v1/sessions/revoke-others` | `POST /internal/v1/sessions/{sessionId}/revoke-others` with the session the introspection returned |
     | `PUT /v1/session/organization` | `PUT /internal/v1/sessions/{sessionId}/organization` with the session the introspection returned |
     | `POST /v1/api-tokens` | `POST /internal/v1/api-tokens` |
     | `GET /v1/api-tokens` | `GET /internal/v1/api-tokens` |
@@ -34,7 +46,37 @@ info:
     **Tokens.** A route that signs in returns the opaque session token once, in `token`: the gateway
     writes it into the cookie `__Host-cw_session` and never logs it; identity-service keeps only its
     SHA-256 hash. The gateway reads the browser's address and User-Agent and sends them in `client`:
-    identity-service never reads them from the headers of the internal call.
+    identity-service never reads them from the headers of the internal call. The routes whose
+    security email shows the device (the sign-ins, the password reset, the password change and the
+    confirmation of a new address) take `client` for it. A reset link token is a secret too: it
+    travels in bodies only and is never logged.
+
+    **Session of the request.** The routes a signed-in person calls about their own account name
+    the session the introspection returned, in the path (`sessionId`), the body (`sessionId`) or the
+    query (`currentSessionId`). identity-service checks that it is an open session of the actor;
+    otherwise it answers `404 session.not-found`, which the gateway answers as
+    `401 auth.session-expired`, since the session ended after its introspection. Only the
+    revocation of a session by the id of the public path relays `404 session.not-found` as is.
+
+    **Recent authentication.** identity-service records, per session, when its person last proved
+    who they are: the sign-in that opened it, `POST /internal/v1/sessions/{sessionId}/reauthentication`
+    or the right current password of `PUT /internal/v1/users/{userId}/password`. The request of a
+    change of address, the scheduling of the deletion and the creation of a personal API token
+    require it within the last 10 minutes, else they answer `403 auth.reauthentication-required`
+    with `details.methods`. identity-service
+    answers this code itself; the gateway forwards it with its French title, unlike the refusals of
+    the internal token.
+
+    **Lockout.** The failed passwords of the re-authentication and of the password change count
+    with the failed sign-ins of the address of the account: 5 in a row lock its password sign-in
+    for 15 minutes (`429 auth.account-locked`), and these two routes answer the same code during the
+    lockout, without closing the session. A right password, and a completed password reset, end
+    the count.
+
+    **Ownership.** identity-service refuses to schedule the deletion of an account that owns an
+    organization (`409 account.organization-owner`). It knows it from its copy of the memberships:
+    the role `owner` of a membership that is not removed, which `member.joined.v1` gives the creator
+    of an organization. It never calls organization-service for it.
 
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
     (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `identity-service`). Every route accepts
@@ -78,11 +120,11 @@ security:
   - internalToken: []
 tags:
   - name: auth
-    description: Sign-up, email verification and sign-in, before a session exists.
+    description: Sign-up, email verification, sign-in and password reset, before a session exists.
   - name: sessions
-    description: Introspection and revocation of sessions.
+    description: Introspection, list, recent re-authentication and revocation of sessions.
   - name: users
-    description: Accounts and their profile.
+    description: Accounts, their profile, password, address and deletion.
   - name: api-tokens
     description: Personal API tokens and their introspection.
 paths:
@@ -263,8 +305,17 @@ paths:
       summary: Sign in with a password
       description: |
         Checks the address and the password, counting failures per address whether or not an
-        account uses it, and opens a session for the `client`. Internal token: actor `anonymous`,
-        no organization.
+        account uses it, and opens a session for the `client`.
+
+        - An account whose deletion is scheduled is signed in and its deletion cancelled:
+          `deletionCancelled: true` and `user.deletion-cancelled.v1`.
+        - A session opened on a device the account did not use in the last 90 days emits
+          `session.opened-on-new-device.v1`.
+        - Later versions answer `202` with a two-step challenge, no token and no session, to an
+          account that needs one; only the `200` opens a session, cancels a deletion and counts the
+          device.
+
+        Internal token: actor `anonymous`, no organization.
       tags: [auth]
       requestBody:
         required: true
@@ -336,8 +387,11 @@ paths:
       summary: Sign in with a code
       description: |
         Checks the `sign-in` code and opens a session for the `client`. An address without a
-        verified account answers like a wrong code. Internal token: actor `anonymous`, no
-        organization.
+        verified account answers like a wrong code. As with `POST /internal/v1/auth/sign-in`, the
+        session cancels a scheduled deletion (`deletionCancelled: true`,
+        `user.deletion-cancelled.v1`), emits `session.opened-on-new-device.v1` on a device the
+        account did not use in the last 90 days, and later versions answer `202` with a two-step
+        challenge when the account needs one. Internal token: actor `anonymous`, no organization.
       tags: [auth]
       requestBody:
         required: true
@@ -437,7 +491,9 @@ paths:
         Ends a session of the actor: its token is no longer active from the next introspection and
         `session.revoked.v1` is emitted. Revoking a session that already ended answers `204` and
         emits nothing. A session of another user, or an unknown id, answers
-        `404 session.not-found`. Internal token: actor `user`, no organization.
+        `404 session.not-found`. The gateway calls it for the sign-out, with the session of the
+        cookie, and for `DELETE /v1/sessions/{sessionId}`, with the id of the path, which may be the
+        session of the request too. Internal token: actor `user`, no organization.
       tags: [sessions]
       parameters:
         - name: sessionId
@@ -611,6 +667,507 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/SessionOrOrganizationNotFound'
+  /internal/v1/auth/password-reset:
+    post:
+      operationId: requestPasswordResetInternal
+      summary: Issue a password reset link
+      description: |
+        Issues a reset link (`password-reset-link.issued.v1`, restricted) when a verified account
+        uses the address, and makes the previous link of the account stop working; answers `202`
+        the same way otherwise, an unverified account included, without a difference of time an
+        observer could measure. The link works once, for 30 minutes, from any browser. Throttled
+        per address, account or not, apart from the codes: 45 seconds between two requests and at
+        most 5 in an hour (`ResetThrottled`). The `client` is the browser that asked, shown in the
+        email. Internal token: actor `anonymous`, no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+            example:
+              email: camille.martin@ateliernord.fr
+              client:
+                ipAddress: 192.0.2.14
+                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0
+      responses:
+        '202':
+          description: Accepted, whether or not a link was issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetLinkSent'
+              example:
+                email: camille.martin@ateliernord.fr
+                expiresAt: '2026-11-09T13:40:00Z'
+                resendAvailableAt: '2026-11-09T13:10:45Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '429':
+          $ref: '#/components/responses/ResetThrottled'
+  /internal/v1/auth/password-reset/inspection:
+    post:
+      operationId: inspectPasswordResetLinkInternal
+      summary: Read the account of a password reset link
+      description: |
+        Returns the address of the account of a usable link, when it expires and how many open
+        sessions the account has, without using the link. A link that expired, was used, was
+        replaced or is unknown, and a malformed token, answer `422 auth.reset-link-expired`.
+        Internal token: actor `anonymous`, no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetToken'
+            example:
+              token: ExampleOnlyResetToken0000000000000000000000
+      responses:
+        '200':
+          description: The link works; the account it is for.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetLink'
+              example:
+                email: camille.martin@ateliernord.fr
+                expiresAt: '2026-11-09T13:40:00Z'
+                sessionCount: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '422':
+          $ref: '#/components/responses/ResetLinkExpired'
+  /internal/v1/auth/password-reset/confirmation:
+    post:
+      operationId: confirmPasswordResetInternal
+      summary: Set a new password with a reset link
+      description: |
+        Sets the new password of the account of the link and uses the link up, as
+        `POST /v1/auth/password-reset/confirmation` says. Never opens a session.
+
+        - The link first: `422 auth.reset-link-expired`. Then the new password:
+          `422 auth.password-too-short` or `422 auth.password-compromised`, which leave the link
+          usable.
+        - `closeOtherSessions` (`true` by default) revokes every open session of the account, each
+          with `session.revoked.v1`.
+        - Ends the lockout of the password sign-in of the address, drops a pending change of
+          address and ends the recent authentication of the sessions it leaves open; keeps the
+          personal API tokens; does not cancel a scheduled deletion.
+
+        Emits `user.password-changed.v1` with `method: reset`, the number of closed sessions and
+        the device of the `client`. Internal token: actor `anonymous`, no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmation'
+            example:
+              token: ExampleOnlyResetToken0000000000000000000000
+              newPassword: nord-atelier-sprint-15
+              closeOtherSessions: true
+              client:
+                ipAddress: 192.0.2.14
+                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0
+      responses:
+        '200':
+          description: The password is changed; no session is opened.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetCompleted'
+              example:
+                email: camille.martin@ateliernord.fr
+                closedSessionCount: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '422':
+          $ref: '#/components/responses/PasswordResetRefused'
+  /internal/v1/sessions/{sessionId}/reauthentication:
+    post:
+      operationId: reauthenticateInternal
+      summary: Confirm the password in a session
+      description: |
+        Checks the password of the actor and records a recent authentication of the session, which
+        opens the 10-minute window of the guarded routes. A wrong password answers
+        `422 auth.password-incorrect` and counts with the failed sign-ins of the address
+        (`429 auth.account-locked` once locked); the session stays open. A session of another user,
+        an unknown or an ended one, answers `404 session.not-found`. Internal token: actor `user`,
+        no organization.
+      tags: [sessions]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReauthenticationRequest'
+            example:
+              password: atelier-nord-sprint-14
+      responses:
+        '200':
+          description: The password is right; the window of recent authentication.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecentAuthentication'
+              example:
+                authenticatedAt: '2026-11-09T13:12:00Z'
+                expiresAt: '2026-11-09T13:22:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SessionNotFound'
+        '422':
+          $ref: '#/components/responses/PasswordRefused'
+        '429':
+          $ref: '#/components/responses/AccountLocked'
+  /internal/v1/sessions/{sessionId}/revoke-others:
+    post:
+      operationId: revokeOtherSessionsInternal
+      summary: Revoke every other session of the actor
+      description: |
+        Revokes every open session of the actor except `sessionId`, each with
+        `session.revoked.v1`, and says how many. The personal API tokens stay. A session of another
+        user, an unknown or an ended one, answers `404 session.not-found` and revokes nothing.
+        Internal token: actor `user`, no organization.
+      tags: [sessions]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: The other sessions are revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokedSessions'
+              example:
+                revokedCount: 2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SessionNotFound'
+  /internal/v1/users/{userId}/sessions:
+    get:
+      operationId: listUserSessionsInternal
+      summary: List the open sessions of a user
+      description: |
+        Lists the open sessions of the actor, sorted by sign-in, the most recent first, then by
+        id, and marks `currentSessionId` as `current`. Another user id, or an unknown one, answers
+        `404 user.not-found`; a `currentSessionId` that is not an open session of the actor answers
+        `404 session.not-found`. Internal token: actor `user`, no organization.
+      tags: [sessions]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - name: currentSessionId
+          in: query
+          required: true
+          description: The session of the public request, as the introspection returned it.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60]
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the open sessions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenSessionPage'
+              example:
+                items:
+                  - id: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
+                    current: true
+                    device:
+                      type: desktop
+                      browser: Firefox
+                      browserVersion: '132'
+                      os: Windows
+                      osVersion: null
+                    ipAddress: 192.0.2.14
+                    signedInAt: '2026-11-09T07:58:00Z'
+                    lastActiveAt: '2026-11-09T13:24:00Z'
+                    expiresAt: '2026-12-09T07:58:00Z'
+                  - id: 019a6914-2f7a-7b3c-9d4e-5f6a7b8c9d01
+                    current: false
+                    device:
+                      type: mobile
+                      browser: Safari
+                      browserVersion: '18'
+                      os: iOS
+                      osVersion: '18.1'
+                    ipAddress: 86.247.12.30
+                    signedInAt: '2026-11-09T07:42:00Z'
+                    lastActiveAt: '2026-11-09T11:20:00Z'
+                    expiresAt: '2026-12-09T07:42:00Z'
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserOrSessionNotFound'
+  /internal/v1/users/{userId}/password:
+    put:
+      operationId: changePasswordInternal
+      summary: Change the password of a user
+      description: |
+        Replaces the password of the actor, as `PUT /v1/me/password` says: the new password is
+        checked first (`422 auth.password-too-short`, `422 auth.password-compromised`), without
+        counting an attempt; then the current one (`422 auth.password-incorrect`, counted with the
+        failed sign-ins; `429 auth.account-locked`). A right current password records a recent
+        authentication of `sessionId`. Every session stays open, but a pending change of address is
+        dropped and the recent authentication of the other sessions ends. Answers the account with
+        the next `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
+        `method: change`, no closed session and the device of the `client`. Another user id, or an
+        unknown one, answers `404 user.not-found`; a `sessionId` that is not an open session of the
+        actor, `404 session.not-found`. Internal token: actor `user`, no organization.
+      tags: [users]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+            example:
+              sessionId: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
+              currentPassword: atelier-nord-sprint-14
+              newPassword: nord-atelier-sprint-15
+              client:
+                ipAddress: 192.0.2.14
+                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0
+      responses:
+        '200':
+          description: The account after the change.
+          headers:
+            ETag:
+              description: Version of the account, `"<version>"`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              example:
+                id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                name: Camille Martin
+                email: camille.martin@ateliernord.fr
+                language: fr
+                displayName: camille
+                jobTitle: Responsable produit
+                timeZone: Europe/Paris
+                passwordChangedAt: '2026-11-09T13:16:00Z'
+                version: 4
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserOrSessionNotFound'
+        '422':
+          $ref: '#/components/responses/PasswordChangeRefused'
+        '429':
+          $ref: '#/components/responses/AccountLocked'
+  /internal/v1/users/{userId}/email-change:
+    post:
+      operationId: requestEmailChangeInternal
+      summary: Ask to change the address of a user
+      description: |
+        Records a pending change of address of the actor and issues an `email-change` code to the
+        new address (`one-time-code.issued.v1`, 15 minutes); a new request replaces the pending
+        change and its code. The pending change belongs to `sessionId`: the end or the revocation of
+        that session, and a change or a reset of the password, drop it. The checks run in this
+        order: recent authentication of `sessionId` (`403 auth.reauthentication-required`), the
+        current address (`422 auth.email-unchanged`), a verified account of the new address
+        (`409 auth.email-taken`; an unverified sign-up does not count), then the throttle of the
+        code requests of the new address (`429 auth.code-throttled`). Another user id, or an
+        unknown one, answers
+        `404 user.not-found`; a `sessionId` that is not an open session of the actor,
+        `404 session.not-found`. Internal token: actor `user`, no organization.
+      tags: [users]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailChangeRequest'
+            example:
+              sessionId: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
+              email: camille@ateliernord.fr
+      responses:
+        '202':
+          description: The code is issued to the new address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailChangeCodeSent'
+              example:
+                email: camille@ateliernord.fr
+                expiresAt: '2026-11-09T13:35:00Z'
+                resendAvailableAt: '2026-11-09T13:20:30Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RecentAuthenticationRequired'
+        '404':
+          $ref: '#/components/responses/UserOrSessionNotFound'
+        '409':
+          $ref: '#/components/responses/EmailTaken'
+        '422':
+          $ref: '#/components/responses/EmailUnchanged'
+        '429':
+          $ref: '#/components/responses/CodeThrottled'
+  /internal/v1/users/{userId}/email-change/confirmation:
+    post:
+      operationId: confirmEmailChangeInternal
+      summary: Confirm the new address of a user
+      description: |
+        Checks the `email-change` code of the pending change of the actor and makes the new
+        address the address of the account, verified. Without a pending change of `sessionId` (the
+        session that asked for it), or with a wrong code: `422 auth.code-invalid`; a code no longer usable: `422 auth.code-expired`; a new
+        address a verified account took since the request: `409 auth.email-taken`, and the change
+        is dropped. Recent authentication is not required again. The codes and the reset link
+        issued to the previous address stop working, an unverified sign-up of the new address
+        ends, and the sessions and personal API tokens stay. Answers the account with the next
+        `version`, and emits `user.email-changed.v1` with the device of the `client`. Another user
+        id, or an unknown one, answers `404 user.not-found`; a `sessionId` that is not an open
+        session of the actor, `404 session.not-found`. Internal token: actor `user`, no
+        organization.
+      tags: [users]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailChangeConfirmation'
+            example:
+              sessionId: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
+              code: '731406'
+              client:
+                ipAddress: 192.0.2.14
+                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0
+      responses:
+        '200':
+          description: The account, with its new address.
+          headers:
+            ETag:
+              description: Version of the account, `"<version>"`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              example:
+                id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                name: Camille Martin
+                email: camille@ateliernord.fr
+                language: fr
+                displayName: camille
+                jobTitle: Responsable produit
+                timeZone: Europe/Paris
+                passwordChangedAt: '2026-11-09T13:16:00Z'
+                version: 5
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserOrSessionNotFound'
+        '409':
+          $ref: '#/components/responses/EmailTaken'
+        '422':
+          $ref: '#/components/responses/EmailChangeCodeRefused'
+  /internal/v1/users/{userId}/deletion:
+    post:
+      operationId: scheduleAccountDeletionInternal
+      summary: Schedule the deletion of a user
+      description: |
+        Schedules the deletion of the account of the actor in 30 days, as `POST /v1/me/deletion`
+        says. The checks run in this order: an organization the actor owns in the copy of the
+        memberships (`409 account.organization-owner`, with `details.organizationIds`), then the
+        recent authentication of `sessionId` (`403 auth.reauthentication-required`).
+
+        On success, in the same transaction: every session of the account, `sessionId` included,
+        is revoked (`session.revoked.v1` each), every personal API token is revoked, a pending
+        change of address is dropped, and `user.deletion-scheduled.v1` is emitted. The gateway
+        then clears the session cookie. A sign-in before `deleteAt` cancels the deletion. At
+        `deleteAt`, identity-service checks the copy of the memberships again: an account that owns
+        an organization then (one whose creation reached the copy after the scheduling) is not
+        deleted and stays scheduled until it no longer owns one or signs in; otherwise it is
+        deleted and `user.deleted.v1` is emitted. Another user id, or an unknown one, answers
+        `404 user.not-found`; a `sessionId` that is not an open session of the actor,
+        `404 session.not-found`. Internal token: actor `user`, no organization.
+      tags: [users]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeletionRequest'
+            example:
+              sessionId: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
+      responses:
+        '202':
+          description: The deletion is scheduled; the sessions and tokens of the account are revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionScheduled'
+              example:
+                deleteAt: '2026-12-09T15:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RecentAuthenticationRequired'
+        '404':
+          $ref: '#/components/responses/UserOrSessionNotFound'
+        '409':
+          $ref: '#/components/responses/OrganizationOwner'
   /internal/v1/api-tokens:
     post:
       operationId: createApiTokenInternal
@@ -620,7 +1177,13 @@ paths:
         organization of the session, as `POST /v1/api-tokens` says, and returns its secret once:
         `cw_pat_`, 30 base62 characters from `node:crypto`, then 6 characters of CRC32 check.
         identity-service keeps its SHA-256 hash and its first 11 characters, never the secret.
-        Internal token: actor `user`, organization required.
+
+        Requires a recent authentication of `sessionId`, the session of the public request: a
+        session without one in the last 10 minutes, or a request without `sessionId`, answers
+        `403 auth.reauthentication-required` with `details.methods` and creates nothing; a
+        `sessionId` that is not an open session of the actor answers `404 session.not-found`, which
+        the gateway answers as `401 auth.session-expired`. Internal token: actor `user`,
+        organization required.
       tags: [api-tokens]
       requestBody:
         required: true
@@ -629,6 +1192,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ApiTokenCreation'
             example:
+              sessionId: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
               name: Synchronisation GitLab
               scopes: [tasks:read]
               expiration: 30-days
@@ -660,7 +1224,9 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/RecentAuthenticationRequired'
+        '404':
+          $ref: '#/components/responses/SessionNotFound'
     get:
       operationId: listApiTokensInternal
       summary: List the personal API tokens
@@ -792,6 +1358,25 @@ components:
       description: |
         Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` = `identity-service`,
         issuer `api-gateway`.
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: Id of the session of the public request, as the introspection returned it.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60]
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: Id of the account, the actor.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
   headers:
     RetryAfter:
       description: Seconds to wait before the request can succeed (RFC 9110).
@@ -809,6 +1394,7 @@ components:
         displayName: camille
         jobTitle: Responsable produit
         timeZone: Europe/Paris
+        passwordChangedAt: '2026-08-12T09:30:00Z'
         version: 3
   responses:
     SessionIssued:
@@ -1003,8 +1589,9 @@ components:
     CodeThrottled:
       description: |
         `auth.code-throttled`, with `details.resendAvailableAt`: the code requests of the address
-        are throttled whatever their purpose, account or not, so the sign-up, the sign-up code and
-        the sign-in code routes count together. A request is refused less than 30 seconds after
+        are throttled whatever their purpose, account or not, so the sign-up, the sign-up code,
+        the sign-in code and the change of address, counted on the new address, count together. A
+        request is refused less than 30 seconds after
         the last accepted one, and once 5 were accepted in the current hour, which starts with the
         first request accepted after the previous hour ended. `details.resendAvailableAt` is 30
         seconds after the last accepted request, or the end of the hour.
@@ -1092,6 +1679,199 @@ components:
             code: request.version-mismatch
             details:
               version: 3
+    ResetThrottled:
+      description: |
+        `auth.reset-throttled`, with `details.resendAvailableAt`: the password reset requests of
+        the address are throttled, account or not, apart from the code requests. A request is
+        refused less than 45 seconds after the last accepted one, and once 5 were accepted in the
+        current hour, which starts with the first request accepted after the previous hour ended.
+        `details.resendAvailableAt` is 45 seconds after the last accepted request, or the end of
+        the hour.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Too Many Requests
+            status: 429
+            code: auth.reset-throttled
+            details:
+              resendAvailableAt: '2026-11-09T13:10:45Z'
+    ResetLinkExpired:
+      description: '`auth.reset-link-expired`: the link expired, was used, was replaced, or is unknown or malformed.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: auth.reset-link-expired
+    PasswordResetRefused:
+      description: |
+        `auth.reset-link-expired` (the link is checked first), then `auth.password-too-short`
+        (with `details.minLength`) or `auth.password-compromised`, which leave the link usable.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            resetLinkExpired:
+              summary: Link no longer usable
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: auth.reset-link-expired
+            passwordTooShort:
+              summary: Password too short
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: auth.password-too-short
+                details:
+                  minLength: 12
+    PasswordRefused:
+      description: |
+        `auth.password-incorrect`, with `details.remainingAttempts` (at least 1): the failures left
+        before the lockout of the password sign-in of the address of the account.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: auth.password-incorrect
+            details:
+              remainingAttempts: 3
+    PasswordChangeRefused:
+      description: |
+        The new password first: `auth.password-too-short` (with `details.minLength`) or
+        `auth.password-compromised`, no attempt counted; then the current one:
+        `auth.password-incorrect`, with `details.remainingAttempts`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            passwordTooShort:
+              summary: New password too short
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: auth.password-too-short
+                details:
+                  minLength: 12
+            passwordIncorrect:
+              summary: Wrong current password
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: auth.password-incorrect
+                details:
+                  remainingAttempts: 3
+    RecentAuthenticationRequired:
+      description: |
+        - `auth.reauthentication-required`: the session has no authentication in the last 10
+          minutes. `details.methods` lists the ways its person can confirm, `password` today; the
+          gateway forwards the code, its `details` and the French title of
+          `openapi/public/auth.yaml`;
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, and `auth.organization-required` on
+          a route that requires an organization: see the internal token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            reauthenticationRequired:
+              summary: No recent authentication
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.reauthentication-required
+                details:
+                  methods: [password]
+            actorNotAllowed:
+              summary: Actor not accepted
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.actor-not-allowed
+    EmailUnchanged:
+      description: '`auth.email-unchanged`: the new address is the current address of the account.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: auth.email-unchanged
+    EmailChangeCodeRefused:
+      description: |
+        `auth.code-invalid` (wrong code, or no pending change of address) or `auth.code-expired`
+        (expired, used, replaced by a newer request or too many wrong attempts).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: auth.code-invalid
+    OrganizationOwner:
+      description: |
+        `account.organization-owner`: the copy of the memberships holds a membership of the actor
+        with the role `owner`, not removed. `details.organizationIds` lists those organizations.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            code: account.organization-owner
+            details:
+              organizationIds: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f]
+    UserOrSessionNotFound:
+      description: |
+        - `user.not-found`: the user id is not the actor, or no account has it;
+        - `session.not-found`: the session of the request is not an open session of the actor. The
+          gateway answers it as `401 auth.session-expired`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            userNotFound:
+              summary: Another user
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: user.not-found
+            sessionNotFound:
+              summary: Session ended since its introspection
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: session.not-found
   schemas:
     Email:
       type: string
@@ -1107,8 +1887,9 @@ components:
       type: object
       required: [ipAddress, userAgent]
       description: |
-        The browser the session is opened for, as the gateway saw it. Stored with the session, to
-        show its device and place later; never logged with the token.
+        The browser a request came from, as the gateway saw it. Stored with the session it opens,
+        to show its device and address; shown in the security email of the request. No place is
+        derived from the address. Never logged with a token.
       properties:
         ipAddress:
           type: string
@@ -1257,6 +2038,11 @@ components:
           $ref: '#/components/schemas/Session'
         user:
           $ref: '#/components/schemas/User'
+        deletionCancelled:
+          type: boolean
+          description: |
+            `true` when this sign-in cancelled the scheduled deletion of the account; the gateway
+            passes it on in the public answer. Absent or `false` otherwise.
     Session:
       type: object
       required: [id, expiresAt, persistent]
@@ -1369,10 +2155,20 @@ components:
           type: string
           description: IANA time zone name; `Europe/Paris` until the person chooses another.
           examples: [Europe/Paris]
+        passwordChangedAt:
+          type: string
+          format: date-time
+          description: |
+            When the password was last set: at the sign-up, by a change or by a reset.
+            identity-service always sends it from this version on; it is optional so that the
+            gateway can move to this version first, and the gateway leaves it out of the public
+            answer until identity-service sends it.
         version:
           type: integer
           minimum: 1
-          description: Version of the account.
+          description: |
+            Version of the account. A change of the profile, of the password, of the address or of
+            the scheduled deletion makes it the next one.
     Role:
       $ref: '../../components/organization.yaml#/components/schemas/Role'
     ProfilePatch:
@@ -1425,6 +2221,14 @@ components:
       type: object
       required: [name, scopes]
       properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: |
+            The session of the public request, as the introspection returned it, whose recent
+            authentication is checked. The gateway always sends it: without it the creation answers
+            `403 auth.reauthentication-required`. It is optional in the schema only so that adding
+            it changes no existing request.
         name:
           type: string
           minLength: 1
@@ -1541,3 +2345,249 @@ components:
           type: [string, 'null']
           format: date-time
           description: When the token stops working; `null` for a token without expiry.
+    PasswordResetRequest:
+      type: object
+      required: [email, client]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        client:
+          $ref: '#/components/schemas/Client'
+          description: The browser that asks for the link, shown in the email.
+    PasswordResetLinkSent:
+      type: object
+      required: [email, expiresAt, resendAvailableAt]
+      description: Answered the same way whether or not a link was issued.
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        expiresAt:
+          type: string
+          format: date-time
+          description: When a link issued now stops working, 30 minutes later.
+        resendAvailableAt:
+          type: string
+          format: date-time
+          description: 45 seconds later, or the end of the hour once 5 links were asked for the address in it.
+    ResetToken:
+      type: string
+      minLength: 1
+      maxLength: 256
+      description: |
+        The token of the reset link, as the public request carried it. A secret, never logged;
+        identity-service keeps only its SHA-256 hash.
+    PasswordResetToken:
+      type: object
+      required: [token]
+      properties:
+        token:
+          $ref: '#/components/schemas/ResetToken'
+    PasswordResetLink:
+      type: object
+      required: [email, expiresAt, sessionCount]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+          description: Address of the account of the link.
+        expiresAt:
+          type: string
+          format: date-time
+        sessionCount:
+          type: integer
+          minimum: 0
+          description: Open sessions of the account.
+    PasswordResetConfirmation:
+      type: object
+      required: [token, newPassword, client]
+      properties:
+        token:
+          $ref: '#/components/schemas/ResetToken'
+        newPassword:
+          type: string
+          maxLength: 256
+          description: At least 12 characters, checked here (`auth.password-too-short`). Never logged.
+        closeOtherSessions:
+          type: boolean
+          default: true
+          description: Revokes every open session of the account; `false` leaves them open.
+        client:
+          $ref: '#/components/schemas/Client'
+          description: The browser the new password is chosen in, shown in the email.
+    PasswordResetCompleted:
+      type: object
+      required: [email, closedSessionCount]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        closedSessionCount:
+          type: integer
+          minimum: 0
+    ReauthenticationRequest:
+      type: object
+      required: [password]
+      description: Later versions add a two-step code; `password` then becomes optional beside it.
+      properties:
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Never logged.
+    RecentAuthentication:
+      type: object
+      required: [authenticatedAt, expiresAt]
+      properties:
+        authenticatedAt:
+          type: string
+          format: date-time
+          description: The recent authentication recorded for the session.
+        expiresAt:
+          type: string
+          format: date-time
+          description: 10 minutes later, when the guarded routes require it again.
+    PasswordChange:
+      type: object
+      required: [sessionId, currentPassword, newPassword, client]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: The session of the public request, which the right current password authenticates again.
+        currentPassword:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Never logged.
+        newPassword:
+          type: string
+          maxLength: 256
+          description: At least 12 characters, checked here (`auth.password-too-short`). Never logged.
+        client:
+          $ref: '#/components/schemas/Client'
+          description: The browser the password is changed in, shown in the email.
+    EmailChangeRequest:
+      type: object
+      required: [sessionId, email]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: The session of the public request, whose recent authentication is checked.
+        email:
+          $ref: '#/components/schemas/Email'
+          description: The new address.
+    EmailChangeCodeSent:
+      type: object
+      required: [email, expiresAt, resendAvailableAt]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+          description: The new address.
+        expiresAt:
+          type: string
+          format: date-time
+          description: 15 minutes after the code was issued.
+        resendAvailableAt:
+          type: string
+          format: date-time
+          description: 30 seconds later, or the end of the hour once 5 codes were asked for the new address in it.
+    EmailChangeConfirmation:
+      type: object
+      required: [sessionId, code, client]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: The session of the public request.
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: Never logged.
+          examples: ['731406']
+        client:
+          $ref: '#/components/schemas/Client'
+          description: The browser the address is confirmed in, shown in the notice to the previous address.
+    DeletionRequest:
+      type: object
+      required: [sessionId]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: The session of the public request, whose recent authentication is checked; it is revoked too.
+    DeletionScheduled:
+      type: object
+      required: [deleteAt]
+      properties:
+        deleteAt:
+          type: string
+          format: date-time
+          description: 30 days after the scheduling.
+    Device:
+      type: object
+      required: [type, browser, browserVersion, os, osVersion]
+      description: |
+        The device of a session, read with `bowser` from the `User-Agent` of its `client`. A member
+        that cannot be read is `null`.
+      properties:
+        type:
+          type: string
+          description: '`desktop`, `mobile`, `tablet` or `unknown` today; more later (`x-extensible-enum`).'
+          x-extensible-enum: [desktop, mobile, tablet, unknown]
+        browser:
+          type: [string, 'null']
+          examples: [Firefox]
+        browserVersion:
+          type: [string, 'null']
+          description: Major version.
+          examples: ['132']
+        os:
+          type: [string, 'null']
+          examples: [Windows]
+        osVersion:
+          type: [string, 'null']
+          description: '`null` when the `User-Agent` does not tell it reliably (Windows 10 and 11, macOS).'
+          examples: ['18.1']
+    OpenSession:
+      type: object
+      required: [id, current, device, ipAddress, signedInAt, lastActiveAt, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        current:
+          type: boolean
+          description: '`true` for `currentSessionId`.'
+        device:
+          $ref: '#/components/schemas/Device'
+        ipAddress:
+          type: string
+          description: Address of the `client` of the sign-in that opened the session.
+          examples: [192.0.2.14]
+        signedInAt:
+          type: string
+          format: date-time
+        lastActiveAt:
+          type: string
+          format: date-time
+          description: Last active introspection, recorded at most once a minute.
+        expiresAt:
+          type: string
+          format: date-time
+    OpenSessionPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenSession'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    RevokedSessions:
+      type: object
+      required: [revokedCount]
+      properties:
+        revokedCount:
+          type: integer
+          minimum: 0
+          description: Sessions revoked by the request.

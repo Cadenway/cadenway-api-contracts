@@ -6,8 +6,9 @@ import type { Problem } from './problem';
 
 /**
  * - `auth.code-throttled`: the code requests of this address are throttled whatever their
- *   purpose, account or not: a sign-up, `POST /v1/auth/sign-up/code` and
- *   `POST /v1/auth/sign-in/code` count together. A request is refused less than 30 seconds
+ *   purpose, account or not: a sign-up, `POST /v1/auth/sign-up/code`,
+ *   `POST /v1/auth/sign-in/code` and `POST /v1/me/email-change`, which sends its code to the
+ *   new address, count together. A request is refused less than 30 seconds
  *   after the last accepted one, and once 5 were accepted in the current hour, which starts
  *   with the first request accepted after the previous hour ended.
  *   `details.resendAvailableAt` says when the next one can be: 30 seconds after the last

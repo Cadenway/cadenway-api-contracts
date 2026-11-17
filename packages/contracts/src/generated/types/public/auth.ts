@@ -152,7 +152,14 @@ export interface CurrentUser {
   jobTitle: string | null;
   timeZone: TimeZone;
   /**
-     * Version of the account, also sent as `ETag`.
+     * When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.
+     * The "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the
+     * gateway and identity-service run this version of the contracts.
+     */
+  passwordChangedAt?: string;
+  /**
+     * Version of the account, also sent as `ETag`. A change of the profile, of the password,
+     * of the address or of the scheduled deletion makes it the next one.
      * @minimum 1
      */
   version: number;
@@ -171,6 +178,12 @@ export interface Session {
 export interface SignedIn {
   user: CurrentUser;
   session: Session;
+  /**
+     * `true` when this sign-in cancelled the scheduled deletion of the account
+     * (`POST /v1/me/deletion`): the web application tells the person (new copy: "La
+     * suppression de votre compte est annulée."). Absent or `false` otherwise.
+     */
+  deletionCancelled?: boolean;
 }
 
 /**
@@ -221,10 +234,206 @@ export interface ProfilePatch {
 }
 
 /**
+ * Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.
+ */
+export interface EmptyRequest { [key: string]: never }
+
+export interface PasswordResetRequest {
+  email: Email;
+}
+
+/**
+ * Answered the same way whether or not a link was actually sent.
+ */
+export interface PasswordResetLinkSent {
+  email: Email;
+  /** When a link sent now stops working, 30 minutes later ("Il reste valable 30 minutes."). */
+  expiresAt: string;
+  /**
+     * When another link can be asked for ("Renvoyer l'e-mail dans 0:45"): 45 seconds later,
+     * or the end of the hour once 5 links were asked for the address in it (see
+     * `ResetThrottled`).
+     */
+  resendAvailableAt: string;
+}
+
+/**
+ * The token of the reset link, read from the fragment of `<web application>/reset#token=<token>`.
+ * A secret: sent in the body only, never logged. A malformed token answers like an unknown one
+ * (`422 auth.reset-link-expired`).
+ * @minLength 1
+ * @maxLength 256
+ */
+export type ResetToken = string;
+
+export interface PasswordResetToken {
+  token: ResetToken;
+}
+
+export interface PasswordResetLink {
+  /** Address of the account of the link ("Pour le compte <email>."). */
+  email: Email;
+  /** When the link stops working. */
+  expiresAt: string;
+  /**
+     * Open sessions of the account, every one of which the reset closes unless the person
+     * unticks "Fermer mes autres sessions" ("3 appareils connectés seront déconnectés").
+     * @minimum 0
+     */
+  sessionCount: number;
+}
+
+export interface PasswordResetConfirmation {
+  token: ResetToken;
+  newPassword: Password;
+  /**
+     * "Fermer mes autres sessions", ticked by default: closes every open session of the
+     * account. `false` leaves them open.
+     */
+  closeOtherSessions?: boolean;
+}
+
+export interface PasswordResetCompleted {
+  /** Address of the account, where the confirmation email goes. */
+  email: Email;
+  /**
+     * Sessions the reset closed; 0 when `closeOtherSessions` was `false` or none was open.
+     * @minimum 0
+     */
+  closedSessionCount: number;
+}
+
+export interface ReauthenticationRequest {
+  /**
+     * The current password of the account. Never logged.
+     * @minLength 1
+     * @maxLength 256
+     */
+  password: string;
+}
+
+export interface RecentAuthentication {
+  /** When the person last proved who they are in this session. */
+  authenticatedAt: string;
+  /**
+     * When the window ends, 10 minutes later; the guarded routes then answer
+     * `403 auth.reauthentication-required` again.
+     */
+  expiresAt: string;
+}
+
+export interface PasswordChange {
+  /**
+     * "Mot de passe actuel". Never logged.
+     * @minLength 1
+     * @maxLength 256
+     */
+  currentPassword: string;
+  newPassword: Password;
+}
+
+export interface EmailChangeRequest {
+  /** "Nouvelle adresse e-mail", where the code goes. */
+  email: Email;
+}
+
+export interface EmailChangeCodeSent {
+  /** The new address the code was sent to ("Code envoyé à <email>"). */
+  email: Email;
+  /** When the code stops working, 15 minutes later ("Le code est valable 15 minutes."). */
+  expiresAt: string;
+  /**
+     * When another code can be asked for the new address: 30 seconds later, or the end of the
+     * hour once 5 codes were asked for it (see `CodeThrottled`).
+     */
+  resendAvailableAt: string;
+}
+
+export interface EmailChangeConfirmation {
+  /**
+     * The 6 digits sent to the new address, without the space they are shown with. Never logged.
+     * @pattern ^[0-9]{6}$
+     */
+  code: string;
+}
+
+export interface DeletionScheduled {
+  /** When the account will be deleted, 30 days after the scheduling, unless a sign-in cancels it first. */
+  deleteAt: string;
+}
+
+/**
+ * The device a session runs on, as identity-service reads it from the `User-Agent` of its
+ * sign-in ("Firefox 132 · Windows"). A member it cannot read is `null`.
+ */
+export interface Device {
+  /**
+     * `desktop`, `mobile` or `tablet`, or `unknown` when the `User-Agent` does not tell.
+     * Later versions may add types; a client shows an unknown one as `unknown`.
+     */
+  type: string;
+  /**
+     * Name of the browser or client.
+     * @nullable
+     */
+  browser: string | null;
+  /**
+     * Major version of the browser.
+     * @nullable
+     */
+  browserVersion: string | null;
+  /**
+     * Name of the operating system.
+     * @nullable
+     */
+  os: string | null;
+  /**
+     * Version of the operating system, `null` when the `User-Agent` does not tell it
+     * reliably: browsers report Windows 10 and 11 alike and freeze the version of macOS.
+     * @nullable
+     */
+  osVersion: string | null;
+}
+
+export interface OpenSession {
+  id: string;
+  /** `true` for the session of the request ("Cet appareil"). */
+  current: boolean;
+  device: Device;
+  /**
+     * IPv4 or IPv6 address the session was opened from, as the gateway saw it. No place is
+     * derived from it.
+     */
+  ipAddress: string;
+  /** When the sign-in opened the session. */
+  signedInAt: string;
+  /**
+     * Last request of the session, recorded at most once a minute ("Actif maintenant", "Il y
+     * a 2 h").
+     */
+  lastActiveAt: string;
+  /** When the session ends at the latest, whatever its activity. */
+  expiresAt: string;
+}
+
+/**
  * Cursor of the next page; `null` on the last page.
  * @nullable
  */
 export type NextCursor = string | null;
+
+export interface OpenSessionPage {
+  items: OpenSession[];
+  nextCursor: NextCursor | null;
+}
+
+export interface RevokedSessions {
+  /**
+     * Sessions closed by the request ("2 sessions fermées").
+     * @minimum 0
+     */
+  revokedCount: number;
+}
 
 /**
  * Members specific to the code, for example the fields that failed validation.
@@ -263,7 +472,8 @@ export type SignedInResponse = SignedIn;
 export type BadRequestResponse = Problem;
 
 /**
- * `auth.email-taken`: a verified account already uses the address.
+ * `auth.email-taken`: a verified account already uses the address, the one of the sign-up or
+ * the new address of a change.
  */
 export type EmailTakenResponse = Problem;
 
@@ -315,15 +525,18 @@ export type EmailNotVerifiedResponse = Problem;
 /**
  * - `auth.account-locked`: too many failed passwords for the address; the password sign-in
  *   is refused until `details.lockedUntil` (15 minutes), even with the right password.
- *   Answered the same way when no account uses the address.
+ *   Answered the same way when no account uses the address. The failed passwords of
+ *   `POST /v1/auth/reauthentication` and `PUT /v1/me/password` count with those of the
+ *   sign-in, and both routes answer this code during the lockout.
  * - `rate-limit.exceeded`: the gateway's own limit.
  */
 export type AccountLockedResponse = Problem;
 
 /**
  * - `auth.code-throttled`: the code requests of this address are throttled whatever their
- *   purpose, account or not: a sign-up, `POST /v1/auth/sign-up/code` and
- *   `POST /v1/auth/sign-in/code` count together. A request is refused less than 30 seconds
+ *   purpose, account or not: a sign-up, `POST /v1/auth/sign-up/code`,
+ *   `POST /v1/auth/sign-in/code` and `POST /v1/me/email-change`, which sends its code to the
+ *   new address, count together. A request is refused less than 30 seconds
  *   after the last accepted one, and once 5 were accepted in the current hour, which starts
  *   with the first request accepted after the previous hour ended.
  *   `details.resendAvailableAt` says when the next one can be: 30 seconds after the last
@@ -374,4 +587,107 @@ export type CrossSiteRefusedResponse = Problem;
  * `upstream.deadline-exceeded`, with `details.service`.
  */
 export type UnavailableResponse = Problem;
+
+/**
+ * - `auth.reset-throttled`: the password reset requests of this address are throttled,
+ *   account or not, apart from the code requests. A request is refused less than 45 seconds
+ *   after the last accepted one, and once 5 were accepted in the current hour, which starts
+ *   with the first request accepted after the previous hour ended.
+ *   `details.resendAvailableAt` says when the next one can be: 45 seconds after the last
+ *   accepted request, or the end of the hour.
+ * - `rate-limit.exceeded`: the gateway's own limit.
+ */
+export type ResetThrottledResponse = Problem;
+
+/**
+ * `auth.reset-link-expired`: the link expired (30 minutes), was used, was replaced by a newer
+ * one, or is unknown. The web application shows one state for all of them and offers to ask
+ * for a new link.
+ */
+export type ResetLinkExpiredResponse = Problem;
+
+/**
+ * The new password is not set:
+ *
+ * - `auth.reset-link-expired`: see `ResetLinkExpired`;
+ * - `auth.password-too-short`: fewer than 12 characters, with `details.minLength`;
+ * - `auth.password-compromised`: the password is in the list of compromised passwords.
+ *
+ * A refused password leaves the link usable.
+ */
+export type PasswordResetRefusedResponse = Problem;
+
+/**
+ * `auth.password-incorrect`: the password is not the one of the account.
+ * `details.remainingAttempts` is the number of failures left before the lockout of the
+ * password sign-in of the address, at least 1.
+ */
+export type PasswordRefusedResponse = Problem;
+
+/**
+ * The password is not changed. The new password is checked first:
+ *
+ * - `auth.password-too-short`: fewer than 12 characters, with `details.minLength`;
+ * - `auth.password-compromised`: the password is in the list of compromised passwords;
+ * - `auth.password-incorrect`: the current password is wrong, with
+ *   `details.remainingAttempts` (see `PasswordRefused`).
+ */
+export type PasswordChangeRefusedResponse = Problem;
+
+/**
+ * - `auth.csrf-rejected`: see `CrossSiteRefused`;
+ * - `auth.api-token-not-accepted`: a personal API token cannot call this route.
+ */
+export type SessionWriteForbiddenResponse = Problem;
+
+/**
+ * - `auth.reauthentication-required`: the person of this session has not proved who they are
+ *   in the last 10 minutes (see "Recent authentication"). `details.methods` lists the ways
+ *   they can, in the order to offer them: `password` today, for
+ *   `POST /v1/auth/reauthentication`; later versions add two-step methods, and a client
+ *   ignores a method it does not know. The web application asks, confirms, then repeats the
+ *   request;
+ * - `auth.csrf-rejected`: see `CrossSiteRefused`;
+ * - `auth.api-token-not-accepted`: a personal API token cannot call this route.
+ */
+export type RecentAuthenticationForbiddenResponse = Problem;
+
+/**
+ * `auth.email-unchanged`: the new address is the current address of the account.
+ */
+export type EmailUnchangedResponse = Problem;
+
+/**
+ * The code of the change of address is refused; the web application shows the same line for
+ * both codes:
+ *
+ * - `auth.code-invalid`: the code is wrong, or no change of address awaits a code;
+ * - `auth.code-expired`: the code expired (15 minutes), was used, was replaced by a newer
+ *   request, or took too many wrong attempts. A new request is needed.
+ */
+export type EmailChangeCodeRefusedResponse = Problem;
+
+/**
+ * `account.organization-owner`: the person owns at least one organization, which must first
+ * have another owner. `details.organizationIds` lists them, as identity-service's copy of
+ * the memberships knows them; the web application names them from `GET /v1/organizations`
+ * ("Atelier Nord doit d’abord avoir un autre propriétaire.").
+ */
+export type OrganizationOwnerResponse = Problem;
+
+/**
+ * `session.not-found`: no session with this id belongs to the account.
+ */
+export type SessionNotFoundResponse = Problem;
+
+export type ListSessionsParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
 

@@ -25,8 +25,16 @@ import type {
   CodeSent,
   CodeVerification,
   CurrentUser,
+  PasswordResetCompleted,
+  PasswordResetConfirmation,
+  PasswordResetLink,
+  PasswordResetLinkSent,
+  PasswordResetRequest,
+  PasswordResetToken,
   PasswordSignIn,
   ProfilePatch,
+  ReauthenticationRequest,
+  RecentAuthentication,
   SignInMethods,
   SignInMethodsRequest,
   SignOutRequest,
@@ -297,8 +305,16 @@ export class AuthService {
  *   `429 auth.account-locked` with `Retry-After` and `details.lockedUntil` (15 minutes).
  * - The right password of an account whose address is not verified answers
  *   `403 auth.email-not-verified`; `POST /v1/auth/sign-up/code` sends a new code.
+ * - A sign-in to an account whose deletion is scheduled (`POST /v1/me/deletion`) cancels the
+ *   deletion: the answer says so with `deletionCancelled: true`, and
+ *   `user.deletion-cancelled.v1` is emitted. Signing in is the only way to cancel it.
+ * - A sign-in from a device the account did not use in the last 90 days (see
+ *   `session.opened-on-new-device.v1`) sends the email "Nouvelle connexion".
  *
- * No session needed. Scopes: none.
+ * Later versions add two-step verification: a sign-in that needs it answers `202` with a
+ * challenge and no cookie, and only the `200` that completes it opens the session, cancels a
+ * scheduled deletion and counts the device. Only a `200` means signed in: a client checks the
+ * status, not merely a success. No session needed. Scopes: none.
  * @summary Sign in with a password
  */
  signInWithPassword<TData = SignedInResponse>(passwordSignIn: PasswordSignIn, options?: HttpClientBodyOptions): Observable<TData>;
@@ -380,7 +396,12 @@ export class AuthService {
  * Checks a sign-in code. On success a session is opened and the gateway sets the session
  * cookie. Same rules for the code as `POST /v1/auth/sign-up/verification`: single-use, 10
  * minutes, a few wrong attempts. An address without an account answers like a wrong code.
- * No session needed. Scopes: none.
+ *
+ * As with `POST /v1/auth/sign-in`, the sign-in cancels a scheduled deletion of the account
+ * (`deletionCancelled: true`, `user.deletion-cancelled.v1`) and, from a device the account did
+ * not use in the last 90 days, sends "Nouvelle connexion"; later versions answer `202` with a
+ * two-step challenge when the account needs one, and only a `200` means signed in. No session
+ * needed. Scopes: none.
  * @summary Sign in with a code
  */
  signInWithCode<TData = SignedInResponse>(codeVerification: CodeVerification, options?: HttpClientBodyOptions): Observable<TData>;
@@ -459,6 +480,216 @@ export class AuthService {
     );
   }
 /**
+ * Sends a link to choose a new password ("Mot de passe oublié") to the address when a
+ * verified account uses it. Always answers `202` the same way, whether or not an account uses
+ * the address ("Si un compte existe pour <email>, un lien de réinitialisation vient de
+ * partir.").
+ *
+ * - The link opens `<web application>/reset#token=<token>`: the token sits in the fragment,
+ *   which no server receives or logs. It works once, for 30 minutes (`expiresAt`), from any
+ *   browser: it is not bound to the browser that asked for it, so that the email can be
+ *   opened on another device.
+ * - A new request makes the previous link stop working ("Un nouveau lien vient de partir ;
+ *   le précédent ne fonctionne plus."). Asking again is how the link is resent.
+ * - Throttled per address, account or not, apart from the codes: a request is refused less
+ *   than 45 seconds after the last accepted one, and once 5 were accepted in the current
+ *   hour (`resendAvailableAt`, else `429 auth.reset-throttled`).
+ * - The current password keeps working until a new one is chosen; asking for a link signs
+ *   nobody out. An account whose address is not verified gets no link: its sign-up code
+ *   verifies it (`POST /v1/auth/sign-up/code`).
+ *
+ * Emits the restricted `password-reset-link.issued.v1`, from which notification-service sends
+ * the email "Réinitialisez votre mot de passe Cadenway". No session needed. Scopes: none.
+ * @summary Request a password reset link
+ */
+ requestPasswordReset<TData = PasswordResetLinkSent>(passwordResetRequest: PasswordResetRequest, options?: HttpClientBodyOptions): Observable<TData>;
+ requestPasswordReset<TData = PasswordResetLinkSent>(passwordResetRequest: PasswordResetRequest, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ requestPasswordReset<TData = PasswordResetLinkSent>(passwordResetRequest: PasswordResetRequest, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  requestPasswordReset<TData = PasswordResetLinkSent>(
+    passwordResetRequest: PasswordResetRequest, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/password-reset`,
+      passwordResetRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/password-reset`,
+      passwordResetRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/password-reset`,
+      passwordResetRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Tells the reset screen ("Choisir un nouveau mot de passe") which account a link is for
+ * ("Pour le compte <email>.") and how many sessions the reset would close ("3 appareils
+ * connectés seront déconnectés"). The web application reads the token from the fragment of
+ * the link and sends it in the body, never in a URL of the API. Reading a link does not use
+ * it.
+ *
+ * `sessionCount` counts every open session of the account: the reset runs without a session,
+ * so none of them is "this device" (the mockup's "sauf celui-ci" does not apply). A link that
+ * expired, was used, was replaced by a newer one or is unknown answers
+ * `422 auth.reset-link-expired` ("Ce lien a expiré"): the web application offers to ask for a
+ * new one. No session needed. Scopes: none.
+ * @summary Read the account of a password reset link
+ */
+ inspectPasswordResetLink<TData = PasswordResetLink>(passwordResetToken: PasswordResetToken, options?: HttpClientBodyOptions): Observable<TData>;
+ inspectPasswordResetLink<TData = PasswordResetLink>(passwordResetToken: PasswordResetToken, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ inspectPasswordResetLink<TData = PasswordResetLink>(passwordResetToken: PasswordResetToken, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  inspectPasswordResetLink<TData = PasswordResetLink>(
+    passwordResetToken: PasswordResetToken, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/password-reset/inspection`,
+      passwordResetToken,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/password-reset/inspection`,
+      passwordResetToken,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/password-reset/inspection`,
+      passwordResetToken,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Sets the new password of the account of the link and uses the link up. Never signs in:
+ * the web application then offers "Se connecter".
+ *
+ * - `closeOtherSessions` ("Fermer mes autres sessions", ticked by default) closes every open
+ *   session of the account; unticked, they stay open. `closedSessionCount` says how many
+ *   closed ("Vos 3 autres sessions ont été fermées." or "Vos autres sessions restent
+ *   ouvertes.").
+ * - The new password follows the rules of the sign-up: 12 characters at least, no
+ *   composition rule (the four rules of the mockup's reset screen do not apply), not in the
+ *   list of compromised passwords (`422 auth.password-too-short`,
+ *   `422 auth.password-compromised`). A refused password leaves the link usable.
+ * - A link that expired, was used, was replaced or is unknown answers
+ *   `422 auth.reset-link-expired`.
+ * - The reset ends the lockout of the password sign-in of the address, drops a pending change
+ *   of address, ends the recent authentication of every session it leaves open, keeps the
+ *   personal API tokens, and does not cancel a scheduled deletion of the account: only a
+ *   sign-in does.
+ *
+ * Emits `user.password-changed.v1` (`method: reset`), from which notification-service sends
+ * "Votre mot de passe a été modifié" to the address of the account ("Un e-mail de
+ * confirmation vient de partir vers <email>."), and `session.revoked.v1` for each closed
+ * session. No session needed. Scopes: none.
+ * @summary Choose a new password with a reset link
+ */
+ confirmPasswordReset<TData = PasswordResetCompleted>(passwordResetConfirmation: PasswordResetConfirmation, options?: HttpClientBodyOptions): Observable<TData>;
+ confirmPasswordReset<TData = PasswordResetCompleted>(passwordResetConfirmation: PasswordResetConfirmation, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ confirmPasswordReset<TData = PasswordResetCompleted>(passwordResetConfirmation: PasswordResetConfirmation, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  confirmPasswordReset<TData = PasswordResetCompleted>(
+    passwordResetConfirmation: PasswordResetConfirmation, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/password-reset/confirmation`,
+      passwordResetConfirmation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/password-reset/confirmation`,
+      passwordResetConfirmation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/password-reset/confirmation`,
+      passwordResetConfirmation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Opens the window of recent authentication of this session for 10 minutes (see "Recent
+ * authentication" above). The web application calls it when a route answered
+ * `403 auth.reauthentication-required`, then repeats that request.
+ *
+ * - A wrong password answers `422 auth.password-incorrect` with
+ *   `details.remainingAttempts`. It counts with the failed sign-ins of the address of the
+ *   account: the failure that uses the last attempt, and every attempt during the lockout,
+ *   answer `429 auth.account-locked` (15 minutes). The lockout also refuses the password
+ *   sign-in of the address, but leaves this session open.
+ * - Later versions accept a two-step code instead of the password: `password` then becomes
+ *   optional beside it.
+ *
+ * Session only: a personal API token gets `403 auth.api-token-not-accepted`.
+ * @summary Confirm the password of the signed-in person
+ */
+ reauthenticate<TData = RecentAuthentication>(reauthenticationRequest: ReauthenticationRequest, options?: HttpClientBodyOptions): Observable<TData>;
+ reauthenticate<TData = RecentAuthentication>(reauthenticationRequest: ReauthenticationRequest, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ reauthenticate<TData = RecentAuthentication>(reauthenticationRequest: ReauthenticationRequest, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  reauthenticate<TData = RecentAuthentication>(
+    reauthenticationRequest: ReauthenticationRequest, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/reauthentication`,
+      reauthenticationRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/reauthentication`,
+      reauthenticationRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/reauthentication`,
+      reauthenticationRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
  * Returns the account of the session and its profile ("Profil"). The organizations of the
  * account are listed by `GET /v1/organizations` and the current one is read by
  * `GET /v1/organization` (`openapi/public/organizations.yaml`). Session only: a personal API
@@ -505,7 +736,8 @@ export class AuthService {
  *   `400 request.invalid` with an issue on `timeZone`.
  * - `If-Match` is optional; a version that is no longer the current one answers
  *   `412 request.version-mismatch`.
- * - The address, the password and the photo do not change here: their own routes come in a
+ * - The address, the password and the photo do not change here: the address changes with
+ *   `POST /v1/me/email-change`, the password with `PUT /v1/me/password`, and the photo in a
  *   later version.
  *
  * Emits `user.profile-updated.v1` when something changed; a patch that changes nothing
@@ -556,5 +788,9 @@ export type SignInWithPasswordClientResult = NonNullable<SignedInResponse>
 export type RequestSignInCodeClientResult = NonNullable<CodeSent>
 export type SignInWithCodeClientResult = NonNullable<SignedInResponse>
 export type SignOutClientResult = NonNullable<void>
+export type RequestPasswordResetClientResult = NonNullable<PasswordResetLinkSent>
+export type InspectPasswordResetLinkClientResult = NonNullable<PasswordResetLink>
+export type ConfirmPasswordResetClientResult = NonNullable<PasswordResetCompleted>
+export type ReauthenticateClientResult = NonNullable<RecentAuthentication>
 export type GetCurrentUserClientResult = NonNullable<CurrentUser>
 export type UpdateCurrentUserClientResult = NonNullable<CurrentUser>

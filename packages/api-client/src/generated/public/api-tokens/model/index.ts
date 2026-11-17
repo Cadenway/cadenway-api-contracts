@@ -16,6 +16,7 @@ export * from './nextCursor';
 export * from './problem';
 export * from './problemDetails';
 export * from './rateLimitedResponse';
+export * from './tokenCreationForbiddenResponse';
 export * from './tokenReadForbiddenResponse';
 export * from './tokenWriteForbiddenResponse';
 export * from './unauthenticatedResponse';

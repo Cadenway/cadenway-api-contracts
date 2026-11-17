@@ -24,7 +24,14 @@ export interface CurrentUser {
   jobTitle: string | null;
   timeZone: TimeZone;
   /**
-     * Version of the account, also sent as `ETag`.
+     * When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.
+     * The "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the
+     * gateway and identity-service run this version of the contracts.
+     */
+  passwordChangedAt?: string;
+  /**
+     * Version of the account, also sent as `ETag`. A change of the profile, of the password,
+     * of the address or of the scheduled deletion makes it the next one.
      * @minimum 1
      */
   version: number;

@@ -345,7 +345,8 @@ components:
         account that joined, `{ type: 'user', id: userId }`.
 
         Personal data: none beyond the ids. A consumer that needs the name or the address reads
-        them from `user.signed-up.v1` and `user.profile-updated.v1` of identity-service.
+        them from `user.signed-up.v1`, `user.profile-updated.v1` and `user.email-changed.v1` of
+        identity-service.
       headers:
         $ref: '#/components/schemas/EventHeaders'
       payload:
@@ -432,14 +433,17 @@ components:
       title: Member removed
       summary: A member was removed from an organization.
       description: |
-        Emitted when an owner or an admin removes a member; the owner is never removed. Its last
-        change: no event of the membership follows. `role` is the role the member had. On it,
-        identity-service marks the membership removed in its copy, so that the sessions of the
+        Emitted when an owner or an admin removes a member, and for each membership of an account
+        that identity-service deleted (`user.deleted.v1`), with `actor`
+        `{ type: 'system', id: 'organization-service' }`; the owner is never removed, and a deleted
+        account owns no organization. Its last change: no event of the membership follows. `role`
+        is the role the member had. On it, identity-service marks the membership removed in its
+        copy, so that the sessions of the
         account stop acting on the organization and its personal API tokens of the organization stop
         working while the person is not a member. A person who joins again gets a new `memberId`
         (`member.joined.v1`): their tokens of the organization work again, until revoked or
         expired, and a session that was acting on it acts on it again only once it is chosen
-        again. `actor` is who removed the member.
+        again. `actor` is who removed the member, or the system for a deleted account.
 
         Personal data: none beyond the ids.
       headers:

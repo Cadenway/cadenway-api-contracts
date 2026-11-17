@@ -149,6 +149,16 @@ export type UnauthenticatedResponse = Problem;
 export type TokenReadForbiddenResponse = Problem;
 
 /**
+ * - `auth.reauthentication-required`: the person of this session has not proved who they are
+ *   in the last 10 minutes. `details.methods` lists the ways they can, `password` today
+ *   (`POST /v1/auth/reauthentication`); a client ignores a method it does not know;
+ * - `organization.not-selected`: the session has no current organization;
+ * - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
+ * - `auth.api-token-not-accepted`: a personal API token never manages tokens.
+ */
+export type TokenCreationForbiddenResponse = Problem;
+
+/**
  * - `organization.not-selected`: the session has no current organization;
  * - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
  * - `auth.api-token-not-accepted`: a personal API token never manages tokens.
