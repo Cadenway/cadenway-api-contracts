@@ -18,7 +18,10 @@ import * as zod from 'zod';
  * - An address used by another organization answers `409 organization.slug-taken`, derived
  *   or not.
  * - Each address of `inviteEmails` gets its own outcome in `invitations`, as
- *   `POST /v1/invitations` does; an address of the caller answers `already-member`.
+ *   `POST /v1/invitations` does; an address of the caller answers `already-member`. These
+ *   invitations take their emails from the daily allowance of the new organization, 100
+ *   invitation emails in any 24 hours (`openapi/public/members.yaml`), which a creation, 50
+ *   addresses at most, never exceeds.
  * - organization-service knows the caller from the events of their sign-up, which precede
  *   their first session. In the rare case it has not applied them yet, the creation answers
  *   `404 user.not-synchronized` and nothing is created: the web application retries after a
@@ -65,7 +68,7 @@ export const CreateOrganizationResponse = zod.object({
   "name": zod.string(),
   "slug": zod.string(),
   "description": zod.string().nullable().describe('Up to 280 characters; `null` when there is none.'),
-  "website": zod.string().nullable().describe('Absolute URL; `null` when there is none.'),
+  "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
   "defaultLanguage": zod.string().describe('BCP 47 tag; `fr`, `en` or `de` today, more later (`x-extensible-enum`).'),
   "plan": zod.string().describe('Plan of the organization: `free` ("Gratuit"), `team` ("Équipe") or `enterprise`\n("Entreprise"). Read-only, and always `free` until billing exists.\n'),
   "memberCount": zod.int().min(1).describe('Members that take a seat (owner, admins and members); guests are not counted.'),
@@ -96,7 +99,7 @@ export const listMyOrganizationsQueryLimitMax = 100;
 
 export const ListMyOrganizationsQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
-  "limit": zod.int().min(1).max(listMyOrganizationsQueryLimitMax).default(listMyOrganizationsQueryLimitDefault).describe('Page size.')
+  "limit": zod.coerce.number().int().min(1).max(listMyOrganizationsQueryLimitMax).default(listMyOrganizationsQueryLimitDefault).describe('Page size.')
 })
 
 
@@ -132,7 +135,7 @@ export const GetCurrentOrganizationResponse = zod.object({
   "name": zod.string(),
   "slug": zod.string(),
   "description": zod.string().nullable().describe('Up to 280 characters; `null` when there is none.'),
-  "website": zod.string().nullable().describe('Absolute URL; `null` when there is none.'),
+  "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
   "defaultLanguage": zod.string().describe('BCP 47 tag; `fr`, `en` or `de` today, more later (`x-extensible-enum`).'),
   "plan": zod.string().describe('Plan of the organization: `free` ("Gratuit"), `team` ("Équipe") or `enterprise`\n("Entreprise"). Read-only, and always `free` until billing exists.\n'),
   "memberCount": zod.int().min(1).describe('Members that take a seat (owner, admins and members); guests are not counted.'),
@@ -178,7 +181,7 @@ export const UpdateCurrentOrganizationBody = zod.object({
   "name": zod.string().min(1).max(updateCurrentOrganizationBodyNameMax).optional().describe('Name of the organization ("Nom"), as typed; surrounding spaces are removed, and a name made\nonly of spaces is refused with `400 request.invalid`.\n'),
   "slug": zod.string().min(updateCurrentOrganizationBodySlugMin).max(updateCurrentOrganizationBodySlugMax).regex(updateCurrentOrganizationBodySlugRegExp).optional().describe('Address of the organization ("Adresse", `app.cadenway.example/<slug>`): lowercase letters,\ndigits and single dashes, unique across organizations.\n'),
   "description": zod.string().max(updateCurrentOrganizationBodyDescriptionMax).nullish().describe('"Description (facultatif)", shown on the invitation page; `null` clears it.'),
-  "website": zod.url().max(updateCurrentOrganizationBodyWebsiteMax).nullish().describe('"Site web", an absolute `https` or `http` URL; `null` clears it.'),
+  "website": zod.url().max(updateCurrentOrganizationBodyWebsiteMax).nullish().describe('"Site web", an absolute URL; `null` clears it. Only the schemes `https` and `http` are\naccepted: any other (`javascript:`, `data:`, `mailto:`, `ftp:`) answers\n`400 request.invalid` with an issue on `website`.\n'),
   "defaultLanguage": zod.enum(['fr', 'en', 'de']).optional().describe('Default language of the organization ("Langue par défaut"), a BCP 47 tag: `fr` (Français),\n`en` (English) or `de` (Deutsch). Later versions may accept more.\n')
 }).describe('JSON Merge Patch of the organization; an empty object changes nothing.')
 
@@ -191,7 +194,7 @@ export const UpdateCurrentOrganizationResponse = zod.object({
   "name": zod.string(),
   "slug": zod.string(),
   "description": zod.string().nullable().describe('Up to 280 characters; `null` when there is none.'),
-  "website": zod.string().nullable().describe('Absolute URL; `null` when there is none.'),
+  "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
   "defaultLanguage": zod.string().describe('BCP 47 tag; `fr`, `en` or `de` today, more later (`x-extensible-enum`).'),
   "plan": zod.string().describe('Plan of the organization: `free` ("Gratuit"), `team` ("Équipe") or `enterprise`\n("Entreprise"). Read-only, and always `free` until billing exists.\n'),
   "memberCount": zod.int().min(1).describe('Members that take a seat (owner, admins and members); guests are not counted.'),
@@ -210,7 +213,10 @@ export const UpdateCurrentOrganizationResponse = zod.object({
  * - An organization the caller does not belong to answers `404 organization.not-found`, as
  *   does, for a few seconds, an organization the caller has just created or joined: the web
  *   application retries before it shows the error.
- * - Choosing the current organization again answers `200` and changes nothing.
+ * - Choosing the current organization of the session again answers `200` and leaves the
+ *   session as it is, but records the organization as the last choice of the caller again,
+ *   the one their next sessions start in, also when another session of theirs chose
+ *   another organization since.
  * - A session that ended meanwhile answers `401 auth.session-expired`.
  *
  * Session only: a personal API token, bound to the organization it was created in, cannot

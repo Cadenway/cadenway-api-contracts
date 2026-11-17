@@ -164,6 +164,17 @@ export class InvitationsService {
  * for either. The web application counts the `invited` outcomes ("{n} invitations
  * envoyées"). Owner and admins only. No seat check in this version.
  *
+ * **Daily allowance.** An organization causes at most 100 invitation emails in any 24 hours:
+ * the invitations of this route, those of the creation of the organization and the resends
+ * count together. Each address that would be `invited` needs one email of the allowance;
+ * when the batch needs more than what remains, the whole batch is refused with
+ * `429 invitation.daily-limit-reached` ("Limite d’invitations atteinte pour aujourd’hui :
+ * réessayez plus tard."), and nothing is created, sent or emitted. `details.remaining` says
+ * how many invitation emails the organization can still cause now, `0` or more, so that the
+ * web application can offer to invite fewer addresses; `Retry-After` says in how many
+ * seconds the oldest email counted leaves the 24 hours, which is when the allowance grows
+ * again. The allowance is checked once the body and the role of the caller are accepted.
+ *
  * A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
  * `invitation.issued.v1` per `invited` address. Session only.
  * @summary Invite people
@@ -280,6 +291,20 @@ export class InvitationsService {
  * Sends the email of a pending invitation again, expired or not, and starts its 7 days again
  * ("Renvoyer", "Invitation renvoyée"). A revoked invitation answers `409 invitation.revoked`,
  * an accepted or refused one `409 invitation.answered`. Owner and admins only.
+ *
+ * **Limits.** Once the invitation is found and pending, two limits apply, in this order:
+ *
+ * 1. The email of an invitation goes out at most once an hour: a resend less than an hour
+ *    after its last sending, `sentAt` (the invitation itself or the previous resend),
+ *    answers `429 invitation.resend-throttled` ("Cette invitation vient d’être renvoyée :
+ *    réessayez dans une heure."). `details.resendAvailableAt` is `sentAt` plus one hour,
+ *    and `Retry-After` the seconds until then.
+ * 2. A resend takes one email of the daily allowance of the organization, 100 invitation
+ *    emails in any 24 hours (see `POST /v1/invitations`): with none left, it answers
+ *    `429 invitation.daily-limit-reached` with `details.remaining: 0`, and `Retry-After`
+ *    says when the allowance grows again.
+ *
+ * A refused resend changes nothing and emits nothing.
  *
  * An action: answers `200` with the invitation. Emits `invitation.issued.v1` with the next
  * version. Session only.

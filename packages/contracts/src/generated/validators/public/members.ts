@@ -27,7 +27,7 @@ export const listMembersQueryRoleMax = 4;
 
 export const ListMembersQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
-  "limit": zod.int().min(1).max(listMembersQueryLimitMax).default(listMembersQueryLimitDefault).describe('Page size.'),
+  "limit": zod.coerce.number().int().min(1).max(listMembersQueryLimitMax).default(listMembersQueryLimitDefault).describe('Page size.'),
   "search": zod.string().min(1).max(listMembersQuerySearchMax).optional().describe('Text to find in the name or the address, without regard to case or accents.'),
   "role": zod.array(zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n')).min(1).max(listMembersQueryRoleMax).optional().describe('Roles to keep, separated by commas; every role when absent.')
 })
@@ -137,9 +137,12 @@ export const ChangeMemberRoleResponse = zod.object({
 /**
  * Removes a member from the current organization ("Retirer le membre"): they lose access to
  * every space of it, their tasks stay assigned and a seat is freed. Owner and admins only; the
- * owner cannot be removed (`422 member.owner-protected`). Their sessions stop acting on this
- * organization and their personal API tokens of it stop working once identity-service has
- * applied `member.removed.v1`, within seconds.
+ * owner cannot be removed (`422 member.owner-protected`). Once identity-service has applied
+ * `member.removed.v1`, within seconds, their sessions stop acting on this organization and
+ * their personal API tokens of it stop working while they are not a member. If the person
+ * joins again, by a new invitation, those tokens work again until revoked or expired; a
+ * session that was acting on the organization acts on it again only once it is chosen again
+ * (`PUT /v1/session/organization`).
  *
  * Emits `member.removed.v1`. Session only.
  * @summary Remove a member
@@ -158,6 +161,17 @@ export const RemoveMemberResponse = zod.void()
  * `already-member`, an address with a pending invitation `already-invited`; nothing is sent
  * for either. The web application counts the `invited` outcomes ("{n} invitations
  * envoyées"). Owner and admins only. No seat check in this version.
+ *
+ * **Daily allowance.** An organization causes at most 100 invitation emails in any 24 hours:
+ * the invitations of this route, those of the creation of the organization and the resends
+ * count together. Each address that would be `invited` needs one email of the allowance;
+ * when the batch needs more than what remains, the whole batch is refused with
+ * `429 invitation.daily-limit-reached` ("Limite d’invitations atteinte pour aujourd’hui :
+ * réessayez plus tard."), and nothing is created, sent or emitted. `details.remaining` says
+ * how many invitation emails the organization can still cause now, `0` or more, so that the
+ * web application can offer to invite fewer addresses; `Retry-After` says in how many
+ * seconds the oldest email counted leaves the 24 hours, which is when the allowance grows
+ * again. The allowance is checked once the body and the role of the caller are accepted.
  *
  * A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
  * `invitation.issued.v1` per `invited` address. Session only.
@@ -200,7 +214,7 @@ export const listInvitationsQueryLimitMax = 100;
 
 export const ListInvitationsQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
-  "limit": zod.int().min(1).max(listInvitationsQueryLimitMax).default(listInvitationsQueryLimitDefault).describe('Page size.')
+  "limit": zod.coerce.number().int().min(1).max(listInvitationsQueryLimitMax).default(listInvitationsQueryLimitDefault).describe('Page size.')
 })
 
 export const listInvitationsResponseItemsItemEmailMax = 254;
@@ -248,6 +262,20 @@ export const RevokeInvitationResponse = zod.void()
  * ("Renvoyer", "Invitation renvoyée"). A revoked invitation answers `409 invitation.revoked`,
  * an accepted or refused one `409 invitation.answered`. Owner and admins only.
  *
+ * **Limits.** Once the invitation is found and pending, two limits apply, in this order:
+ *
+ * 1. The email of an invitation goes out at most once an hour: a resend less than an hour
+ *    after its last sending, `sentAt` (the invitation itself or the previous resend),
+ *    answers `429 invitation.resend-throttled` ("Cette invitation vient d’être renvoyée :
+ *    réessayez dans une heure."). `details.resendAvailableAt` is `sentAt` plus one hour,
+ *    and `Retry-After` the seconds until then.
+ * 2. A resend takes one email of the daily allowance of the organization, 100 invitation
+ *    emails in any 24 hours (see `POST /v1/invitations`): with none left, it answers
+ *    `429 invitation.daily-limit-reached` with `details.remaining: 0`, and `Retry-After`
+ *    says when the allowance grows again.
+ *
+ * A refused resend changes nothing and emits nothing.
+ *
  * An action: answers `200` with the invitation. Emits `invitation.issued.v1` with the next
  * version. Session only.
  * @summary Send an invitation again
@@ -293,7 +321,7 @@ export const listReceivedInvitationsQueryLimitMax = 100;
 
 export const ListReceivedInvitationsQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
-  "limit": zod.int().min(1).max(listReceivedInvitationsQueryLimitMax).default(listReceivedInvitationsQueryLimitDefault).describe('Page size.')
+  "limit": zod.coerce.number().int().min(1).max(listReceivedInvitationsQueryLimitMax).default(listReceivedInvitationsQueryLimitDefault).describe('Page size.')
 })
 
 

@@ -436,7 +436,10 @@ components:
         change: no event of the membership follows. `role` is the role the member had. On it,
         identity-service marks the membership removed in its copy, so that the sessions of the
         account stop acting on the organization and its personal API tokens of the organization stop
-        working. `actor` is who removed the member.
+        working while the person is not a member. A person who joins again gets a new `memberId`
+        (`member.joined.v1`): their tokens of the organization work again, until revoked or
+        expired, and a session that was acting on it acts on it again only once it is chosen
+        again. `actor` is who removed the member.
 
         Personal data: none beyond the ids.
       headers:

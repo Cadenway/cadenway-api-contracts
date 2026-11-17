@@ -9,8 +9,9 @@ info:
     through the outbox of `@cadenway/nest-messaging` once its change is committed, at least once:
     a consumer deduplicates on `id` and ignores a `version` of the aggregate it has already applied.
 
-    None of these events belongs to an organization yet: `organizationId` is always `null`, and the
-    events are appended in a system transaction.
+    None of these events belongs to an organization: `organizationId` is always `null`, also in
+    `session.revoked.v1` of a session that acts on an organization, and the events are appended in
+    a system transaction.
 
     **Restricted events.** A message marked `x-cadenway-restricted: true` carries a secret (a
     single-use code). It is published on `restricted.<name>` instead of `evt.<name>`, stored in the
@@ -353,8 +354,10 @@ components:
             type: [string, 'null']
             format: uuid
             description: |
-              Organization of the session; always `null` in this version, since a session belongs
-              to no organization yet.
+              Always `null` in this version, also when the session acts on an organization
+              (`PUT /v1/session/organization`): the revocation ends a session of the account, the
+              event is appended in a system transaction, and a consumer finds the session by
+              `sessionId`.
           actor:
             $ref: '../components/events.yaml#/components/schemas/Actor'
           version:

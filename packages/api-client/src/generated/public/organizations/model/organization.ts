@@ -14,7 +14,7 @@ export interface Organization {
      */
   description: string | null;
   /**
-     * Absolute URL; `null` when there is none.
+     * Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.
      * @nullable
      */
   website: string | null;

@@ -21,7 +21,12 @@ import {
   CreateApiTokenInternalResponse,
   IntrospectApiTokenResponse,
   IntrospectTokenResponse,
+  ListApiTokensInternalQueryParams,
 } from '../../packages/contracts/src/generated/validators/internal/identity-service';
+import {
+  ListInvitationsInternalQueryParams,
+  ListMembersInternalQueryParams,
+} from '../../packages/contracts/src/generated/validators/internal/organization-service';
 import { CreateApiTokenBody } from '../../packages/contracts/src/generated/validators/public/api-tokens';
 import { UpdateCurrentUserBody } from '../../packages/contracts/src/generated/validators/public/auth';
 import {
@@ -241,6 +246,35 @@ describe('routes of organizations and members', () => {
       limit: 50,
     });
     expect(ListMembersQueryParams.safeParse({ role: ['viewer'] }).success).toBe(false);
+  });
+});
+
+describe('page size read from a query string', () => {
+  it('accepts the page size as the text a query string carries', () => {
+    expect(ListMembersQueryParams.parse({ limit: '8' })).toEqual({ limit: 8 });
+    expect(ListMembersInternalQueryParams.parse({ limit: '8' })).toEqual({ limit: 8 });
+    expect(ListInvitationsInternalQueryParams.parse({ limit: '100' })).toEqual({ limit: 100 });
+    expect(ListApiTokensInternalQueryParams.parse({ limit: '20' })).toEqual({ limit: 20 });
+  });
+
+  it('still applies the default when the page size is absent', () => {
+    expect(ListApiTokensInternalQueryParams.parse({})).toEqual({ limit: 50 });
+  });
+
+  it('refuses a page size that is not a whole number from 1 to 100', () => {
+    for (const limit of ['abc', '', '0', '101', '8.5']) {
+      expect(ListMembersQueryParams.safeParse({ limit }).success).toBe(false);
+      expect(ListInvitationsInternalQueryParams.safeParse({ limit }).success).toBe(false);
+      expect(ListApiTokensInternalQueryParams.safeParse({ limit }).success).toBe(false);
+    }
+  });
+
+  it('keeps the cursor and the search as text', () => {
+    expect(ListMembersQueryParams.parse({ cursor: '8', search: '42' })).toEqual({
+      cursor: '8',
+      search: '42',
+      limit: 50,
+    });
   });
 });
 

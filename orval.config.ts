@@ -52,13 +52,17 @@ for (const root of ROOTS) {
       },
     };
 
+    // A query string carries every value as text (`?limit=8`): the query validators turn the text
+    // of a numeric parameter into a number before checking it, so a consumer validates the parsed
+    // query as it arrives. Text that is not a number (`?limit=abc`) still fails. Only numbers are
+    // converted: a string parameter keeps its text, and booleans and arrays have no such parameter.
     entries[`${id}-validators`] = {
       input,
       output: {
         client: 'zod',
         mode: 'single',
         target: `${root.contracts}/validators/${spec}.ts`,
-        override,
+        override: { ...override, zod: { coerce: { query: ['number'] } } },
       },
     };
 

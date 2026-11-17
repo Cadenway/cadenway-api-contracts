@@ -47,8 +47,12 @@ function importsFor(matrix) {
   );
 }
 
-/** Checks every published name and its declaration in a joint TypeScript program. */
-export function compareDeclarations(directory, matrix) {
+/**
+ * Checks every published name and its declaration in a joint TypeScript program. A change listed in
+ * `accepted` (accepted-changes.json) is an intended one, reviewed with its reason: it passes, and an
+ * accepted change that no longer occurs fails, so the list empties when the baseline moves past it.
+ */
+export function compareDeclarations(directory, matrix, accepted = {}) {
   const file = join(directory, 'public-api.ts');
   const imports = importsFor(matrix);
   writeFileSync(
@@ -109,7 +113,16 @@ export function compareDeclarations(directory, matrix) {
       compareExport(checker, previous, candidate, label, changes);
     }
   }
-  assert.deepEqual(changes, [], 'Published declaration surface changed');
+  assert.deepEqual(
+    changes.filter((change) => !Object.hasOwn(accepted, change)),
+    [],
+    'Published declaration surface changed',
+  );
+  assert.deepEqual(
+    Object.keys(accepted).filter((change) => !changes.includes(change)),
+    [],
+    'Accepted declaration changes no longer occur: remove them from accepted-changes.json',
+  );
 }
 
 function separateArchives(directory, options, names) {

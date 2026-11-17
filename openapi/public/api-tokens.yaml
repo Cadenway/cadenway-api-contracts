@@ -16,9 +16,11 @@ info:
     is sent as `Authorization: Bearer <token>` to `https://api.cadenway.com/v1`. Its secret is
     `cw_pat_` followed by 30 base62 characters and 6 characters of CRC32 check; identity-service
     keeps only its SHA-256 hash and its first 11 characters, shown as `prefix`. A token stops
-    working when it is revoked, when it expires, or when its user no longer belongs to its
-    organization; a request with it then answers `401 auth.api-token-invalid`. Its last use is
-    recorded at most once a minute.
+    working for good when it is revoked or when it expires, and for as long as its user does not
+    belong to its organization: a removed member's token works again if the person joins the
+    organization again, by a new invitation, until it is revoked or expires. A request with a
+    token that does not work answers `401 auth.api-token-invalid`. Its last use is recorded at
+    most once a minute.
 
     **Scopes.** `tasks:read` ("Lire les tâches, listes et espaces"), `tasks:write` ("Créer et
     modifier des tâches"), `members:read` ("Lire les membres de l’organisation") and
@@ -31,9 +33,11 @@ info:
     (`403 organization.not-selected` without one): a token never manages tokens.
 
     **Cross-site requests.** A request with an unsafe method authenticated by the cookie carries an
-    `Origin` equal to one of the gateway's allowed origins and, when it has a body,
-    `Content-Type: application/json` (`403 auth.csrf-rejected` otherwise). A `DELETE` has no
-    body: a browser sends one only after a CORS preflight, so its `Origin` is the check.
+    `Origin` equal to one of the gateway's allowed origins; a `POST`, `PUT` or `PATCH` also
+    carries `Content-Type: application/json`. A `DELETE` has no body: a browser sends one
+    cross-site only after a CORS preflight, so its `Origin` is the check; one that carries a body
+    or a `Content-Type` all the same declares `application/json`. The gateway refuses any other
+    request before the route runs (`403 auth.csrf-rejected`).
 
     **Rate limit.** 600 requests per minute per session or personal token, counted by the gateway;
     beyond, `429 rate-limit.exceeded` with `Retry-After` ("600 requêtes par minute et par jeton").

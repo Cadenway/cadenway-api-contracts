@@ -169,7 +169,10 @@ export class OrganizationsService {
  * - An address used by another organization answers `409 organization.slug-taken`, derived
  *   or not.
  * - Each address of `inviteEmails` gets its own outcome in `invitations`, as
- *   `POST /v1/invitations` does; an address of the caller answers `already-member`.
+ *   `POST /v1/invitations` does; an address of the caller answers `already-member`. These
+ *   invitations take their emails from the daily allowance of the new organization, 100
+ *   invitation emails in any 24 hours (`openapi/public/members.yaml`), which a creation, 50
+ *   addresses at most, never exceeds.
  * - organization-service knows the caller from the events of their sign-up, which precede
  *   their first session. In the rare case it has not applied them yet, the creation answers
  *   `404 user.not-synchronized` and nothing is created: the web application retries after a
@@ -347,7 +350,10 @@ export class OrganizationsService {
  * - An organization the caller does not belong to answers `404 organization.not-found`, as
  *   does, for a few seconds, an organization the caller has just created or joined: the web
  *   application retries before it shows the error.
- * - Choosing the current organization again answers `200` and changes nothing.
+ * - Choosing the current organization of the session again answers `200` and leaves the
+ *   session as it is, but records the organization as the last choice of the caller again,
+ *   the one their next sessions start in, also when another session of theirs chose
+ *   another organization since.
  * - A session that ended meanwhile answers `401 auth.session-expired`.
  *
  * Session only: a personal API token, bound to the organization it was created in, cannot

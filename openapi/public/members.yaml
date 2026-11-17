@@ -33,6 +33,12 @@ info:
     otherwise). An expired invitation stays in the pending list ("Expirée le {date}") until it is
     resent or revoked. The personal message of the invitation email has no field in this version.
 
+    **Invitation emails.** The email of an invitation goes out at most once an hour
+    (`429 invitation.resend-throttled` on a resend), and an organization causes at most 100
+    invitation emails in any 24 hours, issues and resends together
+    (`429 invitation.daily-limit-reached`): see `POST /v1/invitations` and
+    `POST /v1/invitations/{invitationId}/resend`.
+
     **Right after a sign-up.** organization-service learns the verified address of an account from
     identity-service within seconds of its verification. Until then, `GET /v1/me/invitations`
     lists nothing and an acceptance or a refusal answers `404 invitation.not-found`: the web
@@ -47,14 +53,18 @@ info:
     authenticates it with that token alone and ignores the cookie.
 
     **Cross-site requests.** A request with an unsafe method authenticated by the cookie carries an
-    `Origin` equal to one of the gateway's allowed origins and, when it has a body,
-    `Content-Type: application/json` (`403 auth.csrf-rejected` otherwise). A `DELETE` has no
-    body: a browser sends one only after a CORS preflight, so its `Origin` is the check. A request
-    authenticated by a personal token carries no ambient credential and needs no `Origin`. A
-    `PATCH` is a JSON Merge Patch (RFC 7396) sent as `application/json`.
+    `Origin` equal to one of the gateway's allowed origins; a `POST`, `PUT` or `PATCH` also
+    carries `Content-Type: application/json`, which is why the actions without input take the
+    empty object `{}`. A `DELETE` has no body: a browser sends one cross-site only after a CORS
+    preflight, so its `Origin` is the check; one that carries a body or a `Content-Type` all the
+    same declares `application/json`. The gateway refuses any other request before the route runs
+    (`403 auth.csrf-rejected`). A request authenticated by a personal token carries no ambient
+    credential and needs no `Origin`. A `PATCH` is a JSON Merge Patch (RFC 7396) sent as
+    `application/json`.
 
     **Rate limit.** 600 requests per minute per session or personal token; beyond,
-    `429 rate-limit.exceeded` with `Retry-After`.
+    `429 rate-limit.exceeded` with `Retry-After`. The invitation emails have their own limits (see
+    "Invitation emails").
 
     **Errors.** As in `openapi/public/auth.yaml`: a stable `code`, a French `title` for the codes
     the web application shows to the person, the English reason phrase otherwise.
@@ -276,9 +286,12 @@ paths:
       description: |
         Removes a member from the current organization ("Retirer le membre"): they lose access to
         every space of it, their tasks stay assigned and a seat is freed. Owner and admins only; the
-        owner cannot be removed (`422 member.owner-protected`). Their sessions stop acting on this
-        organization and their personal API tokens of it stop working once identity-service has
-        applied `member.removed.v1`, within seconds.
+        owner cannot be removed (`422 member.owner-protected`). Once identity-service has applied
+        `member.removed.v1`, within seconds, their sessions stop acting on this organization and
+        their personal API tokens of it stop working while they are not a member. If the person
+        joins again, by a new invitation, those tokens work again until revoked or expired; a
+        session that was acting on the organization acts on it again only once it is chosen again
+        (`PUT /v1/session/organization`).
 
         Emits `member.removed.v1`. Session only.
       tags: [members]
@@ -312,6 +325,17 @@ paths:
         `already-member`, an address with a pending invitation `already-invited`; nothing is sent
         for either. The web application counts the `invited` outcomes ("{n} invitations
         envoyées"). Owner and admins only. No seat check in this version.
+
+        **Daily allowance.** An organization causes at most 100 invitation emails in any 24 hours:
+        the invitations of this route, those of the creation of the organization and the resends
+        count together. Each address that would be `invited` needs one email of the allowance;
+        when the batch needs more than what remains, the whole batch is refused with
+        `429 invitation.daily-limit-reached` ("Limite d’invitations atteinte pour aujourd’hui :
+        réessayez plus tard."), and nothing is created, sent or emitted. `details.remaining` says
+        how many invitation emails the organization can still cause now, `0` or more, so that the
+        web application can offer to invite fewer addresses; `Retry-After` says in how many
+        seconds the oldest email counted leaves the 24 hours, which is when the allowance grows
+        again. The allowance is checked once the body and the role of the caller are accepted.
 
         A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
         `invitation.issued.v1` per `invited` address. Session only.
@@ -357,7 +381,7 @@ paths:
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
         '429':
-          $ref: '#/components/responses/RateLimited'
+          $ref: '#/components/responses/InvitationBatchLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
     get:
@@ -468,6 +492,20 @@ paths:
         ("Renvoyer", "Invitation renvoyée"). A revoked invitation answers `409 invitation.revoked`,
         an accepted or refused one `409 invitation.answered`. Owner and admins only.
 
+        **Limits.** Once the invitation is found and pending, two limits apply, in this order:
+
+        1. The email of an invitation goes out at most once an hour: a resend less than an hour
+           after its last sending, `sentAt` (the invitation itself or the previous resend),
+           answers `429 invitation.resend-throttled` ("Cette invitation vient d’être renvoyée :
+           réessayez dans une heure."). `details.resendAvailableAt` is `sentAt` plus one hour,
+           and `Retry-After` the seconds until then.
+        2. A resend takes one email of the daily allowance of the organization, 100 invitation
+           emails in any 24 hours (see `POST /v1/invitations`): with none left, it answers
+           `429 invitation.daily-limit-reached` with `details.remaining: 0`, and `Retry-After`
+           says when the allowance grows again.
+
+        A refused resend changes nothing and emits nothing.
+
         An action: answers `200` with the invitation. Emits `invitation.issued.v1` with the next
         version. Session only.
       tags: [invitations]
@@ -512,7 +550,7 @@ paths:
         '409':
           $ref: '#/components/responses/InvitationClosed'
         '429':
-          $ref: '#/components/responses/RateLimited'
+          $ref: '#/components/responses/InvitationResendLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/me/invitations:
@@ -796,6 +834,24 @@ components:
         title: 'Trop de requêtes : réessayez dans un instant.'
         status: 429
         code: rate-limit.exceeded
+    InvitationResendThrottled:
+      summary: Invitation email sent less than an hour ago
+      value:
+        type: about:blank
+        title: 'Cette invitation vient d’être renvoyée : réessayez dans une heure.'
+        status: 429
+        code: invitation.resend-throttled
+        details:
+          resendAvailableAt: '2026-11-08T10:30:00Z'
+    InvitationDailyLimitReached:
+      summary: Daily allowance of invitation emails used up
+      value:
+        type: about:blank
+        title: 'Limite d’invitations atteinte pour aujourd’hui : réessayez plus tard.'
+        status: 429
+        code: invitation.daily-limit-reached
+        details:
+          remaining: 2
   responses:
     BadRequest:
       description: |
@@ -1039,6 +1095,59 @@ components:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           examples:
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    InvitationBatchLimited:
+      description: |
+        - `invitation.daily-limit-reached`: the addresses that would be invited need more
+          invitation emails than the organization has left of its 100 in any 24 hours;
+          `details.remaining` is what it has left, `0` or more, and nothing was created or sent;
+        - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
+
+        `Retry-After` says how many seconds to wait: for `invitation.daily-limit-reached`, until
+        the oldest invitation email counted leaves the 24 hours.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            dailyLimitReached:
+              $ref: '#/components/examples/InvitationDailyLimitReached'
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    InvitationResendLimited:
+      description: |
+        - `invitation.resend-throttled`: the email of the invitation went out less than an hour
+          ago; `details.resendAvailableAt` says when it can go out again;
+        - `invitation.daily-limit-reached`: the organization has no invitation email left of its
+          100 in any 24 hours; `details.remaining` is `0`;
+        - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
+
+        `Retry-After` says how many seconds to wait: until `details.resendAvailableAt` for
+        `invitation.resend-throttled`, until the oldest invitation email counted leaves the 24
+        hours for `invitation.daily-limit-reached`.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            resendThrottled:
+              $ref: '#/components/examples/InvitationResendThrottled'
+            dailyLimitReached:
+              summary: No invitation email left today
+              value:
+                type: about:blank
+                title: 'Limite d’invitations atteinte pour aujourd’hui : réessayez plus tard.'
+                status: 429
+                code: invitation.daily-limit-reached
+                details:
+                  remaining: 0
             rateLimited:
               $ref: '#/components/examples/RateLimited'
     Unavailable:

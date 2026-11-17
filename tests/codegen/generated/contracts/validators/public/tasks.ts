@@ -15,7 +15,7 @@ export const listTasksQueryLimitMax = 100;
 
 export const ListTasksQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
-  "limit": zod.int().min(1).max(listTasksQueryLimitMax).default(listTasksQueryLimitDefault).describe('Page size.'),
+  "limit": zod.coerce.number().int().min(1).max(listTasksQueryLimitMax).default(listTasksQueryLimitDefault).describe('Page size.'),
   "sort": zod.string().optional().describe('Sort key; a leading `-` sorts in descending order.')
 })
 

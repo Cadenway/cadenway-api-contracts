@@ -57,7 +57,7 @@ export const listApiTokensQueryLimitMax = 100;
 
 export const ListApiTokensQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
-  "limit": zod.int().min(1).max(listApiTokensQueryLimitMax).default(listApiTokensQueryLimitDefault).describe('Page size.')
+  "limit": zod.coerce.number().int().min(1).max(listApiTokensQueryLimitMax).default(listApiTokensQueryLimitDefault).describe('Page size.')
 })
 
 export const listApiTokensResponseItemsItemPrefixMin = 11;
