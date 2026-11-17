@@ -17,7 +17,10 @@ and token revoked at once, the cookie cleared; a sign-in cancels it), `GET /v1/s
 `auth.reset-throttled`, `auth.reset-link-expired`, `auth.password-incorrect`,
 `auth.reauthentication-required`, `auth.email-unchanged`, `account.organization-owner`, and
 `session.not-found` on the public side. The failed passwords of the re-authentication and the
-password change count with the lockout of the sign-in. `CurrentUser` and the internal `User` gain
+password change count with the lockout of the sign-in. A pending change of address belongs to the
+session that asked for it; a change or a reset of the password drops it and ends the recent
+authentication of the other sessions. Only a `200` of a sign-in means signed in, ahead of the
+`202` challenge that two-step verification will add. `CurrentUser` and the internal `User` gain
 an optional `passwordChangedAt`, the sign-in answers an optional `deletionCancelled`.
 
 Events in `asyncapi/identity-service.yaml`: the restricted `password-reset-link.issued.v1`, and

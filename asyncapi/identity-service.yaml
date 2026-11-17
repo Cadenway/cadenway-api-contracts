@@ -335,7 +335,7 @@ components:
           minLength: 2
           maxLength: 45
           description: IPv4 or IPv6 address of the browser, as the gateway saw it.
-          examples: [86.247.12.30]
+          examples: [192.0.2.14]
   messages:
     userSignedUpV1:
       name: user.signed-up.v1
@@ -786,7 +786,7 @@ components:
                 browserVersion: '132'
                 os: Windows
                 osVersion: null
-              ipAddress: 86.247.12.30
+              ipAddress: 192.0.2.14
             recipient: { email: camille.martin@ateliernord.fr, name: Camille Martin }
             language: fr
             timeZone: Europe/Paris
@@ -900,7 +900,7 @@ components:
                 browserVersion: '132'
                 os: Windows
                 osVersion: null
-              ipAddress: 86.247.12.30
+              ipAddress: 192.0.2.14
             language: fr
             timeZone: Europe/Paris
     userDeletionScheduledV1:
@@ -1077,7 +1077,7 @@ components:
                 browserVersion: '132'
                 os: Windows
                 osVersion: null
-              ipAddress: 86.247.12.30
+              ipAddress: 192.0.2.14
             recipient: { email: camille.martin@ateliernord.fr, name: Camille Martin }
             language: fr
             timeZone: Europe/Paris
@@ -1354,7 +1354,7 @@ components:
                 browserVersion: '132'
                 os: Windows
                 osVersion: null
-              ipAddress: 86.247.12.30
+              ipAddress: 192.0.2.14
             recipient: { email: camille.martin@ateliernord.fr, name: Camille Martin }
             language: fr
             timeZone: Europe/Paris

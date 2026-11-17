@@ -429,7 +429,7 @@ export interface OpenSessionPage {
 
 export interface RevokedSessions {
   /**
-     * Sessions closed by the request ("3 sessions fermées").
+     * Sessions closed by the request ("2 sessions fermées").
      * @minimum 0
      */
   revokedCount: number;

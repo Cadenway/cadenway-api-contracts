@@ -103,7 +103,7 @@ const FIREFOX_ON_WINDOWS: UserPasswordChangedV1['client'] = {
     os: 'Windows',
     osVersion: null,
   },
-  ipAddress: '86.247.12.30',
+  ipAddress: '192.0.2.14',
 };
 
 /**
@@ -359,7 +359,7 @@ describe('routes of account security', () => {
     const change: Record<string, unknown> = {
       currentPassword: 'atelier-nord-sprint-14',
       newPassword: 'nord-atelier-sprint-15',
-      client: { ipAddress: '86.247.12.30', userAgent: null },
+      client: { ipAddress: '192.0.2.14', userAgent: null },
     };
 
     expect(ChangePasswordInternalBody.safeParse(change).success).toBe(false);

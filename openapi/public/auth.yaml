@@ -42,8 +42,9 @@ info:
     authenticated by a personal API token carries no ambient credential and needs no `Origin`.
 
     **Account enumeration.** Only the sign-up and the change of address say whether an address is
-    taken: the sign-up as the mockup does, the change of address only to a signed-in person who has
-    just confirmed their password. Every other route answers the same way whether or not an account
+    taken: the sign-up as the mockup does, the change of address only to a signed-in person who
+    proved who they are in the last 10 minutes (see "Recent authentication"). Every other route
+    answers the same way whether or not an account
     uses the address: the method discovery, the code requests, the password reset request, the code
     checks, the password check and its lockout, which are counted per address. A reset link tells
     its own account (`POST /v1/auth/password-reset/inspection`) to whoever holds it, the person who
@@ -85,8 +86,11 @@ info:
 
     **Later versions** add, without changing what is here: OAuth providers and SAML single sign-on
     (new method types in the discovery, new routes); two-step verification, whose sign-in answers
-    `202` with a challenge and no cookie, a `200` always carrying a session, so that a client that
-    does not know the `202` never takes it for a sign-in; a two-step code as a confirmation of
+    `202` with a challenge and no cookie, a `200` always carrying a session. Only a `200` means
+    signed in: a client built on this version checks the status (or the presence of `session`)
+    rather than taking any success for a sign-in, and the gateway answers an internal success other
+    than `200` on these routes as an upstream failure until it knows the challenge; a two-step code
+    as a confirmation of
     `POST /v1/auth/reauthentication` (`password` then becomes optional beside it); the trusted
     devices; the authentication policy of an organization; and the photo. The organizations, the
     current organization of the session and the personal API tokens are in
@@ -337,7 +341,8 @@ paths:
 
         Later versions add two-step verification: a sign-in that needs it answers `202` with a
         challenge and no cookie, and only the `200` that completes it opens the session, cancels a
-        scheduled deletion and counts the device. No session needed. Scopes: none.
+        scheduled deletion and counts the device. Only a `200` means signed in: a client checks the
+        status, not merely a success. No session needed. Scopes: none.
       tags: [auth]
       security: []
       requestBody:
@@ -415,7 +420,8 @@ paths:
         As with `POST /v1/auth/sign-in`, the sign-in cancels a scheduled deletion of the account
         (`deletionCancelled: true`, `user.deletion-cancelled.v1`) and, from a device the account did
         not use in the last 90 days, sends "Nouvelle connexion"; later versions answer `202` with a
-        two-step challenge when the account needs one. No session needed. Scopes: none.
+        two-step challenge when the account needs one, and only a `200` means signed in. No session
+        needed. Scopes: none.
       tags: [auth]
       security: []
       requestBody:
@@ -596,8 +602,10 @@ paths:
           `422 auth.password-compromised`). A refused password leaves the link usable.
         - A link that expired, was used, was replaced or is unknown answers
           `422 auth.reset-link-expired`.
-        - The reset ends the lockout of the password sign-in of the address, keeps the personal API
-          tokens, and does not cancel a scheduled deletion of the account: only a sign-in does.
+        - The reset ends the lockout of the password sign-in of the address, drops a pending change
+          of address, ends the recent authentication of every session it leaves open, keeps the
+          personal API tokens, and does not cancel a scheduled deletion of the account: only a
+          sign-in does.
 
         Emits `user.password-changed.v1` (`method: reset`), from which notification-service sends
         "Votre mot de passe a été modifié" to the address of the account ("Un e-mail de
@@ -803,8 +811,10 @@ paths:
            `POST /v1/auth/reauthentication` says (`429 auth.account-locked`). A right one counts
            as a recent authentication of this session.
 
-        Recent authentication is not required: the current password stands for it. Answers the
-        account, with its new `passwordChangedAt` ("Modifié aujourd’hui") and the next `version`.
+        Recent authentication is not required: the current password stands for it. The change
+        drops a pending change of address and ends the recent authentication of every other
+        session, which stay open. Answers the account, with its new `passwordChangedAt` ("Modifié
+        aujourd’hui") and the next `version`.
         Emits `user.password-changed.v1` (`method: change`, no session closed), from which
         notification-service sends "Votre mot de passe a été modifié" to the address of the
         account ("Un e-mail de confirmation vient de partir vers <email>."). Session only: a
@@ -862,7 +872,9 @@ paths:
         minutes. The current address stays the address of the account, for the sign-in and the
         emails, until the code is confirmed ("L'adresse actuelle reste active jusqu'à la
         confirmation."). A new request replaces the pending change and makes its code stop
-        working; asking again for the same address is how the code is resent.
+        working; asking again for the same address is how the code is resent. The pending change
+        belongs to this session: the end or the revocation of the session, and a change or a reset
+        of the password, drop it.
 
         The checks run in this order:
 
@@ -920,11 +932,11 @@ paths:
       description: |
         Checks the code sent to the new address and makes it the address of the account, verified
         ("<email> est vérifiée et reçoit désormais vos e-mails."). Same rules for the code as the
-        sign-in code, except its 15 minutes: single use, and the fifth wrong attempt stops it.
+        sign-in code, except its 15 minutes: single use, and a few wrong attempts stop it.
 
-        - Without a pending change, or with a wrong code: `422 auth.code-invalid`. A code that
-          expired, was used, was replaced or took too many wrong attempts:
-          `422 auth.code-expired`.
+        - The change belongs to the session that asked for it. From another session, without a
+          pending change, or with a wrong code: `422 auth.code-invalid`. A code that expired, was
+          used, was replaced or took too many wrong attempts: `422 auth.code-expired`.
         - An address a verified account took since the request: `409 auth.email-taken`, and the
           change is dropped.
         - Recent authentication is not required again: the request required it, and the code
@@ -965,7 +977,7 @@ paths:
                 displayName: camille
                 jobTitle: Responsable produit
                 timeZone: Europe/Paris
-                passwordChangedAt: '2026-08-12T09:30:00Z'
+                passwordChangedAt: '2026-11-09T13:16:00Z'
                 version: 5
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -994,7 +1006,7 @@ paths:
           annuler"): `POST /v1/auth/sign-in` or `POST /v1/auth/sign-in/code/verification`, whose
           answer then carries `deletionCancelled: true`. There is no other way to cancel it, since
           no session or token of the account outlives the scheduling. A password reset does not
-          cancel it.
+          cancel it, and the cancellation does not bring back the revoked sessions and tokens.
         - At `deleteAt`, identity-service deletes the account (`user.deleted.v1`):
           organization-service removes its memberships, and the tasks and documents stay in the
           organizations, attributed to « Ancien membre ». The address is free again.
@@ -1097,10 +1109,10 @@ paths:
                       browserVersion: '18'
                       os: iOS
                       osVersion: '18.1'
-                    ipAddress: 198.51.100.7
-                    signedInAt: '2026-11-08T07:42:00Z'
+                    ipAddress: 86.247.12.30
+                    signedInAt: '2026-11-09T07:42:00Z'
                     lastActiveAt: '2026-11-09T11:20:00Z'
-                    expiresAt: '2026-12-08T07:42:00Z'
+                    expiresAt: '2026-12-09T07:42:00Z'
                   - id: 019a5f88-1c2d-7e3f-8a4b-6c7d8e9f0a12
                     current: false
                     device:
@@ -1173,7 +1185,7 @@ paths:
       description: |
         Closes every open session of the account except the one of the request ("Déconnecter les
         autres"; "Tous vos appareils sauf celui-ci seront déconnectés."). `revokedCount` gives the
-        confirmation ("3 sessions fermées", "Seul cet appareil reste connecté."). The personal API
+        confirmation ("2 sessions fermées", "Seul cet appareil reste connecté."). The personal API
         tokens stay. Recent authentication is not required. Emits `session.revoked.v1` for each
         closed session. The body is an empty JSON object. Session only: a personal API token gets
         `403 auth.api-token-not-accepted`.
@@ -1195,7 +1207,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/RevokedSessions'
               example:
-                revokedCount: 3
+                revokedCount: 2
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -2354,4 +2366,4 @@ components:
         revokedCount:
           type: integer
           minimum: 0
-          description: Sessions closed by the request ("3 sessions fermées").
+          description: Sessions closed by the request ("2 sessions fermées").

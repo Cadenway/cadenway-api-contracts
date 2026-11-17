@@ -313,7 +313,8 @@ export class AuthService {
  *
  * Later versions add two-step verification: a sign-in that needs it answers `202` with a
  * challenge and no cookie, and only the `200` that completes it opens the session, cancels a
- * scheduled deletion and counts the device. No session needed. Scopes: none.
+ * scheduled deletion and counts the device. Only a `200` means signed in: a client checks the
+ * status, not merely a success. No session needed. Scopes: none.
  * @summary Sign in with a password
  */
  signInWithPassword<TData = SignedInResponse>(passwordSignIn: PasswordSignIn, options?: HttpClientBodyOptions): Observable<TData>;
@@ -399,7 +400,8 @@ export class AuthService {
  * As with `POST /v1/auth/sign-in`, the sign-in cancels a scheduled deletion of the account
  * (`deletionCancelled: true`, `user.deletion-cancelled.v1`) and, from a device the account did
  * not use in the last 90 days, sends "Nouvelle connexion"; later versions answer `202` with a
- * two-step challenge when the account needs one. No session needed. Scopes: none.
+ * two-step challenge when the account needs one, and only a `200` means signed in. No session
+ * needed. Scopes: none.
  * @summary Sign in with a code
  */
  signInWithCode<TData = SignedInResponse>(codeVerification: CodeVerification, options?: HttpClientBodyOptions): Observable<TData>;
@@ -594,8 +596,10 @@ export class AuthService {
  *   `422 auth.password-compromised`). A refused password leaves the link usable.
  * - A link that expired, was used, was replaced or is unknown answers
  *   `422 auth.reset-link-expired`.
- * - The reset ends the lockout of the password sign-in of the address, keeps the personal API
- *   tokens, and does not cancel a scheduled deletion of the account: only a sign-in does.
+ * - The reset ends the lockout of the password sign-in of the address, drops a pending change
+ *   of address, ends the recent authentication of every session it leaves open, keeps the
+ *   personal API tokens, and does not cancel a scheduled deletion of the account: only a
+ *   sign-in does.
  *
  * Emits `user.password-changed.v1` (`method: reset`), from which notification-service sends
  * "Votre mot de passe a été modifié" to the address of the account ("Un e-mail de

@@ -97,8 +97,10 @@ export class AccountService {
  *    `POST /v1/auth/reauthentication` says (`429 auth.account-locked`). A right one counts
  *    as a recent authentication of this session.
  *
- * Recent authentication is not required: the current password stands for it. Answers the
- * account, with its new `passwordChangedAt` ("Modifié aujourd’hui") and the next `version`.
+ * Recent authentication is not required: the current password stands for it. The change
+ * drops a pending change of address and ends the recent authentication of every other
+ * session, which stay open. Answers the account, with its new `passwordChangedAt` ("Modifié
+ * aujourd’hui") and the next `version`.
  * Emits `user.password-changed.v1` (`method: change`, no session closed), from which
  * notification-service sends "Votre mot de passe a été modifié" to the address of the
  * account ("Un e-mail de confirmation vient de partir vers <email>."). Session only: a
@@ -143,7 +145,9 @@ export class AccountService {
  * minutes. The current address stays the address of the account, for the sign-in and the
  * emails, until the code is confirmed ("L'adresse actuelle reste active jusqu'à la
  * confirmation."). A new request replaces the pending change and makes its code stop
- * working; asking again for the same address is how the code is resent.
+ * working; asking again for the same address is how the code is resent. The pending change
+ * belongs to this session: the end or the revocation of the session, and a change or a reset
+ * of the password, drop it.
  *
  * The checks run in this order:
  *
@@ -196,11 +200,11 @@ export class AccountService {
 /**
  * Checks the code sent to the new address and makes it the address of the account, verified
  * ("<email> est vérifiée et reçoit désormais vos e-mails."). Same rules for the code as the
- * sign-in code, except its 15 minutes: single use, and the fifth wrong attempt stops it.
+ * sign-in code, except its 15 minutes: single use, and a few wrong attempts stop it.
  *
- * - Without a pending change, or with a wrong code: `422 auth.code-invalid`. A code that
- *   expired, was used, was replaced or took too many wrong attempts:
- *   `422 auth.code-expired`.
+ * - The change belongs to the session that asked for it. From another session, without a
+ *   pending change, or with a wrong code: `422 auth.code-invalid`. A code that expired, was
+ *   used, was replaced or took too many wrong attempts: `422 auth.code-expired`.
  * - An address a verified account took since the request: `409 auth.email-taken`, and the
  *   change is dropped.
  * - Recent authentication is not required again: the request required it, and the code
@@ -256,7 +260,7 @@ export class AccountService {
  *   annuler"): `POST /v1/auth/sign-in` or `POST /v1/auth/sign-in/code/verification`, whose
  *   answer then carries `deletionCancelled: true`. There is no other way to cancel it, since
  *   no session or token of the account outlives the scheduling. A password reset does not
- *   cancel it.
+ *   cancel it, and the cancellation does not bring back the revoked sessions and tokens.
  * - At `deleteAt`, identity-service deletes the account (`user.deleted.v1`):
  *   organization-service removes its memberships, and the tasks and documents stay in the
  *   organizations, attributed to « Ancien membre ». The address is free again.

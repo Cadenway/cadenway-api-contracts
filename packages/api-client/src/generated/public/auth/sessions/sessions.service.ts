@@ -242,7 +242,7 @@ export class SessionsService {
 /**
  * Closes every open session of the account except the one of the request ("Déconnecter les
  * autres"; "Tous vos appareils sauf celui-ci seront déconnectés."). `revokedCount` gives the
- * confirmation ("3 sessions fermées", "Seul cet appareil reste connecté."). The personal API
+ * confirmation ("2 sessions fermées", "Seul cet appareil reste connecté."). The personal API
  * tokens stay. Recent authentication is not required. Emits `session.revoked.v1` for each
  * closed session. The body is an empty JSON object. Session only: a personal API token gets
  * `403 auth.api-token-not-accepted`.

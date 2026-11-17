@@ -345,7 +345,8 @@ components:
         account that joined, `{ type: 'user', id: userId }`.
 
         Personal data: none beyond the ids. A consumer that needs the name or the address reads
-        them from `user.signed-up.v1` and `user.profile-updated.v1` of identity-service.
+        them from `user.signed-up.v1`, `user.profile-updated.v1` and `user.email-changed.v1` of
+        identity-service.
       headers:
         $ref: '#/components/schemas/EventHeaders'
       payload:

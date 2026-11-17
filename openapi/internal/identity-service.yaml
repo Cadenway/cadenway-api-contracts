@@ -673,11 +673,11 @@ paths:
       description: |
         Issues a reset link (`password-reset-link.issued.v1`, restricted) when a verified account
         uses the address, and makes the previous link of the account stop working; answers `202`
-        the same way otherwise, an unverified account included. The link works once, for 30
-        minutes, from any browser. Throttled per address, account or not, apart from the codes:
-        45 seconds between two requests and at most 5 in an hour (`ResetThrottled`). The `client`
-        is the browser that asked, shown in the email. Internal token: actor `anonymous`, no
-        organization.
+        the same way otherwise, an unverified account included, without a difference of time an
+        observer could measure. The link works once, for 30 minutes, from any browser. Throttled
+        per address, account or not, apart from the codes: 45 seconds between two requests and at
+        most 5 in an hour (`ResetThrottled`). The `client` is the browser that asked, shown in the
+        email. Internal token: actor `anonymous`, no organization.
       tags: [auth]
       requestBody:
         required: true
@@ -688,8 +688,8 @@ paths:
             example:
               email: camille.martin@ateliernord.fr
               client:
-                ipAddress: 86.247.12.30
-                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0
+                ipAddress: 192.0.2.14
+                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0
       responses:
         '202':
           description: Accepted, whether or not a link was issued.
@@ -759,8 +759,9 @@ paths:
           usable.
         - `closeOtherSessions` (`true` by default) revokes every open session of the account, each
           with `session.revoked.v1`.
-        - Ends the lockout of the password sign-in of the address; keeps the personal API tokens;
-          does not cancel a scheduled deletion.
+        - Ends the lockout of the password sign-in of the address, drops a pending change of
+          address and ends the recent authentication of the sessions it leaves open; keeps the
+          personal API tokens; does not cancel a scheduled deletion.
 
         Emits `user.password-changed.v1` with `method: reset`, the number of closed sessions and
         the device of the `client`. Internal token: actor `anonymous`, no organization.
@@ -776,8 +777,8 @@ paths:
               newPassword: nord-atelier-sprint-15
               closeOtherSessions: true
               client:
-                ipAddress: 86.247.12.30
-                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0
+                ipAddress: 192.0.2.14
+                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0
       responses:
         '200':
           description: The password is changed; no session is opened.
@@ -860,7 +861,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/RevokedSessions'
               example:
-                revokedCount: 3
+                revokedCount: 2
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -920,10 +921,10 @@ paths:
                       browserVersion: '18'
                       os: iOS
                       osVersion: '18.1'
-                    ipAddress: 198.51.100.7
-                    signedInAt: '2026-11-08T07:42:00Z'
+                    ipAddress: 86.247.12.30
+                    signedInAt: '2026-11-09T07:42:00Z'
                     lastActiveAt: '2026-11-09T11:20:00Z'
-                    expiresAt: '2026-12-08T07:42:00Z'
+                    expiresAt: '2026-12-09T07:42:00Z'
                 nextCursor: null
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -942,8 +943,9 @@ paths:
         checked first (`422 auth.password-too-short`, `422 auth.password-compromised`), without
         counting an attempt; then the current one (`422 auth.password-incorrect`, counted with the
         failed sign-ins; `429 auth.account-locked`). A right current password records a recent
-        authentication of `sessionId`. Every session stays open. Answers the account with the next
-        `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
+        authentication of `sessionId`. Every session stays open, but a pending change of address is
+        dropped and the recent authentication of the other sessions ends. Answers the account with
+        the next `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
         `method: change`, no closed session and the device of the `client`. Another user id, or an
         unknown one, answers `404 user.not-found`; a `sessionId` that is not an open session of the
         actor, `404 session.not-found`. Internal token: actor `user`, no organization.
@@ -961,8 +963,8 @@ paths:
               currentPassword: atelier-nord-sprint-14
               newPassword: nord-atelier-sprint-15
               client:
-                ipAddress: 86.247.12.30
-                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0
+                ipAddress: 192.0.2.14
+                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0
       responses:
         '200':
           description: The account after the change.
@@ -1004,11 +1006,13 @@ paths:
       description: |
         Records a pending change of address of the actor and issues an `email-change` code to the
         new address (`one-time-code.issued.v1`, 15 minutes); a new request replaces the pending
-        change and its code. The checks run in this order: recent authentication of `sessionId`
-        (`403 auth.reauthentication-required`), the current address (`422 auth.email-unchanged`),
-        a verified account of the new address (`409 auth.email-taken`; an unverified sign-up does
-        not count), then the throttle of the code requests of the new address
-        (`429 auth.code-throttled`). Another user id, or an unknown one, answers
+        change and its code. The pending change belongs to `sessionId`: the end or the revocation of
+        that session, and a change or a reset of the password, drop it. The checks run in this
+        order: recent authentication of `sessionId` (`403 auth.reauthentication-required`), the
+        current address (`422 auth.email-unchanged`), a verified account of the new address
+        (`409 auth.email-taken`; an unverified sign-up does not count), then the throttle of the
+        code requests of the new address (`429 auth.code-throttled`). Another user id, or an
+        unknown one, answers
         `404 user.not-found`; a `sessionId` that is not an open session of the actor,
         `404 session.not-found`. Internal token: actor `user`, no organization.
       tags: [users]
@@ -1054,8 +1058,8 @@ paths:
       summary: Confirm the new address of a user
       description: |
         Checks the `email-change` code of the pending change of the actor and makes the new
-        address the address of the account, verified. Without a pending change, or with a wrong
-        code: `422 auth.code-invalid`; a code no longer usable: `422 auth.code-expired`; a new
+        address the address of the account, verified. Without a pending change of `sessionId` (the
+        session that asked for it), or with a wrong code: `422 auth.code-invalid`; a code no longer usable: `422 auth.code-expired`; a new
         address a verified account took since the request: `409 auth.email-taken`, and the change
         is dropped. Recent authentication is not required again. The codes and the reset link
         issued to the previous address stop working, an unverified sign-up of the new address
@@ -1077,8 +1081,8 @@ paths:
               sessionId: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
               code: '731406'
               client:
-                ipAddress: 86.247.12.30
-                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0
+                ipAddress: 192.0.2.14
+                userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0
       responses:
         '200':
           description: The account, with its new address.
@@ -1099,7 +1103,7 @@ paths:
                 displayName: camille
                 jobTitle: Responsable produit
                 timeZone: Europe/Paris
-                passwordChangedAt: '2026-08-12T09:30:00Z'
+                passwordChangedAt: '2026-11-09T13:16:00Z'
                 version: 5
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -1575,8 +1579,9 @@ components:
     CodeThrottled:
       description: |
         `auth.code-throttled`, with `details.resendAvailableAt`: the code requests of the address
-        are throttled whatever their purpose, account or not, so the sign-up, the sign-up code and
-        the sign-in code routes count together. A request is refused less than 30 seconds after
+        are throttled whatever their purpose, account or not, so the sign-up, the sign-up code,
+        the sign-in code and the change of address, counted on the new address, count together. A
+        request is refused less than 30 seconds after
         the last accepted one, and once 5 were accepted in the current hour, which starts with the
         first request accepted after the previous hour ended. `details.resendAvailableAt` is 30
         seconds after the last accepted request, or the end of the hour.
@@ -1871,8 +1876,9 @@ components:
       type: object
       required: [ipAddress, userAgent]
       description: |
-        The browser the session is opened for, as the gateway saw it. Stored with the session, to
-        show its device and place later; never logged with the token.
+        The browser a request came from, as the gateway saw it. Stored with the session it opens,
+        to show its device and address; shown in the security email of the request. No place is
+        derived from the address. Never logged with a token.
       properties:
         ipAddress:
           type: string

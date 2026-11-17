@@ -14,8 +14,9 @@ export type Email = string;
 export type Language = string;
 
 /**
- * The browser the session is opened for, as the gateway saw it. Stored with the session, to
- * show its device and place later; never logged with the token.
+ * The browser a request came from, as the gateway saw it. Stored with the session it opens,
+ * to show its device and address; shown in the security email of the request. No place is
+ * derived from the address. Never logged with a token.
  */
 export interface Client {
   /**
@@ -694,8 +695,9 @@ export type AccountLockedResponse = Problem;
 
 /**
  * `auth.code-throttled`, with `details.resendAvailableAt`: the code requests of the address
- * are throttled whatever their purpose, account or not, so the sign-up, the sign-up code and
- * the sign-in code routes count together. A request is refused less than 30 seconds after
+ * are throttled whatever their purpose, account or not, so the sign-up, the sign-up code,
+ * the sign-in code and the change of address, counted on the new address, count together. A
+ * request is refused less than 30 seconds after
  * the last accepted one, and once 5 were accepted in the current hour, which starts with the
  * first request accepted after the previous hour ended. `details.resendAvailableAt` is 30
  * seconds after the last accepted request, or the end of the hour.

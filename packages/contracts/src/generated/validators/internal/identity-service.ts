@@ -133,7 +133,7 @@ export const VerifySignUpInternalBody = zod.object({
   "client": zod.object({
   "ipAddress": zod.string().min(verifySignUpInternalBodyClientIpAddressMin).max(verifySignUpInternalBodyClientIpAddressMax).describe('IPv4 or IPv6 address of the browser, from the one proxy hop the gateway trusts.'),
   "userAgent": zod.string().max(verifySignUpInternalBodyClientUserAgentMax).nullable().describe('`User-Agent` header of the browser, `null` when it sent none.')
-}).describe('The browser the session is opened for, as the gateway saw it. Stored with the session, to\nshow its device and place later; never logged with the token.\n')
+}).describe('The browser a request came from, as the gateway saw it. Stored with the session it opens,\nto show its device and address; shown in the security email of the request. No place is\nderived from the address. Never logged with a token.\n')
 }).describe('The code of a sign-up and the password that binds the verification to that sign-up. See\n`POST /internal/v1/auth/sign-up/verification` for the order of the checks.\n')
 
 export const verifySignUpInternalResponseTokenMax = 256;
@@ -199,7 +199,7 @@ export const SignInWithPasswordInternalBody = zod.object({
   "client": zod.object({
   "ipAddress": zod.string().min(signInWithPasswordInternalBodyClientIpAddressMin).max(signInWithPasswordInternalBodyClientIpAddressMax).describe('IPv4 or IPv6 address of the browser, from the one proxy hop the gateway trusts.'),
   "userAgent": zod.string().max(signInWithPasswordInternalBodyClientUserAgentMax).nullable().describe('`User-Agent` header of the browser, `null` when it sent none.')
-}).describe('The browser the session is opened for, as the gateway saw it. Stored with the session, to\nshow its device and place later; never logged with the token.\n')
+}).describe('The browser a request came from, as the gateway saw it. Stored with the session it opens,\nto show its device and address; shown in the security email of the request. No place is\nderived from the address. Never logged with a token.\n')
 })
 
 export const signInWithPasswordInternalResponseTokenMax = 256;
@@ -285,7 +285,7 @@ export const SignInWithCodeInternalBody = zod.object({
   "client": zod.object({
   "ipAddress": zod.string().min(signInWithCodeInternalBodyClientIpAddressMin).max(signInWithCodeInternalBodyClientIpAddressMax).describe('IPv4 or IPv6 address of the browser, from the one proxy hop the gateway trusts.'),
   "userAgent": zod.string().max(signInWithCodeInternalBodyClientUserAgentMax).nullable().describe('`User-Agent` header of the browser, `null` when it sent none.')
-}).describe('The browser the session is opened for, as the gateway saw it. Stored with the session, to\nshow its device and place later; never logged with the token.\n')
+}).describe('The browser a request came from, as the gateway saw it. Stored with the session it opens,\nto show its device and address; shown in the security email of the request. No place is\nderived from the address. Never logged with a token.\n')
 })
 
 export const signInWithCodeInternalResponseTokenMax = 256;
@@ -480,11 +480,11 @@ export const SwitchSessionOrganizationResponse = zod.object({
 /**
  * Issues a reset link (`password-reset-link.issued.v1`, restricted) when a verified account
  * uses the address, and makes the previous link of the account stop working; answers `202`
- * the same way otherwise, an unverified account included. The link works once, for 30
- * minutes, from any browser. Throttled per address, account or not, apart from the codes:
- * 45 seconds between two requests and at most 5 in an hour (`ResetThrottled`). The `client`
- * is the browser that asked, shown in the email. Internal token: actor `anonymous`, no
- * organization.
+ * the same way otherwise, an unverified account included, without a difference of time an
+ * observer could measure. The link works once, for 30 minutes, from any browser. Throttled
+ * per address, account or not, apart from the codes: 45 seconds between two requests and at
+ * most 5 in an hour (`ResetThrottled`). The `client` is the browser that asked, shown in the
+ * email. Internal token: actor `anonymous`, no organization.
  * @summary Issue a password reset link
  */
 export const requestPasswordResetInternalBodyEmailMax = 254;
@@ -552,8 +552,9 @@ export const InspectPasswordResetLinkInternalResponse = zod.object({
  *   usable.
  * - `closeOtherSessions` (`true` by default) revokes every open session of the account, each
  *   with `session.revoked.v1`.
- * - Ends the lockout of the password sign-in of the address; keeps the personal API tokens;
- *   does not cancel a scheduled deletion.
+ * - Ends the lockout of the password sign-in of the address, drops a pending change of
+ *   address and ends the recent authentication of the sessions it leaves open; keeps the
+ *   personal API tokens; does not cancel a scheduled deletion.
  *
  * Emits `user.password-changed.v1` with `method: reset`, the number of closed sessions and
  * the device of the `client`. Internal token: actor `anonymous`, no organization.
@@ -687,8 +688,9 @@ export const ListUserSessionsInternalResponse = zod.object({
  * checked first (`422 auth.password-too-short`, `422 auth.password-compromised`), without
  * counting an attempt; then the current one (`422 auth.password-incorrect`, counted with the
  * failed sign-ins; `429 auth.account-locked`). A right current password records a recent
- * authentication of `sessionId`. Every session stays open. Answers the account with the next
- * `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
+ * authentication of `sessionId`. Every session stays open, but a pending change of address is
+ * dropped and the recent authentication of the other sessions ends. Answers the account with
+ * the next `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
  * `method: change`, no closed session and the device of the `client`. Another user id, or an
  * unknown one, answers `404 user.not-found`; a `sessionId` that is not an open session of the
  * actor, `404 session.not-found`. Internal token: actor `user`, no organization.
@@ -740,11 +742,13 @@ export const ChangePasswordInternalResponse = zod.object({
 /**
  * Records a pending change of address of the actor and issues an `email-change` code to the
  * new address (`one-time-code.issued.v1`, 15 minutes); a new request replaces the pending
- * change and its code. The checks run in this order: recent authentication of `sessionId`
- * (`403 auth.reauthentication-required`), the current address (`422 auth.email-unchanged`),
- * a verified account of the new address (`409 auth.email-taken`; an unverified sign-up does
- * not count), then the throttle of the code requests of the new address
- * (`429 auth.code-throttled`). Another user id, or an unknown one, answers
+ * change and its code. The pending change belongs to `sessionId`: the end or the revocation of
+ * that session, and a change or a reset of the password, drop it. The checks run in this
+ * order: recent authentication of `sessionId` (`403 auth.reauthentication-required`), the
+ * current address (`422 auth.email-unchanged`), a verified account of the new address
+ * (`409 auth.email-taken`; an unverified sign-up does not count), then the throttle of the
+ * code requests of the new address (`429 auth.code-throttled`). Another user id, or an
+ * unknown one, answers
  * `404 user.not-found`; a `sessionId` that is not an open session of the actor,
  * `404 session.not-found`. Internal token: actor `user`, no organization.
  * @summary Ask to change the address of a user
@@ -775,8 +779,8 @@ export const RequestEmailChangeInternalResponse = zod.object({
 
 /**
  * Checks the `email-change` code of the pending change of the actor and makes the new
- * address the address of the account, verified. Without a pending change, or with a wrong
- * code: `422 auth.code-invalid`; a code no longer usable: `422 auth.code-expired`; a new
+ * address the address of the account, verified. Without a pending change of `sessionId` (the
+ * session that asked for it), or with a wrong code: `422 auth.code-invalid`; a code no longer usable: `422 auth.code-expired`; a new
  * address a verified account took since the request: `409 auth.email-taken`, and the change
  * is dropped. Recent authentication is not required again. The codes and the reset link
  * issued to the previous address stop working, an unverified sign-up of the new address
