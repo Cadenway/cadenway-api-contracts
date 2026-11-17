@@ -169,9 +169,10 @@ export const RemoveMemberResponse = zod.void()
  * `429 invitation.daily-limit-reached` ("Limite d’invitations atteinte pour aujourd’hui :
  * réessayez plus tard."), and nothing is created, sent or emitted. `details.remaining` says
  * how many invitation emails the organization can still cause now, `0` or more, so that the
- * web application can offer to invite fewer addresses; `Retry-After` says in how many
- * seconds the oldest email counted leaves the 24 hours, which is when the allowance grows
- * again. The allowance is checked once the body and the role of the caller are accepted.
+ * web application can offer to invite fewer addresses; `details.nextAvailableAt` says when
+ * the oldest email counted leaves the 24 hours, which is when the allowance grows again,
+ * and `Retry-After` the seconds until then. The allowance is checked once the body and the
+ * role of the caller are accepted.
  *
  * A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
  * `invitation.issued.v1` per `invited` address. Session only.
@@ -271,8 +272,8 @@ export const RevokeInvitationResponse = zod.void()
  *    and `Retry-After` the seconds until then.
  * 2. A resend takes one email of the daily allowance of the organization, 100 invitation
  *    emails in any 24 hours (see `POST /v1/invitations`): with none left, it answers
- *    `429 invitation.daily-limit-reached` with `details.remaining: 0`, and `Retry-After`
- *    says when the allowance grows again.
+ *    `429 invitation.daily-limit-reached` with `details.remaining: 0`;
+ *    `details.nextAvailableAt` and `Retry-After` say when the allowance grows again.
  *
  * A refused resend changes nothing and emits nothing.
  *

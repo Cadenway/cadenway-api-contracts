@@ -320,9 +320,10 @@ export const RemoveMemberInternalResponse = zod.void()
  * 100. Once the body and the role are accepted, a batch whose addresses that would be
  * `invited` need more emails than remain is refused as a whole with
  * `429 invitation.daily-limit-reached`: nothing is created, sent or emitted.
- * `details.remaining` is what remains, `0` or more, and `Retry-After` the seconds until the
- * oldest email counted leaves the 24 hours, rounded up. A batch whose addresses are all
- * members or already invited needs none and is never refused.
+ * `details.remaining` is what remains, `0` or more; `details.nextAvailableAt` is when the
+ * allowance grows again, the oldest email counted plus 24 hours; `Retry-After` is the
+ * seconds until then, rounded up. A batch whose addresses are all members or already invited
+ * needs none and is never refused.
  * @summary Invite people
  */
 export const inviteMembersInternalBodyEmailsItemMax = 254;
@@ -418,7 +419,8 @@ export const RevokeInvitationInternalResponse = zod.void()
  *    hour, and `Retry-After`, the seconds until then, rounded up.
  * 2. A resend takes one email of the daily allowance of the organization (see
  *    `POST /internal/v1/invitations`): with none left, it answers
- *    `429 invitation.daily-limit-reached` with `details.remaining: 0` and `Retry-After`.
+ *    `429 invitation.daily-limit-reached` with `details.remaining: 0`,
+ *    `details.nextAvailableAt` and `Retry-After`.
  *
  * A refused resend changes nothing and emits nothing.
  * @summary Send an invitation again

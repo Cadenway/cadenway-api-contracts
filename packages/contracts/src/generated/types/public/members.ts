@@ -355,11 +355,13 @@ export type RateLimitedResponse = Problem;
 /**
  * - `invitation.daily-limit-reached`: the addresses that would be invited need more
  *   invitation emails than the organization has left of its 100 in any 24 hours;
- *   `details.remaining` is what it has left, `0` or more, and nothing was created or sent;
+ *   `details.remaining` is what it has left, `0` or more, `details.nextAvailableAt` when
+ *   the oldest invitation email counted leaves the 24 hours, and nothing was created or
+ *   sent;
  * - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
  *
- * `Retry-After` says how many seconds to wait: for `invitation.daily-limit-reached`, until
- * the oldest invitation email counted leaves the 24 hours.
+ * `Retry-After` says how many seconds to wait: until `details.nextAvailableAt` for
+ * `invitation.daily-limit-reached`.
  */
 export type InvitationBatchLimitedResponse = Problem;
 
@@ -367,12 +369,13 @@ export type InvitationBatchLimitedResponse = Problem;
  * - `invitation.resend-throttled`: the email of the invitation went out less than an hour
  *   ago; `details.resendAvailableAt` says when it can go out again;
  * - `invitation.daily-limit-reached`: the organization has no invitation email left of its
- *   100 in any 24 hours; `details.remaining` is `0`;
+ *   100 in any 24 hours; `details.remaining` is `0`, and `details.nextAvailableAt` says
+ *   when the oldest invitation email counted leaves the 24 hours;
  * - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
  *
  * `Retry-After` says how many seconds to wait: until `details.resendAvailableAt` for
- * `invitation.resend-throttled`, until the oldest invitation email counted leaves the 24
- * hours for `invitation.daily-limit-reached`.
+ * `invitation.resend-throttled`, until `details.nextAvailableAt` for
+ * `invitation.daily-limit-reached`.
  */
 export type InvitationResendLimitedResponse = Problem;
 

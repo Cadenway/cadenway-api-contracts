@@ -384,8 +384,8 @@ export type InvitationClosedResponse = Problem;
 /**
  * `invitation.daily-limit-reached`: the addresses that would be invited need more invitation
  * emails than the organization has left of its 100 in any 24 hours; `details.remaining` is
- * what it has left, and nothing was created, sent or emitted. `Retry-After` is the seconds
- * until the oldest email counted leaves the 24 hours.
+ * what it has left, and nothing was created, sent or emitted. `details.nextAvailableAt` is
+ * when the oldest email counted leaves the 24 hours and `Retry-After` the seconds until then.
  */
 export type InvitationBatchLimitedResponse = Problem;
 
@@ -393,7 +393,8 @@ export type InvitationBatchLimitedResponse = Problem;
  * - `invitation.resend-throttled`: the email of the invitation went out less than an hour
  *   ago; `details.resendAvailableAt` is `sentAt` plus one hour;
  * - `invitation.daily-limit-reached`: the organization has no invitation email left of its
- *   100 in any 24 hours; `details.remaining` is `0`.
+ *   100 in any 24 hours; `details.remaining` is `0` and `details.nextAvailableAt` says when
+ *   the oldest email counted leaves the 24 hours.
  *
  * `Retry-After` is the seconds until the resend can succeed. Nothing changed and nothing was
  * emitted.

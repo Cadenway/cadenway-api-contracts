@@ -53,9 +53,11 @@ for (const root of ROOTS) {
     };
 
     // A query string carries every value as text (`?limit=8`): the query validators turn the text
-    // of a numeric parameter into a number before checking it, so a consumer validates the parsed
-    // query as it arrives. Text that is not a number (`?limit=abc`) still fails. Only numbers are
-    // converted: a string parameter keeps its text, and booleans and arrays have no such parameter.
+    // of a numeric parameter into a number with `Number()` before checking it, so text that is not
+    // a number (`?limit=abc`) still fails, and the bounds and `int` still apply. Only numbers are
+    // converted: a string parameter keeps its text, and an array parameter (`role=owner,admin`,
+    // `style: form`, `explode: false`) still arrives as one comma-separated text the consumer
+    // splits before the validator.
     entries[`${id}-validators`] = {
       input,
       output: {

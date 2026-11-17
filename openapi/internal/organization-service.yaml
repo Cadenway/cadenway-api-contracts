@@ -61,12 +61,13 @@ info:
     a late `user.signed-up.v1` never overwrites a newer profile.
 
     **Errors.** The gateway forwards the `code` and the `details` and answers the French `title`
-    of the public spec; the titles here are English. On a `429` it also forwards the
-    `Retry-After` of the answer, which its generated client exposes with the response headers.
-    The gateway's internal client turns any `401` into `503 upstream.unauthorized`, and answers
-    `403 auth.issuer-not-allowed`, `403 auth.actor-not-allowed` and
-    `403 auth.organization-required`, configuration defects, as `503 upstream.unauthorized` too,
-    never to the browser.
+    of the public spec; the titles here are English. The internal client does not carry the
+    headers of a problem: on a `429` the gateway derives `Retry-After` from `details`
+    (`resendAvailableAt` or `nextAvailableAt`), as for identity-service; the `Retry-After` these
+    routes send says the same to any other caller. The gateway's internal client turns any `401`
+    into `503 upstream.unauthorized`, and answers `403 auth.issuer-not-allowed`,
+    `403 auth.actor-not-allowed` and `403 auth.organization-required`, configuration defects, as
+    `503 upstream.unauthorized` too, never to the browser.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -440,9 +441,10 @@ paths:
         100. Once the body and the role are accepted, a batch whose addresses that would be
         `invited` need more emails than remain is refused as a whole with
         `429 invitation.daily-limit-reached`: nothing is created, sent or emitted.
-        `details.remaining` is what remains, `0` or more, and `Retry-After` the seconds until the
-        oldest email counted leaves the 24 hours, rounded up. A batch whose addresses are all
-        members or already invited needs none and is never refused.
+        `details.remaining` is what remains, `0` or more; `details.nextAvailableAt` is when the
+        allowance grows again, the oldest email counted plus 24 hours; `Retry-After` is the
+        seconds until then, rounded up. A batch whose addresses are all members or already invited
+        needs none and is never refused.
       tags: [invitations]
       requestBody:
         required: true
@@ -559,7 +561,8 @@ paths:
            hour, and `Retry-After`, the seconds until then, rounded up.
         2. A resend takes one email of the daily allowance of the organization (see
            `POST /internal/v1/invitations`): with none left, it answers
-           `429 invitation.daily-limit-reached` with `details.remaining: 0` and `Retry-After`.
+           `429 invitation.daily-limit-reached` with `details.remaining: 0`,
+           `details.nextAvailableAt` and `Retry-After`.
 
         A refused resend changes nothing and emits nothing.
       tags: [invitations]
@@ -868,6 +871,7 @@ components:
         code: invitation.daily-limit-reached
         details:
           remaining: 2
+          nextAvailableAt: '2026-11-07T09:12:00Z'
   responses:
     BadRequest:
       description: '`request.invalid`: the request does not match the schema; one `details.issues` entry per issue.'
@@ -1051,8 +1055,8 @@ components:
       description: |
         `invitation.daily-limit-reached`: the addresses that would be invited need more invitation
         emails than the organization has left of its 100 in any 24 hours; `details.remaining` is
-        what it has left, and nothing was created, sent or emitted. `Retry-After` is the seconds
-        until the oldest email counted leaves the 24 hours.
+        what it has left, and nothing was created, sent or emitted. `details.nextAvailableAt` is
+        when the oldest email counted leaves the 24 hours and `Retry-After` the seconds until then.
       headers:
         Retry-After:
           $ref: '#/components/headers/RetryAfter'
@@ -1068,7 +1072,8 @@ components:
         - `invitation.resend-throttled`: the email of the invitation went out less than an hour
           ago; `details.resendAvailableAt` is `sentAt` plus one hour;
         - `invitation.daily-limit-reached`: the organization has no invitation email left of its
-          100 in any 24 hours; `details.remaining` is `0`.
+          100 in any 24 hours; `details.remaining` is `0` and `details.nextAvailableAt` says when
+          the oldest email counted leaves the 24 hours.
 
         `Retry-After` is the seconds until the resend can succeed. Nothing changed and nothing was
         emitted.
@@ -1098,6 +1103,7 @@ components:
                 code: invitation.daily-limit-reached
                 details:
                   remaining: 0
+                  nextAvailableAt: '2026-11-07T09:12:00Z'
     InvitationNotPending:
       description: |
         `invitation.revoked`, `invitation.answered` (with `details.status`, `accepted` or
