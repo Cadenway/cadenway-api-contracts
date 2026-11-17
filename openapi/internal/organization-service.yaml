@@ -61,7 +61,10 @@ info:
     a late `user.signed-up.v1` never overwrites a newer profile.
 
     **Errors.** The gateway forwards the `code` and the `details` and answers the French `title`
-    of the public spec; the titles here are English. The gateway's internal client turns any `401`
+    of the public spec; the titles here are English. The internal client does not carry the
+    headers of a problem: on a `429` the gateway derives `Retry-After` from `details`
+    (`resendAvailableAt` or `nextAvailableAt`), as for identity-service; the `Retry-After` these
+    routes send says the same to any other caller. The gateway's internal client turns any `401`
     into `503 upstream.unauthorized`, and answers `403 auth.issuer-not-allowed`,
     `403 auth.actor-not-allowed` and `403 auth.organization-required`, configuration defects, as
     `503 upstream.unauthorized` too, never to the browser.
@@ -95,7 +98,9 @@ paths:
         Creates an organization owned by the actor, with the plan `free`, its owner member and the
         invitations of `inviteEmails` as `member`, in one transaction; derives the slug as
         `POST /v1/organizations` says. Emits `organization.created.v1`, `member.joined.v1` and one
-        `invitation.issued.v1` per invited address.
+        `invitation.issued.v1` per invited address. These invitations take their emails from the
+        daily allowance of the new organization (`POST /internal/v1/invitations`), which a
+        creation, 50 addresses at most, never exceeds.
 
         An actor that is not in the user directory yet answers `404 user.not-synchronized` and
         creates nothing. Internal token: actor `user`, no organization.
@@ -429,6 +434,17 @@ paths:
         Invites the addresses of the batch with one role, one outcome per distinct address, as
         `POST /v1/invitations` says. Owner and admins only. Emits one `invitation.issued.v1` per
         `invited` address. Internal token: actor `user`, organization required.
+
+        **Daily allowance.** organization-service counts the invitation emails of each
+        organization over a rolling 24 hours: every `invitation.issued.v1`, from this route, from
+        the creation of the organization or from a resend, takes one, and the organization has
+        100. Once the body and the role are accepted, a batch whose addresses that would be
+        `invited` need more emails than remain is refused as a whole with
+        `429 invitation.daily-limit-reached`: nothing is created, sent or emitted.
+        `details.remaining` is what remains, `0` or more; `details.nextAvailableAt` is when the
+        allowance grows again, the oldest email counted plus 24 hours; `Retry-After` is the
+        seconds until then, rounded up. A batch whose addresses are all members or already invited
+        needs none and is never refused.
       tags: [invitations]
       requestBody:
         required: true
@@ -459,6 +475,8 @@ paths:
           $ref: '#/components/responses/RoleForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/InvitationBatchLimited'
     get:
       operationId: listInvitationsInternal
       summary: List the pending invitations
@@ -534,6 +552,19 @@ paths:
         `invitation.issued.v1` with the next version; `409 invitation.revoked` or
         `409 invitation.answered` otherwise. Owner and admins only. Internal token: actor `user`,
         organization required.
+
+        **Limits.** Once the invitation is found and pending, in this order:
+
+        1. A resend less than an hour after the last sending of the invitation, its `sentAt`
+           (the invitation itself or the previous resend), answers
+           `429 invitation.resend-throttled` with `details.resendAvailableAt`, `sentAt` plus one
+           hour, and `Retry-After`, the seconds until then, rounded up.
+        2. A resend takes one email of the daily allowance of the organization (see
+           `POST /internal/v1/invitations`): with none left, it answers
+           `429 invitation.daily-limit-reached` with `details.remaining: 0`,
+           `details.nextAvailableAt` and `Retry-After`.
+
+        A refused resend changes nothing and emits nothing.
       tags: [invitations]
       requestBody:
         required: true
@@ -565,6 +596,8 @@ paths:
           $ref: '#/components/responses/InvitationNotFound'
         '409':
           $ref: '#/components/responses/InvitationClosed'
+        '429':
+          $ref: '#/components/responses/InvitationResendLimited'
   /internal/v1/users/{userId}/invitations:
     parameters:
       - $ref: '#/components/parameters/UserId'
@@ -747,6 +780,11 @@ components:
       description: Version of the invitation, `"<version>"`.
       schema:
         type: string
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110), rounded up.
+      schema:
+        type: integer
+        minimum: 1
   examples:
     AtelierNord:
       summary: Atelier Nord, read by its owner
@@ -824,6 +862,16 @@ components:
         code: invitation.expired
         details:
           expiresAt: '2026-11-02T15:00:00Z'
+    InvitationDailyLimitReached:
+      summary: Daily allowance of invitation emails used up
+      value:
+        type: about:blank
+        title: Too Many Requests
+        status: 429
+        code: invitation.daily-limit-reached
+        details:
+          remaining: 2
+          nextAvailableAt: '2026-11-07T09:12:00Z'
   responses:
     BadRequest:
       description: '`request.invalid`: the request does not match the schema; one `details.issues` entry per issue.'
@@ -1003,6 +1051,59 @@ components:
               $ref: '#/components/examples/InvitationRevoked'
             invitationAnswered:
               $ref: '#/components/examples/InvitationAnswered'
+    InvitationBatchLimited:
+      description: |
+        `invitation.daily-limit-reached`: the addresses that would be invited need more invitation
+        emails than the organization has left of its 100 in any 24 hours; `details.remaining` is
+        what it has left, and nothing was created, sent or emitted. `details.nextAvailableAt` is
+        when the oldest email counted leaves the 24 hours and `Retry-After` the seconds until then.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            dailyLimitReached:
+              $ref: '#/components/examples/InvitationDailyLimitReached'
+    InvitationResendLimited:
+      description: |
+        - `invitation.resend-throttled`: the email of the invitation went out less than an hour
+          ago; `details.resendAvailableAt` is `sentAt` plus one hour;
+        - `invitation.daily-limit-reached`: the organization has no invitation email left of its
+          100 in any 24 hours; `details.remaining` is `0` and `details.nextAvailableAt` says when
+          the oldest email counted leaves the 24 hours.
+
+        `Retry-After` is the seconds until the resend can succeed. Nothing changed and nothing was
+        emitted.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            resendThrottled:
+              summary: Invitation email sent less than an hour ago
+              value:
+                type: about:blank
+                title: Too Many Requests
+                status: 429
+                code: invitation.resend-throttled
+                details:
+                  resendAvailableAt: '2026-11-06T17:20:00Z'
+            dailyLimitReached:
+              summary: No invitation email left today
+              value:
+                type: about:blank
+                title: Too Many Requests
+                status: 429
+                code: invitation.daily-limit-reached
+                details:
+                  remaining: 0
+                  nextAvailableAt: '2026-11-07T09:12:00Z'
     InvitationNotPending:
       description: |
         `invitation.revoked`, `invitation.answered` (with `details.status`, `accepted` or
@@ -1141,6 +1242,10 @@ components:
           type: [string, 'null']
           format: uri
           maxLength: 2048
+          description: |
+            Absolute URL; `null` clears it. Only the schemes `https` and `http` are accepted: any
+            other (`javascript:`, `data:`, `mailto:`, `ftp:`) answers `400 request.invalid` with an
+            issue on `website`.
         defaultLanguage:
           type: string
           enum: [fr, en, de]
@@ -1172,6 +1277,7 @@ components:
           type: [string, 'null']
         website:
           type: [string, 'null']
+          description: Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.
         defaultLanguage:
           type: string
           x-extensible-enum: [fr, en, de]

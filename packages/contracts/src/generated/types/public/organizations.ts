@@ -122,7 +122,9 @@ export interface OrganizationPatch {
      */
   description?: string | null;
   /**
-     * "Site web", an absolute `https` or `http` URL; `null` clears it.
+     * "Site web", an absolute URL; `null` clears it. Only the schemes `https` and `http` are
+     * accepted: any other (`javascript:`, `data:`, `mailto:`, `ftp:`) answers
+     * `400 request.invalid` with an issue on `website`.
      * @maxLength 2048
      * @nullable
      */
@@ -140,7 +142,7 @@ export interface Organization {
      */
   description: string | null;
   /**
-     * Absolute URL; `null` when there is none.
+     * Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.
      * @nullable
      */
   website: string | null;

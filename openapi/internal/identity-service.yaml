@@ -570,9 +570,11 @@ paths:
         `member.joined.v1` has not arrived yet, answers `404 organization.not-found`. A session of
         another user, or an unknown id, answers `404 session.not-found`, which the gateway answers
         as `401 auth.session-expired`: the session ended since its introspection. Choosing the
-        current organization again answers `200` and changes nothing. From the next introspection
-        the session carries the organization and the role. Internal token: actor `user`, no
-        organization.
+        current organization of the session again answers `200` and leaves the session as it is,
+        but records the organization as the last choice of the actor again, the one their next
+        sessions start in, also when another session of theirs chose another organization since.
+        From the next introspection the session carries the organization and the role. Internal
+        token: actor `user`, no organization.
       tags: [sessions]
       parameters:
         - name: sessionId
@@ -735,7 +737,9 @@ paths:
         its context from it, as for a session.
 
         A token is active when it is known by its hash, neither revoked nor expired, and its user
-        still belongs to its organization in the copy of the memberships. Any other token,
+        belongs to its organization in the copy of the memberships. A token of a removed member is
+        inactive while the person is not a member, and active again, until revoked or expired, once
+        they join the organization again with a new membership. Any other token,
         malformed ones and session tokens included, answers `200` with `active: false`, never an
         error. An active answer records the last use of the token, at most once a minute. The call
         can be retried. Separate from `POST /internal/v1/tokens/introspect`, whose active answer
@@ -1305,7 +1309,11 @@ components:
           format: uuid
           description: |
             Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);
-            `null` when it has none, or when its user no longer belongs to it.
+            `null` when it has none, or when the membership it was chosen through was removed
+            (`member.removed.v1`). A session whose organization was emptied by a removal stays
+            without one, even after the person joins the organization again with a new membership,
+            until an organization is chosen again; a new session starts in the last organization
+            the person chose, if they are a member of it.
         role:
           type: [string, 'null']
           description: |

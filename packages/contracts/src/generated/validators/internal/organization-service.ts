@@ -8,7 +8,9 @@ import * as zod from 'zod';
  * Creates an organization owned by the actor, with the plan `free`, its owner member and the
  * invitations of `inviteEmails` as `member`, in one transaction; derives the slug as
  * `POST /v1/organizations` says. Emits `organization.created.v1`, `member.joined.v1` and one
- * `invitation.issued.v1` per invited address.
+ * `invitation.issued.v1` per invited address. These invitations take their emails from the
+ * daily allowance of the new organization (`POST /internal/v1/invitations`), which a
+ * creation, 50 addresses at most, never exceeds.
  *
  * An actor that is not in the user directory yet answers `404 user.not-synchronized` and
  * creates nothing. Internal token: actor `user`, no organization.
@@ -50,7 +52,7 @@ export const CreateOrganizationInternalResponse = zod.object({
   "name": zod.string(),
   "slug": zod.string(),
   "description": zod.string().nullable(),
-  "website": zod.string().nullable(),
+  "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
   "defaultLanguage": zod.string(),
   "plan": zod.string().describe('Always `free` until billing exists.'),
   "memberCount": zod.int().min(1).describe('Members that take a seat; guests are not counted.'),
@@ -79,7 +81,7 @@ export const listMyOrganizationsInternalQueryLimitMax = 100;
 
 export const ListMyOrganizationsInternalQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
-  "limit": zod.int().min(1).max(listMyOrganizationsInternalQueryLimitMax).default(listMyOrganizationsInternalQueryLimitDefault).describe('Page size.')
+  "limit": zod.coerce.number().int().min(1).max(listMyOrganizationsInternalQueryLimitMax).default(listMyOrganizationsInternalQueryLimitDefault).describe('Page size.')
 })
 
 
@@ -114,7 +116,7 @@ export const GetOrganizationInternalResponse = zod.object({
   "name": zod.string(),
   "slug": zod.string(),
   "description": zod.string().nullable(),
-  "website": zod.string().nullable(),
+  "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
   "defaultLanguage": zod.string(),
   "plan": zod.string().describe('Always `free` until billing exists.'),
   "memberCount": zod.int().min(1).describe('Members that take a seat; guests are not counted.'),
@@ -152,7 +154,7 @@ export const UpdateOrganizationInternalBody = zod.object({
   "name": zod.string().min(1).max(updateOrganizationInternalBodyNameMax).optional(),
   "slug": zod.string().min(updateOrganizationInternalBodySlugMin).max(updateOrganizationInternalBodySlugMax).regex(updateOrganizationInternalBodySlugRegExp).optional(),
   "description": zod.string().max(updateOrganizationInternalBodyDescriptionMax).nullish(),
-  "website": zod.url().max(updateOrganizationInternalBodyWebsiteMax).nullish(),
+  "website": zod.url().max(updateOrganizationInternalBodyWebsiteMax).nullish().describe('Absolute URL; `null` clears it. Only the schemes `https` and `http` are accepted: any\nother (`javascript:`, `data:`, `mailto:`, `ftp:`) answers `400 request.invalid` with an\nissue on `website`.\n'),
   "defaultLanguage": zod.enum(['fr', 'en', 'de']).optional()
 })
 
@@ -165,7 +167,7 @@ export const UpdateOrganizationInternalResponse = zod.object({
   "name": zod.string(),
   "slug": zod.string(),
   "description": zod.string().nullable(),
-  "website": zod.string().nullable(),
+  "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
   "defaultLanguage": zod.string(),
   "plan": zod.string().describe('Always `free` until billing exists.'),
   "memberCount": zod.int().min(1).describe('Members that take a seat; guests are not counted.'),
@@ -192,7 +194,7 @@ export const listMembersInternalQueryRoleMax = 4;
 
 export const ListMembersInternalQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
-  "limit": zod.int().min(1).max(listMembersInternalQueryLimitMax).default(listMembersInternalQueryLimitDefault).describe('Page size.'),
+  "limit": zod.coerce.number().int().min(1).max(listMembersInternalQueryLimitMax).default(listMembersInternalQueryLimitDefault).describe('Page size.'),
   "search": zod.string().min(1).max(listMembersInternalQuerySearchMax).optional().describe('Text to find in the name or the address, without regard to case or accents.'),
   "role": zod.array(zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n')).min(1).max(listMembersInternalQueryRoleMax).optional().describe('Roles to keep, separated by commas.')
 })
@@ -311,6 +313,17 @@ export const RemoveMemberInternalResponse = zod.void()
  * Invites the addresses of the batch with one role, one outcome per distinct address, as
  * `POST /v1/invitations` says. Owner and admins only. Emits one `invitation.issued.v1` per
  * `invited` address. Internal token: actor `user`, organization required.
+ *
+ * **Daily allowance.** organization-service counts the invitation emails of each
+ * organization over a rolling 24 hours: every `invitation.issued.v1`, from this route, from
+ * the creation of the organization or from a resend, takes one, and the organization has
+ * 100. Once the body and the role are accepted, a batch whose addresses that would be
+ * `invited` need more emails than remain is refused as a whole with
+ * `429 invitation.daily-limit-reached`: nothing is created, sent or emitted.
+ * `details.remaining` is what remains, `0` or more; `details.nextAvailableAt` is when the
+ * allowance grows again, the oldest email counted plus 24 hours; `Retry-After` is the
+ * seconds until then, rounded up. A batch whose addresses are all members or already invited
+ * needs none and is never refused.
  * @summary Invite people
  */
 export const inviteMembersInternalBodyEmailsItemMax = 254;
@@ -350,7 +363,7 @@ export const listInvitationsInternalQueryLimitMax = 100;
 
 export const ListInvitationsInternalQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
-  "limit": zod.int().min(1).max(listInvitationsInternalQueryLimitMax).default(listInvitationsInternalQueryLimitDefault).describe('Page size.')
+  "limit": zod.coerce.number().int().min(1).max(listInvitationsInternalQueryLimitMax).default(listInvitationsInternalQueryLimitDefault).describe('Page size.')
 })
 
 export const listInvitationsInternalResponseItemsItemEmailMax = 254;
@@ -397,6 +410,19 @@ export const RevokeInvitationInternalResponse = zod.void()
  * `invitation.issued.v1` with the next version; `409 invitation.revoked` or
  * `409 invitation.answered` otherwise. Owner and admins only. Internal token: actor `user`,
  * organization required.
+ *
+ * **Limits.** Once the invitation is found and pending, in this order:
+ *
+ * 1. A resend less than an hour after the last sending of the invitation, its `sentAt`
+ *    (the invitation itself or the previous resend), answers
+ *    `429 invitation.resend-throttled` with `details.resendAvailableAt`, `sentAt` plus one
+ *    hour, and `Retry-After`, the seconds until then, rounded up.
+ * 2. A resend takes one email of the daily allowance of the organization (see
+ *    `POST /internal/v1/invitations`): with none left, it answers
+ *    `429 invitation.daily-limit-reached` with `details.remaining: 0`,
+ *    `details.nextAvailableAt` and `Retry-After`.
+ *
+ * A refused resend changes nothing and emits nothing.
  * @summary Send an invitation again
  */
 export const ResendInvitationInternalParams = zod.object({
@@ -446,7 +472,7 @@ export const listReceivedInvitationsInternalQueryLimitMax = 100;
 
 export const ListReceivedInvitationsInternalQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
-  "limit": zod.int().min(1).max(listReceivedInvitationsInternalQueryLimitMax).default(listReceivedInvitationsInternalQueryLimitDefault).describe('Page size.')
+  "limit": zod.coerce.number().int().min(1).max(listReceivedInvitationsInternalQueryLimitMax).default(listReceivedInvitationsInternalQueryLimitDefault).describe('Page size.')
 })
 
 

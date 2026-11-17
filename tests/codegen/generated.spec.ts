@@ -175,6 +175,14 @@ describe('code generated from a fixture route', () => {
     expect(ListTasksQueryParams.safeParse({ limit: 101 }).success).toBe(false);
   });
 
+  it('reads a numeric query parameter from its text and keeps a string one as text', () => {
+    expect(ListTasksQueryParams.parse({ limit: '20', sort: '1' })).toEqual({
+      limit: 20,
+      sort: '1',
+    });
+    expect(ListTasksQueryParams.safeParse({ limit: 'abc' }).success).toBe(false);
+  });
+
   it('validates a page typed by the generated schema types', () => {
     const page: TaskPage = { items: [task], nextCursor: null };
 

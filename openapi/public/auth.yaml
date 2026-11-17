@@ -27,11 +27,13 @@ info:
 
     **Cross-site requests.** Every request with an unsafe method on these routes, signed in or not,
     carries an `Origin` equal to one of the gateway's allowed origins (the web application, the
-    website) and `Content-Type: application/json`; the gateway refuses any other before the route
-    runs (`403 auth.csrf-rejected`). Signing in and signing up are covered too, so that another
-    site cannot sign a browser in to an account of its choosing. A `PATCH` is a JSON Merge Patch
-    (RFC 7396) sent as `application/json`, for the same reason. A request authenticated by a
-    personal API token carries no ambient credential and needs no `Origin`.
+    website) and, every one of them being a `POST` or a `PATCH`, `Content-Type: application/json`;
+    the gateway refuses any other before the route runs (`403 auth.csrf-rejected`). Signing in and
+    signing up are covered too, so that another site cannot sign a browser in to an account of its
+    choosing. A `PATCH` is a JSON Merge Patch (RFC 7396) sent as `application/json`, for the same
+    reason. The other documents apply the same rule to the requests the cookie authenticates,
+    where a bodiless `DELETE` passes on its `Origin` alone. A request authenticated by a personal
+    API token carries no ambient credential and needs no `Origin`.
 
     **Account enumeration.** Only the sign-up says whether an address is taken, as the mockup does.
     Every other route answers the same way whether or not an account uses the address: the method

@@ -283,9 +283,12 @@ export class MembersService {
 /**
  * Removes a member from the current organization ("Retirer le membre"): they lose access to
  * every space of it, their tasks stay assigned and a seat is freed. Owner and admins only; the
- * owner cannot be removed (`422 member.owner-protected`). Their sessions stop acting on this
- * organization and their personal API tokens of it stop working once identity-service has
- * applied `member.removed.v1`, within seconds.
+ * owner cannot be removed (`422 member.owner-protected`). Once identity-service has applied
+ * `member.removed.v1`, within seconds, their sessions stop acting on this organization and
+ * their personal API tokens of it stop working while they are not a member. If the person
+ * joins again, by a new invitation, those tokens work again until revoked or expired; a
+ * session that was acting on the organization acts on it again only once it is chosen again
+ * (`PUT /v1/session/organization`).
  *
  * Emits `member.removed.v1`. Session only.
  * @summary Remove a member

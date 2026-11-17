@@ -37,10 +37,11 @@ info:
     authenticates it with that token alone and ignores the cookie.
 
     **Cross-site requests.** A request with an unsafe method authenticated by the cookie carries an
-    `Origin` equal to one of the gateway's allowed origins and `Content-Type: application/json`, as
-    in `openapi/public/auth.yaml`; the gateway refuses any other before the route runs
-    (`403 auth.csrf-rejected`). A `PATCH` is a JSON Merge Patch (RFC 7396) sent as
-    `application/json`, for the same reason.
+    `Origin` equal to one of the gateway's allowed origins; a `POST`, `PUT` or `PATCH`, the only
+    unsafe methods of this document, also carries `Content-Type: application/json` (a bodiless
+    `DELETE` passes on its `Origin` alone, see `openapi/public/members.yaml`). The gateway refuses
+    any other request before the route runs (`403 auth.csrf-rejected`). A `PATCH` is a JSON Merge
+    Patch (RFC 7396) sent as `application/json`, for the same reason.
 
     **Rate limit.** 600 requests per minute per session or personal token, counted by the gateway;
     beyond, `429 rate-limit.exceeded` with `Retry-After`.
@@ -90,7 +91,10 @@ paths:
         - An address used by another organization answers `409 organization.slug-taken`, derived
           or not.
         - Each address of `inviteEmails` gets its own outcome in `invitations`, as
-          `POST /v1/invitations` does; an address of the caller answers `already-member`.
+          `POST /v1/invitations` does; an address of the caller answers `already-member`. These
+          invitations take their emails from the daily allowance of the new organization, 100
+          invitation emails in any 24 hours (`openapi/public/members.yaml`), which a creation, 50
+          addresses at most, never exceeds.
         - organization-service knows the caller from the events of their sign-up, which precede
           their first session. In the rare case it has not applied them yet, the creation answers
           `404 user.not-synchronized` and nothing is created: the web application retries after a
@@ -320,7 +324,10 @@ paths:
         - An organization the caller does not belong to answers `404 organization.not-found`, as
           does, for a few seconds, an organization the caller has just created or joined: the web
           application retries before it shows the error.
-        - Choosing the current organization again answers `200` and changes nothing.
+        - Choosing the current organization of the session again answers `200` and leaves the
+          session as it is, but records the organization as the last choice of the caller again,
+          the one their next sessions start in, also when another session of theirs chose
+          another organization since.
         - A session that ended meanwhile answers `401 auth.session-expired`.
 
         Session only: a personal API token, bound to the organization it was created in, cannot
@@ -737,7 +744,10 @@ components:
           type: [string, 'null']
           format: uri
           maxLength: 2048
-          description: '"Site web", an absolute `https` or `http` URL; `null` clears it.'
+          description: |
+            "Site web", an absolute URL; `null` clears it. Only the schemes `https` and `http` are
+            accepted: any other (`javascript:`, `data:`, `mailto:`, `ftp:`) answers
+            `400 request.invalid` with an issue on `website`.
         defaultLanguage:
           $ref: '#/components/schemas/DefaultLanguage'
     Organization:
@@ -771,7 +781,7 @@ components:
           description: Up to 280 characters; `null` when there is none.
         website:
           type: [string, 'null']
-          description: Absolute URL; `null` when there is none.
+          description: Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.
         defaultLanguage:
           type: string
           description: BCP 47 tag; `fr`, `en` or `de` today, more later (`x-extensible-enum`).

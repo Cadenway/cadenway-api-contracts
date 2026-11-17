@@ -193,7 +193,11 @@ export interface ActiveToken {
   userId: string;
   /**
      * Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);
-     * `null` when it has none, or when its user no longer belongs to it.
+     * `null` when it has none, or when the membership it was chosen through was removed
+     * (`member.removed.v1`). A session whose organization was emptied by a removal stays
+     * without one, even after the person joins the organization again with a new membership,
+     * until an organization is chosen again; a new session starts in the last organization
+     * the person chose, if they are a member of it.
      * @nullable
      */
   organizationId: string | null;

@@ -86,8 +86,10 @@ export interface SessionRevokedV1 {
   /** When the session was revoked. */
   occurredAt: string;
   /**
-   * Organization of the session; always `null` in this version, since a session belongs
-   * to no organization yet.
+   * Always `null` in this version, also when the session acts on an organization
+   * (`PUT /v1/session/organization`): the revocation ends a session of the account, the
+   * event is appended in a system transaction, and a consumer finds the session by
+   * `sessionId`.
    */
   organizationId: string | null;
   /** Who caused the event. */

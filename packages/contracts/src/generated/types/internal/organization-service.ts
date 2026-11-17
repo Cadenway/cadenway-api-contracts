@@ -107,6 +107,9 @@ export interface OrganizationPatch {
      */
   description?: string | null;
   /**
+     * Absolute URL; `null` clears it. Only the schemes `https` and `http` are accepted: any
+     * other (`javascript:`, `data:`, `mailto:`, `ftp:`) answers `400 request.invalid` with an
+     * issue on `website`.
      * @maxLength 2048
      * @nullable
      */
@@ -120,7 +123,10 @@ export interface Organization {
   slug: string;
   /** @nullable */
   description: string | null;
-  /** @nullable */
+  /**
+     * Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.
+     * @nullable
+     */
   website: string | null;
   defaultLanguage: string;
   /** Always `free` until billing exists. */
@@ -374,6 +380,26 @@ export type InvitationAnsweredResponse = Problem;
  * `invitation.revoked`, or `invitation.answered` with `details.status`.
  */
 export type InvitationClosedResponse = Problem;
+
+/**
+ * `invitation.daily-limit-reached`: the addresses that would be invited need more invitation
+ * emails than the organization has left of its 100 in any 24 hours; `details.remaining` is
+ * what it has left, and nothing was created, sent or emitted. `details.nextAvailableAt` is
+ * when the oldest email counted leaves the 24 hours and `Retry-After` the seconds until then.
+ */
+export type InvitationBatchLimitedResponse = Problem;
+
+/**
+ * - `invitation.resend-throttled`: the email of the invitation went out less than an hour
+ *   ago; `details.resendAvailableAt` is `sentAt` plus one hour;
+ * - `invitation.daily-limit-reached`: the organization has no invitation email left of its
+ *   100 in any 24 hours; `details.remaining` is `0` and `details.nextAvailableAt` says when
+ *   the oldest email counted leaves the 24 hours.
+ *
+ * `Retry-After` is the seconds until the resend can succeed. Nothing changed and nothing was
+ * emitted.
+ */
+export type InvitationResendLimitedResponse = Problem;
 
 /**
  * `invitation.revoked`, `invitation.answered` (with `details.status`, `accepted` or

@@ -327,7 +327,7 @@ export const IntrospectTokenResponse = zod.union([zod.object({
   "tokenType": zod.string().describe('Kind of token: always `session` on this route. A personal API token is introspected by\n`POST /internal/v1/api-tokens/introspect`, which answers `api-token`. Later versions\nmay add kinds without a new version (`x-extensible-enum`).\n'),
   "sessionId": zod.uuid(),
   "userId": zod.uuid(),
-  "organizationId": zod.uuid().nullable().describe('Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);\n`null` when it has none, or when its user no longer belongs to it.\n'),
+  "organizationId": zod.uuid().nullable().describe('Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);\n`null` when it has none, or when the membership it was chosen through was removed\n(`member.removed.v1`). A session whose organization was emptied by a removal stays\nwithout one, even after the person joins the organization again with a new membership,\nuntil an organization is chosen again; a new session starts in the last organization\nthe person chose, if they are a member of it.\n'),
   "role": zod.string().nullable().describe('Role of the user in that organization, from the copy of the memberships: `owner`,\n`admin`, `member` or `guest`; `null` without an organization. The gateway carries it\nin the internal token; organization-service decides from its own members.\n'),
   "scopes": zod.array(zod.string()).describe('Scopes the token grants. A session holds every scope: `tasks:read`, `tasks:write`,\n`members:read` and `webhooks:manage` today, more as they are added.\n'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('When the session ends at the latest.')
@@ -434,9 +434,11 @@ export const UpdateUserResponse = zod.object({
  * `member.joined.v1` has not arrived yet, answers `404 organization.not-found`. A session of
  * another user, or an unknown id, answers `404 session.not-found`, which the gateway answers
  * as `401 auth.session-expired`: the session ended since its introspection. Choosing the
- * current organization again answers `200` and changes nothing. From the next introspection
- * the session carries the organization and the role. Internal token: actor `user`, no
- * organization.
+ * current organization of the session again answers `200` and leaves the session as it is,
+ * but records the organization as the last choice of the actor again, the one their next
+ * sessions start in, also when another session of theirs chose another organization since.
+ * From the next introspection the session carries the organization and the role. Internal
+ * token: actor `user`, no organization.
  * @summary Choose the current organization of a session
  */
 export const SwitchSessionOrganizationParams = zod.object({
@@ -507,7 +509,7 @@ export const listApiTokensInternalQueryLimitMax = 100;
 
 export const ListApiTokensInternalQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
-  "limit": zod.int().min(1).max(listApiTokensInternalQueryLimitMax).default(listApiTokensInternalQueryLimitDefault).describe('Page size.')
+  "limit": zod.coerce.number().int().min(1).max(listApiTokensInternalQueryLimitMax).default(listApiTokensInternalQueryLimitDefault).describe('Page size.')
 })
 
 export const listApiTokensInternalResponseItemsItemPrefixMin = 11;
@@ -551,7 +553,9 @@ export const RevokeApiTokenInternalResponse = zod.void()
  * its context from it, as for a session.
  *
  * A token is active when it is known by its hash, neither revoked nor expired, and its user
- * still belongs to its organization in the copy of the memberships. Any other token,
+ * belongs to its organization in the copy of the memberships. A token of a removed member is
+ * inactive while the person is not a member, and active again, until revoked or expired, once
+ * they join the organization again with a new membership. Any other token,
  * malformed ones and session tokens included, answers `200` with `active: false`, never an
  * error. An active answer records the last use of the token, at most once a minute. The call
  * can be retried. Separate from `POST /internal/v1/tokens/introspect`, whose active answer

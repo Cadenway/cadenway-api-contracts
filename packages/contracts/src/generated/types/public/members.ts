@@ -353,6 +353,33 @@ export type VersionMismatchResponse = Problem;
 export type RateLimitedResponse = Problem;
 
 /**
+ * - `invitation.daily-limit-reached`: the addresses that would be invited need more
+ *   invitation emails than the organization has left of its 100 in any 24 hours;
+ *   `details.remaining` is what it has left, `0` or more, `details.nextAvailableAt` when
+ *   the oldest invitation email counted leaves the 24 hours, and nothing was created or
+ *   sent;
+ * - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
+ *
+ * `Retry-After` says how many seconds to wait: until `details.nextAvailableAt` for
+ * `invitation.daily-limit-reached`.
+ */
+export type InvitationBatchLimitedResponse = Problem;
+
+/**
+ * - `invitation.resend-throttled`: the email of the invitation went out less than an hour
+ *   ago; `details.resendAvailableAt` says when it can go out again;
+ * - `invitation.daily-limit-reached`: the organization has no invitation email left of its
+ *   100 in any 24 hours; `details.remaining` is `0`, and `details.nextAvailableAt` says
+ *   when the oldest invitation email counted leaves the 24 hours;
+ * - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
+ *
+ * `Retry-After` says how many seconds to wait: until `details.resendAvailableAt` for
+ * `invitation.resend-throttled`, until `details.nextAvailableAt` for
+ * `invitation.daily-limit-reached`.
+ */
+export type InvitationResendLimitedResponse = Problem;
+
+/**
  * organization-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
  * `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
  * `upstream.deadline-exceeded`, with `details.service`.

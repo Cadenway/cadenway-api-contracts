@@ -21,6 +21,9 @@ import { compareDeclarations, publicEntries } from './public-api.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const baseline = JSON.parse(readFileSync(new URL('./published-api.json', import.meta.url), 'utf8'));
+const accepted = JSON.parse(
+  readFileSync(new URL('./accepted-changes.json', import.meta.url), 'utf8'),
+);
 const requireFromRoot = createRequire(join(root, 'package.json'));
 const tooling = [
   '@angular/build',
@@ -160,7 +163,7 @@ function checkPackages(directory) {
         .map((entry) => name + entry.slice(1));
     }
   }
-  compareDeclarations(directory, matrix);
+  compareDeclarations(directory, matrix, accepted);
   writeJson(join(directory, 'runtime-entries.json'), runtime);
   copyFileSync(
     fileURLToPath(new URL('./runtime.fixture', import.meta.url)),
