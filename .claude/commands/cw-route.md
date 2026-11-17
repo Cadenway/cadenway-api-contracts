@@ -3,6 +3,4 @@ description: "Add or change a route."
 argument-hint: "<METHOD /path in public|internal>"
 ---
 
-Delegate to the **cw-contracts-openapi-author** subagent: $ARGUMENTS
-
-The agent carries its own procedure and rules; do not restate them.
+Delegate to subagent **cw-contracts-openapi-author** without restating its rules or procedure: $ARGUMENTS
