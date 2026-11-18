@@ -56,6 +56,15 @@ export interface Member {
      * @minimum 1
      */
   version: number;
+  /**
+     * Whether the account of the member has two-step verification ("Deux étapes":
+     * "Configurée" / "Non configurée"), as organization-service last learnt it from
+     * `user.two-step-verification-changed.v1`; `false` until it learns otherwise. Present for
+     * the owner and the admins only, absent for a member or a personal API token of a member,
+     * so that nobody else learns which accounts have none. Present for them once the gateway
+     * and organization-service run this version of the contracts.
+     */
+  twoStepVerificationEnabled?: boolean;
 }
 
 /**
@@ -270,12 +279,18 @@ export type UnauthenticatedResponse = Problem;
  * - `auth.scope-missing`: the personal API token lacks `members:read`;
  *   `details.requiredScopes` lists what the route needs;
  * - `organization.not-selected`: the session has no current organization;
+ * - `organization.mfa-required`: the authentication policy of the organization requires
+ *   two-step verification for the role of the caller, who has none; `details.organizationId`
+ *   names it;
  * - `organization.role-forbidden`: guests do not read the member list.
  */
 export type MembersReadForbiddenResponse = Problem;
 
 /**
  * - `organization.not-selected`: the session has no current organization;
+ * - `organization.mfa-required`: the authentication policy of the organization requires
+ *   two-step verification for the role of the caller, who has none; `details.organizationId`
+ *   names it;
  * - `organization.role-forbidden`: only the owner and the admins see pending invitations;
  * - `auth.api-token-not-accepted`: a personal API token cannot call this route.
  */
@@ -283,6 +298,9 @@ export type OrganizationReadForbiddenResponse = Problem;
 
 /**
  * - `organization.not-selected`: the session has no current organization;
+ * - `organization.mfa-required`: the authentication policy of the organization requires
+ *   two-step verification for the role of the caller, who has none; `details.organizationId`
+ *   names it;
  * - `organization.role-forbidden`: only the owner and the admins invite, change roles and
  *   remove members;
  * - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;

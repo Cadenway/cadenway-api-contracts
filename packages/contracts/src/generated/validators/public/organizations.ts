@@ -217,7 +217,14 @@ export const UpdateCurrentOrganizationResponse = zod.object({
  *   session as it is, but records the organization as the last choice of the caller again,
  *   the one their next sessions start in, also when another session of theirs chose
  *   another organization since.
- * - A session that ended meanwhile answers `401 auth.session-expired`.
+ * - A session that ended meanwhile answers `401 auth.session-expired`, as does a session that
+ *   had been idle, before this request, for longer than the inactivity the policy of the
+ *   chosen organization allows: choosing an organization never revives a session its policy
+ *   would have closed.
+ * - An organization whose authentication policy requires two-step verification for the role
+ *   of the caller, who has none, answers `403 organization.mfa-required` with
+ *   `details.organizationId`, and nothing changes: the web application offers to set it up
+ *   from the account, then chooses again.
  *
  * Session only: a personal API token, bound to the organization it was created in, cannot
  * call it.
@@ -231,3 +238,89 @@ export const SwitchOrganizationResponse = zod.object({
   "organizationId": zod.uuid().describe('The current organization of the session from now on.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role of the caller in it.')
 })
+
+
+/**
+ * Returns the "Politique d'authentification" of the current organization: who must have
+ * two-step verification ("Exiger la vérification en deux étapes des administrateurs",
+ * "L’exiger pour tous les membres") and the inactivity after which its sessions close
+ * ("Expiration des sessions inactives"), with the count of its members without two-step
+ * verification ("7 personnes ne l’ont pas configurée : elles devront le faire à leur
+ * prochaine connexion."). Answered by identity-service from its policies and its copy of the
+ * memberships. Owner and admins only (`403 organization.role-forbidden`). Session only: a
+ * personal API token cannot call it.
+ * @summary Read the authentication policy of the current organization
+ */
+
+export const getAuthenticationPolicyResponseMembersWithoutTwoStepVerificationAdminsMin = 0;
+
+export const getAuthenticationPolicyResponseMembersWithoutTwoStepVerificationEveryoneMin = 0;
+
+
+
+
+export const GetAuthenticationPolicyResponse = zod.object({
+  "twoStepVerificationRequiredFor": zod.string().describe('Who must have two-step verification: `nobody` (both switches off), `admins` ("Exiger\nla vérification en deux étapes des administrateurs": the owner and the admins) or\n`everyone` ("L’exiger pour tous les membres": every member, guests included, which\nimplies the admins). Later versions may add values (`x-extensible-enum`).\n'),
+  "sessionInactivityTimeoutMinutes": zod.int().min(1).describe('"Expiration des sessions inactives", in minutes: `60` ("1 heure"), `720` ("12 heures",\nthe default), `10080` ("7 jours") or `43200` ("30 jours"). A session acting on the\norganization closes after this much inactivity ("Au-delà, la page « Session expirée »\ns\'affiche."). Later versions may add values (`x-extensible-enum`).\n'),
+  "membersWithoutTwoStepVerification": zod.object({
+  "admins": zod.int().min(getAuthenticationPolicyResponseMembersWithoutTwoStepVerificationAdminsMin).describe('The owner and the admins among them.'),
+  "everyone": zod.int().min(getAuthenticationPolicyResponseMembersWithoutTwoStepVerificationEveryoneMin).describe('All of them, guests included.')
+}).describe('Members whose account has no two-step verification, for the hints of the switches ("7\npersonnes ne l’ont pas configurée : elles devront le faire à leur prochaine\nconnexion.").\n'),
+  "version": zod.int().min(1).describe('Version of the policy, also sent as `ETag`; 1 for the default policy.')
+}).describe('"Politique d\'authentification" of the organization, kept and applied by identity-service.\nA new organization has the default policy: `nobody`, `720`.\n')
+
+
+/**
+ * Applies a JSON Merge Patch (RFC 7396) to the authentication policy of the current
+ * organization: a member left out is unchanged. Owner and admins only
+ * (`403 organization.role-forbidden`). The change applies from the next request of every
+ * session and personal token acting on the organization (toast "Politique de session mise à
+ * jour", "Les sessions inactives expirent désormais après 12 heures.").
+ *
+ * - `twoStepVerificationRequiredFor`: `admins` ("Propriétaire et administrateurs ne peuvent
+ *   plus se connecter sans elle.") or `everyone` withholds the organization from the people
+ *   concerned without two-step verification, until they set it up
+ *   (`403 organization.mfa-required`), and forbids them to turn it off
+ *   (`409 auth.mfa-required-by-organization`). There is no grace period. Requiring it for a
+ *   role the caller has, while the caller has no two-step verification, answers
+ *   `409 auth.two-step-not-enabled`: nobody locks themselves out of their own organization.
+ * - `sessionInactivityTimeoutMinutes`: `60` ("1 heure"), `720` ("12 heures"), `10080` ("7
+ *   jours") or `43200` ("30 jours"). A session idle for longer than the new value closes at
+ *   its next request.
+ * - `If-Match` is optional; a version that is no longer the current one answers
+ *   `412 request.version-mismatch`. A patch that changes nothing answers `200` with the same
+ *   version.
+ *
+ * Checked once the role is: a recent authentication of this session (the sign-in, a password
+ * or a code of the app in the last 10 minutes, see "Recent authentication" in
+ * `openapi/public/auth.yaml`), else `403 auth.reauthentication-required` with
+ * `details.methods`: a stolen session cannot loosen the policy. Emits nothing in this
+ * version. Session only: a personal API token cannot call it.
+ * @summary Update the authentication policy of the current organization
+ */
+export const UpdateAuthenticationPolicyHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const UpdateAuthenticationPolicyBody = zod.object({
+  "twoStepVerificationRequiredFor": zod.enum(['nobody', 'admins', 'everyone']).optional().describe('`nobody`, `admins` or `everyone`.'),
+  "sessionInactivityTimeoutMinutes": zod.union([zod.literal(60),zod.literal(720),zod.literal(10080),zod.literal(43200)]).optional().describe('`60`, `720`, `10080` or `43200` minutes.')
+}).describe('JSON Merge Patch of the authentication policy; an empty object changes nothing.')
+
+
+export const updateAuthenticationPolicyResponseMembersWithoutTwoStepVerificationAdminsMin = 0;
+
+export const updateAuthenticationPolicyResponseMembersWithoutTwoStepVerificationEveryoneMin = 0;
+
+
+
+
+export const UpdateAuthenticationPolicyResponse = zod.object({
+  "twoStepVerificationRequiredFor": zod.string().describe('Who must have two-step verification: `nobody` (both switches off), `admins` ("Exiger\nla vérification en deux étapes des administrateurs": the owner and the admins) or\n`everyone` ("L’exiger pour tous les membres": every member, guests included, which\nimplies the admins). Later versions may add values (`x-extensible-enum`).\n'),
+  "sessionInactivityTimeoutMinutes": zod.int().min(1).describe('"Expiration des sessions inactives", in minutes: `60` ("1 heure"), `720` ("12 heures",\nthe default), `10080` ("7 jours") or `43200` ("30 jours"). A session acting on the\norganization closes after this much inactivity ("Au-delà, la page « Session expirée »\ns\'affiche."). Later versions may add values (`x-extensible-enum`).\n'),
+  "membersWithoutTwoStepVerification": zod.object({
+  "admins": zod.int().min(updateAuthenticationPolicyResponseMembersWithoutTwoStepVerificationAdminsMin).describe('The owner and the admins among them.'),
+  "everyone": zod.int().min(updateAuthenticationPolicyResponseMembersWithoutTwoStepVerificationEveryoneMin).describe('All of them, guests included.')
+}).describe('Members whose account has no two-step verification, for the hints of the switches ("7\npersonnes ne l’ont pas configurée : elles devront le faire à leur prochaine\nconnexion.").\n'),
+  "version": zod.int().min(1).describe('Version of the policy, also sent as `ETag`; 1 for the default policy.')
+}).describe('"Politique d\'authentification" of the organization, kept and applied by identity-service.\nA new organization has the default policy: `nobody`, `720`.\n')

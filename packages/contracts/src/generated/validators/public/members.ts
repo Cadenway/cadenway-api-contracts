@@ -11,7 +11,8 @@ import * as zod from 'zod';
  * `role=owner,admin`). `total` counts the members that match, for "{a}–{b} sur {n}
  * personnes"; `counts` counts every member by role, whatever the filters, for the tabs and
  * the summary. Owner, admins and members only: a guest gets
- * `403 organization.role-forbidden`.
+ * `403 organization.role-forbidden`. For the owner and the admins, each member carries
+ * `twoStepVerificationEnabled` (column "Deux étapes").
  *
  * Scope `members:read` for a personal API token.
  * @summary List the members
@@ -55,7 +56,8 @@ export const ListMembersResponse = zod.object({
   "email": zod.email().max(listMembersResponseItemsItemEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "joinedAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the membership, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the membership, also sent as `ETag`.'),
+  "twoStepVerificationEnabled": zod.boolean().optional().describe('Whether the account of the member has two-step verification ("Deux étapes":\n"Configurée" / "Non configurée"), as organization-service last learnt it from\n`user.two-step-verification-changed.v1`; `false` until it learns otherwise. Present for\nthe owner and the admins only, absent for a member or a personal API token of a member,\nso that nobody else learns which accounts have none. Present for them once the gateway\nand organization-service run this version of the contracts.\n')
 })),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(listMembersResponseTotalMin).describe('Members that match `search` and `role`, on every page.'),
@@ -92,7 +94,8 @@ export const GetMemberResponse = zod.object({
   "email": zod.email().max(getMemberResponseEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "joinedAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the membership, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the membership, also sent as `ETag`.'),
+  "twoStepVerificationEnabled": zod.boolean().optional().describe('Whether the account of the member has two-step verification ("Deux étapes":\n"Configurée" / "Non configurée"), as organization-service last learnt it from\n`user.two-step-verification-changed.v1`; `false` until it learns otherwise. Present for\nthe owner and the admins only, absent for a member or a personal API token of a member,\nso that nobody else learns which accounts have none. Present for them once the gateway\nand organization-service run this version of the contracts.\n')
 })
 
 
@@ -130,7 +133,8 @@ export const ChangeMemberRoleResponse = zod.object({
   "email": zod.email().max(changeMemberRoleResponseEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "joinedAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the membership, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the membership, also sent as `ETag`.'),
+  "twoStepVerificationEnabled": zod.boolean().optional().describe('Whether the account of the member has two-step verification ("Deux étapes":\n"Configurée" / "Non configurée"), as organization-service last learnt it from\n`user.two-step-verification-changed.v1`; `false` until it learns otherwise. Present for\nthe owner and the admins only, absent for a member or a personal API token of a member,\nso that nobody else learns which accounts have none. Present for them once the gateway\nand organization-service run this version of the contracts.\n')
 })
 
 

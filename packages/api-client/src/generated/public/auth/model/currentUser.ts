@@ -31,7 +31,8 @@ export interface CurrentUser {
   passwordChangedAt?: string;
   /**
      * Version of the account, also sent as `ETag`. A change of the profile, of the password,
-     * of the address or of the scheduled deletion makes it the next one.
+     * of the address, of the two-step verification or of the scheduled deletion makes it the
+     * next one.
      * @minimum 1
      */
   version: number;

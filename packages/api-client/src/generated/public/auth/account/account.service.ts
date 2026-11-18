@@ -92,14 +92,24 @@ export class AccountService {
  * 1. The new password, against the rules of the sign-up: 12 characters at least, no
  *    composition rule, not in the list of compromised passwords
  *    (`422 auth.password-too-short`, `422 auth.password-compromised`). No attempt is counted.
- * 2. The current password. A wrong one answers `422 auth.password-incorrect` with
- *    `details.remainingAttempts` and counts with the failed sign-ins of the address, as
- *    `POST /v1/auth/reauthentication` says (`429 auth.account-locked`). A right one counts
- *    as a recent authentication of this session.
+ * 2. For an account with two-step verification only, a recent two-step proof of this
+ *    session (see "Recent authentication"): without one, `403 auth.reauthentication-required`
+ *    with `details.methods: [authenticator-app]`, before the current password is checked or
+ *    counted.
+ * 3. The current password, always required. A wrong one answers
+ *    `422 auth.password-incorrect` with `details.remainingAttempts` and counts with the
+ *    failed sign-ins of the address, as `POST /v1/auth/reauthentication` says
+ *    (`429 auth.account-locked`). For an account without two-step verification, a right one
+ *    counts as a recent authentication of this session, and no other recent authentication
+ *    is required: the current password stands for it. For an account with two-step
+ *    verification, it never counts as one.
  *
- * Recent authentication is not required: the current password stands for it. The change
- * drops a pending change of address and ends the recent authentication of every other
- * session, which stay open. Answers the account, with its new `passwordChangedAt` ("Modifié
+ * The change
+ * drops a pending change of address, ends the recent authentication of every other session,
+ * which stay open, drops their pending two-step setups and key registrations and the open
+ * challenge of the account, and forgets every trusted device of the account, this browser's
+ * included, so that the next sign-in of an account with two-step verification answers its
+ * challenge everywhere. Answers the account, with its new `passwordChangedAt` ("Modifié
  * aujourd’hui") and the next `version`.
  * Emits `user.password-changed.v1` (`method: change`, no session closed), from which
  * notification-service sends "Votre mot de passe a été modifié" to the address of the
@@ -253,8 +263,10 @@ export class AccountService {
   }
 /**
  * Schedules the deletion of the account in 30 days ("Supprimer mon compte"). At once, every
- * session of the account, this one included, and every personal API token are revoked: the
- * gateway clears the session cookie and the web application shows the sign-out screen.
+ * session of the account, this one included, and every personal API token are revoked, and
+ * every trusted device is forgotten: the gateway clears the session cookie and the web
+ * application shows the sign-out screen. The two-step verification stays: the sign-in that
+ * cancels the deletion answers its challenge first.
  *
  * - Until `deleteAt`, signing in again cancels the deletion ("une connexion suffit pour
  *   annuler"): `POST /v1/auth/sign-in` or `POST /v1/auth/sign-in/code/verification`, whose

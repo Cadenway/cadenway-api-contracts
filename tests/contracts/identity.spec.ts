@@ -10,25 +10,37 @@ import {
   type PasswordResetLinkIssuedV1,
   type UserPasswordChangedV1,
   type UserSignedUpV1,
+  type UserTwoStepVerificationChangedV1,
 } from '../../packages/contracts/src/generated/events/identity-service';
 import {
+  AnswerSignInChallengeWithAuthenticatorAppInternalResponse,
   ChangePasswordInternalBody,
   CreateApiTokenInternalBody,
   GetUserResponse,
+  InspectSignInChallengeInternalResponse,
+  IntrospectApiTokenResponse,
   IntrospectTokenResponse,
   ListUserSessionsInternalQueryParams,
+  ReauthenticateInternalBody,
   SignInWithCodeInternalBody,
   SignInWithPasswordInternalBody,
+  StartSecurityKeyRegistrationInternalResponse,
   VerifySignUpInternalBody,
 } from '../../packages/contracts/src/generated/validators/internal/identity-service';
 import {
+  AnswerSignInChallengeWithAuthenticatorAppBody,
+  AnswerSignInChallengeWithBackupCodeBody,
+  AnswerSignInChallengeWithSecurityKeyBody,
   ChangePasswordBody,
+  ConfirmAuthenticatorAppSetupResponse,
   ConfirmPasswordResetBody,
+  ReauthenticateBody,
   SignInWithCodeBody,
   SignInWithPasswordResponse,
   SignUpBody,
   VerifySignUpBody,
 } from '../../packages/contracts/src/generated/validators/public/auth';
+import { UpdateAuthenticationPolicyBody } from '../../packages/contracts/src/generated/validators/public/organizations';
 
 // Pins what the consumers of the identity contracts rely on: which event is restricted (a change
 // here moves a single-use code to or from the stream every backend reads), and the members the
@@ -155,6 +167,65 @@ const passwordChanged: UserPasswordChangedV1 = {
   timeZone: 'Europe/Paris',
 };
 
+/**
+ * Constant twoStepEnabled
+ *
+ * @description
+ * Payload of `user.two-step-verification-changed.v1` when Camille Martin turns two-step
+ * verification on, as the mockup email "La vérification en deux étapes est activée" shows it.
+ *
+ * @type {UserTwoStepVerificationChangedV1}
+ */
+const twoStepEnabled: UserTwoStepVerificationChangedV1 = {
+  id: '019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e08',
+  occurredAt: '2026-11-09T13:21:00Z',
+  organizationId: null,
+  actor: { type: 'user', id: USER_ID },
+  version: 8,
+  userId: USER_ID,
+  change: 'enabled',
+  enabled: true,
+  methods: ['authenticator-app'],
+  backupCodesRemaining: 10,
+  securityKey: null,
+  client: FIREFOX_ON_WINDOWS,
+  recipient: { email: 'camille.martin@ateliernord.fr', name: 'Camille Martin' },
+  language: 'fr',
+  timeZone: 'Europe/Paris',
+};
+
+/**
+ * Constant CHALLENGE_TOKEN
+ *
+ * @description
+ * Example token of a two-step challenge, of the length identity-service issues (256 bits in
+ * base64url). Not a real secret.
+ *
+ * @type {string}
+ */
+const CHALLENGE_TOKEN: string = 'ExampleOnlyChallengeToken00000000000000000';
+
+/**
+ * Constant signInChallenge
+ *
+ * @description
+ * The two-step challenge of the sign-in of Camille Martin, with her app, her two keys and 7
+ * backup codes left, as the screen "Vérification en deux étapes" of the mockup shows it.
+ *
+ * @type {Record<string, unknown>}
+ */
+const signInChallenge: Record<string, unknown> = {
+  token: CHALLENGE_TOKEN,
+  expiresAt: '2026-11-09T07:52:00Z',
+  email: 'camille.martin@ateliernord.fr',
+  name: 'Camille Martin',
+  primaryMethod: 'authenticator-app',
+  methods: ['authenticator-app', 'security-key', 'backup-code'],
+  securityKeys: [{ name: 'YubiKey 5C NFC' }, { name: 'Touch ID (MacBook Air)' }],
+  backupCodesRemaining: 7,
+  lockedUntil: null,
+};
+
 describe('events of identity-service', () => {
   it('restricts the events that carry a code or a link, and no other', () => {
     expect(RESTRICTED_EVENT_NAMES).toEqual([
@@ -174,7 +245,48 @@ describe('events of identity-service', () => {
       'user.password-changed.v1',
       'user.profile-updated.v1',
       'user.signed-up.v1',
+      'user.two-step-verification-changed.v1',
     ]);
+  });
+
+  it('tells the security email and the directory what changed in two-step verification, without a secret', () => {
+    const schema: (typeof eventSchemas)['user.two-step-verification-changed.v1'] =
+      eventSchemas['user.two-step-verification-changed.v1'];
+    const parsed: Record<string, unknown> = schema.parse({
+      ...twoStepEnabled,
+      backupCodes: ['4F7K-2M9Q'],
+      secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+    });
+
+    expect(parsed).toEqual(twoStepEnabled);
+    expect(parsed).not.toHaveProperty('backupCodes');
+    expect(parsed).not.toHaveProperty('secret');
+    expect(
+      schema.parse({
+        ...twoStepEnabled,
+        change: 'security-key-added',
+        methods: ['authenticator-app', 'security-key'],
+        securityKey: { id: '019a6c52-1d2e-7f3a-8b4c-5d6e7f8a9b01', name: 'YubiKey 5C NFC' },
+      }),
+    ).toMatchObject({ securityKey: { name: 'YubiKey 5C NFC' } });
+  });
+
+  it('keeps a change of two-step verification readable when later versions add a kind of change', () => {
+    const schema: (typeof eventSchemas)['user.two-step-verification-changed.v1'] =
+      eventSchemas['user.two-step-verification-changed.v1'];
+    const withoutState: Partial<UserTwoStepVerificationChangedV1> = { ...twoStepEnabled };
+    delete withoutState.enabled;
+
+    expect(schema.safeParse({ ...twoStepEnabled, change: 'reset-by-administrator' }).success).toBe(
+      true,
+    );
+    expect(
+      schema.safeParse({
+        ...twoStepEnabled,
+        methods: ['authenticator-app', 'security-key', 'passkey'],
+      }).success,
+    ).toBe(true);
+    expect(schema.safeParse(withoutState).success).toBe(false);
   });
 
   it('validates a reset link and refuses a token that cannot sit in the fragment of a link', () => {
@@ -416,5 +528,221 @@ describe('routes of account security', () => {
     expect(
       SignInWithPasswordResponse.parse({ ...signedIn, deletionCancelled: true }),
     ).toMatchObject({ deletionCancelled: true });
+  });
+});
+
+describe('routes of two-step verification', () => {
+  it('confirms who the person is with a code of the app instead of the password', () => {
+    expect(ReauthenticateBody.parse({ code: '261845' })).toEqual({ code: '261845' });
+    expect(ReauthenticateBody.safeParse({ code: '261 845' }).success).toBe(false);
+    expect(ReauthenticateInternalBody.parse({ password: 'atelier-nord-sprint-14' })).toEqual({
+      password: 'atelier-nord-sprint-14',
+    });
+  });
+
+  it('forwards the trusted device of the browser to both sign-ins', () => {
+    const client: { ipAddress: string; userAgent: null } = {
+      ipAddress: '86.247.12.30',
+      userAgent: null,
+    };
+    const trustedDeviceToken: string = 'ExampleOnlyTrustedDeviceToken0000000000000';
+
+    expect(
+      SignInWithPasswordInternalBody.parse({
+        email: 'camille.martin@ateliernord.fr',
+        password: 'atelier-nord-sprint-14',
+        client,
+        trustedDeviceToken,
+      }),
+    ).toMatchObject({ trustedDeviceToken });
+    expect(
+      SignInWithCodeInternalBody.parse({
+        email: 'camille.martin@ateliernord.fr',
+        code: '482913',
+        client,
+        trustedDeviceToken,
+      }),
+    ).toMatchObject({ trustedDeviceToken });
+  });
+
+  it('validates the challenge of a sign-in with the validator of its inspection', () => {
+    expect(InspectSignInChallengeInternalResponse.parse(signInChallenge)).toEqual(signInChallenge);
+    expect(
+      InspectSignInChallengeInternalResponse.safeParse({
+        ...signInChallenge,
+        methods: ['authenticator-app', 'security-key', 'backup-code', 'passkey'],
+      }).success,
+    ).toBe(true);
+    expect(
+      InspectSignInChallengeInternalResponse.safeParse({ ...signInChallenge, token: 'short' })
+        .success,
+    ).toBe(false);
+  });
+
+  it('trusts the device only when the person asks, and returns the device token to the gateway only', () => {
+    expect(
+      AnswerSignInChallengeWithAuthenticatorAppBody.parse({
+        token: CHALLENGE_TOKEN,
+        code: '261845',
+      }),
+    ).toEqual({ token: CHALLENGE_TOKEN, code: '261845', trustDevice: false });
+    expect(
+      AnswerSignInChallengeWithAuthenticatorAppInternalResponse.parse({
+        token: 'example-session-token',
+        session: {
+          id: '019a6914-2f7a-7b3c-9d4e-5f6a7b8c9d01',
+          expiresAt: '2026-12-09T07:42:00Z',
+          persistent: true,
+        },
+        user: {
+          id: USER_ID,
+          name: 'Camille Martin',
+          email: 'camille.martin@ateliernord.fr',
+          language: 'fr',
+          version: 9,
+        },
+        trustedDevice: {
+          token: 'ExampleOnlyTrustedDeviceToken0000000000000',
+          expiresAt: '2026-12-09T07:42:00Z',
+        },
+      }),
+    ).toHaveProperty('trustedDevice.expiresAt', '2026-12-09T07:42:00Z');
+  });
+
+  it('reads a backup code without regard to case or dash, and refuses another shape', () => {
+    expect(
+      AnswerSignInChallengeWithBackupCodeBody.safeParse({
+        token: CHALLENGE_TOKEN,
+        code: '4f7k2m9q',
+      }).success,
+    ).toBe(true);
+    expect(
+      AnswerSignInChallengeWithBackupCodeBody.safeParse({
+        token: CHALLENGE_TOKEN,
+        code: '4F7K-2M9',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('passes on the members of a WebAuthn answer and of its options that the contract does not list', () => {
+    const credential: Record<string, unknown> = {
+      id: 'ExampleOnlyCredentialIdYubiKey5CNfc0000000',
+      rawId: 'ExampleOnlyCredentialIdYubiKey5CNfc0000000',
+      type: 'public-key',
+      response: {
+        clientDataJSON: 'ExampleOnlyClientDataJson',
+        authenticatorData: 'ExampleOnlyAuthenticatorData',
+        signature: 'ExampleOnlySignature',
+        userHandle: null,
+        futureMember: 'kept',
+      },
+      clientExtensionResults: { appid: false },
+    };
+    const options: Record<string, unknown> = {
+      options: {
+        challenge: 'ExampleOnlyWebAuthnChallenge000000000000000',
+        rp: { id: 'cadenway.com', name: 'Cadenway' },
+        user: {
+          id: 'ExampleOnlyWebAuthnUserHandle00000000000000',
+          name: 'camille.martin@ateliernord.fr',
+          displayName: 'Camille Martin',
+        },
+        pubKeyCredParams: [{ type: 'public-key', alg: -8 }],
+        authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred' },
+        hints: ['security-key'],
+      },
+      expiresAt: '2026-11-09T13:26:00Z',
+    };
+
+    expect(
+      AnswerSignInChallengeWithSecurityKeyBody.parse({ token: CHALLENGE_TOKEN, credential }),
+    ).toEqual({ token: CHALLENGE_TOKEN, credential, trustDevice: false });
+    expect(StartSecurityKeyRegistrationInternalResponse.parse(options)).toEqual(options);
+  });
+
+  it('returns ten backup codes once on the first setup, and none on a reconfiguration', () => {
+    const state: Record<string, unknown> = {
+      enabled: true,
+      primaryMethod: 'authenticator-app',
+      methods: ['authenticator-app'],
+      authenticatorApp: { configuredAt: '2026-11-09T13:21:00Z' },
+      securityKeys: [],
+      backupCodes: { remaining: 10, total: 10, generatedAt: '2026-11-09T13:21:00Z' },
+      requiredBy: [],
+    };
+    const codes: string[] = [
+      '4F7K-2M9Q',
+      'H3XP-8D2L',
+      'Q9TZ-5W1C',
+      'B6NR-7J4E',
+      'K2VD-9S8A',
+      'M8LC-3F6P',
+      'T5QW-1H7Z',
+      'R4GY-6B3N',
+      'C7EJ-2K5U',
+      'W1PS-8V9D',
+    ];
+
+    expect(
+      ConfirmAuthenticatorAppSetupResponse.parse({
+        twoStepVerification: state,
+        backupCodes: { codes, generatedAt: '2026-11-09T13:21:00Z' },
+      }),
+    ).toHaveProperty('backupCodes.codes', codes);
+    expect(
+      ConfirmAuthenticatorAppSetupResponse.parse({ twoStepVerification: state, backupCodes: null }),
+    ).toHaveProperty('backupCodes', null);
+    expect(
+      ConfirmAuthenticatorAppSetupResponse.safeParse({
+        twoStepVerification: state,
+        backupCodes: { codes: codes.slice(1), generatedAt: '2026-11-09T13:21:00Z' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('withholds the organization of a session or a token without giving its context', () => {
+    const withheld: { organizationId: string; code: string } = {
+      organizationId: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f',
+      code: 'organization.mfa-required',
+    };
+
+    expect(
+      IntrospectTokenResponse.parse({
+        active: true,
+        tokenType: 'session',
+        sessionId: '019a6a31-5c2d-7e4f-9a6b-3d8c7f2e5b71',
+        userId: USER_ID,
+        organizationId: null,
+        role: null,
+        scopes: ['tasks:read', 'tasks:write', 'members:read', 'webhooks:manage'],
+        expiresAt: '2026-12-08T13:07:00Z',
+        withheldOrganization: withheld,
+      }),
+    ).toMatchObject({ organizationId: null, withheldOrganization: withheld });
+    expect(
+      IntrospectApiTokenResponse.parse({
+        active: true,
+        tokenType: 'api-token',
+        apiTokenId: '019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e91',
+        userId: USER_ID,
+        organizationId: withheld.organizationId,
+        role: 'member',
+        scopes: [],
+        expiresAt: null,
+        withheldOrganization: withheld,
+      }),
+    ).toMatchObject({ scopes: [], withheldOrganization: withheld });
+  });
+
+  it('accepts only the session inactivities of the organization policy', () => {
+    expect(UpdateAuthenticationPolicyBody.parse({ sessionInactivityTimeoutMinutes: 60 })).toEqual({
+      sessionInactivityTimeoutMinutes: 60,
+    });
+    expect(
+      UpdateAuthenticationPolicyBody.safeParse({ sessionInactivityTimeoutMinutes: 180 }).success,
+    ).toBe(false);
+    expect(
+      UpdateAuthenticationPolicyBody.safeParse({ twoStepVerificationRequiredFor: 'owner' }).success,
+    ).toBe(false);
   });
 });

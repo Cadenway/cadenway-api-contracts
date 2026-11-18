@@ -238,6 +238,92 @@ export interface SessionOrganization {
 }
 
 /**
+ * Members whose account has no two-step verification, for the hints of the switches ("7
+ * personnes ne l’ont pas configurée : elles devront le faire à leur prochaine
+ * connexion.").
+ */
+export type AuthenticationPolicyMembersWithoutTwoStepVerification = {
+  /**
+     * The owner and the admins among them.
+     * @minimum 0
+     */
+  admins: number;
+  /**
+     * All of them, guests included.
+     * @minimum 0
+     */
+  everyone: number;
+};
+
+/**
+ * "Politique d'authentification" of the organization, kept and applied by identity-service.
+ * A new organization has the default policy: `nobody`, `720`.
+ */
+export interface AuthenticationPolicy {
+  /**
+     * Who must have two-step verification: `nobody` (both switches off), `admins` ("Exiger
+     * la vérification en deux étapes des administrateurs": the owner and the admins) or
+     * `everyone` ("L’exiger pour tous les membres": every member, guests included, which
+     * implies the admins). Later versions may add values (`x-extensible-enum`).
+     */
+  twoStepVerificationRequiredFor: string;
+  /**
+     * "Expiration des sessions inactives", in minutes: `60` ("1 heure"), `720` ("12 heures",
+     * the default), `10080` ("7 jours") or `43200` ("30 jours"). A session acting on the
+     * organization closes after this much inactivity ("Au-delà, la page « Session expirée »
+     * s'affiche."). Later versions may add values (`x-extensible-enum`).
+     * @minimum 1
+     */
+  sessionInactivityTimeoutMinutes: number;
+  /**
+     * Members whose account has no two-step verification, for the hints of the switches ("7
+     * personnes ne l’ont pas configurée : elles devront le faire à leur prochaine
+     * connexion.").
+     */
+  membersWithoutTwoStepVerification: AuthenticationPolicyMembersWithoutTwoStepVerification;
+  /**
+     * Version of the policy, also sent as `ETag`; 1 for the default policy.
+     * @minimum 1
+     */
+  version: number;
+}
+
+/**
+ * `nobody`, `admins` or `everyone`.
+ */
+export type AuthenticationPolicyPatchTwoStepVerificationRequiredFor = typeof AuthenticationPolicyPatchTwoStepVerificationRequiredFor[keyof typeof AuthenticationPolicyPatchTwoStepVerificationRequiredFor];
+
+
+export const AuthenticationPolicyPatchTwoStepVerificationRequiredFor = {
+  nobody: 'nobody',
+  admins: 'admins',
+  everyone: 'everyone',
+} as const;
+
+/**
+ * `60`, `720`, `10080` or `43200` minutes.
+ */
+export type AuthenticationPolicyPatchSessionInactivityTimeoutMinutes = typeof AuthenticationPolicyPatchSessionInactivityTimeoutMinutes[keyof typeof AuthenticationPolicyPatchSessionInactivityTimeoutMinutes];
+
+
+export const AuthenticationPolicyPatchSessionInactivityTimeoutMinutes = {
+  NUMBER_60: 60,
+  NUMBER_720: 720,
+  NUMBER_10080: 10080,
+  NUMBER_43200: 43200,
+} as const;
+
+/**
+ * JSON Merge Patch of the authentication policy; an empty object changes nothing.
+ */
+export interface AuthenticationPolicyPatch {
+  /** `nobody`, `admins` or `everyone`. */
+  twoStepVerificationRequiredFor?: AuthenticationPolicyPatchTwoStepVerificationRequiredFor;
+  /** `60`, `720`, `10080` or `43200` minutes. */
+  sessionInactivityTimeoutMinutes?: AuthenticationPolicyPatchSessionInactivityTimeoutMinutes;
+}
+
+/**
  * Members specific to the code, for example the fields that failed validation.
  */
 export type ProblemDetails = { [key: string]: unknown };
@@ -292,16 +378,49 @@ export type SessionWriteForbiddenResponse = Problem;
 /**
  * - `organization.not-selected`: the session has no current organization; the web
  *   application shows the picker;
+ * - `organization.mfa-required`: the authentication policy of the current organization
+ *   requires two-step verification for the role of the caller, who has none;
+ *   `details.organizationId` names it, and the web application offers to set it up from the
+ *   account;
+ * - `organization.role-forbidden`: on the authentication policy, only the owner and the
+ *   admins read it;
  * - `auth.api-token-not-accepted`: a personal API token cannot call this route.
  */
 export type OrganizationReadForbiddenResponse = Problem;
 
 /**
  * - `organization.not-selected`: the session has no current organization;
- * - `organization.role-forbidden`: only the owner and the admins change the organization;
+ * - `organization.mfa-required`: see `OrganizationReadForbidden`;
+ * - `organization.role-forbidden`: only the owner and the admins change the organization and
+ *   its authentication policy;
  * - `auth.csrf-rejected`, `auth.api-token-not-accepted`: see `SessionWriteForbidden`.
  */
 export type OrganizationWriteForbiddenResponse = Problem;
+
+/**
+ * - `organization.not-selected`, `organization.mfa-required`, `organization.role-forbidden`:
+ *   see `OrganizationWriteForbidden`;
+ * - `auth.reauthentication-required`: the person of this session has not proved who they are
+ *   in the last 10 minutes; `details.methods` lists the ways they can
+ *   (`POST /v1/auth/reauthentication`), and the web application asks, confirms, then repeats
+ *   the request;
+ * - `auth.csrf-rejected`, `auth.api-token-not-accepted`: see `SessionWriteForbidden`.
+ */
+export type PolicyWriteForbiddenResponse = Problem;
+
+/**
+ * - `organization.mfa-required`: the authentication policy of the organization requires
+ *   two-step verification for the role of the caller, who has none; `details.organizationId`
+ *   names it. Nothing changed;
+ * - `auth.csrf-rejected`, `auth.api-token-not-accepted`: see `SessionWriteForbidden`.
+ */
+export type OrganizationChoiceForbiddenResponse = Problem;
+
+/**
+ * `auth.two-step-not-enabled`: the patch requires two-step verification for a role the
+ * caller has, and the caller has none: they set it up from their account first.
+ */
+export type TwoStepNotEnabledResponse = Problem;
 
 /**
  * `organization.not-found`: the caller does not belong to this organization, or, for a few

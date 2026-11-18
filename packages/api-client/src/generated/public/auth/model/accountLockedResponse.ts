@@ -10,6 +10,8 @@ import type { Problem } from './problem';
  *   Answered the same way when no account uses the address. The failed passwords of
  *   `POST /v1/auth/reauthentication` and `PUT /v1/me/password` count with those of the
  *   sign-in, and both routes answer this code during the lockout.
+ * - `auth.two-step-locked`, on `POST /v1/auth/reauthentication` with a `code` only: see
+ *   `TwoStepLocked`.
  * - `rate-limit.exceeded`: the gateway's own limit.
  */
 export type AccountLockedResponse = Problem;

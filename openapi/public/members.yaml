@@ -13,8 +13,11 @@ info:
     **Current organization.** The member and invitation routes act on the current organization of
     the session (`PUT /v1/session/organization`, `openapi/public/organizations.yaml`) or on the
     organization of the personal API token; without one they answer
-    `403 organization.not-selected`. The routes under `/v1/me/invitations` act on the invitations
-    addressed to the caller, whatever the current organization.
+    `403 organization.not-selected`. While the authentication policy of that organization requires
+    two-step verification for the role of the caller, who has none, they answer
+    `403 organization.mfa-required` (see "Authentication policy" in
+    `openapi/public/organizations.yaml`). The routes under `/v1/me/invitations` act on the
+    invitations addressed to the caller, whatever the current organization.
 
     **Roles.** `owner` ("Propriétaire"), `admin` ("Administrateur"), `member` ("Membre"), `guest`
     ("Invité"). The owner, the creator of the organization, is the only one; nobody changes the
@@ -69,9 +72,16 @@ info:
     **Errors.** As in `openapi/public/auth.yaml`: a stable `code`, a French `title` for the codes
     the web application shows to the person, the English reason phrase otherwise.
 
+    **Two-step column.** The member list tells the owner and the admins whether each member has
+    two-step verification ("Deux étapes": "Configurée" / "Non configurée"), in
+    `twoStepVerificationEnabled`. organization-service learns it from
+    `user.two-step-verification-changed.v1` of identity-service (`asyncapi/identity-service.yaml`)
+    for its directory, within seconds of the change. A member, a guest or a personal API token of
+    one does not see it: `twoStepVerificationEnabled` is absent from their answers.
+
     **Later versions** add, without changing what is here: seats and their checks (billing),
-    presence and last activity (realtime), the two-step column, verified domains, auto-join and the
-    reusable invitation link, and the transfer of ownership.
+    presence and last activity (realtime), verified domains, auto-join and the reusable invitation
+    link, and the transfer of ownership.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -82,7 +92,7 @@ info:
     - repository: cadenway-api-gateway
       uses: Serves every route, through openapi/internal/organization-service.yaml.
     - repository: cadenway-webapp
-      uses: Calls every route through @cadenway/api-client (settings "Membres", invite dialog, pending invitations, picker "Invitation en attente").
+      uses: Calls every route through @cadenway/api-client (settings "Membres" with its column "Deux étapes", invite dialog, pending invitations, picker "Invitation en attente").
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -105,7 +115,8 @@ paths:
         `role=owner,admin`). `total` counts the members that match, for "{a}–{b} sur {n}
         personnes"; `counts` counts every member by role, whatever the filters, for the tabs and
         the summary. Owner, admins and members only: a guest gets
-        `403 organization.role-forbidden`.
+        `403 organization.role-forbidden`. For the owner and the admins, each member carries
+        `twoStepVerificationEnabled` (column "Deux étapes").
 
         Scope `members:read` for a personal API token.
       tags: [members]
@@ -153,6 +164,7 @@ paths:
                     role: owner
                     joinedAt: '2026-03-02T09:00:00Z'
                     version: 1
+                    twoStepVerificationEnabled: true
                   - id: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e42
                     userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
                     name: Hugo Dubois
@@ -160,6 +172,7 @@ paths:
                     role: admin
                     joinedAt: '2026-03-03T10:12:00Z'
                     version: 2
+                    twoStepVerificationEnabled: true
                   - id: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41
                     userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
                     name: Inès Robert
@@ -167,6 +180,7 @@ paths:
                     role: admin
                     joinedAt: '2026-03-03T09:40:00Z'
                     version: 2
+                    twoStepVerificationEnabled: true
                 nextCursor: null
                 total: 3
                 counts:
@@ -757,7 +771,7 @@ components:
         minimum: 1
   examples:
     InesRobert:
-      summary: Inès Robert, admin of Atelier Nord
+      summary: Inès Robert, admin of Atelier Nord, read by an admin
       value:
         id: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41
         userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
@@ -766,6 +780,7 @@ components:
         role: admin
         joinedAt: '2026-03-03T09:40:00Z'
         version: 2
+        twoStepVerificationEnabled: true
     CrossSiteRefused:
       summary: Request from another site
       value:
@@ -796,6 +811,15 @@ components:
         title: Choisissez une organisation pour continuer.
         status: 403
         code: organization.not-selected
+    OrganizationMfaRequired:
+      summary: Two-step verification required by the organization
+      value:
+        type: about:blank
+        title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
+        status: 403
+        code: organization.mfa-required
+        details:
+          organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
     RoleForbidden:
       summary: Role not allowed
       value:
@@ -911,6 +935,9 @@ components:
         - `auth.scope-missing`: the personal API token lacks `members:read`;
           `details.requiredScopes` lists what the route needs;
         - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the organization requires
+          two-step verification for the role of the caller, who has none; `details.organizationId`
+          names it;
         - `organization.role-forbidden`: guests do not read the member list.
       content:
         application/problem+json:
@@ -921,11 +948,16 @@ components:
               $ref: '#/components/examples/ScopeMissing'
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
             roleForbidden:
               $ref: '#/components/examples/RoleForbidden'
     OrganizationReadForbidden:
       description: |
         - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the organization requires
+          two-step verification for the role of the caller, who has none; `details.organizationId`
+          names it;
         - `organization.role-forbidden`: only the owner and the admins see pending invitations;
         - `auth.api-token-not-accepted`: a personal API token cannot call this route.
       content:
@@ -935,6 +967,8 @@ components:
           examples:
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
             roleForbidden:
               $ref: '#/components/examples/RoleForbidden'
             apiTokenNotAccepted:
@@ -942,6 +976,9 @@ components:
     OrganizationWriteForbidden:
       description: |
         - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the organization requires
+          two-step verification for the role of the caller, who has none; `details.organizationId`
+          names it;
         - `organization.role-forbidden`: only the owner and the admins invite, change roles and
           remove members;
         - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
@@ -953,6 +990,8 @@ components:
           examples:
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
             roleForbidden:
               $ref: '#/components/examples/RoleForbidden'
             crossSiteRefused:
@@ -1219,6 +1258,15 @@ components:
           type: integer
           minimum: 1
           description: Version of the membership, also sent as `ETag`.
+        twoStepVerificationEnabled:
+          type: boolean
+          description: |
+            Whether the account of the member has two-step verification ("Deux étapes":
+            "Configurée" / "Non configurée"), as organization-service last learnt it from
+            `user.two-step-verification-changed.v1`; `false` until it learns otherwise. Present for
+            the owner and the admins only, absent for a member or a personal API token of a member,
+            so that nobody else learns which accounts have none. Present for them once the gateway
+            and organization-service run this version of the contracts.
     RoleCounts:
       type: object
       required: [owner, admin, member, guest]

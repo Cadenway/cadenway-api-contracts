@@ -845,8 +845,136 @@ export const userSignedUpV1Schema = zod.object({
   language: zod.string(),
 }) satisfies zod.ZodType<UserSignedUpV1>;
 
+/** Name of the event `user.two-step-verification-changed.v1`. The two-step verification of an account changed. */
+export const USER_TWO_STEP_VERIFICATION_CHANGED_V1 = 'user.two-step-verification-changed.v1';
+
+/** Payload of the event `user.two-step-verification-changed.v1`. */
+export interface UserTwoStepVerificationChangedV1 {
+  /** Id of the event, the deduplication key and the idempotency key of the email. */
+  id: string;
+  /** When the change was committed. */
+  occurredAt: string;
+  /** Always `null`, an account belongs to no organization. */
+  organizationId: string | null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the account after the change. */
+  version: number;
+  userId: string;
+  /**
+   * What changed: `enabled` (turned on with its first authenticator app and 10 backup
+   * codes), `disabled` (turned off: app, keys, backup codes and trusted devices deleted),
+   * `authenticator-app-replaced`, `backup-codes-regenerated`, `security-key-added` or
+   * `security-key-removed`. Later versions may add values without a new event version
+   * (an administrator's reset, for example): a consumer sends no email for a value it
+   * does not know, and still applies `enabled`.
+   */
+  change: string;
+  /** Whether two-step verification is on after the change. */
+  enabled: boolean;
+  /**
+   * The configured methods after the change: `authenticator-app`, and `security-key`
+   * when the account has a key; empty when it is off. A consumer ignores a value it does
+   * not know; the list has no upper bound, so that a new method needs no new version.
+   */
+  methods: string[];
+  /** Backup codes not used yet after the change ("10 codes générés"); 0 when it is off. */
+  backupCodesRemaining: number;
+  /**
+   * The key added or removed, for `security-key-added` and `security-key-removed`;
+   * `null` for the other changes.
+   */
+  securityKey: {
+    id: string;
+    name: string;
+  } | null;
+  /**
+   * The browser a request came from, shown in the rows "Appareil" and "Adresse IP" of the
+   * email. No place ("Lieu (approximatif)") is derived from the address.
+   */
+  client: {
+    /**
+     * The device of a browser, as identity-service reads it from its `User-Agent` ("Firefox sur
+     * Windows"). A member it cannot read is `null`.
+     */
+    device: {
+      /**
+       * `desktop`, `mobile`, `tablet` or `unknown` today. Later versions may add types without
+       * a new event version: a consumer treats an unknown value as `unknown`.
+       */
+      type: string;
+      /** Name of the browser or client. */
+      browser: string | null;
+      /** Major version of the browser. */
+      browserVersion: string | null;
+      /** Name of the operating system. */
+      os: string | null;
+      /**
+       * Version of the operating system; `null` when the `User-Agent` does not tell it
+       * reliably (Windows 10 and 11 look alike, macOS is frozen).
+       */
+      osVersion: string | null;
+    };
+    /** IPv4 or IPv6 address of the browser, as the gateway saw it. */
+    ipAddress: string;
+  };
+  /** Who receives the email of the event. */
+  recipient: {
+    /** Address to send to. */
+    email: string;
+    /** Full name of the account, for the greeting. */
+    name: string;
+  };
+  /** BCP 47 language tag of the email, the language of the account. */
+  language: string;
+  /** IANA time zone of the account, in which the email shows the date. */
+  timeZone: string;
+}
+
+/** Validator of the payload of the event `user.two-step-verification-changed.v1`. */
+export const userTwoStepVerificationChangedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().nullable(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  userId: zod.uuid(),
+  change: zod.string(),
+  enabled: zod.boolean(),
+  methods: zod.array(zod.string()),
+  backupCodesRemaining: zod.int().min(0).max(10),
+  securityKey: zod.object({
+    id: zod.uuid(),
+    name: zod.string().min(1).max(60),
+  }).nullable(),
+  client: zod.object({
+    device: zod.object({
+      type: zod.string(),
+      browser: zod.string().max(60).nullable(),
+      browserVersion: zod.string().max(20).nullable(),
+      os: zod.string().max(60).nullable(),
+      osVersion: zod.string().max(20).nullable(),
+    }),
+    ipAddress: zod.string().min(2).max(45),
+  }),
+  recipient: zod.object({
+    email: zod.email().max(254),
+    name: zod.string().min(1).max(120),
+  }),
+  language: zod.string(),
+  timeZone: zod.string().min(1).max(64),
+}) satisfies zod.ZodType<UserTwoStepVerificationChangedV1>;
+
 /** Names of the events of this document. */
-export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, PASSWORD_RESET_LINK_ISSUED_V1, SESSION_OPENED_ON_NEW_DEVICE_V1, SESSION_REVOKED_V1, USER_DELETED_V1, USER_DELETION_CANCELLED_V1, USER_DELETION_SCHEDULED_V1, USER_EMAIL_CHANGED_V1, USER_EMAIL_VERIFIED_V1, USER_PASSWORD_CHANGED_V1, USER_PROFILE_UPDATED_V1, USER_SIGNED_UP_V1] as const;
+export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, PASSWORD_RESET_LINK_ISSUED_V1, SESSION_OPENED_ON_NEW_DEVICE_V1, SESSION_REVOKED_V1, USER_DELETED_V1, USER_DELETION_CANCELLED_V1, USER_DELETION_SCHEDULED_V1, USER_EMAIL_CHANGED_V1, USER_EMAIL_VERIFIED_V1, USER_PASSWORD_CHANGED_V1, USER_PROFILE_UPDATED_V1, USER_SIGNED_UP_V1, USER_TWO_STEP_VERIFICATION_CHANGED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -875,6 +1003,7 @@ export interface EventPayloads {
   'user.password-changed.v1': UserPasswordChangedV1;
   'user.profile-updated.v1': UserProfileUpdatedV1;
   'user.signed-up.v1': UserSignedUpV1;
+  'user.two-step-verification-changed.v1': UserTwoStepVerificationChangedV1;
 }
 
 /** Payload validator of each event of this document, by event name. */
@@ -891,4 +1020,5 @@ export const eventSchemas = {
   'user.password-changed.v1': userPasswordChangedV1Schema,
   'user.profile-updated.v1': userProfileUpdatedV1Schema,
   'user.signed-up.v1': userSignedUpV1Schema,
+  'user.two-step-verification-changed.v1': userTwoStepVerificationChangedV1Schema,
 } as const satisfies { readonly [Name in EventName]: zod.ZodType<EventPayloads[Name]> };

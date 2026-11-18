@@ -23,4 +23,12 @@ export interface OpenSession {
   lastActiveAt: string;
   /** When the session ends at the latest, whatever its activity. */
   expiresAt: string;
+  /**
+     * Minutes of inactivity after which the session closes: the policy of its current
+     * organization (`60`, `720`, `10080` or `43200`), `720` (12 hours) without one ("Une
+     * session inactive pendant 12 heures est fermée automatiquement."). Always present once
+     * the gateway and identity-service run this version of the contracts.
+     * @minimum 1
+     */
+  inactivityTimeoutMinutes?: number;
 }

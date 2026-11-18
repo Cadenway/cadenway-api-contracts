@@ -6,6 +6,9 @@ import type { Problem } from './problem';
 
 /**
  * - `organization.not-selected`: the session has no current organization;
+ * - `organization.mfa-required`: the authentication policy of the organization requires
+ *   two-step verification for the role of the caller, who has none; `details.organizationId`
+ *   names it;
  * - `organization.role-forbidden`: only the owner and the admins see pending invitations;
  * - `auth.api-token-not-accepted`: a personal API token cannot call this route.
  */

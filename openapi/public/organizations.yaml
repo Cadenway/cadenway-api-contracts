@@ -1,16 +1,18 @@
 # Public routes of organizations: create one, list those of the caller (the picker), read and update
-# the current organization, and choose the current organization of the session. Served by
-# cadenway-api-gateway, which calls openapi/internal/organization-service.yaml, and
-# openapi/internal/identity-service.yaml for the choice of the current organization.
+# the current organization and its authentication policy, and choose the current organization of
+# the session. Served by cadenway-api-gateway, which calls openapi/internal/organization-service.yaml,
+# and openapi/internal/identity-service.yaml for the choice of the current organization and the
+# authentication policy.
 openapi: 3.1.0
 info:
   title: Cadenway organizations
   version: 1.0.0
   description: |
     How a signed-in person creates an organization, finds the organizations they belong to, reads
-    and changes the current one, and moves the session from one organization to another. The API
-    gateway serves these routes: organization-service answers the organizations, identity-service
-    keeps the current organization of the session.
+    and changes the current one and its authentication policy, and moves the session from one
+    organization to another. The API gateway serves these routes: organization-service answers the
+    organizations, identity-service keeps the current organization of the session and the
+    authentication policy of each organization, which it applies (decision D5).
 
     **Current organization.** A session holds at most one current organization, chosen with
     `PUT /v1/session/organization` and kept by identity-service. A new session starts in the
@@ -18,6 +20,20 @@ info:
     organization-scoped route acts on the current organization, never on one named in the path or
     the body; without one it answers `403 organization.not-selected`, and the web application shows
     the picker. A personal API token always acts on the organization it was created in.
+
+    **Authentication policy.** The owner and the admins choose, for their organization, who must
+    have two-step verification (nobody by default, the owner and the admins, or everyone) and after
+    how much inactivity the sessions acting on it close (12 hours by default; 1 hour, 7 days or 30
+    days): `GET` and `PATCH /v1/organization/authentication-policy`, a change needing a recent
+    authentication of the session. A person who must have two-step
+    verification there and has none keeps their session but gets no context in that organization:
+    every organization-scoped route of this organization answers `403 organization.mfa-required`,
+    in this document and in `openapi/public/members.yaml` and `openapi/public/api-tokens.yaml`, and
+    choosing it answers the same; the routes of the account, which need no organization, still work
+    (`openapi/public/auth.yaml`), so that the person sets it up ("Atelier Nord vous demandera la
+    vérification à la prochaine connexion : configurez-la maintenant."). The organization comes back
+    by itself at the next request after the setup. The gateway learns it from the introspection of
+    the session or token by identity-service, on every request.
 
     **Right after a creation or an acceptance.** organization-service owns the members;
     identity-service learns them from `member.joined.v1` within seconds. Until then, choosing the
@@ -52,7 +68,8 @@ info:
 
     **Later versions** add, without changing what is here: the logo (object storage), the plan,
     seats and quotas (billing; `plan` is `free` until then), verified domains, the reusable
-    invitation link and auto-join, the transfer of ownership and the deletion of an organization.
+    invitation link and auto-join, the transfer of ownership, the deletion of an organization, and,
+    in the authentication policy, single sign-on and the allowed sign-in methods.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -61,9 +78,9 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Serves every route, through openapi/internal/organization-service.yaml and, for the current organization of the session, openapi/internal/identity-service.yaml.
+      uses: Serves every route, through openapi/internal/organization-service.yaml and, for the current organization of the session and the authentication policy, openapi/internal/identity-service.yaml.
     - repository: cadenway-webapp
-      uses: Calls every route through @cadenway/api-client (picker, creation form, organization switcher, settings "Général").
+      uses: Calls every route through @cadenway/api-client (picker, creation form, organization switcher, settings "Général" and "Sécurité et SSO").
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -72,6 +89,8 @@ servers:
 tags:
   - name: organizations
     description: Organizations of the caller and the current organization of the session.
+  - name: authentication-policy
+    description: The authentication policy of the current organization, which identity-service applies.
 paths:
   /v1/organizations:
     post:
@@ -328,7 +347,14 @@ paths:
           session as it is, but records the organization as the last choice of the caller again,
           the one their next sessions start in, also when another session of theirs chose
           another organization since.
-        - A session that ended meanwhile answers `401 auth.session-expired`.
+        - A session that ended meanwhile answers `401 auth.session-expired`, as does a session that
+          had been idle, before this request, for longer than the inactivity the policy of the
+          chosen organization allows: choosing an organization never revives a session its policy
+          would have closed.
+        - An organization whose authentication policy requires two-step verification for the role
+          of the caller, who has none, answers `403 organization.mfa-required` with
+          `details.organizationId`, and nothing changes: the web application offers to set it up
+          from the account, then chooses again.
 
         Session only: a personal API token, bound to the organization it was created in, cannot
         call it.
@@ -358,9 +384,119 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
-          $ref: '#/components/responses/SessionWriteForbidden'
+          $ref: '#/components/responses/OrganizationChoiceForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/organization/authentication-policy:
+    get:
+      operationId: getAuthenticationPolicy
+      summary: Read the authentication policy of the current organization
+      description: |
+        Returns the "Politique d'authentification" of the current organization: who must have
+        two-step verification ("Exiger la vérification en deux étapes des administrateurs",
+        "L’exiger pour tous les membres") and the inactivity after which its sessions close
+        ("Expiration des sessions inactives"), with the count of its members without two-step
+        verification ("7 personnes ne l’ont pas configurée : elles devront le faire à leur
+        prochaine connexion."). Answered by identity-service from its policies and its copy of the
+        memberships. Owner and admins only (`403 organization.role-forbidden`). Session only: a
+        personal API token cannot call it.
+      tags: [authentication-policy]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The authentication policy.
+          headers:
+            ETag:
+              $ref: '#/components/headers/PolicyETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationPolicy'
+              examples:
+                atelierNord:
+                  $ref: '#/components/examples/AtelierNordPolicy'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateAuthenticationPolicy
+      summary: Update the authentication policy of the current organization
+      description: |
+        Applies a JSON Merge Patch (RFC 7396) to the authentication policy of the current
+        organization: a member left out is unchanged. Owner and admins only
+        (`403 organization.role-forbidden`). The change applies from the next request of every
+        session and personal token acting on the organization (toast "Politique de session mise à
+        jour", "Les sessions inactives expirent désormais après 12 heures.").
+
+        - `twoStepVerificationRequiredFor`: `admins` ("Propriétaire et administrateurs ne peuvent
+          plus se connecter sans elle.") or `everyone` withholds the organization from the people
+          concerned without two-step verification, until they set it up
+          (`403 organization.mfa-required`), and forbids them to turn it off
+          (`409 auth.mfa-required-by-organization`). There is no grace period. Requiring it for a
+          role the caller has, while the caller has no two-step verification, answers
+          `409 auth.two-step-not-enabled`: nobody locks themselves out of their own organization.
+        - `sessionInactivityTimeoutMinutes`: `60` ("1 heure"), `720` ("12 heures"), `10080` ("7
+          jours") or `43200` ("30 jours"). A session idle for longer than the new value closes at
+          its next request.
+        - `If-Match` is optional; a version that is no longer the current one answers
+          `412 request.version-mismatch`. A patch that changes nothing answers `200` with the same
+          version.
+
+        Checked once the role is: a recent authentication of this session (the sign-in, a password
+        or a code of the app in the last 10 minutes, see "Recent authentication" in
+        `openapi/public/auth.yaml`), else `403 auth.reauthentication-required` with
+        `details.methods`: a stolen session cannot loosen the policy. Emits nothing in this
+        version. Session only: a personal API token cannot call it.
+      tags: [authentication-policy]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticationPolicyPatch'
+            example:
+              twoStepVerificationRequiredFor: admins
+      responses:
+        '200':
+          description: The policy after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/PolicyETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationPolicy'
+              examples:
+                atelierNord:
+                  $ref: '#/components/examples/AtelierNordPolicy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/PolicyWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/TwoStepNotEnabled'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -386,6 +522,10 @@ components:
   headers:
     ETag:
       description: Version of the organization, `"<version>"`.
+      schema:
+        type: string
+    PolicyETag:
+      description: Version of the authentication policy, `"<version>"`.
       schema:
         type: string
     OrganizationLocation:
@@ -442,6 +582,24 @@ components:
         title: Votre rôle ne permet pas cette action.
         status: 403
         code: organization.role-forbidden
+    OrganizationMfaRequired:
+      summary: Two-step verification required by the organization
+      value:
+        type: about:blank
+        title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
+        status: 403
+        code: organization.mfa-required
+        details:
+          organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+    AtelierNordPolicy:
+      summary: The policy of Atelier Nord in the mockup
+      value:
+        twoStepVerificationRequiredFor: admins
+        sessionInactivityTimeoutMinutes: 720
+        membersWithoutTwoStepVerification:
+          admins: 0
+          everyone: 7
+        version: 2
     RateLimited:
       summary: Gateway limit reached
       value:
@@ -529,6 +687,12 @@ components:
       description: |
         - `organization.not-selected`: the session has no current organization; the web
           application shows the picker;
+        - `organization.mfa-required`: the authentication policy of the current organization
+          requires two-step verification for the role of the caller, who has none;
+          `details.organizationId` names it, and the web application offers to set it up from the
+          account;
+        - `organization.role-forbidden`: on the authentication policy, only the owner and the
+          admins read it;
         - `auth.api-token-not-accepted`: a personal API token cannot call this route.
       content:
         application/problem+json:
@@ -537,12 +701,18 @@ components:
           examples:
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            roleForbidden:
+              $ref: '#/components/examples/RoleForbidden'
             apiTokenNotAccepted:
               $ref: '#/components/examples/ApiTokenNotAccepted'
     OrganizationWriteForbidden:
       description: |
         - `organization.not-selected`: the session has no current organization;
-        - `organization.role-forbidden`: only the owner and the admins change the organization;
+        - `organization.mfa-required`: see `OrganizationReadForbidden`;
+        - `organization.role-forbidden`: only the owner and the admins change the organization and
+          its authentication policy;
         - `auth.csrf-rejected`, `auth.api-token-not-accepted`: see `SessionWriteForbidden`.
       content:
         application/problem+json:
@@ -551,12 +721,75 @@ components:
           examples:
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
             roleForbidden:
               $ref: '#/components/examples/RoleForbidden'
             crossSiteRefused:
               $ref: '#/components/examples/CrossSiteRefused'
             apiTokenNotAccepted:
               $ref: '#/components/examples/ApiTokenNotAccepted'
+    PolicyWriteForbidden:
+      description: |
+        - `organization.not-selected`, `organization.mfa-required`, `organization.role-forbidden`:
+          see `OrganizationWriteForbidden`;
+        - `auth.reauthentication-required`: the person of this session has not proved who they are
+          in the last 10 minutes; `details.methods` lists the ways they can
+          (`POST /v1/auth/reauthentication`), and the web application asks, confirms, then repeats
+          the request;
+        - `auth.csrf-rejected`, `auth.api-token-not-accepted`: see `SessionWriteForbidden`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            reauthenticationRequired:
+              summary: No recent authentication
+              value:
+                type: about:blank
+                title: Confirmez votre identité pour continuer.
+                status: 403
+                code: auth.reauthentication-required
+                details:
+                  methods: [authenticator-app]
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            roleForbidden:
+              $ref: '#/components/examples/RoleForbidden'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    OrganizationChoiceForbidden:
+      description: |
+        - `organization.mfa-required`: the authentication policy of the organization requires
+          two-step verification for the role of the caller, who has none; `details.organizationId`
+          names it. Nothing changed;
+        - `auth.csrf-rejected`, `auth.api-token-not-accepted`: see `SessionWriteForbidden`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+            apiTokenNotAccepted:
+              $ref: '#/components/examples/ApiTokenNotAccepted'
+    TwoStepNotEnabled:
+      description: |
+        `auth.two-step-not-enabled`: the patch requires two-step verification for a role the
+        caller has, and the caller has none: they set it up from their account first.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Activez d’abord la vérification en deux étapes.
+            status: 409
+            code: auth.two-step-not-enabled
     OrganizationNotFound:
       description: |
         `organization.not-found`: the caller does not belong to this organization, or, for a few
@@ -895,3 +1128,65 @@ components:
         role:
           $ref: '#/components/schemas/Role'
           description: Role of the caller in it.
+    AuthenticationPolicy:
+      type: object
+      required:
+        [
+          twoStepVerificationRequiredFor,
+          sessionInactivityTimeoutMinutes,
+          membersWithoutTwoStepVerification,
+          version,
+        ]
+      description: |
+        "Politique d'authentification" of the organization, kept and applied by identity-service.
+        A new organization has the default policy: `nobody`, `720`.
+      properties:
+        twoStepVerificationRequiredFor:
+          type: string
+          description: |
+            Who must have two-step verification: `nobody` (both switches off), `admins` ("Exiger
+            la vérification en deux étapes des administrateurs": the owner and the admins) or
+            `everyone` ("L’exiger pour tous les membres": every member, guests included, which
+            implies the admins). Later versions may add values (`x-extensible-enum`).
+          x-extensible-enum: [nobody, admins, everyone]
+        sessionInactivityTimeoutMinutes:
+          type: integer
+          minimum: 1
+          description: |
+            "Expiration des sessions inactives", in minutes: `60` ("1 heure"), `720` ("12 heures",
+            the default), `10080` ("7 jours") or `43200` ("30 jours"). A session acting on the
+            organization closes after this much inactivity ("Au-delà, la page « Session expirée »
+            s'affiche."). Later versions may add values (`x-extensible-enum`).
+          x-extensible-enum: [60, 720, 10080, 43200]
+        membersWithoutTwoStepVerification:
+          type: object
+          required: [admins, everyone]
+          description: |
+            Members whose account has no two-step verification, for the hints of the switches ("7
+            personnes ne l’ont pas configurée : elles devront le faire à leur prochaine
+            connexion.").
+          properties:
+            admins:
+              type: integer
+              minimum: 0
+              description: The owner and the admins among them.
+            everyone:
+              type: integer
+              minimum: 0
+              description: All of them, guests included.
+        version:
+          type: integer
+          minimum: 1
+          description: Version of the policy, also sent as `ETag`; 1 for the default policy.
+    AuthenticationPolicyPatch:
+      type: object
+      description: JSON Merge Patch of the authentication policy; an empty object changes nothing.
+      properties:
+        twoStepVerificationRequiredFor:
+          type: string
+          description: '`nobody`, `admins` or `everyone`.'
+          enum: [nobody, admins, everyone]
+        sessionInactivityTimeoutMinutes:
+          type: integer
+          description: '`60`, `720`, `10080` or `43200` minutes.'
+          enum: [60, 720, 10080, 43200]

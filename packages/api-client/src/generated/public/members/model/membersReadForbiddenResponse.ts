@@ -8,6 +8,9 @@ import type { Problem } from './problem';
  * - `auth.scope-missing`: the personal API token lacks `members:read`;
  *   `details.requiredScopes` lists what the route needs;
  * - `organization.not-selected`: the session has no current organization;
+ * - `organization.mfa-required`: the authentication policy of the organization requires
+ *   two-step verification for the role of the caller, who has none; `details.organizationId`
+ *   names it;
  * - `organization.role-forbidden`: guests do not read the member list.
  */
 export type MembersReadForbiddenResponse = Problem;

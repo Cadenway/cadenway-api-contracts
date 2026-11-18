@@ -32,11 +32,20 @@ info:
     **Session only.** Only a session creates, lists or revokes tokens, in its current organization
     (`403 organization.not-selected` without one): a token never manages tokens.
 
+    **Two-step verification required.** While the authentication policy of the organization of a
+    token requires two-step verification for the role of its user, who has none, the token stays
+    valid but acts on nothing: every route answers it `403 organization.mfa-required`, with
+    `details.organizationId`, until its user sets two-step verification up. The same policy
+    withholds the organization from the sessions of that person, so that they cannot manage the
+    tokens of that organization either (see "Authentication policy" in
+    `openapi/public/organizations.yaml`).
+
     **Recent authentication.** Creating a token needs a session whose person proved who they are
     in the last 10 minutes, as changing the address does ("Recent authentication" in
     `openapi/public/auth.yaml`): otherwise `POST /v1/api-tokens` answers
     `403 auth.reauthentication-required` with `details.methods`, and the web application asks for
-    the password (`POST /v1/auth/reauthentication`), then repeats the request. A stolen session
+    the password, or a code of the authenticator app for an account with two-step verification
+    (`POST /v1/auth/reauthentication`), then repeats the request. A stolen session
     therefore cannot mint a token that outlives the recovery of the account: a password reset or
     change keeps the existing tokens, so that integrations keep working. Listing and revoking
     tokens need no recent authentication.
@@ -243,6 +252,15 @@ components:
         title: Choisissez une organisation pour continuer.
         status: 403
         code: organization.not-selected
+    OrganizationMfaRequired:
+      summary: Two-step verification required by the organization
+      value:
+        type: about:blank
+        title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
+        status: 403
+        code: organization.mfa-required
+        details:
+          organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
     ReauthenticationRequired:
       summary: No recent authentication
       value:
@@ -314,6 +332,9 @@ components:
     TokenReadForbidden:
       description: |
         - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the current organization
+          requires two-step verification for the role of the caller, who has none;
+          `details.organizationId` names it;
         - `auth.api-token-not-accepted`: a personal API token never manages tokens.
       content:
         application/problem+json:
@@ -322,14 +343,21 @@ components:
           examples:
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
             apiTokenNotAccepted:
               $ref: '#/components/examples/ApiTokenNotAccepted'
     TokenCreationForbidden:
       description: |
         - `auth.reauthentication-required`: the person of this session has not proved who they are
-          in the last 10 minutes. `details.methods` lists the ways they can, `password` today
-          (`POST /v1/auth/reauthentication`); a client ignores a method it does not know;
+          in the last 10 minutes. `details.methods` lists the ways they can
+          (`POST /v1/auth/reauthentication`): `[password]` for an account without two-step
+          verification, `[authenticator-app]` for an account with it; a client ignores a method it
+          does not know;
         - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the current organization
+          requires two-step verification for the role of the caller, who has none;
+          `details.organizationId` names it;
         - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
         - `auth.api-token-not-accepted`: a personal API token never manages tokens.
       content:
@@ -341,6 +369,8 @@ components:
               $ref: '#/components/examples/ReauthenticationRequired'
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
             crossSiteRefused:
               summary: Request from another site
               value:
@@ -353,6 +383,9 @@ components:
     TokenWriteForbidden:
       description: |
         - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the current organization
+          requires two-step verification for the role of the caller, who has none;
+          `details.organizationId` names it;
         - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
         - `auth.api-token-not-accepted`: a personal API token never manages tokens.
       content:
@@ -362,6 +395,8 @@ components:
           examples:
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
             crossSiteRefused:
               summary: Request from another site
               value:

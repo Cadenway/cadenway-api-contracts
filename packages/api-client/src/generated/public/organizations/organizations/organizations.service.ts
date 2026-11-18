@@ -354,7 +354,14 @@ export class OrganizationsService {
  *   session as it is, but records the organization as the last choice of the caller again,
  *   the one their next sessions start in, also when another session of theirs chose
  *   another organization since.
- * - A session that ended meanwhile answers `401 auth.session-expired`.
+ * - A session that ended meanwhile answers `401 auth.session-expired`, as does a session that
+ *   had been idle, before this request, for longer than the inactivity the policy of the
+ *   chosen organization allows: choosing an organization never revives a session its policy
+ *   would have closed.
+ * - An organization whose authentication policy requires two-step verification for the role
+ *   of the caller, who has none, answers `403 organization.mfa-required` with
+ *   `details.organizationId`, and nothing changes: the web application offers to set it up
+ *   from the account, then chooses again.
  *
  * Session only: a personal API token, bound to the organization it was created in, cannot
  * call it.

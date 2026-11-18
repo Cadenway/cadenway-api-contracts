@@ -8,7 +8,8 @@ export interface Session {
   id: string;
   /**
      * When the session ends at the latest: 30 days after the sign-in with `rememberMe`. It
-     * also ends after 12 hours of inactivity by default.
+     * also ends after the inactivity the policy of its current organization sets, 12 hours
+     * by default.
      */
   expiresAt: string;
 }
