@@ -1,0 +1,843 @@
+# Public routes of lists and sprints: create, list, read and change the lists of a space (name,
+# appearance, sprint dates and goal), read the counts of a list, and read its activity log. Served
+# by cadenway-api-gateway, which calls openapi/internal/task-service.yaml for each of them.
+openapi: 3.1.0
+info:
+  title: Cadenway lists and sprints
+  version: 1.0.0
+  description: |
+    The lists of a space, and the sprints, lists with dates and a goal ("Une période datée, avec un
+    objectif et un suivi d’avancement."). The API gateway serves these routes and answers them
+    through task-service. Spaces are in `openapi/public/spaces.yaml`, tasks in
+    `openapi/public/tasks.yaml`.
+
+    **Who sees a list.** A list is seen by whoever sees its space (see "Who sees a space" in
+    `openapi/public/spaces.yaml`); a list the caller does not see answers `404 list.not-found`, as an
+    unknown one does. Any member who sees the space creates and changes its lists: there is no role
+    rule beyond the one of the space, and a guest sees nothing in this version.
+
+    **Sprints.** A sprint is a list with a first day, a last day on or after it ("La fin doit suivre
+    le début."), and an optional goal. Its state follows from its dates, with no start or
+    completion: it is current while the date of the caller is between them. Its tasks are the tasks
+    of the list: a task joins a sprint by being created in it, moved to it, or attached to a task of
+    it. Its progress is the count of its tasks of the key `done` out of its tasks that are not
+    `cancelled`.
+
+    **Counts.** The counts of a list are those of its top-level tasks, subtasks left out, as the
+    sidebar, the list cards and the sprint progress count them. `today` is the date of the caller,
+    in their time zone, which task-service does not know: a task is late when it is not closed and
+    its due date is before it.
+
+    **Activity.** The activity log of a list holds the entries of its tasks recorded while they
+    were in it: creations, status, priority and due date changes, and assignments. An entry whose
+    task the caller no longer sees, moved to a private space for example, is left out. The detail
+    of the log is in `openapi/public/tasks.yaml`.
+
+    **Current organization, members, versions, creations, credentials, cross-site requests, rate
+    limit and errors.** As in `openapi/public/spaces.yaml`: the current organization of the session
+    or of the personal API token, task-service's own copy of the members, `ETag` and `If-Match`, an
+    optional `Idempotency-Key` on a creation, the scopes `tasks:read` and `tasks:write`, 600
+    requests per minute, French titles for the codes the web application shows.
+
+    **Later versions** add, without changing what is here: archiving, restoring, duplicating and
+    deleting a list, sharing it ("Partager"), favorites, saved views, the CSV export and the sprint
+    report.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves every route, through openapi/internal/task-service.yaml, and checks the scopes of every operation.
+    - repository: cadenway-webapp
+      uses: Calls every route through @cadenway/api-client (dialogs "Créer une liste", "Créer un sprint", "Modifier la liste" and "Modifier le sprint", list header, view "Activité").
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging. The local stack of cadenway-ops serves the same routes on `api.<DOMAIN>`.
+tags:
+  - name: lists
+    description: Lists and sprints of the spaces of the current organization.
+paths:
+  /v1/spaces/{spaceId}/lists:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    post:
+      operationId: createList
+      summary: Create a list or a sprint
+      description: |
+        Creates a list in a space the caller sees, after its other lists ("Créer la liste", "Liste
+        créée"); with `sprint`, a sprint ("Créer le sprint", "Sprint créé"). An end before the
+        start answers `422 list.sprint-dates-invalid` ("La fin doit suivre le début."). The web
+        application proposes the name, the dates and the appearance of a new sprint ("Sprint 15",
+        the day after the end of the last sprint, 14 days, the lightning and "Améthyste"); the API
+        takes what it is sent.
+
+        Emits `list.created.v1`. Scope `tasks:write` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListCreation'
+            examples:
+              sprint:
+                summary: The next sprint of "Produit"
+                value:
+                  name: Sprint 15
+                  icon: lightning
+                  color: violet
+                  sprint:
+                    startDate: '2026-11-18'
+                    endDate: '2026-12-01'
+                    goal: Ouvrir la facturation par siège.
+              list:
+                summary: A list
+                value:
+                  name: Bugs
+                  icon: bug
+                  color: rouge
+      responses:
+        '201':
+          description: The list exists.
+          headers:
+            Location:
+              $ref: '#/components/headers/ListLocation'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+              example:
+                id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f15
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                name: Sprint 15
+                icon: lightning
+                color: violet
+                sprint:
+                  startDate: '2026-11-18'
+                  endDate: '2026-12-01'
+                  goal: Ouvrir la facturation par siège.
+                createdAt: '2026-11-08T11:20:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/ListCreationRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    get:
+      operationId: listLists
+      summary: List the lists of a space
+      description: |
+        Lists the lists and the sprints of a space the caller sees, in the order of their creation,
+        the order of the sidebar. Their counts are read with
+        `GET /v1/spaces/{spaceId}/overview` (`openapi/public/spaces.yaml`).
+
+        Scope `tasks:read` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of lists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListPage'
+              example:
+                items:
+                  - id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f11
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    name: Backlog
+                    icon: null
+                    color: gris
+                    sprint: null
+                    createdAt: '2026-03-02T09:30:00Z'
+                    version: 1
+                  - id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    name: Sprint 14
+                    icon: lightning
+                    color: violet
+                    sprint:
+                      startDate: '2026-11-03'
+                      endDate: '2026-11-17'
+                      goal: Livrer la connexion SSO et la page des quotas d’organisation.
+                    createdAt: '2026-10-30T16:00:00Z'
+                    version: 2
+                  - id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f13
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    name: Bugs
+                    icon: bug
+                    color: rouge
+                    sprint: null
+                    createdAt: '2026-03-02T09:31:00Z'
+                    version: 1
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: getList
+      summary: Read a list
+      description: |
+        Returns a list or a sprint the caller sees. Scope `tasks:read` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The list.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+              examples:
+                sprint14:
+                  $ref: '#/components/examples/Sprint14'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateList
+      summary: Change a list or a sprint
+      description: |
+        Applies a JSON Merge Patch to a list ("Modifier la liste", "Modifier le sprint", "Liste
+        modifiée", "Sprint modifié"): a member left out is unchanged, `icon: null` puts back the
+        default icon.
+
+        - `sprint` with its two dates makes a list a sprint or changes the dates of a sprint; an
+          end before the start answers `422 list.sprint-dates-invalid` ("La fin doit suivre le
+          début."). `sprint: null` makes a sprint a list again, without dates or goal; its tasks
+          stay in it.
+        - `If-Match` is optional (`412 request.version-mismatch`).
+
+        A list never moves to another space in this version. Emits `list.updated.v1` when something
+        changed; a patch that changes nothing answers `200` with the same version and emits
+        nothing. Scope `tasks:write` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListPatch'
+            examples:
+              dates:
+                summary: Move the end of a sprint
+                value:
+                  sprint:
+                    startDate: '2026-11-03'
+                    endDate: '2026-11-19'
+              notASprint:
+                summary: Make a sprint a list again
+                value:
+                  sprint: null
+      responses:
+        '200':
+          description: The list after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+              examples:
+                sprint14:
+                  $ref: '#/components/examples/Sprint14'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/SprintDatesInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/counts:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: getListCounts
+      summary: Read the counts of a list
+      description: |
+        Returns a list with the counts of its top-level tasks, for its header ("Sprint du 3 – 17
+        nov. · 98 tâches · 25 % terminé") and the progress of a sprint. `today` is the date of the
+        caller, for the late tasks.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/Today'
+      responses:
+        '200':
+          description: The list and its counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSummary'
+              example:
+                list:
+                  id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  name: Sprint 14
+                  icon: lightning
+                  color: violet
+                  sprint:
+                    startDate: '2026-11-03'
+                    endDate: '2026-11-17'
+                    goal: Livrer la connexion SSO et la page des quotas d’organisation.
+                  createdAt: '2026-10-30T16:00:00Z'
+                  version: 2
+                counts:
+                  total: 98
+                  open: 72
+                  done: 24
+                  cancelled: 2
+                  late: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/activity:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: listListActivity
+      summary: Read the activity log of a list
+      description: |
+        Lists the entries of the activity log of the tasks of a list, recorded while they were in
+        it, the most recent first (view "Activité": "Aujourd’hui", "Hier", "Samedi 7 novembre").
+        `kind` keeps the given kinds (the chips "Statuts", "Assignations", "Créations",
+        "Priorités", "Échéances"), `actorId` the given actors ("Tout le monde" when absent);
+        `total` counts what matches ("18 événements"). An entry shows the task with its name and
+        status as they are now; the entries of a task the caller no longer sees are left out of
+        `items` and `total`.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/ActivityKind'
+        - $ref: '#/components/parameters/ActorId'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityPage'
+              example:
+                items:
+                  - id: 019a7004-5e6f-7a8b-9c0d-1e2f3a4b5c02
+                    occurredAt: '2026-11-08T07:40:00Z'
+                    kind: status
+                    actor:
+                      type: user
+                      id: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                    task:
+                      key: CAD-479
+                      name: Corriger la redirection après connexion
+                      status: progress
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    status:
+                      from: todo
+                      to: progress
+                  - id: 019a7004-5e6f-7a8b-9c0d-1e2f3a4b5c05
+                    occurredAt: '2026-11-07T10:02:00Z'
+                    kind: assign
+                    actor:
+                      type: user
+                      id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    task:
+                      key: CAD-490
+                      name: Journaliser les connexions SSO
+                      status: todo
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    assignee:
+                      userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                      added: true
+                  - id: 019a7004-5e6f-7a8b-9c0d-1e2f3a4b5c09
+                    occurredAt: '2026-11-06T08:30:00Z'
+                    kind: due
+                    actor:
+                      type: user
+                      id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    task:
+                      key: CAD-488
+                      name: Page des quotas d’organisation
+                      status: todo
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    dueDate:
+                      from: '2026-11-16'
+                      to: '2026-11-18'
+                nextCursor: eyJhdCI6IjIwMjYtMTEtMDZUMDg6MzA6MDBaIn0
+                total: 15
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: |
+        Opaque session token of `openapi/public/auth.yaml`, set by the gateway on sign-in and checked
+        with identity-service on every request. A session holds every scope.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: |
+        Personal API token (`cw_pat_…`) of `openapi/public/api-tokens.yaml`, sent as
+        `Authorization: Bearer`. It acts with the rights of its user in the organization it was
+        created in, within the scopes each operation lists.
+  parameters:
+    SpaceId:
+      name: spaceId
+      in: path
+      required: true
+      description: Id of the space, as the list of spaces gives it.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01]
+    ListId:
+      name: listId
+      in: path
+      required: true
+      description: Id of the list or the sprint.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12]
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: '`"<version>"` the change was made from, as the `ETag` gave it.'
+      schema:
+        type: string
+        examples: ['"2"']
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Key of this creation, chosen by the client, a UUID for example; the same key with the same
+        body within 24 hours answers what the first request answered.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        examples: [5d0c6f1e-2a3b-4c5d-8e9f-0a1b2c3d4e5f]
+    Today:
+      $ref: '../../components/task.yaml#/components/parameters/Today'
+    ActivityKind:
+      $ref: '../../components/task.yaml#/components/parameters/ActivityKind'
+    ActorId:
+      $ref: '../../components/task.yaml#/components/parameters/ActorId'
+  headers:
+    ETag:
+      description: Version of the list, `"<version>"`.
+      schema:
+        type: string
+    ListLocation:
+      description: '`/v1/lists/<listId>`, where the list reads.'
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110).
+      schema:
+        type: integer
+        minimum: 1
+  examples:
+    Sprint14:
+      summary: Sprint 14 of the space "Produit"
+      value:
+        id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+        spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+        name: Sprint 14
+        icon: lightning
+        color: violet
+        sprint:
+          startDate: '2026-11-03'
+          endDate: '2026-11-17'
+          goal: Livrer la connexion SSO et la page des quotas d’organisation.
+        createdAt: '2026-10-30T16:00:00Z'
+        version: 2
+    CrossSiteRefused:
+      summary: Request from another site
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.csrf-rejected
+    ScopeMissingRead:
+      summary: Personal API token without `tasks:read`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:read]
+    ScopeMissingWrite:
+      summary: Personal API token without `tasks:write`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:write]
+    OrganizationNotSelected:
+      summary: No current organization
+      value:
+        type: about:blank
+        title: Choisissez une organisation pour continuer.
+        status: 403
+        code: organization.not-selected
+    OrganizationMfaRequired:
+      summary: Two-step verification required by the organization
+      value:
+        type: about:blank
+        title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
+        status: 403
+        code: organization.mfa-required
+        details:
+          organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+    SprintDatesInvalid:
+      summary: End before the start
+      value:
+        type: about:blank
+        title: La fin doit suivre le début.
+        status: 422
+        code: list.sprint-dates-invalid
+    IdempotencyKeyReused:
+      summary: Key sent before with another body
+      value:
+        type: about:blank
+        title: Unprocessable Content
+        status: 422
+        code: idempotency.key-reused
+    RateLimited:
+      summary: Gateway limit reached
+      value:
+        type: about:blank
+        title: 'Trop de requêtes : réessayez dans un instant.'
+        status: 429
+        code: rate-limit.exceeded
+  responses:
+    BadRequest:
+      description: |
+        The request does not match the schema: `request.invalid`, with one `details.issues` entry
+        per failed member (`path` is the dotted path of the member, empty for the body itself).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: body
+                  path: sprint.endDate
+                  code: invalid_type
+                  message: Required
+    Unauthenticated:
+      description: |
+        - `auth.session-required`: the request carries neither a session cookie nor a bearer token;
+        - `auth.session-expired`: the cookie names a session that ended;
+        - `auth.api-token-invalid`: the bearer token is unknown, revoked or expired, or its user
+          no longer belongs to its organization.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sessionRequired:
+              summary: No credential
+              value:
+                type: about:blank
+                title: Connectez-vous pour continuer.
+                status: 401
+                code: auth.session-required
+            sessionExpired:
+              summary: Session ended
+              value:
+                type: about:blank
+                title: Session expirée
+                status: 401
+                code: auth.session-expired
+            apiTokenInvalid:
+              summary: Personal API token no longer valid
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    TasksReadForbidden:
+      description: |
+        - `auth.scope-missing`: the personal API token lacks `tasks:read`; `details.requiredScopes`
+          lists what the route needs;
+        - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the organization requires
+          two-step verification for the role of the caller, who has none; `details.organizationId`
+          names it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingRead'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+    TasksWriteForbidden:
+      description: |
+        - `auth.scope-missing`: the personal API token lacks `tasks:write`;
+        - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
+        - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    SpaceNotFound:
+      description: |
+        - `space.not-found`: no space with this id that the caller sees;
+        - `organization.not-found`: the caller no longer belongs to the current organization, or,
+          for a few seconds after they joined it, task-service does not know them yet.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Espace introuvable.
+            status: 404
+            code: space.not-found
+    ListNotFound:
+      description: |
+        - `list.not-found`: no list with this id that the caller sees;
+        - `organization.not-found`: see `SpaceNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Liste introuvable.
+            status: 404
+            code: list.not-found
+    RequestInProgress:
+      description: '`idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            code: idempotency.request-in-progress
+    ListCreationRefused:
+      description: |
+        - `list.sprint-dates-invalid`: the end of the sprint is before its start;
+        - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sprintDatesInvalid:
+              $ref: '#/components/examples/SprintDatesInvalid'
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
+    SprintDatesInvalid:
+      description: '`list.sprint-dates-invalid`: the end of the sprint is before its start.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sprintDatesInvalid:
+              $ref: '#/components/examples/SprintDatesInvalid'
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 3
+    RateLimited:
+      description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    Unavailable:
+      description: |
+        task-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+        `upstream.deadline-exceeded`, with `details.service`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+            details:
+              service: task-service
+  schemas:
+    TaskList:
+      $ref: '../../components/task.yaml#/components/schemas/TaskList'
+    ListCreation:
+      $ref: '../../components/task.yaml#/components/schemas/ListCreation'
+    ListPatch:
+      $ref: '../../components/task.yaml#/components/schemas/ListPatch'
+    ListSummary:
+      $ref: '../../components/task.yaml#/components/schemas/ListSummary'
+    ActivityEntry:
+      $ref: '../../components/task.yaml#/components/schemas/ActivityEntry'
+    TaskListPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskList'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    ActivityPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          description: The entries, the most recent first.
+          items:
+            $ref: '#/components/schemas/ActivityEntry'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Entries that match the filters, on every page ("18 événements").

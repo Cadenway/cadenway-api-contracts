@@ -1,0 +1,1196 @@
+# Events of task-service: spaces, lists and sprints, and tasks (creation, change, status, assignment).
+asyncapi: 3.0.0
+info:
+  title: task-service events
+  version: 1.0.0
+  description: |
+    What task-service tells the other services about spaces, lists and tasks. Every event leaves
+    through the outbox of `@cadenway/nest-messaging` once its change is committed, at least once: a
+    consumer deduplicates on `id`.
+
+    Every event belongs to an organization: `organizationId` is never `null`, and the event is
+    appended in the tenant transaction of that organization. The aggregates are the space
+    (`spaceId`), the list (`listId`) and the task, named by its `key` as everywhere outside
+    task-service: a key never changes and is never given to another task of the organization.
+
+    **Without calling back.** Each event carries what its planned consumers need without reading
+    task-service: the whole space or list after the change, and for a task its key, name, status,
+    priority, assignees, dates, estimate, labels, list, space and parent after the change. The
+    description and the checklist of a task do not travel: `changed` names them, and a consumer
+    that needs them reads the task. The payloads carry no limit of the product (lengths, counts),
+    which later versions may raise; the formats of a task key and a prefix are part of the
+    identifiers.
+
+    **Several events for one change.** `task.updated.v1` follows every committed change of a task,
+    with `changed`. A change of status also emits `task.status-changed.v1`, and each person added to
+    the assignees `task.assigned.v1`, with the same `version`: these are facts for the consumers
+    that react to them (notifications, automations), not other versions. A consumer that keeps a
+    copy reads `task.created.v1` and `task.updated.v1` and ignores a `version` of the aggregate it
+    has already applied; one that reacts to a fact deduplicates it on `id` only, since two facts of
+    one change share its `version`. Moving a task moves its subtasks: each emits its own
+    `task.updated.v1`.
+
+    **Visibility.** A private space, its lists and its tasks emit events like any other: a consumer
+    that shows them to people filters by the visibility it reads in `space.created.v1` and
+    `space.updated.v1`, and by the owner of the space.
+
+    **No restricted event.** None carries a secret; they travel on `evt.space.>`, `evt.list.>` and
+    `evt.task.>`, the subjects the NATS user `task` publishes.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  tags:
+    - name: spaces
+      description: Spaces.
+    - name: lists
+      description: Lists and sprints.
+    - name: tasks
+      description: Tasks.
+  x-consumers:
+    - repository: cadenway-search-service
+      uses: Planned, space.created.v1, space.updated.v1, list.created.v1, list.updated.v1, task.created.v1 and task.updated.v1, for the search index.
+    - repository: cadenway-notification-service
+      uses: Planned, task.assigned.v1 and task.status-changed.v1, for the inbox and the emails.
+    - repository: cadenway-realtime-gateway
+      uses: Planned, every event, to push the changes to the open lists and tasks.
+    - repository: cadenway-automation-service
+      uses: Planned, task.created.v1, task.status-changed.v1 and task.assigned.v1, as the triggers of the rules.
+servers:
+  nats:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream of each environment, on its internal network.
+channels:
+  spaceCreatedV1:
+    address: evt.space.created.v1
+    description: |
+      A space was created. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      spaceCreatedV1:
+        $ref: '#/components/messages/spaceCreatedV1'
+  spaceUpdatedV1:
+    address: evt.space.updated.v1
+    description: |
+      A space changed. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      spaceUpdatedV1:
+        $ref: '#/components/messages/spaceUpdatedV1'
+  listCreatedV1:
+    address: evt.list.created.v1
+    description: |
+      A list or a sprint was created. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      listCreatedV1:
+        $ref: '#/components/messages/listCreatedV1'
+  listUpdatedV1:
+    address: evt.list.updated.v1
+    description: |
+      A list or a sprint changed. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      listUpdatedV1:
+        $ref: '#/components/messages/listUpdatedV1'
+  taskCreatedV1:
+    address: evt.task.created.v1
+    description: |
+      A task was created. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-search-service, cadenway-realtime-gateway and cadenway-automation-service.
+    messages:
+      taskCreatedV1:
+        $ref: '#/components/messages/taskCreatedV1'
+  taskUpdatedV1:
+    address: evt.task.updated.v1
+    description: |
+      A task changed. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      taskUpdatedV1:
+        $ref: '#/components/messages/taskUpdatedV1'
+  taskStatusChangedV1:
+    address: evt.task.status-changed.v1
+    description: |
+      The status of a task changed. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-notification-service, cadenway-realtime-gateway and
+      cadenway-automation-service.
+    messages:
+      taskStatusChangedV1:
+        $ref: '#/components/messages/taskStatusChangedV1'
+  taskAssignedV1:
+    address: evt.task.assigned.v1
+    description: |
+      A person was assigned a task. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-notification-service, cadenway-realtime-gateway and
+      cadenway-automation-service.
+    messages:
+      taskAssignedV1:
+        $ref: '#/components/messages/taskAssignedV1'
+operations:
+  publishSpaceCreatedV1:
+    action: send
+    summary: task-service publishes the creation of a space.
+    description: Sent from the outbox of task-service once the creation is committed.
+    channel:
+      $ref: '#/channels/spaceCreatedV1'
+    messages:
+      - $ref: '#/channels/spaceCreatedV1/messages/spaceCreatedV1'
+  publishSpaceUpdatedV1:
+    action: send
+    summary: task-service publishes a change of a space.
+    description: Sent from the outbox of task-service once the change is committed.
+    channel:
+      $ref: '#/channels/spaceUpdatedV1'
+    messages:
+      - $ref: '#/channels/spaceUpdatedV1/messages/spaceUpdatedV1'
+  publishListCreatedV1:
+    action: send
+    summary: task-service publishes the creation of a list.
+    description: Sent from the outbox of task-service once the creation is committed.
+    channel:
+      $ref: '#/channels/listCreatedV1'
+    messages:
+      - $ref: '#/channels/listCreatedV1/messages/listCreatedV1'
+  publishListUpdatedV1:
+    action: send
+    summary: task-service publishes a change of a list.
+    description: Sent from the outbox of task-service once the change is committed.
+    channel:
+      $ref: '#/channels/listUpdatedV1'
+    messages:
+      - $ref: '#/channels/listUpdatedV1/messages/listUpdatedV1'
+  publishTaskCreatedV1:
+    action: send
+    summary: task-service publishes the creation of a task.
+    description: Sent from the outbox of task-service once the creation is committed.
+    channel:
+      $ref: '#/channels/taskCreatedV1'
+    messages:
+      - $ref: '#/channels/taskCreatedV1/messages/taskCreatedV1'
+  publishTaskUpdatedV1:
+    action: send
+    summary: task-service publishes a change of a task.
+    description: Sent from the outbox of task-service once the change is committed.
+    channel:
+      $ref: '#/channels/taskUpdatedV1'
+    messages:
+      - $ref: '#/channels/taskUpdatedV1/messages/taskUpdatedV1'
+  publishTaskStatusChangedV1:
+    action: send
+    summary: task-service publishes a change of the status of a task.
+    description: Sent from the outbox of task-service once the change is committed.
+    channel:
+      $ref: '#/channels/taskStatusChangedV1'
+    messages:
+      - $ref: '#/channels/taskStatusChangedV1/messages/taskStatusChangedV1'
+  publishTaskAssignedV1:
+    action: send
+    summary: task-service publishes an assignment.
+    description: Sent from the outbox of task-service once the assignment is committed.
+    channel:
+      $ref: '#/channels/taskAssignedV1'
+    messages:
+      - $ref: '#/channels/taskAssignedV1/messages/taskAssignedV1'
+components:
+  schemas:
+    EventHeaders:
+      type: object
+      properties:
+        traceparent:
+          type: string
+          description: W3C Trace Context of the request that caused the event.
+    StatusKey:
+      type: string
+      description: |
+        Key of a status, `STATUS_KEYS` of `@cadenway/contracts`; the ten keys never change. Its
+        category is `STATUS_CATEGORY_BY_KEY`.
+      enum: [triage, backlog, todo, progress, review, testing, waiting, blocked, done, cancelled]
+    PriorityKey:
+      type: string
+      description: Priority, `PRIORITY_KEYS` of `@cadenway/contracts`; another value would take new event versions.
+      enum: [urgente, haute, moyenne, basse]
+    CancelReason:
+      type: [string, 'null']
+      description: |
+        Why the task was cancelled, `CANCEL_REASONS` of `@cadenway/contracts`; `null` unless its
+        status is `cancelled`. Another value would take new event versions.
+      enum: [duplicate, wontdo, scope, obsolete, null]
+    SpaceStatus:
+      type: object
+      required: [name, hidden]
+      properties:
+        name:
+          type: [string, 'null']
+          description: The name the space gives the status; `null` for its default label.
+        hidden:
+          type: boolean
+          description: Whether the space no longer uses the status.
+    SpaceStatuses:
+      type: object
+      description: The ten statuses as the space shows them, by key.
+      required:
+        [triage, backlog, todo, progress, review, testing, waiting, blocked, done, cancelled]
+      properties:
+        triage:
+          $ref: '#/components/schemas/SpaceStatus'
+        backlog:
+          $ref: '#/components/schemas/SpaceStatus'
+        todo:
+          $ref: '#/components/schemas/SpaceStatus'
+        progress:
+          $ref: '#/components/schemas/SpaceStatus'
+        review:
+          $ref: '#/components/schemas/SpaceStatus'
+        testing:
+          $ref: '#/components/schemas/SpaceStatus'
+        waiting:
+          $ref: '#/components/schemas/SpaceStatus'
+        blocked:
+          $ref: '#/components/schemas/SpaceStatus'
+        done:
+          $ref: '#/components/schemas/SpaceStatus'
+        cancelled:
+          $ref: '#/components/schemas/SpaceStatus'
+    Sprint:
+      type: [object, 'null']
+      description: The dates and the goal of a sprint; `null` for a list that is not a sprint.
+      required: [startDate, endDate, goal]
+      properties:
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        goal:
+          type: [string, 'null']
+    Icon:
+      type: [string, 'null']
+      description: |
+        Key of the icon (`rocket`, `paint`, `lightning`…, the keys of `LOOK_ICONS`); `null` for the
+        default. The set may grow without a new event version: a consumer treats an unknown key as
+        `null`.
+    Color:
+      type: string
+      description: |
+        Key of the color (`gris`, `violet`, `orange`…, the keys of `LOOK_COLORS`). The set may grow
+        without a new event version: a consumer treats an unknown key as `gris`.
+    Changed:
+      type: array
+      minItems: 1
+      description: Names of the members that changed; later versions may name others, which a consumer ignores.
+      items:
+        type: string
+  messages:
+    spaceCreatedV1:
+      name: space.created.v1
+      title: Space created
+      summary: A space was created.
+      description: |
+        Emitted once per space, in the transaction that creates it, followed by the
+        `list.created.v1` of its first list. `actor` is its creator, also `ownerUserId`.
+
+        Personal data: none beyond the ids; the name and the description are content of the
+        organization.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            spaceId,
+            name,
+            prefix,
+            description,
+            icon,
+            color,
+            visibility,
+            ownerUserId,
+            statuses,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the space was created.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the space after the creation, 1.
+          spaceId:
+            type: string
+            format: uuid
+          name:
+            type: string
+            minLength: 1
+            examples: [Produit]
+          prefix:
+            type: string
+            pattern: '^[A-Z]{2,5}$'
+            description: Prefix of the keys of the new tasks.
+            examples: [CAD]
+          description:
+            type: [string, 'null']
+          icon:
+            $ref: '#/components/schemas/Icon'
+          color:
+            $ref: '#/components/schemas/Color'
+          visibility:
+            type: string
+            description: |
+              `organization` or `private` today; a consumer treats an unknown value as `private`.
+            examples: [organization]
+          ownerUserId:
+            type: string
+            format: uuid
+            description: Account of the owner of the space, its creator.
+          statuses:
+            $ref: '#/components/schemas/SpaceStatuses'
+      examples:
+        - name: produit
+          summary: The space "Produit" of Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d01
+            occurredAt: '2026-03-02T09:30:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 1
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            name: Produit
+            prefix: CAD
+            description: 'Développement de Cadenway : sprints, bugs et feuille de route.'
+            icon: rocket
+            color: violet
+            visibility: organization
+            ownerUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            statuses:
+              triage: { name: null, hidden: false }
+              backlog: { name: null, hidden: false }
+              todo: { name: null, hidden: false }
+              progress: { name: null, hidden: false }
+              review: { name: null, hidden: false }
+              testing: { name: null, hidden: false }
+              waiting: { name: null, hidden: false }
+              blocked: { name: null, hidden: false }
+              done: { name: null, hidden: false }
+              cancelled: { name: null, hidden: false }
+    spaceUpdatedV1:
+      name: space.updated.v1
+      title: Space updated
+      summary: A space changed.
+      description: |
+        Emitted when a change of a space is committed and changes something: its name, prefix,
+        description, appearance, visibility or statuses, or its owner, which passes to the owner of
+        the organization when the owner of a private space leaves it (`actor`
+        `{ type: 'system', id: 'task-service' }`). Carries the whole space after the change and
+        `changed`: `name`, `prefix`, `description`, `icon`, `color`, `visibility`, `statuses` or
+        `ownerUserId` today.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            spaceId,
+            name,
+            prefix,
+            description,
+            icon,
+            color,
+            visibility,
+            ownerUserId,
+            statuses,
+            changed,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the space after the change.
+          spaceId:
+            type: string
+            format: uuid
+          name:
+            type: string
+            minLength: 1
+          prefix:
+            type: string
+            pattern: '^[A-Z]{2,5}$'
+          description:
+            type: [string, 'null']
+          icon:
+            $ref: '#/components/schemas/Icon'
+          color:
+            $ref: '#/components/schemas/Color'
+          visibility:
+            type: string
+            description: '`organization` or `private` today; a consumer treats an unknown value as `private`.'
+          ownerUserId:
+            type: string
+            format: uuid
+          statuses:
+            $ref: '#/components/schemas/SpaceStatuses'
+          changed:
+            $ref: '#/components/schemas/Changed'
+      examples:
+        - name: statuses
+          summary: '"En revue" renamed "Relecture"'
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d02
+            occurredAt: '2026-11-08T10:05:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 5
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            name: Produit
+            prefix: CAD
+            description: 'Développement de Cadenway : sprints, bugs et feuille de route.'
+            icon: rocket
+            color: violet
+            visibility: organization
+            ownerUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            statuses:
+              triage: { name: null, hidden: false }
+              backlog: { name: null, hidden: false }
+              todo: { name: null, hidden: false }
+              progress: { name: null, hidden: false }
+              review: { name: Relecture, hidden: false }
+              testing: { name: null, hidden: false }
+              waiting: { name: null, hidden: false }
+              blocked: { name: null, hidden: false }
+              done: { name: null, hidden: false }
+              cancelled: { name: null, hidden: false }
+            changed: [statuses]
+    listCreatedV1:
+      name: list.created.v1
+      title: List created
+      summary: A list or a sprint was created.
+      description: |
+        Emitted once per list, in the transaction that creates it, the first list of a new space
+        included. `sprint` is `null` for a list that is not a sprint.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            listId,
+            spaceId,
+            name,
+            icon,
+            color,
+            sprint,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the list was created.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the list after the creation, 1.
+          listId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          name:
+            type: string
+            minLength: 1
+            examples: [Sprint 14]
+          icon:
+            $ref: '#/components/schemas/Icon'
+          color:
+            $ref: '#/components/schemas/Color'
+          sprint:
+            $ref: '#/components/schemas/Sprint'
+      examples:
+        - name: sprint14
+          summary: Sprint 14 of "Produit"
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d03
+            occurredAt: '2026-10-30T16:00:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 1
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            name: Sprint 14
+            icon: lightning
+            color: violet
+            sprint:
+              startDate: '2026-11-03'
+              endDate: '2026-11-17'
+              goal: Livrer la connexion SSO et la page des quotas d’organisation.
+    listUpdatedV1:
+      name: list.updated.v1
+      title: List updated
+      summary: A list or a sprint changed.
+      description: |
+        Emitted when a change of a list is committed and changes something. Carries the whole list
+        after the change and `changed`: `name`, `icon`, `color` or `sprint` today.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            listId,
+            spaceId,
+            name,
+            icon,
+            color,
+            sprint,
+            changed,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the list after the change.
+          listId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          name:
+            type: string
+            minLength: 1
+          icon:
+            $ref: '#/components/schemas/Icon'
+          color:
+            $ref: '#/components/schemas/Color'
+          sprint:
+            $ref: '#/components/schemas/Sprint'
+          changed:
+            $ref: '#/components/schemas/Changed'
+      examples:
+        - name: sprintDates
+          summary: The end of Sprint 14 moved
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d04
+            occurredAt: '2026-11-08T10:10:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 3
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            name: Sprint 14
+            icon: lightning
+            color: violet
+            sprint:
+              startDate: '2026-11-03'
+              endDate: '2026-11-19'
+              goal: Livrer la connexion SSO et la page des quotas d’organisation.
+            changed: [sprint]
+    taskCreatedV1:
+      name: task.created.v1
+      title: Task created
+      summary: A task was created.
+      description: |
+        Emitted once per task, in the transaction that creates it: one per subtask created with its
+        parent, the parent first. Followed by one `task.assigned.v1` per assignee. `actor` is who
+        created it.
+
+        Personal data: none beyond the ids; the name and the labels are content of the
+        organization.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            parentKey,
+            name,
+            status,
+            cancelReason,
+            priority,
+            assigneeIds,
+            dueDate,
+            startDate,
+            estimateMinutes,
+            labels,
+            completedAt,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the task was created.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the task after the creation, 1.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the task, which names it in every event and never changes.
+            examples: [CAD-482]
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          parentKey:
+            type: [string, 'null']
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the parent of a subtask; `null` for a top-level task.
+          name:
+            type: string
+            minLength: 1
+          status:
+            $ref: '#/components/schemas/StatusKey'
+          cancelReason:
+            $ref: '#/components/schemas/CancelReason'
+          priority:
+            $ref: '#/components/schemas/PriorityKey'
+          assigneeIds:
+            type: array
+            description: Accounts assigned, in the order they were assigned.
+            items:
+              type: string
+              format: uuid
+          dueDate:
+            type: [string, 'null']
+            format: date
+          startDate:
+            type: [string, 'null']
+            format: date
+          estimateMinutes:
+            type: [integer, 'null']
+            minimum: 1
+          labels:
+            type: array
+            items:
+              type: string
+              minLength: 1
+          completedAt:
+            type: [string, 'null']
+            format: date-time
+            description: When the task entered `done`; `null` unless its status is `done`.
+      examples:
+        - name: cad482
+          summary: CAD-482 created in Sprint 14
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d05
+            occurredAt: '2026-11-03T09:00:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 1
+            key: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            parentKey: null
+            name: Refondre l’écran de connexion SSO
+            status: todo
+            cancelReason: null
+            priority: haute
+            assigneeIds: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+            dueDate: '2026-11-12'
+            startDate: null
+            estimateMinutes: 480
+            labels: [Auth, Front]
+            completedAt: null
+    taskUpdatedV1:
+      name: task.updated.v1
+      title: Task updated
+      summary: A task changed.
+      description: |
+        Emitted when a change of a task is committed and changes something, whatever changed: its
+        properties, its list or parent, its assignees and labels, each added or removed by its own
+        route, its checklist, or its assignees when a removed member leaves them (`actor`
+        `{ type: 'system', id: 'task-service' }`). Carries the task after the
+        change and `changed`, the members of the task that changed: `name`, `description`,
+        `status`, `cancelReason`, `cancelNote`, `priority`, `assigneeIds`, `dueDate`, `startDate`,
+        `estimateMinutes`, `labels`, `listId`, `spaceId`, `parentKey` or `checklist` today. The
+        description, the cancel note and the checklist do not travel.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            parentKey,
+            name,
+            status,
+            cancelReason,
+            priority,
+            assigneeIds,
+            dueDate,
+            startDate,
+            estimateMinutes,
+            labels,
+            completedAt,
+            changed,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the task after the change.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          parentKey:
+            type: [string, 'null']
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          name:
+            type: string
+            minLength: 1
+          status:
+            $ref: '#/components/schemas/StatusKey'
+          cancelReason:
+            $ref: '#/components/schemas/CancelReason'
+          priority:
+            $ref: '#/components/schemas/PriorityKey'
+          assigneeIds:
+            type: array
+            items:
+              type: string
+              format: uuid
+          dueDate:
+            type: [string, 'null']
+            format: date
+          startDate:
+            type: [string, 'null']
+            format: date
+          estimateMinutes:
+            type: [integer, 'null']
+            minimum: 1
+          labels:
+            type: array
+            items:
+              type: string
+              minLength: 1
+          completedAt:
+            type: [string, 'null']
+            format: date-time
+          changed:
+            $ref: '#/components/schemas/Changed'
+      examples:
+        - name: moved
+          summary: CAD-482 moved to the list "Bugs"
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d06
+            occurredAt: '2026-11-08T10:20:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 13
+            key: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f13
+            parentKey: null
+            name: Refondre l’écran de connexion SSO
+            status: progress
+            cancelReason: null
+            priority: haute
+            assigneeIds:
+              [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30, 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+            dueDate: '2026-11-12'
+            startDate: '2026-11-11'
+            estimateMinutes: 480
+            labels: [Auth, Front]
+            completedAt: null
+            changed: [listId]
+    taskStatusChangedV1:
+      name: task.status-changed.v1
+      title: Task status changed
+      summary: The status of a task changed.
+      description: |
+        Emitted, beside `task.updated.v1` and with its `version`, when the status of a task
+        changes: `previousStatus` before, `status` after. A status set back within the same
+        request emits nothing. `cancelReason` and `cancelNote` say why a task was cancelled.
+        `actor` is who changed it: a person, or later an automation or the Git integration.
+
+        Personal data: none beyond the ids; the cancel note is content of the organization.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            parentKey,
+            name,
+            status,
+            previousStatus,
+            cancelReason,
+            cancelNote,
+            priority,
+            assigneeIds,
+            dueDate,
+            startDate,
+            estimateMinutes,
+            labels,
+            completedAt,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the task after the change, that of the `task.updated.v1` of the same change.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          parentKey:
+            type: [string, 'null']
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          name:
+            type: string
+            minLength: 1
+          status:
+            $ref: '#/components/schemas/StatusKey'
+          previousStatus:
+            $ref: '#/components/schemas/StatusKey'
+          cancelReason:
+            $ref: '#/components/schemas/CancelReason'
+          cancelNote:
+            type: [string, 'null']
+            description: '"Précision" of the cancellation; `null` when there is none or the task is not cancelled.'
+          priority:
+            $ref: '#/components/schemas/PriorityKey'
+          assigneeIds:
+            type: array
+            items:
+              type: string
+              format: uuid
+          dueDate:
+            type: [string, 'null']
+            format: date
+          startDate:
+            type: [string, 'null']
+            format: date
+          estimateMinutes:
+            type: [integer, 'null']
+            minimum: 1
+          labels:
+            type: array
+            items:
+              type: string
+              minLength: 1
+          completedAt:
+            type: [string, 'null']
+            format: date-time
+      examples:
+        - name: review
+          summary: CAD-482 passes from "En cours" to "En revue"
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d07
+            occurredAt: '2026-11-08T10:30:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 14
+            key: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            parentKey: null
+            name: Refondre l’écran de connexion SSO
+            status: review
+            previousStatus: progress
+            cancelReason: null
+            cancelNote: null
+            priority: haute
+            assigneeIds:
+              [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30, 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+            dueDate: '2026-11-12'
+            startDate: '2026-11-11'
+            estimateMinutes: 480
+            labels: [Auth, Front]
+            completedAt: null
+    taskAssignedV1:
+      name: task.assigned.v1
+      title: Task assigned
+      summary: A person was assigned a task.
+      description: |
+        Emitted once per person added to the assignees of a task, at its creation or by a change,
+        beside `task.created.v1` or `task.updated.v1` and with their `version`. `assigneeId` is the
+        person added; `assigneeIds` all the assignees after the change. The actor assigned
+        themself when `actor.id` is `assigneeId` ("s’est assigné la tâche"). No event follows a
+        removal from the assignees but `task.updated.v1`.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            parentKey,
+            name,
+            status,
+            cancelReason,
+            priority,
+            assigneeId,
+            assigneeIds,
+            dueDate,
+            startDate,
+            estimateMinutes,
+            labels,
+            completedAt,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the assignment was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the task after the change, 1 for an assignment at the creation.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          parentKey:
+            type: [string, 'null']
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          name:
+            type: string
+            minLength: 1
+          status:
+            $ref: '#/components/schemas/StatusKey'
+          cancelReason:
+            $ref: '#/components/schemas/CancelReason'
+          priority:
+            $ref: '#/components/schemas/PriorityKey'
+          assigneeId:
+            type: string
+            format: uuid
+            description: The account added to the assignees.
+          assigneeIds:
+            type: array
+            minItems: 1
+            description: Every account assigned after the change, `assigneeId` included.
+            items:
+              type: string
+              format: uuid
+          dueDate:
+            type: [string, 'null']
+            format: date
+          startDate:
+            type: [string, 'null']
+            format: date
+          estimateMinutes:
+            type: [integer, 'null']
+            minimum: 1
+          labels:
+            type: array
+            items:
+              type: string
+              minLength: 1
+          completedAt:
+            type: [string, 'null']
+            format: date-time
+      examples:
+        - name: hugo
+          summary: Camille Martin assigns CAD-490 to Hugo Dubois
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d08
+            occurredAt: '2026-11-07T10:02:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 4
+            key: CAD-490
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            parentKey: null
+            name: Journaliser les connexions SSO
+            status: todo
+            cancelReason: null
+            priority: moyenne
+            assigneeId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+            assigneeIds:
+              [019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32, 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+            dueDate: '2026-11-20'
+            startDate: null
+            estimateMinutes: null
+            labels: [Auth, Back]
+            completedAt: null

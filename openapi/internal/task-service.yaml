@@ -1,0 +1,1870 @@
+# Internal routes of task-service, called by cadenway-api-gateway: the spaces of
+# openapi/public/spaces.yaml, the lists and sprints of openapi/public/lists.yaml, and the tasks,
+# queries, "Mes tâches" and "Accueil" of openapi/public/tasks.yaml.
+openapi: 3.1.0
+info:
+  title: task-service internal routes
+  version: 1.0.0
+  description: |
+    What task-service exposes to the API gateway for spaces, lists, sprints and tasks. The service
+    has no public route: the gateway serves `openapi/public/spaces.yaml`,
+    `openapi/public/lists.yaml` and `openapi/public/tasks.yaml` and calls these routes, with the
+    same bodies, the same answers and the same codes.
+
+    | Public route | Internal call |
+    | --- | --- |
+    | `POST /v1/spaces` | `POST /internal/v1/spaces` |
+    | `GET /v1/spaces` | `GET /internal/v1/spaces` |
+    | `GET /v1/spaces/{spaceId}` | `GET /internal/v1/spaces/{spaceId}` |
+    | `PATCH /v1/spaces/{spaceId}` | `PATCH /internal/v1/spaces/{spaceId}` |
+    | `GET /v1/spaces/{spaceId}/overview` | `GET /internal/v1/spaces/{spaceId}/overview` |
+    | `POST /v1/spaces/{spaceId}/lists` | `POST /internal/v1/spaces/{spaceId}/lists` |
+    | `GET /v1/spaces/{spaceId}/lists` | `GET /internal/v1/spaces/{spaceId}/lists` |
+    | `GET /v1/lists/{listId}` | `GET /internal/v1/lists/{listId}` |
+    | `PATCH /v1/lists/{listId}` | `PATCH /internal/v1/lists/{listId}` |
+    | `GET /v1/lists/{listId}/counts` | `GET /internal/v1/lists/{listId}/counts` |
+    | `GET /v1/lists/{listId}/activity` | `GET /internal/v1/lists/{listId}/activity` |
+    | `POST /v1/lists/{listId}/tasks` | `POST /internal/v1/lists/{listId}/tasks` |
+    | `GET /v1/lists/{listId}/tasks` | `GET /internal/v1/lists/{listId}/tasks` |
+    | `GET /v1/lists/{listId}/task-groups` | `GET /internal/v1/lists/{listId}/task-groups` |
+    | `GET /v1/tasks/{taskKey}` | `GET /internal/v1/tasks/{taskKey}` |
+    | `PATCH /v1/tasks/{taskKey}` | `PATCH /internal/v1/tasks/{taskKey}` |
+    | `PUT /v1/tasks/{taskKey}/assignees/{userId}` | `PUT /internal/v1/tasks/{taskKey}/assignees/{userId}` |
+    | `DELETE /v1/tasks/{taskKey}/assignees/{userId}` | `DELETE /internal/v1/tasks/{taskKey}/assignees/{userId}` |
+    | `POST /v1/tasks/{taskKey}/labels/add` | `POST /internal/v1/tasks/{taskKey}/labels/add` |
+    | `POST /v1/tasks/{taskKey}/labels/remove` | `POST /internal/v1/tasks/{taskKey}/labels/remove` |
+    | `GET /v1/tasks/{taskKey}/detail` | `GET /internal/v1/tasks/{taskKey}/detail`, to which the gateway adds `partial` |
+    | `GET /v1/tasks/{taskKey}/subtasks` | `GET /internal/v1/tasks/{taskKey}/subtasks` |
+    | `POST /v1/tasks/{taskKey}/subtasks` | `POST /internal/v1/tasks/{taskKey}/subtasks` |
+    | `POST /v1/tasks/{taskKey}/checklist-items` | `POST /internal/v1/tasks/{taskKey}/checklist-items` |
+    | `PATCH /v1/tasks/{taskKey}/checklist-items/{checklistItemId}` | `PATCH /internal/v1/tasks/{taskKey}/checklist-items/{checklistItemId}` |
+    | `GET /v1/tasks/{taskKey}/activity` | `GET /internal/v1/tasks/{taskKey}/activity` |
+    | `GET /v1/labels` | `GET /internal/v1/labels` |
+    | `GET /v1/me/tasks` | `GET /internal/v1/users/{userId}/tasks` with the user the introspection returned |
+    | `GET /v1/me/home` | `GET /internal/v1/users/{userId}/home` with the user the introspection returned |
+
+    **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
+    (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `task-service`). Every route accepts the
+    issuer `api-gateway` and the actor `user` only, and requires an organization: it acts on the
+    organization of the token, the current organization of the session or the organization of the
+    personal API token, and runs in the tenant transaction of that organization. The actor and the
+    organization come from the token, never from a body or a path; the `userId` of a path under
+    `/internal/v1/users/` that is not the actor answers `404 user.not-found` (the `userId` of
+    `/internal/v1/tasks/{taskKey}/assignees/{userId}` is the person assigned). The guard of the kit
+    answers `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
+    `403 auth.actor-not-allowed` and `403 auth.organization-required`. The gateway answers
+    `403 organization.not-selected` itself, before the call, when the session has no current
+    organization. Later versions accept other issuers (the automation and Git integrations, with
+    their actors, and the realtime gateway).
+
+    **Members.** task-service decides every rule from its own copy of the members of each
+    organization and their roles, never from the `role` of the token. It builds the copy from
+    `member.joined.v1`, `member.role-changed.v1` and `member.removed.v1`
+    (`asyncapi/organization-service.yaml`), through the durable consumers
+    `task-service__project-member-joined`, `task-service__project-member-role-changed` and
+    `task-service__project-member-removed` of the stream `EVENTS`. It reads the whole history of
+    these events, applies each membership by its `version` and keeps a removed one removed, and
+    retries a failed event for at least 24 hours before its dead letter. An actor the copy does not
+    hold as a member of the organization of the token, for a few seconds after they joined or
+    after their removal, gets `404 organization.not-found`. On `member.removed.v1`, task-service
+    removes the member from the assignees of every task (an entry `assign` of the activity log and
+    `task.updated.v1`, by the actor `{ type: system, id: task-service }`) and gives the private
+    spaces the member owned to the owner of the organization (`space.updated.v1`). On
+    `member.role-changed.v1`, task-service only records the new role in this version: a member who
+    becomes a guest stays among the assignees they had and keeps the spaces they own.
+
+    **Visibility.** task-service applies "Who sees a space" of `openapi/public/spaces.yaml` to every
+    route: what the actor does not see answers `404` and is left out of every collection, query and
+    count. A guest sees nothing in this version.
+
+    **Creations.** A creation that carries `Idempotency-Key` is recorded with its key, the actor
+    and a fingerprint of its body for 24 hours: the same key and body answer the recorded answer
+    again, another body `422 idempotency.key-reused`, a request with the key that still runs
+    `409 idempotency.request-in-progress`. The gateway forwards the header as it came.
+
+    **Versions.** `ETag` and `If-Match` carry `"<version>"` as in the public routes; the gateway
+    forwards both.
+
+    **Events.** Every change emits the events of `asyncapi/task-service.yaml` through the outbox of
+    `@cadenway/nest-messaging`, in the transaction of the change.
+
+    **Errors.** The gateway forwards the `code` and the `details` and answers the French `title` of
+    the public spec; the titles here are English. The gateway's internal client turns any `401`
+    into `503 upstream.unauthorized`, and answers `403 auth.issuer-not-allowed`,
+    `403 auth.actor-not-allowed` and `403 auth.organization-required`, configuration defects, as
+    `503 upstream.unauthorized` too, never to the browser.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Calls every route through its generated client, for openapi/public/spaces.yaml, openapi/public/lists.yaml and openapi/public/tasks.yaml, and composes the task detail.
+servers:
+  - url: http://task-service:3013
+    description: task-service on the internal network of each environment (`TASK_SERVICE_URL`).
+security:
+  - internalToken: []
+tags:
+  - name: spaces
+    description: Spaces of the organization of the token.
+  - name: lists
+    description: Lists and sprints of the spaces of the organization of the token.
+  - name: tasks
+    description: Tasks, subtasks, checklists and activity logs.
+  - name: task-queries
+    description: The tasks of a list, filtered, sorted and counted by group, and the labels.
+  - name: users
+    description: '"Mes tâches" and "Accueil" of the actor.'
+paths:
+  /internal/v1/spaces:
+    post:
+      operationId: createSpaceInternal
+      summary: Create a space
+      description: |
+        Creates a space owned by the actor and its list "Première liste", in one transaction, as
+        `POST /v1/spaces` says. A guest gets `403 organization.role-forbidden`; a current or former
+        prefix of another space, `409 space.prefix-taken`. Emits `space.created.v1` and
+        `list.created.v1`. Internal token: actor `user`, organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpaceCreation'
+            example:
+              name: Ressources humaines
+              prefix: RH
+      responses:
+        '201':
+          description: The space exists, with its first list.
+          headers:
+            Location:
+              description: '`/internal/v1/spaces/<spaceId>`.'
+              schema:
+                type: string
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpaceCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/SpaceCreationConflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+    get:
+      operationId: listSpacesInternal
+      summary: List the spaces
+      description: |
+        Lists the spaces the actor sees, in the order of their creation. Internal token: actor
+        `user`, organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of spaces.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpacePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/spaces/{spaceId}:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: getSpaceInternal
+      summary: Read a space
+      description: |
+        Returns a space the actor sees; any other answers `404 space.not-found`. Internal token:
+        actor `user`, organization required.
+      tags: [spaces]
+      responses:
+        '200':
+          description: The space.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+    patch:
+      operationId: updateSpaceInternal
+      summary: Change a space
+      description: |
+        Applies a JSON Merge Patch to a space the actor sees, as `PATCH /v1/spaces/{spaceId}` says:
+        `403 space.visibility-forbidden`, `409 space.prefix-taken`, `412 request.version-mismatch`,
+        `422 space.status-required`. Emits `space.updated.v1` when something changed. Internal
+        token: actor `user`, organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpacePatch'
+            example:
+              statuses:
+                review:
+                  name: Relecture
+      responses:
+        '200':
+          description: The space after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/SpaceWriteForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '409':
+          $ref: '#/components/responses/PrefixTaken'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/StatusRequired'
+  /internal/v1/spaces/{spaceId}/overview:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: getSpaceOverviewInternal
+      summary: Read the overview of a space
+      description: |
+        Returns the lists of a space the actor sees with the counts of their top-level tasks, as
+        `GET /v1/spaces/{spaceId}/overview` says. Internal token: actor `user`, organization
+        required.
+      tags: [spaces]
+      parameters:
+        - $ref: '#/components/parameters/Today'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the lists of the space, with their counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpaceOverview'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+  /internal/v1/spaces/{spaceId}/lists:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    post:
+      operationId: createListInternal
+      summary: Create a list or a sprint
+      description: |
+        Creates a list in a space the actor sees, as `POST /v1/spaces/{spaceId}/lists` says:
+        `422 list.sprint-dates-invalid` for an end before the start. Emits `list.created.v1`.
+        Internal token: actor `user`, organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListCreation'
+            example:
+              name: Sprint 15
+              icon: lightning
+              color: violet
+              sprint:
+                startDate: '2026-11-18'
+                endDate: '2026-12-01'
+      responses:
+        '201':
+          description: The list exists.
+          headers:
+            Location:
+              description: '`/internal/v1/lists/<listId>`.'
+              schema:
+                type: string
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/ListCreationRefused'
+    get:
+      operationId: listListsInternal
+      summary: List the lists of a space
+      description: |
+        Lists the lists of a space the actor sees, in the order of their creation. Internal token:
+        actor `user`, organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of lists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+  /internal/v1/lists/{listId}:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: getListInternal
+      summary: Read a list
+      description: |
+        Returns a list the actor sees; any other answers `404 list.not-found`. Internal token: actor
+        `user`, organization required.
+      tags: [lists]
+      responses:
+        '200':
+          description: The list.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+    patch:
+      operationId: updateListInternal
+      summary: Change a list or a sprint
+      description: |
+        Applies a JSON Merge Patch to a list the actor sees, as `PATCH /v1/lists/{listId}` says:
+        `412 request.version-mismatch`, `422 list.sprint-dates-invalid`. Emits `list.updated.v1`
+        when something changed. Internal token: actor `user`, organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListPatch'
+            example:
+              sprint: null
+      responses:
+        '200':
+          description: The list after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/SprintDatesInvalid'
+  /internal/v1/lists/{listId}/counts:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: getListCountsInternal
+      summary: Read the counts of a list
+      description: |
+        Returns a list the actor sees with the counts of its top-level tasks, as
+        `GET /v1/lists/{listId}/counts` says. Internal token: actor `user`, organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '#/components/parameters/Today'
+      responses:
+        '200':
+          description: The list and its counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+  /internal/v1/lists/{listId}/activity:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: listListActivityInternal
+      summary: Read the activity log of a list
+      description: |
+        Lists the entries of the activity log recorded while their task was in a list the actor
+        sees, the most recent first, as `GET /v1/lists/{listId}/activity` says; the entries of a
+        task the actor no longer sees are left out of `items` and `total`. Internal token:
+        actor `user`, organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '#/components/parameters/ActivityKind'
+        - $ref: '#/components/parameters/ActorId'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+  /internal/v1/lists/{listId}/tasks:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    post:
+      operationId: createTaskInternal
+      summary: Create a task
+      description: |
+        Creates a task and the subtasks of `subtasks` in a list the actor sees, in one transaction,
+        as `POST /v1/lists/{listId}/tasks` says: the next keys of the space of the list, never
+        given again, `422 task.status-hidden`, `422 task.cancel-reason-required`,
+        `422 task.cancel-reason-unexpected`, `422 task.assignee-invalid`,
+        `422 task.start-date-invalid`. Records a creation per task. Emits `task.created.v1` per task
+        and `task.assigned.v1` per assignee of each. Internal token: actor `user`, organization
+        required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreation'
+            example:
+              name: Ajouter la connexion par lien magique
+              priority: haute
+              assigneeIds: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+      responses:
+        '201':
+          description: The task exists, with its subtasks.
+          headers:
+            Location:
+              description: '`/internal/v1/tasks/<key>`.'
+              schema:
+                type: string
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/TaskRefused'
+    get:
+      operationId: listTasksInternal
+      summary: List the tasks of a list
+      description: |
+        Lists the tasks of a list the actor sees, filtered and sorted, as
+        `GET /v1/lists/{listId}/tasks` says; `assignee=me` is the actor. Internal token: actor
+        `user`, organization required.
+      tags: [task-queries]
+      parameters:
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/PriorityFilter'
+        - $ref: '#/components/parameters/AssigneeFilter'
+        - $ref: '#/components/parameters/LabelFilter'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/DueFrom'
+        - $ref: '#/components/parameters/DueTo'
+        - $ref: '#/components/parameters/Level'
+        - $ref: '#/components/parameters/TaskSort'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSummaryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+  /internal/v1/lists/{listId}/task-groups:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: countTaskGroupsInternal
+      summary: Count the tasks of a list by group
+      description: |
+        Counts the tasks of a list the actor sees by status, priority or assignee, with the filters
+        of `GET /internal/v1/lists/{listId}/tasks`, as `GET /v1/lists/{listId}/task-groups` says.
+        Internal token: actor `user`, organization required.
+      tags: [task-queries]
+      parameters:
+        - $ref: '#/components/parameters/GroupBy'
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/PriorityFilter'
+        - $ref: '#/components/parameters/AssigneeFilter'
+        - $ref: '#/components/parameters/LabelFilter'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/DueFrom'
+        - $ref: '#/components/parameters/DueTo'
+        - $ref: '#/components/parameters/Level'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of groups.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskGroupPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+  /internal/v1/tasks/{taskKey}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: getTaskInternal
+      summary: Read a task
+      description: |
+        Returns a task the actor sees; any other key answers `404 task.not-found`. Internal token:
+        actor `user`, organization required.
+      tags: [tasks]
+      responses:
+        '200':
+          description: The task.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+    patch:
+      operationId: updateTaskInternal
+      summary: Change a task
+      description: |
+        Applies a JSON Merge Patch to a task the actor sees, as `PATCH /v1/tasks/{taskKey}` says:
+        the status and its cancel reason, checked against the statuses of the space the task is in
+        after the patch, the due date that moves the start and keeps the duration, the move of the
+        task and its subtasks, the parent, `If-Match` required with `description`
+        (`400 request.invalid` with an issue on the header). Records the changes of status,
+        priority and due date, the changes of the priority and the due date of a task by the same
+        actor within 60 seconds merged into one entry. Emits `task.updated.v1` and
+        `task.status-changed.v1` as the public route says. Internal token: actor `user`,
+        organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskPatch'
+            example:
+              status: cancelled
+              cancelReason: duplicate
+      responses:
+        '200':
+          description: The task after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/TaskRefused'
+  /internal/v1/tasks/{taskKey}/assignees/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/AssigneeUserId'
+    put:
+      operationId: assignTaskInternal
+      summary: Assign a person
+      description: |
+        Adds a person to the assignees of a task the actor sees, as
+        `PUT /v1/tasks/{taskKey}/assignees/{userId}` says: a current member of the organization,
+        guests excepted (`422 task.assignee-invalid`), 20 at most
+        (`422 task.assignee-limit-reached`); already assigned, `200` with the same version.
+        Records an entry `assign`. Emits `task.updated.v1` with `changed: [assigneeIds]` and
+        `task.assigned.v1`. Internal token: actor `user`, organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The task with its assignees.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/AssigneeRefused'
+    delete:
+      operationId: unassignTaskInternal
+      summary: Remove an assignee
+      description: |
+        Removes a person from the assignees of a task the actor sees; not assigned, `204` with the
+        same version. `ETag` gives the version after the change. Records an entry `assign` and
+        emits `task.updated.v1` with `changed: [assigneeIds]` when the person was assigned.
+        Internal token: actor `user`, organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The person is not among the assignees.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/tasks/{taskKey}/labels/add:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: addTaskLabelInternal
+      summary: Add a label
+      description: |
+        Adds a label to a task the actor sees, as `POST /v1/tasks/{taskKey}/labels/add` says: one
+        that repeats a label of the task without regard to case changes nothing, 20 at most
+        (`422 task.label-limit-reached`). Emits `task.updated.v1` with `changed: [labels]` when it
+        changed. Internal token: actor `user`, organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelChange'
+            example:
+              name: Sécurité
+      responses:
+        '200':
+          description: The task with its labels.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/LabelLimitReached'
+  /internal/v1/tasks/{taskKey}/labels/remove:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: removeTaskLabelInternal
+      summary: Remove a label
+      description: |
+        Removes a label from a task the actor sees, without regard to case; absent, nothing changes.
+        Emits `task.updated.v1` with `changed: [labels]` when it changed. Internal token: actor
+        `user`, organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelChange'
+            example:
+              name: Front
+      responses:
+        '200':
+          description: The task with its labels.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/tasks/{taskKey}/detail:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: getTaskDetailInternal
+      summary: Read the detail of a task
+      description: |
+        Returns task-service's part of the task detail: the task, its space, its list, its parent
+        and its direct subtasks, read in one transaction. The gateway adds `partial` and, in later
+        versions, the parts of other services. Internal token: actor `user`, organization required.
+      tags: [tasks]
+      responses:
+        '200':
+          description: The detail of the task.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskDetailCore'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/tasks/{taskKey}/subtasks:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listSubtasksInternal
+      summary: List the subtasks of a task
+      description: |
+        Lists the direct subtasks of a task the actor sees, in the order of their creation.
+        Internal token: actor `user`, organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of subtasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSummaryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+    post:
+      operationId: createSubtaskInternal
+      summary: Create a subtask
+      description: |
+        Creates a subtask of a task the actor sees, in its list, as
+        `POST /v1/tasks/{taskKey}/subtasks` says: `422 task.subtask-depth-exceeded`,
+        `422 task.subtask-limit-reached` and the refusals of a creation. Emits `task.created.v1` and
+        `task.assigned.v1` per assignee. Internal token: actor `user`, organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubtaskCreation'
+            example:
+              name: Tester la connexion avec Okta
+      responses:
+        '201':
+          description: The subtask exists.
+          headers:
+            Location:
+              description: '`/internal/v1/tasks/<key>`.'
+              schema:
+                type: string
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/TaskRefused'
+  /internal/v1/tasks/{taskKey}/checklist-items:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: addChecklistItemInternal
+      summary: Add a checklist item
+      description: |
+        Adds an item at the end of the checklist of a task the actor sees;
+        `422 task.checklist-limit-reached` beyond 100. Emits `task.updated.v1` with
+        `changed: [checklist]`. Internal token: actor `user`, organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChecklistItemCreation'
+            example:
+              text: Relire les messages d’erreur
+      responses:
+        '201':
+          description: The item exists; the answer is the task.
+          headers:
+            Location:
+              description: '`/internal/v1/tasks/<key>/checklist-items/<checklistItemId>`.'
+              schema:
+                type: string
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/ChecklistItemRefused'
+  /internal/v1/tasks/{taskKey}/checklist-items/{checklistItemId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/ChecklistItemId'
+    patch:
+      operationId: updateChecklistItemInternal
+      summary: Tick or untick a checklist item
+      description: |
+        Ticks or unticks an item of the checklist of a task the actor sees;
+        `404 checklist-item.not-found` for an id the task does not have; `412` on a stale
+        `If-Match`. Emits `task.updated.v1` with `changed: [checklist]` when it changed. Internal
+        token: actor `user`, organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChecklistItemPatch'
+            example:
+              done: true
+      responses:
+        '200':
+          description: The task after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ChecklistItemNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/tasks/{taskKey}/activity:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskActivityInternal
+      summary: Read the activity log of a task
+      description: |
+        Lists the entries of the activity log of a task the actor sees, the most recent first.
+        Internal token: actor `user`, organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/ActivityKind'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/labels:
+    get:
+      operationId: listLabelsInternal
+      summary: List the labels
+      description: |
+        Lists the labels of the tasks the actor sees, as `GET /v1/labels` says. Internal token:
+        actor `user`, organization required.
+      tags: [task-queries]
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of labels.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabelPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/users/{userId}/tasks:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      operationId: listMyTasksInternal
+      summary: List the tasks of the actor
+      description: |
+        Lists the tasks assigned to the actor in every space they see, subtasks included, as
+        `GET /v1/me/tasks` says. A `userId` other than the actor answers `404 user.not-found`.
+        Internal token: actor `user`, organization required.
+      tags: [users]
+      parameters:
+        - $ref: '#/components/parameters/MyTaskState'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the tasks of the actor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyTaskPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+  /internal/v1/users/{userId}/home:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      operationId: getHomeInternal
+      summary: Read the task part of "Accueil"
+      description: |
+        Returns the counters, the priorities, the current sprints and the first lists of the
+        actor, as `GET /v1/me/home` says. A `userId` other than the actor answers
+        `404 user.not-found`. Internal token: actor `user`, organization required.
+      tags: [users]
+      parameters:
+        - $ref: '#/components/parameters/Today'
+      responses:
+        '200':
+          description: The task part of "Accueil".
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Home'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` = `task-service`,
+        issuer `api-gateway`.
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: Id of the account of the actor, as the introspection returned it.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+    SpaceId:
+      name: spaceId
+      in: path
+      required: true
+      description: Id of the space.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01]
+    ListId:
+      name: listId
+      in: path
+      required: true
+      description: Id of the list.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12]
+    TaskKey:
+      name: taskKey
+      in: path
+      required: true
+      description: Key of the task.
+      schema:
+        $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+    AssigneeUserId:
+      name: userId
+      in: path
+      required: true
+      description: Account of the person to assign or to remove, not the actor.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+    ChecklistItemId:
+      name: checklistItemId
+      in: path
+      required: true
+      description: Id of the checklist item.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: '`"<version>"` the change was made from.'
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Key of the creation, as the client sent it to the gateway.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+    Today:
+      $ref: '../../components/task.yaml#/components/parameters/Today'
+    StatusFilter:
+      $ref: '../../components/task.yaml#/components/parameters/StatusFilter'
+    PriorityFilter:
+      $ref: '../../components/task.yaml#/components/parameters/PriorityFilter'
+    AssigneeFilter:
+      $ref: '../../components/task.yaml#/components/parameters/AssigneeFilter'
+    LabelFilter:
+      $ref: '../../components/task.yaml#/components/parameters/LabelFilter'
+    Search:
+      $ref: '../../components/task.yaml#/components/parameters/Search'
+    DueFrom:
+      $ref: '../../components/task.yaml#/components/parameters/DueFrom'
+    DueTo:
+      $ref: '../../components/task.yaml#/components/parameters/DueTo'
+    Level:
+      $ref: '../../components/task.yaml#/components/parameters/Level'
+    TaskSort:
+      $ref: '../../components/task.yaml#/components/parameters/TaskSort'
+    GroupBy:
+      $ref: '../../components/task.yaml#/components/parameters/GroupBy'
+    MyTaskState:
+      $ref: '../../components/task.yaml#/components/parameters/MyTaskState'
+    ActivityKind:
+      $ref: '../../components/task.yaml#/components/parameters/ActivityKind'
+    ActorId:
+      $ref: '../../components/task.yaml#/components/parameters/ActorId'
+  headers:
+    ETag:
+      description: Version of the space, the list or the task, `"<version>"`.
+      schema:
+        type: string
+  examples:
+    ActorNotAllowed:
+      summary: Actor not accepted
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.actor-not-allowed
+    OrganizationRequired:
+      summary: Token without an organization
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.organization-required
+    PrefixTaken:
+      summary: Prefix of another space
+      value:
+        type: about:blank
+        title: Conflict
+        status: 409
+        code: space.prefix-taken
+        details:
+          prefix: CAD
+    RequestInProgress:
+      summary: The first request with this key still runs
+      value:
+        type: about:blank
+        title: Conflict
+        status: 409
+        code: idempotency.request-in-progress
+    IdempotencyKeyReused:
+      summary: Key sent before with another body
+      value:
+        type: about:blank
+        title: Unprocessable Content
+        status: 422
+        code: idempotency.key-reused
+  responses:
+    BadRequest:
+      description: '`request.invalid`: the request does not match the schema; one `details.issues` entry per issue.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: body
+                  path: name
+                  code: too_small
+                  message: Too small
+    InternalTokenRefused:
+      description: |
+        The internal token is missing (`auth.token-missing`) or refused (`auth.token-invalid`, with
+        `details.reason`). The gateway's client reports it as `503 upstream.unauthorized`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unauthorized
+            status: 401
+            code: auth.token-invalid
+            details:
+              reason: expired
+    InternalAccessRefused:
+      description: |
+        The internal token is valid but the route does not accept its issuer
+        (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`), or it carries no
+        organization (`auth.organization-required`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            actorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+            organizationRequired:
+              $ref: '#/components/examples/OrganizationRequired'
+    RoleForbidden:
+      description: |
+        - `organization.role-forbidden`: a guest does not create spaces;
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
+          the internal token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roleForbidden:
+              summary: A guest
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: organization.role-forbidden
+            actorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+    SpaceWriteForbidden:
+      description: |
+        - `space.visibility-forbidden`: only the owner of the space, and the owner and the admins
+          of the organization, change its visibility;
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
+          the internal token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            visibilityForbidden:
+              summary: A member who does not own the space
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: space.visibility-forbidden
+            actorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+    OrganizationNotFound:
+      description: |
+        `organization.not-found`: task-service does not hold the actor as a member of the
+        organization of the token, removed or not yet learnt.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: organization.not-found
+    UserNotFound:
+      description: |
+        - `user.not-found`: the `userId` of the path is not the actor;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: user.not-found
+    SpaceNotFound:
+      description: |
+        - `space.not-found`: no space with this id that the actor sees;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: space.not-found
+    ListNotFound:
+      description: |
+        - `list.not-found`: no list with this id that the actor sees;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: list.not-found
+    TaskNotFound:
+      description: |
+        - `task.not-found`: no task with this key that the actor sees;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: task.not-found
+    ChecklistItemNotFound:
+      description: |
+        - `checklist-item.not-found`: the task has no item with this id;
+        - `task.not-found`, `organization.not-found`: see `TaskNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: checklist-item.not-found
+    PrefixTaken:
+      description: '`space.prefix-taken`: another space of the organization uses or used the prefix, with `details.prefix`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            prefixTaken:
+              $ref: '#/components/examples/PrefixTaken'
+    SpaceCreationConflict:
+      description: '`space.prefix-taken`, with `details.prefix`, or `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            prefixTaken:
+              $ref: '#/components/examples/PrefixTaken'
+            requestInProgress:
+              $ref: '#/components/examples/RequestInProgress'
+    RequestInProgress:
+      description: '`idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            requestInProgress:
+              $ref: '#/components/examples/RequestInProgress'
+    IdempotencyKeyReused:
+      description: '`idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
+    StatusRequired:
+      description: '`space.status-required`: the patch hides `todo` or `done`, with `details.status`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: space.status-required
+            details:
+              status: todo
+    ListCreationRefused:
+      description: '`list.sprint-dates-invalid` or `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sprintDatesInvalid:
+              summary: End before the start
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: list.sprint-dates-invalid
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
+    SprintDatesInvalid:
+      description: '`list.sprint-dates-invalid`: the end of the sprint is before its start.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: list.sprint-dates-invalid
+    TaskRefused:
+      description: |
+        A task rule refuses the request, with the codes of the public route: `task.status-hidden`
+        (`details.status`), `task.cancel-reason-required`, `task.cancel-reason-unexpected`,
+        `task.assignee-invalid` (`details.userIds`, at a creation), `task.start-date-invalid`,
+        `task.list-invalid`, `task.parent-invalid` (`details.parentKey`),
+        `task.subtask-depth-exceeded`, `task.subtask-limit-reached`, or, on a creation,
+        `idempotency.key-reused`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            subtaskDepthExceeded:
+              summary: More than 3 levels
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.subtask-depth-exceeded
+            assigneeInvalid:
+              summary: An assignee who is not a member, or a guest
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.assignee-invalid
+                details:
+                  userIds: [019a6f00-1b2c-7d3e-8f4a-5b6c7d8e9f40]
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
+    AssigneeRefused:
+      description: '`task.assignee-invalid`, with `details.userIds`, or `task.assignee-limit-reached` beyond 20 assignees.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            assigneeLimitReached:
+              summary: 20 assignees already
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.assignee-limit-reached
+    LabelLimitReached:
+      description: '`task.label-limit-reached`: the task has 20 labels.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: task.label-limit-reached
+    ChecklistItemRefused:
+      description: '`task.checklist-limit-reached` beyond 100 items, or `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            checklistLimitReached:
+              summary: 100 items already
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.checklist-limit-reached
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version, with `details.version`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Precondition Failed
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 13
+  schemas:
+    Space:
+      $ref: '../../components/task.yaml#/components/schemas/Space'
+    SpaceCreation:
+      $ref: '../../components/task.yaml#/components/schemas/SpaceCreation'
+    SpacePatch:
+      $ref: '../../components/task.yaml#/components/schemas/SpacePatch'
+    TaskList:
+      $ref: '../../components/task.yaml#/components/schemas/TaskList'
+    ListCreation:
+      $ref: '../../components/task.yaml#/components/schemas/ListCreation'
+    ListPatch:
+      $ref: '../../components/task.yaml#/components/schemas/ListPatch'
+    ListSummary:
+      $ref: '../../components/task.yaml#/components/schemas/ListSummary'
+    Task:
+      $ref: '../../components/task.yaml#/components/schemas/Task'
+    TaskSummary:
+      $ref: '../../components/task.yaml#/components/schemas/TaskSummary'
+    TaskRef:
+      $ref: '../../components/task.yaml#/components/schemas/TaskRef'
+    TaskCreation:
+      $ref: '../../components/task.yaml#/components/schemas/TaskCreation'
+    SubtaskCreation:
+      $ref: '../../components/task.yaml#/components/schemas/SubtaskCreation'
+    TaskPatch:
+      $ref: '../../components/task.yaml#/components/schemas/TaskPatch'
+    LabelChange:
+      $ref: '../../components/task.yaml#/components/schemas/LabelChange'
+    EmptyRequest:
+      type: object
+      additionalProperties: false
+      description: Empty object `{}`, the body the public route carried.
+    ChecklistItemCreation:
+      $ref: '../../components/task.yaml#/components/schemas/ChecklistItemCreation'
+    ChecklistItemPatch:
+      $ref: '../../components/task.yaml#/components/schemas/ChecklistItemPatch'
+    ActivityEntry:
+      $ref: '../../components/task.yaml#/components/schemas/ActivityEntry'
+    SpaceCreated:
+      type: object
+      required: [space, firstList]
+      properties:
+        space:
+          $ref: '#/components/schemas/Space'
+        firstList:
+          $ref: '#/components/schemas/TaskList'
+    SpacePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Space'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    SpaceOverview:
+      type: object
+      required: [spaceId, listCount, taskCount, items, nextCursor]
+      properties:
+        spaceId:
+          type: string
+          format: uuid
+        listCount:
+          type: integer
+          minimum: 0
+        taskCount:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ListSummary'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    TaskListPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskList'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    TaskSummaryPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskSummary'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+    TaskGroup:
+      type: object
+      required: [value, count]
+      properties:
+        value:
+          type: string
+          description: A status key, a priority, an account id, or `none`.
+        count:
+          type: integer
+          minimum: 0
+    TaskGroupPage:
+      type: object
+      required: [groupBy, items, nextCursor, total]
+      properties:
+        groupBy:
+          type: string
+          x-extensible-enum: [status, priority, assignee]
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskGroup'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+    Label:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    LabelPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Label'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    ActivityPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityEntry'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+    MyTaskCounts:
+      type: object
+      required: [open, closed]
+      properties:
+        open:
+          type: integer
+          minimum: 0
+        closed:
+          type: integer
+          minimum: 0
+    MyTaskPage:
+      type: object
+      required: [items, nextCursor, counts]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskSummary'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        counts:
+          $ref: '#/components/schemas/MyTaskCounts'
+    HomeStats:
+      type: object
+      required: [assigned, late, dueToday, done]
+      properties:
+        assigned:
+          type: integer
+          minimum: 0
+        late:
+          type: integer
+          minimum: 0
+        dueToday:
+          type: integer
+          minimum: 0
+        done:
+          type: integer
+          minimum: 0
+    Home:
+      type: object
+      required: [stats, priorities, sprints, lists]
+      properties:
+        stats:
+          $ref: '#/components/schemas/HomeStats'
+        priorities:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskSummary'
+        sprints:
+          type: array
+          items:
+            $ref: '#/components/schemas/ListSummary'
+        lists:
+          type: array
+          items:
+            $ref: '#/components/schemas/ListSummary'
+    TaskDetailCore:
+      type: object
+      required: [task, space, list, parent, subtasks]
+      description: task-service's part of the task detail; the gateway adds `partial`.
+      properties:
+        task:
+          $ref: '#/components/schemas/Task'
+        space:
+          $ref: '#/components/schemas/Space'
+        list:
+          $ref: '#/components/schemas/TaskList'
+        parent:
+          oneOf:
+            - $ref: '#/components/schemas/TaskRef'
+            - type: 'null'
+        subtasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskSummary'

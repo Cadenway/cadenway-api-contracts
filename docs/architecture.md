@@ -4,7 +4,7 @@
 
 ## Status
 
-The tooling described here exists and runs: lint, generation, breaking-change check, build and CI. The contracts are those of identity-service (sign-up, sign-in, sessions, the current user and its profile, personal API tokens, and their events) and of organization-service (organizations, members, invitations and their events); the two packages publish them with the shared enumerations. Each section says what is checked by a fixture and what is still a target.
+The tooling described here exists and runs: lint, generation, breaking-change check, build and CI. The contracts are those of identity-service (sign-up, sign-in, sessions, the current user and its profile, personal API tokens, and their events), of organization-service (organizations, members, invitations and their events) and of task-service (spaces, lists and sprints, tasks, subtasks, checklists, activity logs, task queries, "Mes tâches" and "Accueil", and their events); the two packages publish them with the shared enumerations. Each section says what is checked by a fixture and what is still a target.
 
 ## Purpose and target structure
 
@@ -61,11 +61,12 @@ Decisions and their reasons:
 
 What every spec uses with the same shape lives in `components/`, outside `openapi/` and `asyncapi/`, and is referenced by a relative `$ref`:
 
-| File                           | Holds                                                                                     | Referenced as                                                 |
-| ------------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `components/http.yaml`         | `Problem` (schema and response), `Cursor` and `Limit` (parameters), `NextCursor` (schema) | `../../components/http.yaml#/components/...`                  |
-| `components/events.yaml`       | `Actor` (schema)                                                                          | `../components/events.yaml#/components/schemas/Actor`         |
-| `components/organization.yaml` | `Role` (schema)                                                                           | `../../components/organization.yaml#/components/schemas/Role` |
+| File                           | Holds                                                                                                                                                                                                                      | Referenced as                                                                          |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `components/http.yaml`         | `Problem` (schema and response), `Cursor` and `Limit` (parameters), `NextCursor` (schema)                                                                                                                                  | `../../components/http.yaml#/components/...`                                           |
+| `components/events.yaml`       | `Actor` (schema)                                                                                                                                                                                                           | `../components/events.yaml#/components/schemas/Actor`                                  |
+| `components/organization.yaml` | `Role` (schema)                                                                                                                                                                                                            | `../../components/organization.yaml#/components/schemas/Role`                          |
+| `components/task.yaml`         | `StatusKey`, `StatusCategory`, `PriorityKey`, `CancelReason` (the shared enumerations), the spaces, lists, tasks and activity entries of the public and internal task routes, and the query parameters of the task queries | `../../components/task.yaml#/components/schemas/...` and `#/components/parameters/...` |
 
 Why a folder of its own and not a copy in each spec:
 
@@ -78,7 +79,9 @@ What the choice costs, each point handled in this repository:
 - oasdiff does the same in CI: the `breaking` job and `pnpm breaking` pass `allow-external-refs`. A change in `components/` is compared through every spec that references it;
 - the Redocly rules follow a `$ref` written inside a shared component from the file that holds it (`rules/contracts-redocly.mjs`);
 - an event payload still declares `properties` and `required` itself: a member may be a `$ref`, the envelope is never composed with `allOf`;
-- the shipped specs are bundled, so a consumer never sees the reference.
+- the shipped specs are bundled, so a consumer never sees the reference;
+- orval generates every schema of a referenced component file in each document that references it, so the documents of spaces, lists and tasks each carry the whole of `components/task.yaml`, and `packages/api-client/src/public-api.ts` exports each of its declarations once;
+- orval drops the keywords written beside a `$ref` inside a component file, a `default` included: a member of `components/task.yaml` with a default declares its values itself, and `tests/contracts/task.spec.ts` compares them with the shared schema they copy (`StatusKey`, `PriorityKey`, `LookColor`, `LookIcon`, `Visibility`), the first two also with `packages/contracts/src/enums/`.
 
 These component files are valid documents and are linted like the specs. When a spec needs one of
 the shared enumerations from TypeScript, its schema joins `components/` with a test that compares

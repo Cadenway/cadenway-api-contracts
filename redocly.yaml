@@ -37,3 +37,8 @@ apis:
     rules:
       no-empty-servers: off
       no-unused-components: off
+  shared-task:
+    root: components/task.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off

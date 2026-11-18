@@ -14,7 +14,8 @@ info:
 
     **Memberships.** organization-service owns the members. identity-service keeps a copy of the
     memberships from `member.joined.v1`, `member.role-changed.v1` and `member.removed.v1`, to check
-    the choice of an organization and to fill the introspections; the copy follows within seconds.
+    the choice of an organization and to fill the introspections, and task-service keeps one to
+    decide who sees and changes spaces, lists and tasks; each copy follows within seconds.
     The aggregate of the three is the membership, `memberId`: its `version` orders them. The
     events travel on separate subjects and may arrive out of order: a consumer applies a membership
     by its `version` and keeps a removed one as removed, so that a late `member.joined.v1` or
@@ -46,7 +47,7 @@ info:
     - repository: cadenway-billing-service
       uses: Planned, organization.created.v1, member.joined.v1 and member.removed.v1, for the subscription and the seats.
     - repository: cadenway-task-service
-      uses: Planned, member.removed.v1, to unassign a removed member.
+      uses: member.joined.v1, member.role-changed.v1 and member.removed.v1, through the consumers task-service__project-member-joined, task-service__project-member-role-changed and task-service__project-member-removed, for its copy of the members and their roles (who sees and changes spaces, lists and tasks, who can be assigned), to unassign a removed member and to give the private spaces they owned to the owner of the organization.
     - repository: cadenway-search-service
       uses: Planned, member events, to filter results by membership.
 servers:
@@ -74,24 +75,25 @@ channels:
   memberJoinedV1:
     address: evt.member.joined.v1
     description: |
-      A person became a member of an organization. Emitted by organization-service. Consumer:
-      cadenway-identity-service; planned, cadenway-billing-service and cadenway-search-service.
+      A person became a member of an organization. Emitted by organization-service. Consumers:
+      cadenway-identity-service and cadenway-task-service; planned, cadenway-billing-service and
+      cadenway-search-service.
     messages:
       memberJoinedV1:
         $ref: '#/components/messages/memberJoinedV1'
   memberRoleChangedV1:
     address: evt.member.role-changed.v1
     description: |
-      The role of a member changed. Emitted by organization-service. Consumer:
-      cadenway-identity-service; planned, cadenway-search-service.
+      The role of a member changed. Emitted by organization-service. Consumers:
+      cadenway-identity-service and cadenway-task-service; planned, cadenway-search-service.
     messages:
       memberRoleChangedV1:
         $ref: '#/components/messages/memberRoleChangedV1'
   memberRemovedV1:
     address: evt.member.removed.v1
     description: |
-      A member was removed from an organization. Emitted by organization-service. Consumer:
-      cadenway-identity-service; planned, cadenway-billing-service, cadenway-task-service and
+      A member was removed from an organization. Emitted by organization-service. Consumers:
+      cadenway-identity-service and cadenway-task-service; planned, cadenway-billing-service and
       cadenway-search-service.
     messages:
       memberRemovedV1:

@@ -1,0 +1,1395 @@
+# Components shared by the task contracts: openapi/public/spaces.yaml, openapi/public/lists.yaml,
+# openapi/public/tasks.yaml and openapi/internal/task-service.yaml. A spec references them with a
+# relative `$ref` (`../../components/task.yaml#/components/...`); nothing here is a route.
+openapi: 3.1.0
+info:
+  title: Cadenway shared task components
+  version: 1.0.0
+  description: |
+    The shared enumerations of `@cadenway/contracts` (status keys and categories, priorities,
+    cancel reasons), the resources of spaces, lists, sprints and tasks, and the query parameters of
+    the task queries, which the public routes of the gateway and the internal routes of
+    task-service carry with the same shape.
+
+    **Limits.** The limits of the product (lengths of names and texts, counts of assignees,
+    labels, subtasks and checklist items, the estimate) bound the requests. The responses state
+    them in their descriptions only, so that a later version may raise one without refusing what an
+    older validator reads. The formats of the identifiers, a task key and a prefix, are not limits:
+    the responses check them.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  parameters:
+    Today:
+      name: today
+      in: query
+      required: true
+      description: |
+        The date of the caller, in their time zone, which task-service does not know: the late
+        tasks, the tasks due that day and the current sprints are counted against it.
+      schema:
+        type: string
+        format: date
+        examples: ['2026-11-08']
+    StatusFilter:
+      name: status
+      in: query
+      required: false
+      description: Statuses to keep, separated by commas.
+      style: form
+      explode: false
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 10
+        items:
+          $ref: '#/components/schemas/StatusKey'
+        examples: [[progress, review]]
+    PriorityFilter:
+      name: priority
+      in: query
+      required: false
+      description: Priorities to keep, separated by commas.
+      style: form
+      explode: false
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 4
+        items:
+          $ref: '#/components/schemas/PriorityKey'
+        examples: [[urgente, haute]]
+    AssigneeFilter:
+      name: assignee
+      in: query
+      required: false
+      description: |
+        Assignees to keep, separated by commas: account ids, `me` for the caller, `none` for the
+        tasks nobody is assigned.
+      style: form
+      explode: false
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 20
+        items:
+          type: string
+          pattern: '^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$'
+        examples: [[me, none]]
+    LabelFilter:
+      name: label
+      in: query
+      required: false
+      description: Labels to keep, separated by commas, without regard to case.
+      style: form
+      explode: false
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 20
+        items:
+          type: string
+          minLength: 1
+          maxLength: 32
+        examples: [[Auth, Front]]
+    Search:
+      name: search
+      in: query
+      required: false
+      description: Text to find, without regard to case or accents.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 100
+        examples: [sso]
+    DueFrom:
+      name: dueFrom
+      in: query
+      required: false
+      description: Keep the tasks due on or after this date.
+      schema:
+        type: string
+        format: date
+        examples: ['2026-11-09']
+    DueTo:
+      name: dueTo
+      in: query
+      required: false
+      description: Keep the tasks due on or before this date.
+      schema:
+        type: string
+        format: date
+        examples: ['2026-11-15']
+    Level:
+      name: level
+      in: query
+      required: false
+      description: '`roots` for the top-level tasks only, `all` for the subtasks too.'
+      schema:
+        type: string
+        default: roots
+        enum: [roots, all]
+    TaskSort:
+      name: sort
+      in: query
+      required: false
+      description: Order of the tasks; a leading `-` reverses it.
+      schema:
+        type: string
+        default: manual
+        enum:
+          [
+            manual,
+            -manual,
+            dueDate,
+            -dueDate,
+            priority,
+            -priority,
+            name,
+            -name,
+            createdAt,
+            -createdAt,
+          ]
+    GroupBy:
+      name: groupBy
+      in: query
+      required: true
+      description: What to group by ("Statut", "Priorité", "Assigné").
+      schema:
+        type: string
+        enum: [status, priority, assignee]
+    MyTaskState:
+      name: state
+      in: query
+      required: false
+      description: '`open` ("À faire", not closed) or `closed` ("Terminées", `done` and `cancelled`).'
+      schema:
+        type: string
+        default: open
+        enum: [open, closed]
+    ActivityKind:
+      name: kind
+      in: query
+      required: false
+      description: Kinds of entries to keep, separated by commas; every kind when absent.
+      style: form
+      explode: false
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 5
+        items:
+          type: string
+          enum: [create, status, priority, due, assign]
+        examples: [[status, assign]]
+    ActorId:
+      name: actorId
+      in: query
+      required: false
+      description: |
+        Actors to keep, separated by commas: account ids for people, the id of the actor otherwise;
+        every actor when absent.
+      style: form
+      explode: false
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 20
+        items:
+          type: string
+          minLength: 1
+          maxLength: 100
+        examples: [[019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32]]
+  schemas:
+    StatusKey:
+      type: string
+      description: |
+        Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
+        planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
+        ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
+        `cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a
+        status, it never adds or removes a key.
+      enum: [triage, backlog, todo, progress, review, testing, waiting, blocked, done, cancelled]
+    StatusCategory:
+      type: string
+      description: |
+        Category of a status: `open` ("Non commencé": `triage`, `backlog`, `todo`), `active`
+        ("Actif": `progress`, `review`, `testing`, `waiting`, `blocked`) or `closed` ("Fermé":
+        `done`, `cancelled`). `STATUS_CATEGORIES` and `STATUS_CATEGORY_BY_KEY` of
+        `@cadenway/contracts`; the category of a key never changes.
+      enum: [open, active, closed]
+    PriorityKey:
+      type: string
+      description: |
+        Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`
+        ("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of
+        `@cadenway/contracts`. A closed set: another priority would be a breaking change.
+      enum: [urgente, haute, moyenne, basse]
+    CancelReason:
+      type: string
+      description: |
+        Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera
+        pas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of
+        `@cadenway/contracts`. A closed set: another reason would be a breaking change.
+      enum: [duplicate, wontdo, scope, obsolete]
+    TaskKey:
+      type: string
+      pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+      description: |
+        Key of a task, the only way a task is named outside task-service: the prefix of the space
+        it was created in, a dash and a number. A key never changes, also when the task moves to
+        another space or its space changes prefix, and is never given to another task.
+      examples: [CAD-482]
+    SpacePrefix:
+      type: string
+      pattern: '^[A-Z]{2,5}$'
+      description: |
+        Prefix of the keys of a space ("Préfixe", "De 2 à 5 lettres, sans accent."): 2 to 5
+        uppercase letters A to Z.
+      examples: [CAD]
+    LookColor:
+      type: string
+      description: |
+        Color of a space or a list ("Couleur"): `gris` ("Gris", the default), `violet` ("Améthyste"),
+        `indigo` ("Indigo"), `azur` ("Azur"), `lagon` ("Lagon"), `vert` ("Jade"), `olive` ("Olive"),
+        `jaune` ("Balise"), `orange` ("Cornaline"), `rouge` ("Grenat"), `rose` ("Rose"), `fuchsia`
+        ("Fuchsia") or `ardoise` ("Ardoise"). The keys of `LOOK_COLORS` of the mockup.
+      enum:
+        [
+          gris,
+          violet,
+          indigo,
+          azur,
+          lagon,
+          vert,
+          olive,
+          jaune,
+          orange,
+          rouge,
+          rose,
+          fuchsia,
+          ardoise,
+        ]
+    LookIcon:
+      type: [string, 'null']
+      description: |
+        Icon of a space or a list ("Icône"): `rocket` ("Fusée"), `paint` ("Pinceau"), `megaphone`
+        ("Mégaphone"), `gear` ("Engrenage"), `code` ("Code"), `bug` ("Bogue"), `lightning`
+        ("Éclair"), `target` ("Cible"), `flag` ("Drapeau"), `briefcase` ("Mallette"), `chart`
+        ("Courbe"), `users` ("Équipe"), `book` ("Livre"), `cube` ("Cube"), `headset` ("Casque"),
+        `globe` ("Globe") or `star` ("Étoile"), the keys of `LOOK_ICONS` of the mockup; `null` for
+        none ("Initiale" for a space, "Par défaut" for a list).
+      enum:
+        [
+          rocket,
+          paint,
+          megaphone,
+          gear,
+          code,
+          bug,
+          lightning,
+          target,
+          flag,
+          briefcase,
+          chart,
+          users,
+          book,
+          cube,
+          headset,
+          globe,
+          star,
+          null,
+        ]
+    Visibility:
+      type: string
+      description: |
+        Who sees a space ("Confidentialité"): `organization` ("Tout Atelier Nord": every member of
+        the organization but the guests) or `private` ("Privé": its owner only in this version).
+      enum: [organization, private]
+    LookColorValue:
+      type: string
+      description: |
+        A color of `LookColor`, as a resource carries it. Later versions add colors
+        (`x-extensible-enum`): a client shows an unknown one as `gris`.
+      x-extensible-enum:
+        [
+          gris,
+          violet,
+          indigo,
+          azur,
+          lagon,
+          vert,
+          olive,
+          jaune,
+          orange,
+          rouge,
+          rose,
+          fuchsia,
+          ardoise,
+        ]
+    LookIconValue:
+      type: [string, 'null']
+      description: |
+        An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name
+        for a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par
+        défaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as
+        `null`.
+      x-extensible-enum:
+        [
+          rocket,
+          paint,
+          megaphone,
+          gear,
+          code,
+          bug,
+          lightning,
+          target,
+          flag,
+          briefcase,
+          chart,
+          users,
+          book,
+          cube,
+          headset,
+          globe,
+          star,
+        ]
+    VisibilityValue:
+      type: string
+      description: |
+        `organization` ("Tout Atelier Nord") or `private` ("Privé", the lock "Espace privé"), as a
+        space carries it. Later versions may add values (`x-extensible-enum`): a client treats an
+        unknown one as `private`.
+      x-extensible-enum: [organization, private]
+    Actor:
+      type: object
+      required: [type, id]
+      description: |
+        Who made a change: a person (`user`, `id` is the account), an automation rule
+        (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
+        example `task-service` when a removed member leaves the assignees). Later versions add
+        actor types (the public intake form of the mockup, "Formulaire public") and members (the
+        Git provider): a client shows an unknown type as is.
+      properties:
+        type:
+          type: string
+          x-extensible-enum: [user, automation, git, system]
+        id:
+          type: string
+          minLength: 1
+          examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+    UserRef:
+      type: object
+      required: [userId]
+      description: |
+        A person, by account. Only the account id in this version: the web application takes the
+        name and the initials from the member list. It may name a former member, for example the
+        owner of a space of the whole organization who left it. Later versions may add members.
+      properties:
+        userId:
+          type: string
+          format: uuid
+          examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+    SpaceStatus:
+      type: object
+      required: [category, name, hidden]
+      description: How a space shows one status ("Statuts de « Produit »").
+      properties:
+        category:
+          $ref: '#/components/schemas/StatusCategory'
+        name:
+          type: [string, 'null']
+          description: |
+            The name the space gives the status, 24 characters at most; `null` for its default
+            label, for example "À faire" for `todo`.
+          examples: [Relecture]
+        hidden:
+          type: boolean
+          description: |
+            Whether the space no longer uses the status ("Ne plus utiliser …"): it leaves the
+            status menus and the list groups, but a task that has it keeps it. Always `false` for
+            `todo` and `done`.
+    SpaceStatuses:
+      type: object
+      description: The ten statuses as the space shows them, by key.
+      required:
+        [triage, backlog, todo, progress, review, testing, waiting, blocked, done, cancelled]
+      properties:
+        triage:
+          $ref: '#/components/schemas/SpaceStatus'
+        backlog:
+          $ref: '#/components/schemas/SpaceStatus'
+        todo:
+          $ref: '#/components/schemas/SpaceStatus'
+        progress:
+          $ref: '#/components/schemas/SpaceStatus'
+        review:
+          $ref: '#/components/schemas/SpaceStatus'
+        testing:
+          $ref: '#/components/schemas/SpaceStatus'
+        waiting:
+          $ref: '#/components/schemas/SpaceStatus'
+        blocked:
+          $ref: '#/components/schemas/SpaceStatus'
+        done:
+          $ref: '#/components/schemas/SpaceStatus'
+        cancelled:
+          $ref: '#/components/schemas/SpaceStatus'
+    Space:
+      type: object
+      required:
+        [
+          id,
+          name,
+          prefix,
+          description,
+          icon,
+          color,
+          visibility,
+          owner,
+          statuses,
+          nextKey,
+          createdAt,
+          version,
+        ]
+      description: |
+        A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task
+        keys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the
+        next task created in the space would take now ("Les tâches seront numérotées CAD-1,
+        CAD-2…"), a preview that reserves nothing: another creation may take it first.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: '"Nom de l’espace", 80 characters at most.'
+          examples: [Produit]
+        prefix:
+          $ref: '#/components/schemas/SpacePrefix'
+        description:
+          type: [string, 'null']
+          description: '"Description", 500 characters at most; `null` when there is none.'
+        icon:
+          $ref: '#/components/schemas/LookIconValue'
+        color:
+          $ref: '#/components/schemas/LookColorValue'
+        visibility:
+          $ref: '#/components/schemas/VisibilityValue'
+        owner:
+          $ref: '#/components/schemas/UserRef'
+        statuses:
+          $ref: '#/components/schemas/SpaceStatuses'
+        nextKey:
+          $ref: '#/components/schemas/TaskKey'
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+          description: Version of the space, also sent as `ETag`.
+    SpaceName:
+      type: string
+      minLength: 1
+      maxLength: 80
+      description: |
+        "Nom de l’espace", as typed; surrounding spaces are removed, and a name made only of spaces
+        is refused with `400 request.invalid`.
+      examples: [Produit]
+    SpaceDescription:
+      type: [string, 'null']
+      maxLength: 500
+      description: '"Description" ("Facultatif"), trimmed; `null` or an empty text for none.'
+      examples: ['Développement de Cadenway : sprints, bugs et feuille de route.']
+    SpaceCreation:
+      type: object
+      required: [name, prefix]
+      description: |
+        A new space. The members with a default declare their values themselves, the values of
+        `LookIcon`, `LookColor` and `Visibility`.
+      properties:
+        name:
+          $ref: '#/components/schemas/SpaceName'
+        prefix:
+          $ref: '#/components/schemas/SpacePrefix'
+        description:
+          $ref: '#/components/schemas/SpaceDescription'
+        icon:
+          type: [string, 'null']
+          description: One of the icons of `LookIcon`; `null`, the default, for the initial.
+          enum:
+            [
+              rocket,
+              paint,
+              megaphone,
+              gear,
+              code,
+              bug,
+              lightning,
+              target,
+              flag,
+              briefcase,
+              chart,
+              users,
+              book,
+              cube,
+              headset,
+              globe,
+              star,
+              null,
+            ]
+          default: null
+        color:
+          type: string
+          description: One of the colors of `LookColor`; `gris` by default.
+          enum:
+            [
+              gris,
+              violet,
+              indigo,
+              azur,
+              lagon,
+              vert,
+              olive,
+              jaune,
+              orange,
+              rouge,
+              rose,
+              fuchsia,
+              ardoise,
+            ]
+          default: gris
+        visibility:
+          type: string
+          description: '`organization` ("Tout Atelier Nord", the default) or `private` ("Privé").'
+          enum: [organization, private]
+          default: organization
+    SpaceStatusPatch:
+      type: [object, 'null']
+      description: |
+        Change of one status: a member left out is unchanged; `null` for the whole status puts back
+        its default label and uses it again.
+      properties:
+        name:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 24
+          description: |
+            New name, trimmed; a name made only of spaces is refused with `400 request.invalid`;
+            `null` puts back the default label.
+        hidden:
+          type: boolean
+          description: '`true` to stop using the status; `todo` and `done` cannot be hidden.'
+    SpaceStatusesPatch:
+      type: [object, 'null']
+      description: |
+        Change of the statuses by key ("Statuts de « Produit »"); `null` puts back every default
+        ("Rétablir par défaut").
+      properties:
+        triage:
+          $ref: '#/components/schemas/SpaceStatusPatch'
+        backlog:
+          $ref: '#/components/schemas/SpaceStatusPatch'
+        todo:
+          $ref: '#/components/schemas/SpaceStatusPatch'
+        progress:
+          $ref: '#/components/schemas/SpaceStatusPatch'
+        review:
+          $ref: '#/components/schemas/SpaceStatusPatch'
+        testing:
+          $ref: '#/components/schemas/SpaceStatusPatch'
+        waiting:
+          $ref: '#/components/schemas/SpaceStatusPatch'
+        blocked:
+          $ref: '#/components/schemas/SpaceStatusPatch'
+        done:
+          $ref: '#/components/schemas/SpaceStatusPatch'
+        cancelled:
+          $ref: '#/components/schemas/SpaceStatusPatch'
+    SpacePatch:
+      type: object
+      description: JSON Merge Patch of a space; an empty object changes nothing.
+      properties:
+        name:
+          $ref: '#/components/schemas/SpaceName'
+        prefix:
+          $ref: '#/components/schemas/SpacePrefix'
+        description:
+          $ref: '#/components/schemas/SpaceDescription'
+        icon:
+          $ref: '#/components/schemas/LookIcon'
+        color:
+          $ref: '#/components/schemas/LookColor'
+        visibility:
+          $ref: '#/components/schemas/Visibility'
+        statuses:
+          $ref: '#/components/schemas/SpaceStatusesPatch'
+    Sprint:
+      type: object
+      required: [startDate, endDate, goal]
+      description: |
+        What makes a list a sprint ("Une période datée, avec un objectif et un suivi
+        d’avancement."). Its state follows from its dates: there is no start or completion.
+      properties:
+        startDate:
+          type: string
+          format: date
+          description: '"Début", the first day of the sprint.'
+          examples: ['2026-11-03']
+        endDate:
+          type: string
+          format: date
+          description: '"Fin", the last day of the sprint, on or after `startDate`.'
+          examples: ['2026-11-17']
+        goal:
+          type: [string, 'null']
+          description: '"Objectif du sprint", 300 characters at most; `null` when there is none.'
+          examples: ['Livrer la connexion SSO et la page des quotas d’organisation.']
+    TaskList:
+      type: object
+      required: [id, spaceId, name, icon, color, sprint, createdAt, version]
+      description: |
+        A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of
+        their creation.
+      properties:
+        id:
+          type: string
+          format: uuid
+        spaceId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: '"Nom", 80 characters at most.'
+          examples: [Sprint 14]
+        icon:
+          $ref: '#/components/schemas/LookIconValue'
+        color:
+          $ref: '#/components/schemas/LookColorValue'
+        sprint:
+          description: The dates and the goal of a sprint; `null` for a list that is not a sprint.
+          oneOf:
+            - $ref: '#/components/schemas/Sprint'
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+          description: Version of the list, also sent as `ETag`.
+    TaskCounts:
+      type: object
+      required: [total, open, done, cancelled, late]
+      description: |
+        Counts of the top-level tasks of a list, subtasks left out, as the sidebar, the list cards
+        and the sprint progress count them. The progress of a list ("12 / 32 terminées", "38 %")
+        is `done` out of `total` minus `cancelled`.
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: Every top-level task of the list ("32 tâches").
+        open:
+          type: integer
+          minimum: 0
+          description: The tasks that are not closed, of the categories `open` and `active` ("14 ouvertes").
+        done:
+          type: integer
+          minimum: 0
+          description: The tasks of the key `done` ("12 / 32 terminées").
+        cancelled:
+          type: integer
+          minimum: 0
+          description: The tasks of the key `cancelled`, left out of the progress.
+        late:
+          type: integer
+          minimum: 0
+          description: |
+            The tasks that are not closed and whose due date is before the `today` of the request
+            ("3 en retard").
+    ListSummary:
+      type: object
+      required: [list, counts]
+      description: A list with the counts of its tasks.
+      properties:
+        list:
+          $ref: '#/components/schemas/TaskList'
+        counts:
+          $ref: '#/components/schemas/TaskCounts'
+    ListName:
+      type: string
+      minLength: 1
+      maxLength: 80
+      description: |
+        "Nom", as typed; surrounding spaces are removed, and a name made only of spaces is refused
+        with `400 request.invalid`.
+      examples: [Sprint 15]
+    SprintInput:
+      type: object
+      required: [startDate, endDate]
+      description: |
+        The dates and the goal of a sprint, the two dates always together; a `goal` left out is
+        unchanged by a patch and `null` at a creation.
+      properties:
+        startDate:
+          type: string
+          format: date
+          description: '"Début".'
+        endDate:
+          type: string
+          format: date
+          description: '"Fin", on or after `startDate` ("La fin doit suivre le début.").'
+        goal:
+          type: [string, 'null']
+          maxLength: 300
+          description: '"Objectif du sprint", trimmed; `null` or an empty text for none.'
+    ListCreation:
+      type: object
+      required: [name]
+      description: |
+        A new list or sprint. The members with a default declare their values themselves, the
+        values of `LookIcon` and `LookColor`.
+      properties:
+        name:
+          $ref: '#/components/schemas/ListName'
+        icon:
+          type: [string, 'null']
+          description: One of the icons of `LookIcon`; `null`, the default, for the default icon.
+          enum:
+            [
+              rocket,
+              paint,
+              megaphone,
+              gear,
+              code,
+              bug,
+              lightning,
+              target,
+              flag,
+              briefcase,
+              chart,
+              users,
+              book,
+              cube,
+              headset,
+              globe,
+              star,
+              null,
+            ]
+          default: null
+        color:
+          type: string
+          description: One of the colors of `LookColor`; `gris` by default.
+          enum:
+            [
+              gris,
+              violet,
+              indigo,
+              azur,
+              lagon,
+              vert,
+              olive,
+              jaune,
+              orange,
+              rouge,
+              rose,
+              fuchsia,
+              ardoise,
+            ]
+          default: gris
+        sprint:
+          description: |
+            The dates and the goal to create a sprint ("Sprint"), both dates required; absent or
+            `null` for a list.
+          oneOf:
+            - $ref: '#/components/schemas/SprintInput'
+            - type: 'null'
+    ListPatch:
+      type: object
+      description: |
+        JSON Merge Patch of a list; an empty object changes nothing. `sprint: null` makes a sprint
+        a list again, and drops its dates and goal.
+      properties:
+        name:
+          $ref: '#/components/schemas/ListName'
+        icon:
+          $ref: '#/components/schemas/LookIcon'
+        color:
+          $ref: '#/components/schemas/LookColor'
+        sprint:
+          oneOf:
+            - $ref: '#/components/schemas/SprintInput'
+            - type: 'null'
+    TaskName:
+      type: string
+      minLength: 1
+      maxLength: 300
+      description: |
+        "Nom de la tâche", as typed; surrounding spaces are removed, and a name made only of spaces
+        is refused with `400 request.invalid`.
+      examples: [Refondre l’écran de connexion SSO]
+    TaskDescription:
+      type: [string, 'null']
+      maxLength: 50000
+      description: '"Description", Markdown; `null` when there is none.'
+      examples:
+        [
+          "Remplacer l’écran actuel par la connexion d’entreprise.\n\n- Bouton « Continuer avec l’authentification unique »\n- Message d’erreur si le domaine n’est pas vérifié",
+        ]
+    LabelName:
+      type: string
+      minLength: 1
+      maxLength: 32
+      description: |
+        A label ("Étiquette"), trimmed; two labels that differ only by case are the same label.
+      examples: [Auth]
+    EstimateMinutes:
+      type: [integer, 'null']
+      minimum: 1
+      maximum: 60000
+      description: '"Estimation", in whole minutes ("8 h" is `480`); `null` for none.'
+      examples: [480]
+    CancelReasonInput:
+      description: Required with the status `cancelled`, refused with any other; `null` for none.
+      oneOf:
+        - $ref: '#/components/schemas/CancelReason'
+        - type: 'null'
+    SubtaskCounts:
+      type: object
+      required: [total, closed]
+      description: Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        closed:
+          type: integer
+          minimum: 0
+    ChecklistCounts:
+      type: object
+      required: [total, done]
+      description: Items of the checklist of a task, and those ticked ("3 / 3").
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        done:
+          type: integer
+          minimum: 0
+    ChecklistItem:
+      type: object
+      required: [id, text, done]
+      description: One item of a checklist ("Une checklist sert aux petites étapes sans statut ni assigné.").
+      properties:
+        id:
+          type: string
+          format: uuid
+        text:
+          type: string
+          description: '"Élément de checklist", 300 characters at most.'
+          examples: [Maquette validée]
+        done:
+          type: boolean
+          description: Ticked ("Terminer") or not ("Rouvrir").
+    TaskRef:
+      type: object
+      required: [key, name, status]
+      description: A task named by another resource, with its name and status as they are now.
+      properties:
+        key:
+          $ref: '#/components/schemas/TaskKey'
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/StatusKey'
+    TaskSummary:
+      type: object
+      required:
+        [
+          key,
+          name,
+          status,
+          cancelReason,
+          priority,
+          assignees,
+          dueDate,
+          startDate,
+          estimateMinutes,
+          labels,
+          parentKey,
+          listId,
+          spaceId,
+          subtaskCounts,
+          checklistCounts,
+          completedAt,
+          createdAt,
+          version,
+        ]
+      description: |
+        A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the
+        description, the note of the cancellation and the items of the checklist.
+      properties:
+        key:
+          $ref: '#/components/schemas/TaskKey'
+        name:
+          type: string
+          description: '"Nom de la tâche", 300 characters at most.'
+          examples: [Refondre l’écran de connexion SSO]
+        status:
+          $ref: '#/components/schemas/StatusKey'
+        cancelReason:
+          description: 'Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'
+          oneOf:
+            - $ref: '#/components/schemas/CancelReason'
+            - type: 'null'
+        priority:
+          $ref: '#/components/schemas/PriorityKey'
+        assignees:
+          type: array
+          description: '"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'
+          items:
+            $ref: '#/components/schemas/UserRef'
+        dueDate:
+          type: [string, 'null']
+          format: date
+          description: '"Échéance", a calendar date; `null` when there is none.'
+        startDate:
+          type: [string, 'null']
+          format: date
+          description: |
+            First day of the work, for the Gantt view; `null` when there is none, always `null`
+            without a due date, and never after the due date.
+        estimateMinutes:
+          type: [integer, 'null']
+          minimum: 1
+          description: '"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'
+        labels:
+          type: array
+          description: '"Étiquettes", 20 at most, in the order they were added.'
+          items:
+            type: string
+        parentKey:
+          description: The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.
+          oneOf:
+            - $ref: '#/components/schemas/TaskKey'
+            - type: 'null'
+        listId:
+          type: string
+          format: uuid
+          description: The list of the task; a subtask is always in the list of its parent.
+        spaceId:
+          type: string
+          format: uuid
+          description: The space of that list, which may not be the space of the prefix of the key.
+        subtaskCounts:
+          $ref: '#/components/schemas/SubtaskCounts'
+        checklistCounts:
+          $ref: '#/components/schemas/ChecklistCounts'
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the task last entered `done`; `null` while its status is not `done`.
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+          description: Version of the task, also sent as `ETag` by the routes of one task.
+    Task:
+      type: object
+      required:
+        [
+          key,
+          name,
+          description,
+          status,
+          cancelReason,
+          cancelNote,
+          priority,
+          assignees,
+          dueDate,
+          startDate,
+          estimateMinutes,
+          labels,
+          parentKey,
+          listId,
+          spaceId,
+          subtaskCounts,
+          checklist,
+          checklistCounts,
+          completedAt,
+          createdAt,
+          createdBy,
+          updatedAt,
+          version,
+        ]
+      description: A task, with its description and its checklist.
+      properties:
+        key:
+          $ref: '#/components/schemas/TaskKey'
+        name:
+          type: string
+          description: '"Nom de la tâche", 300 characters at most.'
+          examples: [Refondre l’écran de connexion SSO]
+        description:
+          type: [string, 'null']
+          description: '"Description", Markdown, 50,000 characters at most; `null` when there is none.'
+        status:
+          $ref: '#/components/schemas/StatusKey'
+        cancelReason:
+          description: Why the task was cancelled; `null` unless its status is `cancelled`.
+          oneOf:
+            - $ref: '#/components/schemas/CancelReason'
+            - type: 'null'
+        cancelNote:
+          type: [string, 'null']
+          description: |
+            "Précision" of the cancellation, 500 characters at most; `null` when there is none or
+            the task is not cancelled.
+        priority:
+          $ref: '#/components/schemas/PriorityKey'
+        assignees:
+          type: array
+          description: '"Assignés", 20 at most, in the order they were assigned.'
+          items:
+            $ref: '#/components/schemas/UserRef'
+        dueDate:
+          type: [string, 'null']
+          format: date
+          description: '"Échéance"; `null` when there is none.'
+        startDate:
+          type: [string, 'null']
+          format: date
+          description: First day of the work; `null` when there is none, always `null` without a due date.
+        estimateMinutes:
+          type: [integer, 'null']
+          minimum: 1
+          description: '"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'
+        labels:
+          type: array
+          description: '"Étiquettes", 20 at most, in the order they were added.'
+          items:
+            type: string
+        parentKey:
+          description: The parent of a subtask; `null` for a top-level task.
+          oneOf:
+            - $ref: '#/components/schemas/TaskKey'
+            - type: 'null'
+        listId:
+          type: string
+          format: uuid
+        spaceId:
+          type: string
+          format: uuid
+        subtaskCounts:
+          $ref: '#/components/schemas/SubtaskCounts'
+        checklist:
+          type: array
+          description: '"Checklist", 100 items at most, in the order they were added.'
+          items:
+            $ref: '#/components/schemas/ChecklistItem'
+        checklistCounts:
+          $ref: '#/components/schemas/ChecklistCounts'
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the task last entered `done`; `null` while its status is not `done`.
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          $ref: '#/components/schemas/Actor'
+        updatedAt:
+          type: string
+          format: date-time
+          description: When the task last changed, its assignees, labels and checklist included.
+        version:
+          type: integer
+          minimum: 1
+          description: |
+            Version of the task, also sent as `ETag`; every change adds one, a change of its
+            assignees, labels or checklist included.
+    SubtaskName:
+      type: object
+      required: [name]
+      description: A subtask to create with its parent ("Ajouter une sous-tâche (Entrée pour valider)").
+      properties:
+        name:
+          $ref: '#/components/schemas/TaskName'
+    TaskCreation:
+      type: object
+      required: [name]
+      description: |
+        A new task. `status` and `priority` declare their values themselves, those of `StatusKey`
+        and `PriorityKey`, with their default.
+      properties:
+        name:
+          $ref: '#/components/schemas/TaskName'
+        description:
+          $ref: '#/components/schemas/TaskDescription'
+        status:
+          type: string
+          description: '"Statut", one of `StatusKey`; `todo` ("À faire") by default.'
+          enum:
+            [triage, backlog, todo, progress, review, testing, waiting, blocked, done, cancelled]
+          default: todo
+        cancelReason:
+          $ref: '#/components/schemas/CancelReasonInput'
+        cancelNote:
+          type: [string, 'null']
+          maxLength: 500
+          description: '"Précision (facultatif)" of a cancellation, trimmed; only with the status `cancelled`.'
+        priority:
+          type: string
+          description: '"Priorité", one of `PriorityKey`; `moyenne` by default.'
+          enum: [urgente, haute, moyenne, basse]
+          default: moyenne
+        assigneeIds:
+          type: array
+          maxItems: 20
+          default: []
+          description: |
+            Accounts to assign, current members of the organization other than guests; the same
+            account twice counts once. The creation form sends the caller by default.
+          items:
+            type: string
+            format: uuid
+        dueDate:
+          type: [string, 'null']
+          format: date
+          description: '"Échéance".'
+        startDate:
+          type: [string, 'null']
+          format: date
+          description: First day of the work; needs a due date, on or before it.
+        estimateMinutes:
+          $ref: '#/components/schemas/EstimateMinutes'
+        labels:
+          type: array
+          maxItems: 20
+          default: []
+          description: '"Étiquettes"; trimmed, and a label that repeats another without regard to case is ignored.'
+          items:
+            $ref: '#/components/schemas/LabelName'
+        subtasks:
+          type: array
+          maxItems: 25
+          default: []
+          description: |
+            Subtasks to create with the task ("Sous-tâches"), in this order. Each takes the next key
+            after the task, its list and its first assignee, the status `todo` and the priority
+            `moyenne`.
+          items:
+            $ref: '#/components/schemas/SubtaskName'
+    SubtaskCreation:
+      type: object
+      required: [name]
+      description: |
+        A subtask created under a task ("Nouvelle sous-tâche"). It takes the list of its parent;
+        without `assigneeIds`, it takes the first assignee of its parent.
+      properties:
+        name:
+          $ref: '#/components/schemas/TaskName'
+        description:
+          $ref: '#/components/schemas/TaskDescription'
+        status:
+          type: string
+          description: '"Statut", one of `StatusKey`; `todo` ("À faire") by default.'
+          enum:
+            [triage, backlog, todo, progress, review, testing, waiting, blocked, done, cancelled]
+          default: todo
+        cancelReason:
+          $ref: '#/components/schemas/CancelReasonInput'
+        cancelNote:
+          type: [string, 'null']
+          maxLength: 500
+          description: Only with the status `cancelled`.
+        priority:
+          type: string
+          description: '"Priorité", one of `PriorityKey`; `moyenne` by default.'
+          enum: [urgente, haute, moyenne, basse]
+          default: moyenne
+        assigneeIds:
+          type: array
+          maxItems: 20
+          description: Accounts to assign; absent, the first assignee of the parent, if any.
+          items:
+            type: string
+            format: uuid
+        dueDate:
+          type: [string, 'null']
+          format: date
+        startDate:
+          type: [string, 'null']
+          format: date
+          description: Needs a due date, on or before it.
+        estimateMinutes:
+          $ref: '#/components/schemas/EstimateMinutes'
+        labels:
+          type: array
+          maxItems: 20
+          default: []
+          items:
+            $ref: '#/components/schemas/LabelName'
+    TaskPatch:
+      type: object
+      description: |
+        JSON Merge Patch of a task; an empty object changes nothing. The assignees, the labels and
+        the checklist are collections: they change through their own routes, and a patch ignores
+        the members it does not declare, `assigneeIds` and `labels` included.
+      properties:
+        name:
+          $ref: '#/components/schemas/TaskName'
+        description:
+          $ref: '#/components/schemas/TaskDescription'
+        status:
+          $ref: '#/components/schemas/StatusKey'
+        cancelReason:
+          description: |
+            Required when the status becomes `cancelled`; changes the reason of a cancelled task;
+            refused on a task that is not cancelled after the patch. Leaving `cancelled` clears it.
+          oneOf:
+            - $ref: '#/components/schemas/CancelReason'
+            - type: 'null'
+        cancelNote:
+          type: [string, 'null']
+          maxLength: 500
+          description: '"Précision" of a cancellation, trimmed; `null` clears it.'
+        priority:
+          $ref: '#/components/schemas/PriorityKey'
+        dueDate:
+          type: [string, 'null']
+          format: date
+          description: |
+            New due date; `null` removes it. Without `startDate` in the same patch, the start
+            moves with it and the duration is kept (see `PATCH /v1/tasks/{taskKey}`).
+        startDate:
+          type: [string, 'null']
+          format: date
+          description: New first day of the work; `null` removes it.
+        estimateMinutes:
+          $ref: '#/components/schemas/EstimateMinutes'
+        listId:
+          type: string
+          format: uuid
+          description: |
+            The list to move the task to ("Déplacer vers…"), in this space or another; its
+            subtasks follow, and a subtask leaves its parent first.
+        parentKey:
+          description: |
+            The task to attach this one to ("Devenir sous-tâche de…"), which brings it and its
+            subtasks to the list of the parent; `null` detaches it ("Détacher de CAD-482").
+          oneOf:
+            - $ref: '#/components/schemas/TaskKey'
+            - type: 'null'
+    LabelChange:
+      type: object
+      required: [name]
+      description: A label to add to a task or to remove from it.
+      properties:
+        name:
+          $ref: '#/components/schemas/LabelName'
+    ChecklistItemCreation:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: |
+            "Élément de checklist", trimmed; a text made only of spaces is refused with
+            `400 request.invalid`.
+          examples: [Maquette validée]
+    ChecklistItemPatch:
+      type: object
+      required: [done]
+      description: JSON Merge Patch of a checklist item; ticking or unticking it is the one change of this version.
+      properties:
+        done:
+          type: boolean
+          description: '`true` ticks the item ("Terminer"), `false` unticks it ("Rouvrir").'
+    ActivityEntry:
+      type: object
+      required: [id, occurredAt, kind, actor, task, listId]
+      description: |
+        One entry of the activity log of a task ("Activité"); every entry names a task, and an entry
+        about a list or a space would come on a route of its own. The member that names the change
+        is the one of its `kind`: `status`, `priority`, `dueDate` or `assignee`; a creation has
+        none. Later versions add kinds and their members (comments): a client shows an unknown kind
+        as "a modifié la tâche".
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+          description: When the change was made; for merged changes, the last of them.
+        kind:
+          type: string
+          description: |
+            `create` ("a créé la tâche"), `status` ("a changé le statut"), `priority` ("a passé la
+            priorité à"), `due` ("a fixé l’échéance", "a déplacé l’échéance", "a retiré
+            l’échéance") or `assign` ("s’est assigné la tâche", "a assigné Inès Robert", "s’est
+            retiré de la tâche", "a retiré Inès Robert"). Later versions add kinds
+            (`x-extensible-enum`).
+          x-extensible-enum: [create, status, priority, due, assign]
+        actor:
+          $ref: '#/components/schemas/Actor'
+        task:
+          $ref: '#/components/schemas/TaskRef'
+        listId:
+          type: string
+          format: uuid
+          description: |
+            The list the task was in when the change was made, an id only, which may be a list the
+            caller no longer sees.
+        status:
+          type: object
+          required: [from, to]
+          description: For `status`, the status before and after.
+          properties:
+            from:
+              $ref: '#/components/schemas/StatusKey'
+            to:
+              $ref: '#/components/schemas/StatusKey'
+        priority:
+          type: object
+          required: [from, to]
+          description: For `priority`, the priority before and after.
+          properties:
+            from:
+              $ref: '#/components/schemas/PriorityKey'
+            to:
+              $ref: '#/components/schemas/PriorityKey'
+        dueDate:
+          type: object
+          required: [from, to]
+          description: For `due`, the due date before and after; `from` is `null` when one is set, `to` when it is removed.
+          properties:
+            from:
+              type: [string, 'null']
+              format: date
+            to:
+              type: [string, 'null']
+              format: date
+        assignee:
+          type: object
+          required: [userId, added]
+          description: |
+            For `assign`, who was assigned (`added: true`) or left the assignees (`added: false`);
+            the person themself when `userId` is the id of the actor.
+          properties:
+            userId:
+              type: string
+              format: uuid
+            added:
+              type: boolean

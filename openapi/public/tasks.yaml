@@ -1,0 +1,2272 @@
+# Public routes of tasks: create a task in a list, with subtasks; read and change it in place
+# (status, priority, dates, estimate, move, parent); its assignees, its labels, its subtasks, its
+# checklist, its detail and its activity log; the filtered and sorted tasks of a list and their
+# group counts; the labels; "Mes tâches" and the task part of "Accueil". Served by
+# cadenway-api-gateway, which calls openapi/internal/task-service.yaml for each of them.
+openapi: 3.1.0
+info:
+  title: Cadenway tasks
+  version: 1.0.0
+  description: |
+    The tasks of the current organization. The API gateway serves these routes and answers them
+    through task-service. Spaces are in `openapi/public/spaces.yaml`, lists and sprints in
+    `openapi/public/lists.yaml`.
+
+    **Keys.** A task is named by its key, `CAD-482`, in every path and every reference: the prefix
+    of the space it was created in and a number that is never given again (see "Prefixes and keys"
+    in `openapi/public/spaces.yaml`). The key never changes, also when the task moves to another
+    space.
+
+    **Who sees a task.** A task is seen by whoever sees its space; a task the caller does not see
+    answers `404 task.not-found`, as an unknown key does, and is left out of every collection and
+    every count. Any member who sees the space creates and changes its tasks; a guest sees nothing in
+    this version.
+
+    **Statuses.** Any status may be chosen, from any other: the next status the web application
+    proposes ("Passer à « En revue »") is a shortcut, not a rule, and every change request is
+    applied (the web application waits for the last click of a burst itself). A status the space
+    no longer uses is refused (`422 task.status-hidden`), unless the task already has it.
+    `cancelled` needs a reason ("Annuler la tâche", "Motif d’annulation") and accepts a note
+    (`422 task.cancel-reason-required`); leaving it clears both. Entering `done` sets
+    `completedAt`; leaving it clears it. The status of a parent never changes its subtasks.
+
+    **Subtasks.** A subtask is a task with a parent: 3 levels at most (task, subtask, sub-subtask)
+    and 25 direct subtasks at most per task (`422 task.subtask-depth-exceeded`,
+    `422 task.subtask-limit-reached`). A task and its subtasks are always in the same list: a new
+    subtask takes the list of its parent, a task that moves takes its subtasks with it, a subtask
+    attached to a parent moves to its list with its own subtasks, and a subtask moved to another
+    list leaves its parent first.
+
+    **Assignees and labels.** A task has 20 assignees at most, current members of the
+    organization other than guests (`422 task.assignee-invalid`), and 20 labels at most. Each is
+    added or removed alone, through its own route, so that two people who change them at once never
+    overwrite each other; the creation of a task takes the first ones. A person who becomes a guest
+    stays among the assignees they had.
+
+    **Checklist.** A task holds at most 100 items ("Une checklist sert aux petites étapes sans
+    statut ni assigné."), added and ticked or unticked; this version neither edits, reorders nor
+    removes them. The checklist is not in the activity log.
+
+    **Activity log.** task-service records the creation of a task and the changes of its status,
+    priority, due date and assignees, with who made them. Changes of the due date or the priority
+    of a task by the same actor within 60 seconds merge into one entry, which disappears when the
+    value is back to where it was. The name, the description, the labels, the estimate, the list,
+    the parent and the checklist are not recorded.
+
+    **Counts and dates.** Counters read the key `done` for "Terminées" and the progress of a
+    sprint, and the categories `open` and `active` for the open work; a task is late when it is
+    not closed and its due date is before the `today` of the request, the date of the caller in
+    their time zone, which task-service does not know. Due dates and start dates are calendar
+    dates; instants are UTC; estimates are whole minutes.
+
+    **Limits.** A name of 1 to 300 characters, a description of 50,000 at most, 20 assignees, 20
+    labels of 1 to 32 characters (two labels that differ only by case are one), 25 subtasks given
+    at the creation, 100 checklist items of 300 characters. The requests are bounded by them; the
+    responses state them in their descriptions, so that a later version may raise one.
+
+    **Current organization, members, versions, creations, credentials, cross-site requests, rate
+    limit and errors.** As in `openapi/public/spaces.yaml`: the current organization of the session
+    or of the personal API token, task-service's own copy of the members, `ETag` and `If-Match`
+    (required to change a description), an optional `Idempotency-Key` on a creation, the scopes
+    `tasks:read` and `tasks:write`, 600 requests per minute, French titles for the codes the web
+    application shows.
+
+    **Later versions** add, without changing what is here: comments and mentions, watchers,
+    dependencies, milestones, recurrence, the trash and the archives, deletion, duplication,
+    templates, bulk changes, time tracking, custom fields, attachments and development links; the
+    detail gains their parts, named in `partial` when they cannot be read.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves every route, through openapi/internal/task-service.yaml, composes the detail of a task and checks the scopes of every operation.
+    - repository: cadenway-webapp
+      uses: Calls every route through @cadenway/api-client (list, board and Gantt views, "Créer une tâche", the task detail, "Mes tâches", "Accueil").
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging. The local stack of cadenway-ops serves the same routes on `api.<DOMAIN>`.
+tags:
+  - name: tasks
+    description: Tasks, their subtasks and their checklist.
+  - name: task-queries
+    description: The tasks of a list, filtered, sorted and counted by group.
+  - name: task-activity
+    description: The activity log of a task.
+  - name: my-tasks
+    description: '"Mes tâches" and the task part of "Accueil".'
+paths:
+  /v1/lists/{listId}/tasks:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    post:
+      operationId: createTask
+      summary: Create a task
+      description: |
+        Creates a task in a list the caller sees ("Créer la tâche", "Tâche CAD-495 créée", "Sprint
+        14 · À faire · 2 sous-tâches."), with the next key of the space of the list, and, in the
+        same transaction, the subtasks of `subtasks`, which take the keys that follow, the list and
+        the first assignee of the task, the status `todo` and the priority `moyenne`.
+
+        - `status` is `todo` by default; a status the space no longer uses answers
+          `422 task.status-hidden`; `cancelled` needs `cancelReason`
+          (`422 task.cancel-reason-required`), which no other status accepts
+          (`422 task.cancel-reason-unexpected`).
+        - `assigneeIds` are current members of the organization, guests excepted
+          (`422 task.assignee-invalid`, with `details.userIds`).
+        - `startDate` needs a `dueDate` and is on or before it (`422 task.start-date-invalid`).
+
+        Records a creation in the activity log of each task created. Emits `task.created.v1` for
+        each task created, and `task.assigned.v1` for each of their assignees. Scope `tasks:write`
+        for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreation'
+            example:
+              name: Ajouter la connexion par lien magique
+              description: null
+              status: todo
+              priority: haute
+              assigneeIds: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+              dueDate: '2026-11-16'
+              labels: [Auth, Front]
+              subtasks:
+                - name: Envoyer le lien par e-mail
+                - name: Valider le lien à l’ouverture
+      responses:
+        '201':
+          description: The task exists, with its subtasks.
+          headers:
+            Location:
+              $ref: '#/components/headers/TaskLocation'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                key: CAD-732
+                name: Ajouter la connexion par lien magique
+                description: null
+                status: todo
+                cancelReason: null
+                cancelNote: null
+                priority: haute
+                assignees:
+                  - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                dueDate: '2026-11-16'
+                startDate: null
+                estimateMinutes: null
+                labels: [Auth, Front]
+                parentKey: null
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                subtaskCounts: { total: 2, closed: 0 }
+                checklist: []
+                checklistCounts: { total: 0, done: 0 }
+                completedAt: null
+                createdAt: '2026-11-08T10:42:00Z'
+                createdBy:
+                  type: user
+                  id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                updatedAt: '2026-11-08T10:42:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/TaskCreationRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    get:
+      operationId: listTasks
+      summary: List the tasks of a list
+      description: |
+        Lists the tasks of a list the caller sees, filtered and sorted (views "Liste", "Tableau",
+        "Gantt"). Values of one filter add up, filters narrow each other ("Statut est l’un de …").
+        `total` counts the tasks that match the filters, on every page ("12 sur 98 tâches").
+
+        - `level`: `roots` (the default) keeps the top-level tasks, whose subtasks the web
+          application reads under each of them with `GET /v1/tasks/{taskKey}/subtasks`
+          ("Repliées sous leur parent", "Dépliées sous leur parent"); `all` keeps the subtasks too,
+          as tasks ("À part, comme des tâches").
+        - `assignee`: account ids, `me` for the caller and `none` for the tasks nobody is assigned
+          ("Non assigné").
+        - `search` ("Rechercher") finds the text in the name, the key and the labels, without regard
+          to case or accents.
+        - `dueFrom` and `dueTo` keep the tasks due on or after, on or before these dates; a task
+          without a due date is then left out.
+        - `sort`: `manual` ("Ordre manuel", the order of the list, which is the order of creation
+          in this version), `dueDate` ("Échéance", the tasks without a due date always last),
+          `priority` ("Priorité", from `urgente` to `basse`), `name` ("Nom", without regard to case
+          or accents) or `createdAt` ("Date de création"); a leading `-` reverses the order
+          ("Décroissant"). Ties follow the order of the list.
+
+        Grouping is a filter: the web application reads the counts of the groups with
+        `GET /v1/lists/{listId}/task-groups`, then the tasks of each group it shows with the value of
+        the group added to the filters.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [task-queries]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/PriorityFilter'
+        - $ref: '#/components/parameters/AssigneeFilter'
+        - $ref: '#/components/parameters/LabelFilter'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/DueFrom'
+        - $ref: '#/components/parameters/DueTo'
+        - $ref: '#/components/parameters/Level'
+        - $ref: '#/components/parameters/TaskSort'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSummaryPage'
+              example:
+                items:
+                  - key: CAD-482
+                    name: Refondre l’écran de connexion SSO
+                    status: progress
+                    cancelReason: null
+                    priority: haute
+                    assignees:
+                      - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                      - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    dueDate: '2026-11-12'
+                    startDate: '2026-11-11'
+                    estimateMinutes: 480
+                    labels: [Auth, Front]
+                    parentKey: null
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    subtaskCounts: { total: 3, closed: 1 }
+                    checklistCounts: { total: 3, done: 3 }
+                    completedAt: null
+                    createdAt: '2026-11-03T09:00:00Z'
+                    version: 12
+                nextCursor: null
+                total: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/task-groups:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: countTaskGroups
+      summary: Count the tasks of a list by group
+      description: |
+        Counts the tasks of a list that match the filters of `GET /v1/lists/{listId}/tasks`, by
+        status, by priority or by assignee ("Grouper : statut"); `total` counts each task once.
+
+        - `status`: one group per key, in the order of the workflow, those without a task
+          included; the web application hides the statuses the space no longer uses and the empty
+          groups it does not show.
+        - `priority`: one group per priority, from `urgente` to `basse`, those without a task
+          included.
+        - `assignee`: one group per account assigned to at least one task, the most tasks first,
+          then `none` for the tasks nobody is assigned ("Non assignées"), always last. A task with
+          two assignees counts in both groups.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [task-queries]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/GroupBy'
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/PriorityFilter'
+        - $ref: '#/components/parameters/AssigneeFilter'
+        - $ref: '#/components/parameters/LabelFilter'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/DueFrom'
+        - $ref: '#/components/parameters/DueTo'
+        - $ref: '#/components/parameters/Level'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of groups.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskGroupPage'
+              example:
+                groupBy: priority
+                items:
+                  - { value: urgente, count: 9 }
+                  - { value: haute, count: 31 }
+                  - { value: moyenne, count: 42 }
+                  - { value: basse, count: 16 }
+                nextCursor: null
+                total: 98
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: getTask
+      summary: Read a task
+      description: |
+        Returns a task the caller sees, with its description and its checklist. Scope `tasks:read`
+        for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The task.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              examples:
+                cad482:
+                  $ref: '#/components/examples/Cad482'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateTask
+      summary: Change a task
+      description: |
+        Applies a JSON Merge Patch to a task, every property edited in place: a member left out is
+        unchanged, `null` clears what can be empty.
+
+        - `status`: any status, from any other, but one the space no longer uses
+          (`422 task.status-hidden`, unless the task already has it). `cancelled` needs
+          `cancelReason` (`422 task.cancel-reason-required`) and takes `cancelNote`; on a cancelled
+          task, they change alone; on a task that is not cancelled after the patch they answer
+          `422 task.cancel-reason-unexpected`. Leaving `cancelled` clears them, entering `done` sets
+          `completedAt` and leaving it clears it.
+        - `dueDate`: when the task has a start date, a new due date moves the start by as many
+          days and keeps the duration, unless the patch sets `startDate` too; removing the due date
+          removes the start. `startDate` needs a due date and is on or before it
+          (`422 task.start-date-invalid`).
+        - `listId` ("Déplacer vers…", "CAD-482 déplacée", "Vers Bugs."): the task moves to the list,
+          in this space or another, with its subtasks, and keeps its key; a subtask leaves its
+          parent first. A list the caller does not see answers `422 task.list-invalid`.
+        - `parentKey` ("Devenir sous-tâche de…", "CAD-490 rattachée à CAD-482"): the task becomes a
+          subtask of a task the caller sees, and moves with its subtasks to the list of the parent.
+          The parent may be neither the task nor one of its subtasks, nor unknown
+          (`422 task.parent-invalid`); the task and its subtasks must fit within 3 levels under it
+          (`422 task.subtask-depth-exceeded`), and the parent must have fewer than 25 subtasks
+          (`422 task.subtask-limit-reached`). With `listId` in the same patch, it must be the list
+          of the parent (`422 task.list-invalid`). `null` detaches it ("CAD-490 détachée", "C’est
+          de nouveau une tâche de premier niveau."); it stays in its list.
+        - The statuses a space no longer uses are those of the space the task is in after the
+          patch: a move or an attachment keeps the status the task has, even one the new space no
+          longer uses, while a new `status` in the same patch must be used by the new space.
+        - `If-Match` is optional (`412 request.version-mismatch`), but required to change
+          `description`, a long text: without it, `400 request.invalid` with an issue on the
+          header.
+
+        Records the changes of status, priority and due date in the activity log. Emits
+        `task.updated.v1` when something changed, with `changed`, and also
+        `task.status-changed.v1` for a new status; a move emits `task.updated.v1` for each subtask
+        that moves too. A patch that changes nothing answers `200` with the same version and emits
+        nothing. Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskPatch'
+            examples:
+              status:
+                summary: Pass to "En revue"
+                value:
+                  status: review
+              cancel:
+                summary: Cancel as a duplicate ("Annuler CAD-457 ?")
+                value:
+                  status: cancelled
+                  cancelReason: duplicate
+                  cancelNote: Par exemple remplacée par CAD-482
+              move:
+                summary: Move to the list "Bugs"
+                value:
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f13
+              attach:
+                summary: Make it a subtask of CAD-482
+                value:
+                  parentKey: CAD-482
+      responses:
+        '200':
+          description: The task after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              examples:
+                cad482:
+                  $ref: '#/components/examples/Cad482'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/TaskChangeRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/detail:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: getTaskDetail
+      summary: Read the detail of a task
+      description: |
+        Returns what the task detail shows ("Détails", "Propriétés"): the task, its space with its
+        statuses, its list, its parent ("Sous-tâche de CAD-482 · Refondre l’écran de connexion
+        SSO") and its direct subtasks ("Sous-tâches 3"). The gateway composes it; `partial` names
+        the parts it could not read, so that the web application shows the rest. In this version
+        task-service is its only source: `partial` is always empty, and the detail fails as a whole
+        when task-service cannot answer ("Impossible de charger la tâche"). Later versions add
+        parts (comments, attachments, development links), each named in `partial` when its source
+        does not answer.
+
+        `ETag` is the version of the task. Scope `tasks:read` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The detail of the task.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskDetail'
+              example:
+                task:
+                  key: CAD-483
+                  name: Bouton « Continuer avec l’authentification unique »
+                  description: null
+                  status: progress
+                  cancelReason: null
+                  cancelNote: null
+                  priority: haute
+                  assignees:
+                    - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  dueDate: '2026-11-10'
+                  startDate: null
+                  estimateMinutes: 180
+                  labels: [Front]
+                  parentKey: CAD-482
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  subtaskCounts: { total: 2, closed: 0 }
+                  checklist: []
+                  checklistCounts: { total: 0, done: 0 }
+                  completedAt: null
+                  createdAt: '2026-11-03T09:12:00Z'
+                  createdBy:
+                    type: user
+                    id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  updatedAt: '2026-11-05T14:00:00Z'
+                  version: 3
+                space:
+                  id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  name: Produit
+                  prefix: CAD
+                  description: 'Développement de Cadenway : sprints, bugs et feuille de route.'
+                  icon: rocket
+                  color: violet
+                  visibility: organization
+                  owner:
+                    userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  statuses:
+                    triage: { category: open, name: null, hidden: false }
+                    backlog: { category: open, name: null, hidden: false }
+                    todo: { category: open, name: null, hidden: false }
+                    progress: { category: active, name: null, hidden: false }
+                    review: { category: active, name: null, hidden: false }
+                    testing: { category: active, name: null, hidden: false }
+                    waiting: { category: active, name: null, hidden: false }
+                    blocked: { category: active, name: null, hidden: false }
+                    done: { category: closed, name: null, hidden: false }
+                    cancelled: { category: closed, name: null, hidden: false }
+                  nextKey: CAD-732
+                  createdAt: '2026-03-02T09:30:00Z'
+                  version: 4
+                list:
+                  id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  name: Sprint 14
+                  icon: lightning
+                  color: violet
+                  sprint:
+                    startDate: '2026-11-03'
+                    endDate: '2026-11-17'
+                    goal: Livrer la connexion SSO et la page des quotas d’organisation.
+                  createdAt: '2026-10-30T16:00:00Z'
+                  version: 2
+                parent:
+                  key: CAD-482
+                  name: Refondre l’écran de connexion SSO
+                  status: progress
+                subtasks:
+                  - key: CAD-489
+                    name: Gérer l’expiration du jeton SAML
+                    status: todo
+                    cancelReason: null
+                    priority: moyenne
+                    assignees:
+                      - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    dueDate: '2026-11-11'
+                    startDate: null
+                    estimateMinutes: 120
+                    labels: []
+                    parentKey: CAD-483
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    subtaskCounts: { total: 0, closed: 0 }
+                    checklistCounts: { total: 0, done: 0 }
+                    completedAt: null
+                    createdAt: '2026-11-04T09:10:00Z'
+                    version: 1
+                  - key: CAD-492
+                    name: Afficher le message si le domaine n’est pas vérifié
+                    status: todo
+                    cancelReason: null
+                    priority: moyenne
+                    assignees:
+                      - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    dueDate: null
+                    startDate: null
+                    estimateMinutes: 60
+                    labels: []
+                    parentKey: CAD-483
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    subtaskCounts: { total: 0, closed: 0 }
+                    checklistCounts: { total: 0, done: 0 }
+                    completedAt: null
+                    createdAt: '2026-11-05T14:00:00Z'
+                    version: 1
+                partial: []
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/subtasks:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listSubtasks
+      summary: List the subtasks of a task
+      description: |
+        Lists the direct subtasks of a task the caller sees, in the order of their creation ("Afficher
+        les 3 sous-tâches de CAD-482"); 25 at most, so one page of the default size holds them all.
+        Scope `tasks:read` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of subtasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSummaryPage'
+              example:
+                items:
+                  - key: CAD-483
+                    name: Bouton « Continuer avec l’authentification unique »
+                    status: progress
+                    cancelReason: null
+                    priority: haute
+                    assignees:
+                      - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    dueDate: '2026-11-10'
+                    startDate: null
+                    estimateMinutes: 180
+                    labels: [Front]
+                    parentKey: CAD-482
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    subtaskCounts: { total: 2, closed: 0 }
+                    checklistCounts: { total: 0, done: 0 }
+                    completedAt: null
+                    createdAt: '2026-11-03T09:12:00Z'
+                    version: 3
+                  - key: CAD-484
+                    name: Rediriger vers le fournisseur d’identité
+                    status: done
+                    cancelReason: null
+                    priority: haute
+                    assignees:
+                      - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    dueDate: '2026-11-06'
+                    startDate: null
+                    estimateMinutes: 120
+                    labels: [Auth]
+                    parentKey: CAD-482
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    subtaskCounts: { total: 0, closed: 0 }
+                    checklistCounts: { total: 0, done: 0 }
+                    completedAt: '2026-11-06T16:40:00Z'
+                    createdAt: '2026-11-03T09:12:00Z'
+                    version: 4
+                  - key: CAD-485
+                    name: Tester la connexion avec un compte d’entreprise
+                    status: todo
+                    cancelReason: null
+                    priority: moyenne
+                    assignees:
+                      - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    dueDate: '2026-11-12'
+                    startDate: null
+                    estimateMinutes: null
+                    labels: []
+                    parentKey: CAD-482
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    subtaskCounts: { total: 0, closed: 0 }
+                    checklistCounts: { total: 0, done: 0 }
+                    completedAt: null
+                    createdAt: '2026-11-03T09:12:00Z'
+                    version: 1
+                nextCursor: null
+                total: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: createSubtask
+      summary: Create a subtask
+      description: |
+        Creates a subtask of a task the caller sees ("Nouvelle sous-tâche", "Sous-tâche CAD-733
+        créée", "Dans CAD-482 · Refondre l’écran de connexion SSO"), with the next key of the space
+        of the list of the parent, in the list of the parent; without `assigneeIds`, it takes the
+        first assignee of the parent. A parent at the third level answers
+        `422 task.subtask-depth-exceeded`, a parent with 25 subtasks
+        `422 task.subtask-limit-reached`; the other rules are those of
+        `POST /v1/lists/{listId}/tasks`.
+
+        Records its creation in the activity log. Emits `task.created.v1` and one
+        `task.assigned.v1` per assignee. Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubtaskCreation'
+            example:
+              name: Tester la connexion avec Okta
+      responses:
+        '201':
+          description: The subtask exists.
+          headers:
+            Location:
+              $ref: '#/components/headers/TaskLocation'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                key: CAD-733
+                name: Tester la connexion avec Okta
+                description: null
+                status: todo
+                cancelReason: null
+                cancelNote: null
+                priority: moyenne
+                assignees:
+                  - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                dueDate: null
+                startDate: null
+                estimateMinutes: null
+                labels: []
+                parentKey: CAD-482
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                subtaskCounts: { total: 0, closed: 0 }
+                checklist: []
+                checklistCounts: { total: 0, done: 0 }
+                completedAt: null
+                createdAt: '2026-11-08T10:50:00Z'
+                createdBy:
+                  type: user
+                  id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                updatedAt: '2026-11-08T10:50:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/SubtaskCreationRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/checklist-items:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: addChecklistItem
+      summary: Add a checklist item
+      description: |
+        Adds an item, not ticked, at the end of the checklist of a task the caller sees ("Ajouter
+        un élément"). A checklist holds 100 items at most (`422 task.checklist-limit-reached`).
+        Answers the task, with a new version. Not recorded in the activity log. Emits
+        `task.updated.v1` with `changed: [checklist]`. Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChecklistItemCreation'
+            example:
+              text: Relire les messages d’erreur
+      responses:
+        '201':
+          description: The item exists; the answer is the task with its checklist.
+          headers:
+            Location:
+              $ref: '#/components/headers/ChecklistItemLocation'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              examples:
+                cad482:
+                  $ref: '#/components/examples/Cad482'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/ChecklistItemRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/checklist-items/{checklistItemId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/ChecklistItemId'
+    patch:
+      operationId: updateChecklistItem
+      summary: Tick or untick a checklist item
+      description: |
+        Ticks an item of the checklist of a task ("Terminer : Maquette validée") or unticks it
+        ("Rouvrir : Maquette validée"). The same state answers `200` with the same version.
+        `If-Match` is optional (`412 request.version-mismatch`), with the version of the task.
+        Answers the task. Not recorded in the activity log. Emits `task.updated.v1` with
+        `changed: [checklist]` when the item changed. Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChecklistItemPatch'
+            example:
+              done: true
+      responses:
+        '200':
+          description: The task with its checklist after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              examples:
+                cad482:
+                  $ref: '#/components/examples/Cad482'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ChecklistItemNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/assignees/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/AssigneeUserId'
+    put:
+      operationId: assignTask
+      summary: Assign a person
+      description: |
+        Adds a person to the assignees of a task the caller sees, after the others ("Assignés",
+        "Inès Robert assigné"). The person is a current member of the organization, guests
+        excepted (`422 task.assignee-invalid`); a task has 20 assignees at most
+        (`422 task.assignee-limit-reached`). A person already assigned answers `200` with the same
+        version, checked first: an assignee who has become a guest since stays. `If-Match` is optional (`412 request.version-mismatch`).
+
+        Records an entry `assign` in the activity log ("a assigné Inès Robert", "s’est assigné la
+        tâche"). Emits `task.updated.v1` with `changed: [assigneeIds]` and `task.assigned.v1`.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The task with its assignees.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              examples:
+                cad482:
+                  $ref: '#/components/examples/Cad482'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/AssigneeRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: unassignTask
+      summary: Remove an assignee
+      description: |
+        Removes a person from the assignees of a task the caller sees ("Inès Robert retiré"). A
+        person who is not assigned answers `204` with the same version. `If-Match` is optional
+        (`412 request.version-mismatch`); `ETag` gives the version after the change.
+
+        Records an entry `assign` in the activity log ("a retiré Inès Robert", "s’est retiré de la
+        tâche"). Emits `task.updated.v1` with `changed: [assigneeIds]` when the person was
+        assigned. Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The person is not among the assignees.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/labels/add:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: addTaskLabel
+      summary: Add a label
+      description: |
+        Adds a label to a task the caller sees, after the others ("Étiquettes"). The label is
+        trimmed; one that repeats a label of the task without regard to case answers `200` with
+        the same version. A task has 20 labels at most (`422 task.label-limit-reached`). A label
+        travels in the body, never in a path, since it is free text. `If-Match` is optional
+        (`412 request.version-mismatch`).
+
+        An action: answers `200` with the task. Not recorded in the activity log. Emits
+        `task.updated.v1` with `changed: [labels]`. Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelChange'
+            example:
+              name: Sécurité
+      responses:
+        '200':
+          description: The task with its labels.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              examples:
+                cad482:
+                  $ref: '#/components/examples/Cad482'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/LabelLimitReached'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/labels/remove:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: removeTaskLabel
+      summary: Remove a label
+      description: |
+        Removes a label from a task the caller sees, without regard to case. A label the task does
+        not have answers `200` with the same version. `If-Match` is optional
+        (`412 request.version-mismatch`).
+
+        An action: answers `200` with the task. Not recorded in the activity log. Emits
+        `task.updated.v1` with `changed: [labels]` when the label was there. Scope `tasks:write`
+        for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelChange'
+            example:
+              name: Front
+      responses:
+        '200':
+          description: The task with its labels.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              examples:
+                cad482:
+                  $ref: '#/components/examples/Cad482'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/activity:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskActivity
+      summary: Read the activity log of a task
+      description: |
+        Lists the entries of the activity log of a task the caller sees, the most recent first (tab
+        "Activité"): its creation, and the changes of its status, priority, due date and
+        assignees, each with its actor (a person, an automation, the Git integration or a service).
+        `kind` keeps the given kinds; `total` counts what matches.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [task-activity]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/ActivityKind'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityPage'
+              example:
+                items:
+                  - id: 019a7004-5e6f-7a8b-9c0d-1e2f3a4b5c21
+                    occurredAt: '2026-11-04T08:15:00Z'
+                    kind: status
+                    actor:
+                      type: user
+                      id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    task:
+                      key: CAD-482
+                      name: Refondre l’écran de connexion SSO
+                      status: progress
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    status:
+                      from: todo
+                      to: progress
+                  - id: 019a7004-5e6f-7a8b-9c0d-1e2f3a4b5c20
+                    occurredAt: '2026-11-03T09:05:00Z'
+                    kind: assign
+                    actor:
+                      type: user
+                      id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    task:
+                      key: CAD-482
+                      name: Refondre l’écran de connexion SSO
+                      status: progress
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    assignee:
+                      userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                      added: true
+                  - id: 019a7004-5e6f-7a8b-9c0d-1e2f3a4b5c19
+                    occurredAt: '2026-11-03T09:00:00Z'
+                    kind: create
+                    actor:
+                      type: user
+                      id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    task:
+                      key: CAD-482
+                      name: Refondre l’écran de connexion SSO
+                      status: progress
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                nextCursor: null
+                total: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/labels:
+    get:
+      operationId: listLabels
+      summary: List the labels
+      description: |
+        Lists the labels of the tasks the caller sees, for the picker ("Étiquettes"), in alphabetical
+        order without regard to case or accents. Two spellings of one label that differ only by
+        case are listed once, in the spelling that comes first in that order. `search` keeps the
+        labels that contain the text, without regard to case or accents.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of labels.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabelPage'
+              example:
+                items:
+                  - name: Auth
+                  - name: Back
+                  - name: Bug
+                  - name: Contenu
+                  - name: Design
+                  - name: Docs
+                  - name: Facturation
+                  - name: Front
+                  - name: Recherche
+                  - name: Sécurité
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/tasks:
+    get:
+      operationId: listMyTasks
+      summary: List the tasks of the caller
+      description: |
+        Lists the tasks assigned to the caller in every space they see, subtasks included ("Mes
+        tâches", "Toutes les tâches qui vous sont assignées, tous espaces confondus."): with
+        `state=open`, the default, those that are not closed ("À faire"); with `state=closed`, those
+        of the keys `done` and `cancelled` ("Terminées", "Terminées et annulées"). They come by due
+        date, the tasks without a due date last, then in the order of their creation; the web
+        application groups the open ones by due date ("En retard", "Aujourd’hui", "Sept prochains
+        jours", "Plus tard", "Sans échéance"). `counts` counts both tabs, on every page.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [my-tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/MyTaskState'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the tasks of the caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyTaskPage'
+              example:
+                items:
+                  - key: CAD-482
+                    name: Refondre l’écran de connexion SSO
+                    status: progress
+                    cancelReason: null
+                    priority: haute
+                    assignees:
+                      - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                      - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    dueDate: '2026-11-12'
+                    startDate: '2026-11-11'
+                    estimateMinutes: 480
+                    labels: [Auth, Front]
+                    parentKey: null
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    subtaskCounts: { total: 3, closed: 1 }
+                    checklistCounts: { total: 3, done: 3 }
+                    completedAt: null
+                    createdAt: '2026-11-03T09:00:00Z'
+                    version: 12
+                nextCursor: null
+                counts:
+                  open: 14
+                  closed: 9
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/home:
+    get:
+      operationId: getHome
+      summary: Read the task part of "Accueil"
+      description: |
+        Returns what "Accueil" shows of the tasks of the caller, in the spaces they see:
+
+        - `stats`: the tasks assigned to them that are not closed ("Assignées à moi", "tâches
+          ouvertes"), those of them that are late ("En retard", "à replanifier") or due `today`
+          ("Aujourd’hui", "échéances du jour"), and the tasks assigned to them of the key `done`
+          ("Terminées"), subtasks included;
+        - `priorities` ("Mes priorités"): 7 of their tasks that are not closed, by due date, the
+          tasks without a due date last, then in the order of their creation;
+        - `sprints`: the sprints current on `today` (first day on or before it, last day on or
+          after it), by last day then in the order of their creation, 10 at most, with the counts
+          of their tasks ("Sprint 14", "3 – 17 nov.", "Avancement");
+        - `lists` ("Listes"): the first 6 lists, in the order of the sidebar (spaces then lists in
+          the order of their creation), with the counts of their tasks ("14 ouvertes").
+
+        `today` is the date of the caller, in their time zone. A guest gets zeros and empty lists in
+        this version. The mentions and the activity of the inbox come from another route in a later
+        version. Scope `tasks:read` for a personal API token.
+      tags: [my-tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/Today'
+      responses:
+        '200':
+          description: The task part of "Accueil".
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Home'
+              example:
+                stats:
+                  assigned: 14
+                  late: 2
+                  dueToday: 1
+                  done: 9
+                priorities:
+                  - key: CAD-482
+                    name: Refondre l’écran de connexion SSO
+                    status: progress
+                    cancelReason: null
+                    priority: haute
+                    assignees:
+                      - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                      - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    dueDate: '2026-11-12'
+                    startDate: '2026-11-11'
+                    estimateMinutes: 480
+                    labels: [Auth, Front]
+                    parentKey: null
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    subtaskCounts: { total: 3, closed: 1 }
+                    checklistCounts: { total: 3, done: 3 }
+                    completedAt: null
+                    createdAt: '2026-11-03T09:00:00Z'
+                    version: 12
+                sprints:
+                  - list:
+                      id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      name: Sprint 14
+                      icon: lightning
+                      color: violet
+                      sprint:
+                        startDate: '2026-11-03'
+                        endDate: '2026-11-17'
+                        goal: Livrer la connexion SSO et la page des quotas d’organisation.
+                      createdAt: '2026-10-30T16:00:00Z'
+                      version: 2
+                    counts:
+                      total: 98
+                      open: 72
+                      done: 24
+                      cancelled: 2
+                      late: 3
+                lists:
+                  - list:
+                      id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f11
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      name: Backlog
+                      icon: null
+                      color: gris
+                      sprint: null
+                      createdAt: '2026-03-02T09:30:00Z'
+                      version: 1
+                    counts:
+                      total: 4
+                      open: 4
+                      done: 0
+                      cancelled: 0
+                      late: 0
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: |
+        Opaque session token of `openapi/public/auth.yaml`, set by the gateway on sign-in and checked
+        with identity-service on every request. A session holds every scope.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: |
+        Personal API token (`cw_pat_…`) of `openapi/public/api-tokens.yaml`, sent as
+        `Authorization: Bearer`. It acts with the rights of its user in the organization it was
+        created in, within the scopes each operation lists.
+  parameters:
+    ListId:
+      name: listId
+      in: path
+      required: true
+      description: Id of the list or the sprint.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12]
+    TaskKey:
+      name: taskKey
+      in: path
+      required: true
+      description: Key of the task.
+      schema:
+        $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+    AssigneeUserId:
+      name: userId
+      in: path
+      required: true
+      description: Account of the person to assign or to remove, as the member list gives it (`userId`).
+      schema:
+        type: string
+        format: uuid
+        examples: [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+    ChecklistItemId:
+      name: checklistItemId
+      in: path
+      required: true
+      description: Id of the checklist item, as the task gives it.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: '`"<version>"` of the task the change was made from, as the `ETag` gave it.'
+      schema:
+        type: string
+        examples: ['"12"']
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Key of this creation, chosen by the client, a UUID for example; the same key with the same
+        body within 24 hours answers what the first request answered.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        examples: [5d0c6f1e-2a3b-4c5d-8e9f-0a1b2c3d4e5f]
+    Today:
+      $ref: '../../components/task.yaml#/components/parameters/Today'
+    StatusFilter:
+      $ref: '../../components/task.yaml#/components/parameters/StatusFilter'
+    PriorityFilter:
+      $ref: '../../components/task.yaml#/components/parameters/PriorityFilter'
+    AssigneeFilter:
+      $ref: '../../components/task.yaml#/components/parameters/AssigneeFilter'
+    LabelFilter:
+      $ref: '../../components/task.yaml#/components/parameters/LabelFilter'
+    Search:
+      $ref: '../../components/task.yaml#/components/parameters/Search'
+    DueFrom:
+      $ref: '../../components/task.yaml#/components/parameters/DueFrom'
+    DueTo:
+      $ref: '../../components/task.yaml#/components/parameters/DueTo'
+    Level:
+      $ref: '../../components/task.yaml#/components/parameters/Level'
+    TaskSort:
+      $ref: '../../components/task.yaml#/components/parameters/TaskSort'
+    GroupBy:
+      $ref: '../../components/task.yaml#/components/parameters/GroupBy'
+    MyTaskState:
+      $ref: '../../components/task.yaml#/components/parameters/MyTaskState'
+    ActivityKind:
+      $ref: '../../components/task.yaml#/components/parameters/ActivityKind'
+  headers:
+    ETag:
+      description: Version of the task, `"<version>"`.
+      schema:
+        type: string
+    TaskLocation:
+      description: '`/v1/tasks/<key>`, where the task reads.'
+      schema:
+        type: string
+    ChecklistItemLocation:
+      description: '`/v1/tasks/<key>/checklist-items/<checklistItemId>`, where the item changes.'
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110).
+      schema:
+        type: integer
+        minimum: 1
+  examples:
+    Cad482:
+      summary: CAD-482 of Sprint 14
+      value:
+        key: CAD-482
+        name: Refondre l’écran de connexion SSO
+        description: |
+          Remplacer l’écran actuel par la connexion d’entreprise.
+
+          - Bouton « Continuer avec l’authentification unique »
+          - Message d’erreur si le domaine n’est pas vérifié
+        status: progress
+        cancelReason: null
+        cancelNote: null
+        priority: haute
+        assignees:
+          - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+          - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+        dueDate: '2026-11-12'
+        startDate: '2026-11-11'
+        estimateMinutes: 480
+        labels: [Auth, Front]
+        parentKey: null
+        listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+        spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+        subtaskCounts: { total: 3, closed: 1 }
+        checklist:
+          - id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+            text: Maquette validée
+            done: true
+          - id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b02
+            text: Textes relus
+            done: true
+          - id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b03
+            text: Accessibilité vérifiée
+            done: true
+        checklistCounts: { total: 3, done: 3 }
+        completedAt: null
+        createdAt: '2026-11-03T09:00:00Z'
+        createdBy:
+          type: user
+          id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+        updatedAt: '2026-11-07T15:20:00Z'
+        version: 12
+    CrossSiteRefused:
+      summary: Request from another site
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.csrf-rejected
+    ScopeMissingRead:
+      summary: Personal API token without `tasks:read`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:read]
+    ScopeMissingWrite:
+      summary: Personal API token without `tasks:write`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:write]
+    OrganizationNotSelected:
+      summary: No current organization
+      value:
+        type: about:blank
+        title: Choisissez une organisation pour continuer.
+        status: 403
+        code: organization.not-selected
+    OrganizationMfaRequired:
+      summary: Two-step verification required by the organization
+      value:
+        type: about:blank
+        title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
+        status: 403
+        code: organization.mfa-required
+        details:
+          organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+    StatusHidden:
+      summary: A status the space no longer uses
+      value:
+        type: about:blank
+        title: Ce statut n’est plus utilisé dans cet espace.
+        status: 422
+        code: task.status-hidden
+        details:
+          status: testing
+    CancelReasonRequired:
+      summary: Cancelled without a reason
+      value:
+        type: about:blank
+        title: 'Indiquez pourquoi : le motif reste visible sur la tâche et dans les rapports.'
+        status: 422
+        code: task.cancel-reason-required
+    CancelReasonUnexpected:
+      summary: A reason for a task that is not cancelled
+      value:
+        type: about:blank
+        title: Unprocessable Content
+        status: 422
+        code: task.cancel-reason-unexpected
+    AssigneeInvalid:
+      summary: An assignee who is not a member, or a guest
+      value:
+        type: about:blank
+        title: Seuls les membres de l’organisation peuvent être assignés.
+        status: 422
+        code: task.assignee-invalid
+        details:
+          userIds: [019a6f00-1b2c-7d3e-8f4a-5b6c7d8e9f40]
+    StartDateInvalid:
+      summary: A start without a due date, or after it
+      value:
+        type: about:blank
+        title: Le début doit précéder l’échéance.
+        status: 422
+        code: task.start-date-invalid
+    ListInvalid:
+      summary: A list the caller does not see
+      value:
+        type: about:blank
+        title: Cette liste n’existe pas ou ne vous est pas accessible.
+        status: 422
+        code: task.list-invalid
+    ParentInvalid:
+      summary: The task itself or one of its subtasks as parent
+      value:
+        type: about:blank
+        title: Une tâche ne peut pas devenir sous-tâche d’elle-même ni de ses sous-tâches.
+        status: 422
+        code: task.parent-invalid
+        details:
+          parentKey: CAD-489
+    SubtaskDepthExceeded:
+      summary: More than 3 levels
+      value:
+        type: about:blank
+        title: 'Niveau maximal atteint : 3 niveaux (tâche, sous-tâche, sous-sous-tâche). Utilisez la checklist pour détailler davantage.'
+        status: 422
+        code: task.subtask-depth-exceeded
+    SubtaskLimitReached:
+      summary: 25 subtasks already
+      value:
+        type: about:blank
+        title: '25 sous-tâches au plus : découpez plutôt en plusieurs tâches.'
+        status: 422
+        code: task.subtask-limit-reached
+    IdempotencyKeyReused:
+      summary: Key sent before with another body
+      value:
+        type: about:blank
+        title: Unprocessable Content
+        status: 422
+        code: idempotency.key-reused
+    RateLimited:
+      summary: Gateway limit reached
+      value:
+        type: about:blank
+        title: 'Trop de requêtes : réessayez dans un instant.'
+        status: 429
+        code: rate-limit.exceeded
+  responses:
+    BadRequest:
+      description: |
+        The request does not match the schema: `request.invalid`, with one `details.issues` entry
+        per failed member (`path` is the dotted path of the member, empty for the body itself, the
+        name of the header for a header). A change of `description` without `If-Match` answers it
+        with an issue `{ in: header, path: If-Match, code: required }`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: header
+                  path: If-Match
+                  code: required
+                  message: Required to change the description
+    Unauthenticated:
+      description: |
+        - `auth.session-required`: the request carries neither a session cookie nor a bearer token;
+        - `auth.session-expired`: the cookie names a session that ended;
+        - `auth.api-token-invalid`: the bearer token is unknown, revoked or expired, or its user
+          no longer belongs to its organization.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sessionRequired:
+              summary: No credential
+              value:
+                type: about:blank
+                title: Connectez-vous pour continuer.
+                status: 401
+                code: auth.session-required
+            sessionExpired:
+              summary: Session ended
+              value:
+                type: about:blank
+                title: Session expirée
+                status: 401
+                code: auth.session-expired
+            apiTokenInvalid:
+              summary: Personal API token no longer valid
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    TasksReadForbidden:
+      description: |
+        - `auth.scope-missing`: the personal API token lacks `tasks:read`; `details.requiredScopes`
+          lists what the route needs;
+        - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the organization requires
+          two-step verification for the role of the caller, who has none; `details.organizationId`
+          names it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingRead'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+    TasksWriteForbidden:
+      description: |
+        - `auth.scope-missing`: the personal API token lacks `tasks:write`;
+        - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
+        - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    OrganizationNotFound:
+      description: |
+        `organization.not-found`: the caller no longer belongs to the current organization, or, for a
+        few seconds after they joined it, task-service does not know them yet.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    ListNotFound:
+      description: |
+        - `list.not-found`: no list with this id that the caller sees;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Liste introuvable.
+            status: 404
+            code: list.not-found
+    TaskNotFound:
+      description: |
+        - `task.not-found`: no task with this key that the caller sees;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Tâche introuvable.
+            status: 404
+            code: task.not-found
+    ChecklistItemNotFound:
+      description: |
+        - `checklist-item.not-found`: the task has no item with this id;
+        - `task.not-found`, `organization.not-found`: see `TaskNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Élément de checklist introuvable.
+            status: 404
+            code: checklist-item.not-found
+    RequestInProgress:
+      description: '`idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            code: idempotency.request-in-progress
+    TaskCreationRefused:
+      description: |
+        - `task.status-hidden`: the space of the list no longer uses the status; `details.status`
+          names it;
+        - `task.cancel-reason-required`: the status `cancelled` without `cancelReason`;
+        - `task.cancel-reason-unexpected`: `cancelReason` or `cancelNote` with another status;
+        - `task.assignee-invalid`: an assignee is not a current member of the organization, or is a
+          guest; `details.userIds` lists them;
+        - `task.start-date-invalid`: `startDate` without `dueDate`, or after it;
+        - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            statusHidden:
+              $ref: '#/components/examples/StatusHidden'
+            cancelReasonRequired:
+              $ref: '#/components/examples/CancelReasonRequired'
+            cancelReasonUnexpected:
+              $ref: '#/components/examples/CancelReasonUnexpected'
+            assigneeInvalid:
+              $ref: '#/components/examples/AssigneeInvalid'
+            startDateInvalid:
+              $ref: '#/components/examples/StartDateInvalid'
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
+    SubtaskCreationRefused:
+      description: |
+        - `task.subtask-depth-exceeded`: the parent is at the third level;
+        - `task.subtask-limit-reached`: the parent has 25 subtasks;
+        - `task.status-hidden`, `task.cancel-reason-required`, `task.cancel-reason-unexpected`,
+          `task.assignee-invalid`, `task.start-date-invalid`, `idempotency.key-reused`: see
+          `TaskCreationRefused`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            subtaskDepthExceeded:
+              $ref: '#/components/examples/SubtaskDepthExceeded'
+            subtaskLimitReached:
+              $ref: '#/components/examples/SubtaskLimitReached'
+            statusHidden:
+              $ref: '#/components/examples/StatusHidden'
+            assigneeInvalid:
+              $ref: '#/components/examples/AssigneeInvalid'
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
+    TaskChangeRefused:
+      description: |
+        - `task.status-hidden`: the space no longer uses the status, which the task does not have;
+          `details.status` names it;
+        - `task.cancel-reason-required`: the task becomes or stays `cancelled` without a reason;
+        - `task.cancel-reason-unexpected`: `cancelReason` or `cancelNote` for a task that is not
+          `cancelled` after the patch;
+        - `task.start-date-invalid`: a start date without a due date, or after it;
+        - `task.list-invalid`: the list does not exist or the caller does not see it, or is not the
+          list of the new parent;
+        - `task.parent-invalid`: the parent is unknown, not seen, the task itself or one of its
+          subtasks; `details.parentKey` repeats it;
+        - `task.subtask-depth-exceeded`: the task and its subtasks would go beyond 3 levels;
+        - `task.subtask-limit-reached`: the parent has 25 subtasks.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            statusHidden:
+              $ref: '#/components/examples/StatusHidden'
+            cancelReasonRequired:
+              $ref: '#/components/examples/CancelReasonRequired'
+            cancelReasonUnexpected:
+              $ref: '#/components/examples/CancelReasonUnexpected'
+            startDateInvalid:
+              $ref: '#/components/examples/StartDateInvalid'
+            listInvalid:
+              $ref: '#/components/examples/ListInvalid'
+            parentInvalid:
+              $ref: '#/components/examples/ParentInvalid'
+            subtaskDepthExceeded:
+              $ref: '#/components/examples/SubtaskDepthExceeded'
+            subtaskLimitReached:
+              $ref: '#/components/examples/SubtaskLimitReached'
+    AssigneeRefused:
+      description: |
+        - `task.assignee-invalid`: the person is not a current member of the organization, or is a
+          guest; `details.userIds` names them;
+        - `task.assignee-limit-reached`: the task has 20 assignees.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            assigneeInvalid:
+              $ref: '#/components/examples/AssigneeInvalid'
+            assigneeLimitReached:
+              summary: 20 assignees already
+              value:
+                type: about:blank
+                title: 20 personnes au plus par tâche.
+                status: 422
+                code: task.assignee-limit-reached
+    LabelLimitReached:
+      description: '`task.label-limit-reached`: the task has 20 labels.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 20 étiquettes au plus par tâche.
+            status: 422
+            code: task.label-limit-reached
+    ChecklistItemRefused:
+      description: |
+        - `task.checklist-limit-reached`: the checklist holds 100 items;
+        - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            checklistLimitReached:
+              summary: 100 items already
+              value:
+                type: about:blank
+                title: 100 éléments au plus par checklist.
+                status: 422
+                code: task.checklist-limit-reached
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version of the task; `details.version` is.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 13
+    RateLimited:
+      description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    Unavailable:
+      description: |
+        task-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+        `upstream.deadline-exceeded`, with `details.service`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+            details:
+              service: task-service
+  schemas:
+    Task:
+      $ref: '../../components/task.yaml#/components/schemas/Task'
+    TaskSummary:
+      $ref: '../../components/task.yaml#/components/schemas/TaskSummary'
+    TaskRef:
+      $ref: '../../components/task.yaml#/components/schemas/TaskRef'
+    TaskCreation:
+      $ref: '../../components/task.yaml#/components/schemas/TaskCreation'
+    SubtaskCreation:
+      $ref: '../../components/task.yaml#/components/schemas/SubtaskCreation'
+    TaskPatch:
+      $ref: '../../components/task.yaml#/components/schemas/TaskPatch'
+    LabelChange:
+      $ref: '../../components/task.yaml#/components/schemas/LabelChange'
+    EmptyRequest:
+      type: object
+      additionalProperties: false
+      description: 'Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.'
+    ChecklistItemCreation:
+      $ref: '../../components/task.yaml#/components/schemas/ChecklistItemCreation'
+    ChecklistItemPatch:
+      $ref: '../../components/task.yaml#/components/schemas/ChecklistItemPatch'
+    ActivityEntry:
+      $ref: '../../components/task.yaml#/components/schemas/ActivityEntry'
+    Space:
+      $ref: '../../components/task.yaml#/components/schemas/Space'
+    TaskList:
+      $ref: '../../components/task.yaml#/components/schemas/TaskList'
+    ListSummary:
+      $ref: '../../components/task.yaml#/components/schemas/ListSummary'
+    TaskSummaryPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskSummary'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Tasks that match the filters, on every page ("12 sur 98 tâches").
+    TaskGroup:
+      type: object
+      required: [value, count]
+      properties:
+        value:
+          type: string
+          description: |
+            The value of the group, to add to the filters to read its tasks: a status key, a
+            priority, an account id, or `none` for the tasks nobody is assigned.
+          examples: [progress]
+        count:
+          type: integer
+          minimum: 0
+          description: Tasks of the group that match the filters.
+    TaskGroupPage:
+      type: object
+      required: [groupBy, items, nextCursor, total]
+      properties:
+        groupBy:
+          type: string
+          description: '`status`, `priority` or `assignee`, as asked; later versions may add groupings (`x-extensible-enum`).'
+          x-extensible-enum: [status, priority, assignee]
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskGroup'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Tasks that match the filters, each counted once.
+    Label:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: The label, 32 characters at most.
+          examples: [Auth]
+    LabelPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Label'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    ActivityPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          description: The entries, the most recent first.
+          items:
+            $ref: '#/components/schemas/ActivityEntry'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Entries that match the filters, on every page.
+    MyTaskCounts:
+      type: object
+      required: [open, closed]
+      description: The tasks of the two tabs of "Mes tâches", on every page.
+      properties:
+        open:
+          type: integer
+          minimum: 0
+          description: Not closed ("À faire 14").
+        closed:
+          type: integer
+          minimum: 0
+          description: Of the keys `done` and `cancelled` ("Terminées 9").
+    MyTaskPage:
+      type: object
+      required: [items, nextCursor, counts]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskSummary'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        counts:
+          $ref: '#/components/schemas/MyTaskCounts'
+    HomeStats:
+      type: object
+      required: [assigned, late, dueToday, done]
+      description: The four counters of "Accueil", over the tasks assigned to the caller, subtasks included.
+      properties:
+        assigned:
+          type: integer
+          minimum: 0
+          description: Not closed ("Assignées à moi").
+        late:
+          type: integer
+          minimum: 0
+          description: Not closed and due before `today` ("En retard").
+        dueToday:
+          type: integer
+          minimum: 0
+          description: Not closed and due on `today` ("Aujourd’hui").
+        done:
+          type: integer
+          minimum: 0
+          description: Of the key `done` ("Terminées").
+    Home:
+      type: object
+      required: [stats, priorities, sprints, lists]
+      properties:
+        stats:
+          $ref: '#/components/schemas/HomeStats'
+        priorities:
+          type: array
+          description: '"Mes priorités", 7 tasks at most; empty for "Rien ne vous est assigné."'
+          items:
+            $ref: '#/components/schemas/TaskSummary'
+        sprints:
+          type: array
+          description: The sprints current on `today`, 10 at most, with the counts of their tasks.
+          items:
+            $ref: '#/components/schemas/ListSummary'
+        lists:
+          type: array
+          description: '"Listes", the first 6 lists of the sidebar, with the counts of their tasks.'
+          items:
+            $ref: '#/components/schemas/ListSummary'
+    TaskDetail:
+      type: object
+      required: [task, space, list, parent, subtasks, partial]
+      description: The task detail, composed by the gateway.
+      properties:
+        task:
+          $ref: '#/components/schemas/Task'
+        space:
+          $ref: '#/components/schemas/Space'
+        list:
+          $ref: '#/components/schemas/TaskList'
+        parent:
+          description: The parent of a subtask, as it is now; `null` for a top-level task.
+          oneOf:
+            - $ref: '#/components/schemas/TaskRef'
+            - type: 'null'
+        subtasks:
+          type: array
+          description: The direct subtasks, 25 at most, in the order of their creation.
+          items:
+            $ref: '#/components/schemas/TaskSummary'
+        partial:
+          type: array
+          description: |
+            The parts the gateway could not read, the rest of the detail being complete. Always
+            empty in this version; later versions name the parts they add (`comments`,
+            `attachments`, `development`) when their source does not answer, and may name others
+            (`x-extensible-enum`).
+          items:
+            type: string
+            x-extensible-enum: [comments, attachments, development]
