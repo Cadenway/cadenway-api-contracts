@@ -751,7 +751,7 @@ components:
                 status: 403
                 code: auth.reauthentication-required
                 details:
-                  methods: [password, authenticator-app]
+                  methods: [authenticator-app]
             organizationMfaRequired:
               $ref: '#/components/examples/OrganizationMfaRequired'
             roleForbidden:

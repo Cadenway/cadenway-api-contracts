@@ -84,17 +84,32 @@ info:
     deletion of the account (`POST /v1/me/deletion`), creating a personal API token
     (`POST /v1/api-tokens`, `openapi/public/api-tokens.yaml`), changing the authentication policy
     of an organization (`PATCH /v1/organization/authentication-policy`,
-    `openapi/public/organizations.yaml`) and every change of the two-step verification that starts
-    or removes something (setting up or reconfiguring the app, turning it off, regenerating the
-    backup codes, starting the registration of a security key and removing one) need a session whose person proved who they are in the last 10 minutes: the sign-in that
-    opened the session, a password or a code of the app confirmed with
-    `POST /v1/auth/reauthentication`, or the current password of a password change
-    (`PUT /v1/me/password`). Otherwise they answer `403 auth.reauthentication-required`, with
-    `details.methods`, the ways the person can confirm (`password`, and `authenticator-app` once the
-    account has it): the web application asks for one, calls `POST /v1/auth/reauthentication`, then
-    repeats the request. The window belongs to one session: confirming in one browser does not open
-    it in another. identity-service answers this code, which the gateway forwards. The steps that
-    complete a started change (the code that confirms the app, the key that answers its
+    `openapi/public/organizations.yaml`), every change of the two-step verification that starts or
+    removes something (setting up or reconfiguring the app, turning it off, regenerating the backup
+    codes, starting the registration of a security key and removing one), and, for an account with
+    two-step verification, changing the password (`PUT /v1/me/password`) need a session whose
+    person proved who they are in the last 10 minutes. Otherwise they answer
+    `403 auth.reauthentication-required`, with `details.methods`, the ways the person can confirm:
+    the web application asks for one, calls `POST /v1/auth/reauthentication`, then repeats the
+    request. What proves it depends on the account:
+
+    - Without two-step verification: the sign-in that opened the session, the password confirmed
+      with `POST /v1/auth/reauthentication`, or the right current password of
+      `PUT /v1/me/password`. `details.methods` is `[password]`.
+    - With two-step verification: a two-step proof only, never a password alone. That is the
+      sign-in that opened the session by answering its challenge, a code of the authenticator app
+      confirmed with `POST /v1/auth/reauthentication`, or the code that confirms the app in
+      `POST /v1/me/two-step-verification/authenticator-app/setup/confirmation`. A sign-in on a
+      trusted device, which skipped the challenge, opens no window, and neither does the current
+      password of a password change. `details.methods` is `[authenticator-app]`; a security key
+      does not confirm in this version (a later version may add it as a new value, which a client
+      ignores when it does not know it). A person without their app signs in again with a backup
+      code: the answer of that challenge opens the window.
+
+    The window belongs to one session: confirming in one browser does not open it in another.
+    Turning two-step verification on ends the windows that other sessions of the account opened
+    with a password. identity-service answers this code, which the gateway forwards. The steps
+    that complete a started change (the code that confirms the app, the key that answers its
     registration options) need no new confirmation: their start did.
 
     **Security emails.** identity-service tells notification-service what happened, through the
@@ -951,11 +966,17 @@ paths:
       description: |
         Opens the window of recent authentication of this session for 10 minutes (see "Recent
         authentication" above). The web application calls it when a route answered
-        `403 auth.reauthentication-required`, then repeats that request. It sends one of the
-        methods of `details.methods`: `password`, or `code`, the 6 digits of the authenticator app
-        of an account with two-step verification. Both or neither answer `400 request.invalid`;
-        `code` for an account without an authenticator app answers
-        `409 auth.two-step-not-enabled`.
+        `403 auth.reauthentication-required`, then repeats that request. It sends the method of
+        `details.methods`: `password` for an account without two-step verification, `code`, the 6
+        digits of the authenticator app, for an account with it.
+
+        - Both or neither answer `400 request.invalid`.
+        - `password` for an account with two-step verification answers
+          `403 auth.reauthentication-required` with `details.methods: [authenticator-app]`: a
+          password alone never confirms such an account. The password is not checked and no
+          attempt is counted, so the route tells nothing about it.
+        - `code` for an account without an authenticator app answers
+          `409 auth.two-step-not-enabled`.
 
         - A wrong password answers `422 auth.password-incorrect` with
           `details.remainingAttempts`. It counts with the failed sign-ins of the address of the
@@ -965,8 +986,7 @@ paths:
         - A wrong or already used code answers `422 auth.two-step-code-invalid` with
           `details.remainingAttempts`. It counts with the wrong answers of the two-step challenges
           of the account: the fifth in a row, and every code during the lockout, answer
-          `429 auth.two-step-locked` (15 minutes), which leaves this session open and the
-          password usable.
+          `429 auth.two-step-locked` (15 minutes), which leaves this session open.
 
         Session only: a personal API token gets `403 auth.api-token-not-accepted`.
       tags: [auth]
@@ -1002,7 +1022,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
-          $ref: '#/components/responses/SessionWriteForbidden'
+          $ref: '#/components/responses/RecentAuthenticationForbidden'
         '409':
           $ref: '#/components/responses/TwoStepNotEnabled'
         '422':
@@ -1123,12 +1143,19 @@ paths:
         1. The new password, against the rules of the sign-up: 12 characters at least, no
            composition rule, not in the list of compromised passwords
            (`422 auth.password-too-short`, `422 auth.password-compromised`). No attempt is counted.
-        2. The current password. A wrong one answers `422 auth.password-incorrect` with
-           `details.remainingAttempts` and counts with the failed sign-ins of the address, as
-           `POST /v1/auth/reauthentication` says (`429 auth.account-locked`). A right one counts
-           as a recent authentication of this session.
+        2. For an account with two-step verification only, a recent two-step proof of this
+           session (see "Recent authentication"): without one, `403 auth.reauthentication-required`
+           with `details.methods: [authenticator-app]`, before the current password is checked or
+           counted.
+        3. The current password, always required. A wrong one answers
+           `422 auth.password-incorrect` with `details.remainingAttempts` and counts with the
+           failed sign-ins of the address, as `POST /v1/auth/reauthentication` says
+           (`429 auth.account-locked`). For an account without two-step verification, a right one
+           counts as a recent authentication of this session, and no other recent authentication
+           is required: the current password stands for it. For an account with two-step
+           verification, it never counts as one.
 
-        Recent authentication is not required: the current password stands for it. The change
+        The change
         drops a pending change of address, ends the recent authentication of every other session,
         which stay open, drops their pending two-step setups and key registrations and the open
         challenge of the account, and forgets every trusted device of the account, this browser's
@@ -1176,7 +1203,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
-          $ref: '#/components/responses/SessionWriteForbidden'
+          $ref: '#/components/responses/RecentAuthenticationForbidden'
         '422':
           $ref: '#/components/responses/PasswordChangeRefused'
         '429':
@@ -1540,7 +1567,9 @@ paths:
           setup stays pending. A setup that expired, was replaced, or belongs to another session,
           or no setup: `422 auth.two-step-setup-expired`, and the person starts again.
 
-        Recent authentication is not required again: the start required it. Emits
+        Recent authentication is not required again: the start required it. The right code counts
+        as a recent two-step authentication of this session, and turning two-step verification on
+        ends the windows that the other sessions of the account opened with a password. Emits
         `user.two-step-verification-changed.v1`, from which notification-service sends a security
         email ("La vérification en deux étapes est activée") and organization-service updates its
         directory. Session only: a personal API token gets `403 auth.api-token-not-accepted`.
@@ -2561,11 +2590,13 @@ components:
     RecentAuthenticationForbidden:
       description: |
         - `auth.reauthentication-required`: the person of this session has not proved who they are
-          in the last 10 minutes (see "Recent authentication"). `details.methods` lists the ways
-          they can, in the order to offer them, for `POST /v1/auth/reauthentication`: `password`,
-          then `authenticator-app` (its `code`) when the account has an authenticator app; later
-          versions add methods, and a client ignores a method it does not know. The web
-          application asks, confirms, then repeats the request;
+          in the last 10 minutes (see "Recent authentication"), or, on
+          `POST /v1/auth/reauthentication`, sent a password for an account with two-step
+          verification. `details.methods` lists the ways they can, for
+          `POST /v1/auth/reauthentication`: `[password]` for an account without two-step
+          verification, `[authenticator-app]` (its `code`) for an account with it, never the
+          password then; later versions add methods, and a client ignores a method it does not
+          know. The web application asks, confirms, then repeats the request;
         - `auth.csrf-rejected`: see `CrossSiteRefused`;
         - `auth.api-token-not-accepted`: a personal API token cannot call this route.
       content:
@@ -2583,14 +2614,14 @@ components:
                 details:
                   methods: [password]
             reauthenticationRequiredWithApp:
-              summary: No recent authentication, account with an authenticator app
+              summary: No recent two-step proof, account with two-step verification
               value:
                 type: about:blank
                 title: Confirmez votre identité pour continuer.
                 status: 403
                 code: auth.reauthentication-required
                 details:
-                  methods: [password, authenticator-app]
+                  methods: [authenticator-app]
             crossSiteRefused:
               $ref: '#/components/examples/CrossSiteRefused'
             apiTokenNotAccepted:
@@ -3334,17 +3365,23 @@ components:
     ReauthenticationRequest:
       type: object
       description: |
-        One of the methods of `details.methods`: `password`, or `code` for `authenticator-app`.
-        Both or neither answer `400 request.invalid`, and `code` for an account without an
-        authenticator app `409 auth.two-step-not-enabled`, both checked by identity-service.
+        The method of `details.methods`: `password` for an account without two-step verification,
+        `code` (`authenticator-app`) for an account with it. Both or neither answer
+        `400 request.invalid`, `password` for an account with two-step verification
+        `403 auth.reauthentication-required`, and `code` for an account without an authenticator
+        app `409 auth.two-step-not-enabled`, all checked by identity-service.
       properties:
         password:
           type: string
           minLength: 1
           maxLength: 256
-          description: The current password of the account. Never logged.
+          description: |
+            The current password of an account without two-step verification. Never logged.
         code:
           $ref: '#/components/schemas/TwoStepCode'
+          description: |
+            The 6 digits the authenticator app of an account with two-step verification shows now.
+            Works once. Never logged.
     RecentAuthentication:
       type: object
       required: [authenticatedAt, expiresAt]

@@ -24,7 +24,11 @@ of identity-service:
   `200` signs in and, with `trustDevice`, sets the device cookie for 30 days. Five wrong answers in a
   row lock the answers of the account for 15 minutes.
 - `POST /v1/auth/reauthentication` accepts `code`, a code of the authenticator app, beside
-  `password`, which becomes optional; `details.methods` gains `authenticator-app`.
+  `password`, which becomes optional. Once an account has two-step verification, only a two-step
+  proof opens the window of recent authentication: a password alone answers
+  `403 auth.reauthentication-required`, `details.methods` is `[authenticator-app]` on every guarded
+  route, and `PUT /v1/me/password` needs that proof beside the current password. An account without
+  two-step verification keeps the password (`details.methods: [password]`).
 - `OpenSession` gains an optional `inactivityTimeoutMinutes`.
 
 `openapi/public/organizations.yaml`: `GET` and `PATCH /v1/organization/authentication-policy`

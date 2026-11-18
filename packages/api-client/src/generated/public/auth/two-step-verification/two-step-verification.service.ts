@@ -246,7 +246,9 @@ export class TwoStepVerificationService {
  *   setup stays pending. A setup that expired, was replaced, or belongs to another session,
  *   or no setup: `422 auth.two-step-setup-expired`, and the person starts again.
  *
- * Recent authentication is not required again: the start required it. Emits
+ * Recent authentication is not required again: the start required it. The right code counts
+ * as a recent two-step authentication of this session, and turning two-step verification on
+ * ends the windows that the other sessions of the account opened with a password. Emits
  * `user.two-step-verification-changed.v1`, from which notification-service sends a security
  * email ("La vérification en deux étapes est activée") and organization-service updates its
  * directory. Session only: a personal API token gets `403 auth.api-token-not-accepted`.

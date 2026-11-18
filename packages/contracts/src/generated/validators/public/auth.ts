@@ -749,11 +749,17 @@ export const ConfirmPasswordResetResponse = zod.object({
 /**
  * Opens the window of recent authentication of this session for 10 minutes (see "Recent
  * authentication" above). The web application calls it when a route answered
- * `403 auth.reauthentication-required`, then repeats that request. It sends one of the
- * methods of `details.methods`: `password`, or `code`, the 6 digits of the authenticator app
- * of an account with two-step verification. Both or neither answer `400 request.invalid`;
- * `code` for an account without an authenticator app answers
- * `409 auth.two-step-not-enabled`.
+ * `403 auth.reauthentication-required`, then repeats that request. It sends the method of
+ * `details.methods`: `password` for an account without two-step verification, `code`, the 6
+ * digits of the authenticator app, for an account with it.
+ *
+ * - Both or neither answer `400 request.invalid`.
+ * - `password` for an account with two-step verification answers
+ *   `403 auth.reauthentication-required` with `details.methods: [authenticator-app]`: a
+ *   password alone never confirms such an account. The password is not checked and no
+ *   attempt is counted, so the route tells nothing about it.
+ * - `code` for an account without an authenticator app answers
+ *   `409 auth.two-step-not-enabled`.
  *
  * - A wrong password answers `422 auth.password-incorrect` with
  *   `details.remainingAttempts`. It counts with the failed sign-ins of the address of the
@@ -763,8 +769,7 @@ export const ConfirmPasswordResetResponse = zod.object({
  * - A wrong or already used code answers `422 auth.two-step-code-invalid` with
  *   `details.remainingAttempts`. It counts with the wrong answers of the two-step challenges
  *   of the account: the fifth in a row, and every code during the lockout, answer
- *   `429 auth.two-step-locked` (15 minutes), which leaves this session open and the
- *   password usable.
+ *   `429 auth.two-step-locked` (15 minutes), which leaves this session open.
  *
  * Session only: a personal API token gets `403 auth.api-token-not-accepted`.
  * @summary Confirm who the signed-in person is
@@ -775,9 +780,9 @@ export const reauthenticateBodyCodeRegExp = new RegExp('^[0-9]{6}$');
 
 
 export const ReauthenticateBody = zod.object({
-  "password": zod.string().min(1).max(reauthenticateBodyPasswordMax).optional().describe('The current password of the account. Never logged.'),
-  "code": zod.string().regex(reauthenticateBodyCodeRegExp).optional().describe('The 6 digits the authenticator app shows now, without a space. Works once: a code already\naccepted is refused. Never logged.\n')
-}).describe('One of the methods of `details.methods`: `password`, or `code` for `authenticator-app`.\nBoth or neither answer `400 request.invalid`, and `code` for an account without an\nauthenticator app `409 auth.two-step-not-enabled`, both checked by identity-service.\n')
+  "password": zod.string().min(1).max(reauthenticateBodyPasswordMax).optional().describe('The current password of an account without two-step verification. Never logged.\n'),
+  "code": zod.string().regex(reauthenticateBodyCodeRegExp).optional().describe('The 6 digits the authenticator app of an account with two-step verification shows now.\nWorks once. Never logged.\n')
+}).describe('The method of `details.methods`: `password` for an account without two-step verification,\n`code` (`authenticator-app`) for an account with it. Both or neither answer\n`400 request.invalid`, `password` for an account with two-step verification\n`403 auth.reauthentication-required`, and `code` for an account without an authenticator\napp `409 auth.two-step-not-enabled`, all checked by identity-service.\n')
 
 export const ReauthenticateResponse = zod.object({
   "authenticatedAt": zod.iso.datetime({"offset":true}).describe('When the person last proved who they are in this session.'),
@@ -882,12 +887,19 @@ export const UpdateCurrentUserResponse = zod.object({
  * 1. The new password, against the rules of the sign-up: 12 characters at least, no
  *    composition rule, not in the list of compromised passwords
  *    (`422 auth.password-too-short`, `422 auth.password-compromised`). No attempt is counted.
- * 2. The current password. A wrong one answers `422 auth.password-incorrect` with
- *    `details.remainingAttempts` and counts with the failed sign-ins of the address, as
- *    `POST /v1/auth/reauthentication` says (`429 auth.account-locked`). A right one counts
- *    as a recent authentication of this session.
+ * 2. For an account with two-step verification only, a recent two-step proof of this
+ *    session (see "Recent authentication"): without one, `403 auth.reauthentication-required`
+ *    with `details.methods: [authenticator-app]`, before the current password is checked or
+ *    counted.
+ * 3. The current password, always required. A wrong one answers
+ *    `422 auth.password-incorrect` with `details.remainingAttempts` and counts with the
+ *    failed sign-ins of the address, as `POST /v1/auth/reauthentication` says
+ *    (`429 auth.account-locked`). For an account without two-step verification, a right one
+ *    counts as a recent authentication of this session, and no other recent authentication
+ *    is required: the current password stands for it. For an account with two-step
+ *    verification, it never counts as one.
  *
- * Recent authentication is not required: the current password stands for it. The change
+ * The change
  * drops a pending change of address, ends the recent authentication of every other session,
  * which stay open, drops their pending two-step setups and key registrations and the open
  * challenge of the account, and forgets every trusted device of the account, this browser's
@@ -1183,7 +1195,9 @@ export const StartAuthenticatorAppSetupResponse = zod.object({
  *   setup stays pending. A setup that expired, was replaced, or belongs to another session,
  *   or no setup: `422 auth.two-step-setup-expired`, and the person starts again.
  *
- * Recent authentication is not required again: the start required it. Emits
+ * Recent authentication is not required again: the start required it. The right code counts
+ * as a recent two-step authentication of this session, and turning two-step verification on
+ * ends the windows that the other sessions of the account opened with a password. Emits
  * `user.two-step-verification-changed.v1`, from which notification-service sends a security
  * email ("La vérification en deux étapes est activée") and organization-service updates its
  * directory. Session only: a personal API token gets `403 auth.api-token-not-accepted`.

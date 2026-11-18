@@ -92,12 +92,19 @@ export class AccountService {
  * 1. The new password, against the rules of the sign-up: 12 characters at least, no
  *    composition rule, not in the list of compromised passwords
  *    (`422 auth.password-too-short`, `422 auth.password-compromised`). No attempt is counted.
- * 2. The current password. A wrong one answers `422 auth.password-incorrect` with
- *    `details.remainingAttempts` and counts with the failed sign-ins of the address, as
- *    `POST /v1/auth/reauthentication` says (`429 auth.account-locked`). A right one counts
- *    as a recent authentication of this session.
+ * 2. For an account with two-step verification only, a recent two-step proof of this
+ *    session (see "Recent authentication"): without one, `403 auth.reauthentication-required`
+ *    with `details.methods: [authenticator-app]`, before the current password is checked or
+ *    counted.
+ * 3. The current password, always required. A wrong one answers
+ *    `422 auth.password-incorrect` with `details.remainingAttempts` and counts with the
+ *    failed sign-ins of the address, as `POST /v1/auth/reauthentication` says
+ *    (`429 auth.account-locked`). For an account without two-step verification, a right one
+ *    counts as a recent authentication of this session, and no other recent authentication
+ *    is required: the current password stands for it. For an account with two-step
+ *    verification, it never counts as one.
  *
- * Recent authentication is not required: the current password stands for it. The change
+ * The change
  * drops a pending change of address, ends the recent authentication of every other session,
  * which stay open, drops their pending two-step setups and key registrations and the open
  * challenge of the account, and forgets every trusted device of the account, this browser's

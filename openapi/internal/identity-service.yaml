@@ -121,17 +121,23 @@ info:
     revocation of a session by the id of the public path relays `404 session.not-found` as is.
 
     **Recent authentication.** identity-service records, per session, when its person last proved
-    who they are: the sign-in that opened it (or the answer of its challenge),
-    `POST /internal/v1/sessions/{sessionId}/reauthentication` with a password or a code of the
-    authenticator app, or the right current password of `PUT /internal/v1/users/{userId}/password`.
-    The request of a change of address, the scheduling of the deletion, the creation of a personal
-    API token, the change of the authentication policy of an organization, and the routes of
-    two-step verification that start or remove something (the start
-    of the setup of the app, its disabling, the regeneration of the backup codes, the start of the
-    registration of a security key and its removal) require it within the last 10 minutes, else
-    they answer `403 auth.reauthentication-required` with `details.methods` (`password`, and
-    `authenticator-app` for an account with the app). identity-service answers this code itself;
-    the gateway forwards it with its French title, unlike the refusals of the internal token.
+    who they are, and how. For an account without two-step verification: the sign-in that opened
+    the session, the password of `POST /internal/v1/sessions/{sessionId}/reauthentication`, or the
+    right current password of `PUT /internal/v1/users/{userId}/password`. For an account with
+    two-step verification, a two-step proof only: the answer of the challenge of the sign-in that
+    opened the session (a sign-in on a trusted device, which skipped it, records nothing), the
+    `code` of the re-authentication, or the code that confirms the authenticator app; a password
+    never counts, and turning two-step verification on ends the windows other sessions opened
+    with a password. The request of a change of address, the scheduling of the deletion, the
+    creation of a personal API token, the change of the authentication policy of an organization,
+    the routes of two-step verification that start or remove something (the start of the setup of
+    the app, its disabling, the regeneration of the backup codes, the start of the registration of
+    a security key and its removal), and, for an account with two-step verification, the change of
+    the password require it within the last 10 minutes, else they answer
+    `403 auth.reauthentication-required` with `details.methods`: `[password]` without two-step
+    verification, `[authenticator-app]` with it (a security key does not confirm in this
+    version). identity-service answers this code itself; the gateway forwards it with its French
+    title, unlike the refusals of the internal token.
 
     **Lockout.** The failed passwords of the re-authentication and of the password change count
     with the failed sign-ins of the address of the account: 5 in a row lock its password sign-in
@@ -1133,14 +1139,18 @@ paths:
       operationId: reauthenticateInternal
       summary: Confirm who the person of a session is
       description: |
-        Checks the password, or the `code` of the authenticator app, of the actor and records a
-        recent authentication of the session, which opens the 10-minute window of the guarded
-        routes. Both or neither answer `400 request.invalid`, and a `code` for an account without
-        an authenticator app `409 auth.two-step-not-enabled`. A wrong password answers `422 auth.password-incorrect` and counts
-        with the failed sign-ins of the address (`429 auth.account-locked` once locked); a wrong or
-        used code answers `422 auth.two-step-code-invalid` and counts with the wrong answers of the
-        two-step challenges of the account (`429 auth.two-step-locked` once locked); the session
-        stays open either way. A session of another user, an unknown or an ended one, answers
+        Checks the password of an actor without two-step verification, or the `code` of the
+        authenticator app of an actor with it, and records a recent authentication of the session,
+        which opens the 10-minute window of the guarded routes. Both or neither answer
+        `400 request.invalid`; a `password` for an account with two-step verification answers
+        `403 auth.reauthentication-required` with `details.methods: [authenticator-app]`, without
+        checking or counting the password; a `code` for an account without an authenticator app
+        answers `409 auth.two-step-not-enabled`. A wrong password answers
+        `422 auth.password-incorrect` and counts with the failed sign-ins of the address
+        (`429 auth.account-locked` once locked); a wrong or used code answers
+        `422 auth.two-step-code-invalid` and counts with the wrong answers of the two-step
+        challenges of the account (`429 auth.two-step-locked` once locked); the session stays open
+        either way. A session of another user, an unknown or an ended one, answers
         `404 session.not-found`. Internal token: actor `user`, no organization.
       tags: [sessions]
       parameters:
@@ -1175,7 +1185,7 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/RecentAuthenticationRequired'
         '404':
           $ref: '#/components/responses/SessionNotFound'
         '409':
@@ -1288,9 +1298,13 @@ paths:
       description: |
         Replaces the password of the actor, as `PUT /v1/me/password` says: the new password is
         checked first (`422 auth.password-too-short`, `422 auth.password-compromised`), without
-        counting an attempt; then the current one (`422 auth.password-incorrect`, counted with the
-        failed sign-ins; `429 auth.account-locked`). A right current password records a recent
-        authentication of `sessionId`. Every session stays open, but a pending change of address is
+        counting an attempt; then, for an account with two-step verification only, a recent
+        two-step proof of `sessionId` (`403 auth.reauthentication-required` with
+        `details.methods: [authenticator-app]`, before the current password is checked or
+        counted); then the current one, always required (`422 auth.password-incorrect`, counted
+        with the failed sign-ins; `429 auth.account-locked`). For an account without two-step
+        verification, a right current password records a recent authentication of `sessionId`;
+        for an account with it, it records none. Every session stays open, but a pending change of address is
         dropped, the recent authentication of the other sessions ends with their pending two-step
         setups and key registrations, the open challenge of the account is voided, and every
         trusted device of the account is forgotten. Answers the account with
@@ -1341,7 +1355,7 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/RecentAuthenticationRequired'
         '404':
           $ref: '#/components/responses/UserOrSessionNotFound'
         '422':
@@ -1640,8 +1654,11 @@ paths:
         Checks `code` against the secret of the pending setup of `sessionId` and, in one
         transaction, makes it the authenticator app of the actor and ends the pending setup. When
         two-step verification was off, it turns on with 10 new backup codes, returned once and
-        kept as HMAC-SHA-256 under a key derived from the pepper (`change: enabled`); otherwise the new app replaces the previous one and the
-        backup codes stay (`backupCodes: null`, `change: authenticator-app-replaced`). Emits
+        kept as HMAC-SHA-256 under a key derived from the pepper (`change: enabled`); otherwise
+        the new app replaces the previous one and the backup codes stay (`backupCodes: null`,
+        `change: authenticator-app-replaced`). The right code records a recent two-step
+        authentication of `sessionId`, and turning two-step verification on ends the recent
+        authentication other sessions of the actor opened with a password. Emits
         `user.two-step-verification-changed.v1` with the device of the `client`. No pending setup
         of `sessionId`, or an expired one: `422 auth.two-step-setup-expired`; a wrong code:
         `422 auth.two-step-code-invalid`, without a count. Recent authentication is not required
@@ -3011,9 +3028,11 @@ components:
     RecentAuthenticationRequired:
       description: |
         - `auth.reauthentication-required`: the session has no authentication in the last 10
-          minutes. `details.methods` lists the ways its person can confirm: `password`, then
-          `authenticator-app` for an account with an authenticator app; the gateway forwards the
-          code, its `details` and the French title of `openapi/public/auth.yaml`;
+          minutes that counts for its account, or the re-authentication sent a password for an
+          account with two-step verification. `details.methods` lists the ways its person can
+          confirm: `[password]` without two-step verification, `[authenticator-app]` with it; the
+          gateway forwards the code, its `details` and the French title of
+          `openapi/public/auth.yaml`;
         - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, and `auth.organization-required` on
           a route that requires an organization: see the internal token.
       content:
@@ -3030,6 +3049,15 @@ components:
                 code: auth.reauthentication-required
                 details:
                   methods: [password]
+            reauthenticationRequiredWithApp:
+              summary: No recent two-step proof, account with two-step verification
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.reauthentication-required
+                details:
+                  methods: [authenticator-app]
             actorNotAllowed:
               summary: Actor not accepted
               value:
@@ -3672,9 +3700,10 @@ components:
     ReauthenticationRequest:
       type: object
       description: |
-        `password`, or `code` for an account with an authenticator app; both or neither answer
-        `400 request.invalid`, and `code` without an authenticator app
-        `409 auth.two-step-not-enabled`, checked here.
+        `password` for an account without two-step verification, `code` for an account with it.
+        Both or neither answer `400 request.invalid`, `password` for an account with two-step
+        verification `403 auth.reauthentication-required`, and `code` without an authenticator
+        app `409 auth.two-step-not-enabled`, checked here.
       properties:
         password:
           type: string

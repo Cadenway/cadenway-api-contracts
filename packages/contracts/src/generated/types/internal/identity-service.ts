@@ -547,9 +547,10 @@ export interface PasswordResetCompleted {
 export type TwoStepCode = string;
 
 /**
- * `password`, or `code` for an account with an authenticator app; both or neither answer
- * `400 request.invalid`, and `code` without an authenticator app
- * `409 auth.two-step-not-enabled`, checked here.
+ * `password` for an account without two-step verification, `code` for an account with it.
+ * Both or neither answer `400 request.invalid`, `password` for an account with two-step
+ * verification `403 auth.reauthentication-required`, and `code` without an authenticator
+ * app `409 auth.two-step-not-enabled`, checked here.
  */
 export interface ReauthenticationRequest {
   /**
@@ -1389,9 +1390,11 @@ export type PasswordChangeRefusedResponse = Problem;
 
 /**
  * - `auth.reauthentication-required`: the session has no authentication in the last 10
- *   minutes. `details.methods` lists the ways its person can confirm: `password`, then
- *   `authenticator-app` for an account with an authenticator app; the gateway forwards the
- *   code, its `details` and the French title of `openapi/public/auth.yaml`;
+ *   minutes that counts for its account, or the re-authentication sent a password for an
+ *   account with two-step verification. `details.methods` lists the ways its person can
+ *   confirm: `[password]` without two-step verification, `[authenticator-app]` with it; the
+ *   gateway forwards the code, its `details` and the French title of
+ *   `openapi/public/auth.yaml`;
  * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, and `auth.organization-required` on
  *   a route that requires an organization: see the internal token.
  */

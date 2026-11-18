@@ -960,14 +960,18 @@ export const ConfirmPasswordResetInternalResponse = zod.object({
 
 
 /**
- * Checks the password, or the `code` of the authenticator app, of the actor and records a
- * recent authentication of the session, which opens the 10-minute window of the guarded
- * routes. Both or neither answer `400 request.invalid`, and a `code` for an account without
- * an authenticator app `409 auth.two-step-not-enabled`. A wrong password answers `422 auth.password-incorrect` and counts
- * with the failed sign-ins of the address (`429 auth.account-locked` once locked); a wrong or
- * used code answers `422 auth.two-step-code-invalid` and counts with the wrong answers of the
- * two-step challenges of the account (`429 auth.two-step-locked` once locked); the session
- * stays open either way. A session of another user, an unknown or an ended one, answers
+ * Checks the password of an actor without two-step verification, or the `code` of the
+ * authenticator app of an actor with it, and records a recent authentication of the session,
+ * which opens the 10-minute window of the guarded routes. Both or neither answer
+ * `400 request.invalid`; a `password` for an account with two-step verification answers
+ * `403 auth.reauthentication-required` with `details.methods: [authenticator-app]`, without
+ * checking or counting the password; a `code` for an account without an authenticator app
+ * answers `409 auth.two-step-not-enabled`. A wrong password answers
+ * `422 auth.password-incorrect` and counts with the failed sign-ins of the address
+ * (`429 auth.account-locked` once locked); a wrong or used code answers
+ * `422 auth.two-step-code-invalid` and counts with the wrong answers of the two-step
+ * challenges of the account (`429 auth.two-step-locked` once locked); the session stays open
+ * either way. A session of another user, an unknown or an ended one, answers
  * `404 session.not-found`. Internal token: actor `user`, no organization.
  * @summary Confirm who the person of a session is
  */
@@ -983,7 +987,7 @@ export const reauthenticateInternalBodyCodeRegExp = new RegExp('^[0-9]{6}$');
 export const ReauthenticateInternalBody = zod.object({
   "password": zod.string().min(1).max(reauthenticateInternalBodyPasswordMax).optional().describe('Never logged.'),
   "code": zod.string().regex(reauthenticateInternalBodyCodeRegExp).optional().describe('The 6 digits of the authenticator app. A time step already accepted is refused. Never logged.')
-}).describe('`password`, or `code` for an account with an authenticator app; both or neither answer\n`400 request.invalid`, and `code` without an authenticator app\n`409 auth.two-step-not-enabled`, checked here.\n')
+}).describe('`password` for an account without two-step verification, `code` for an account with it.\nBoth or neither answer `400 request.invalid`, `password` for an account with two-step\nverification `403 auth.reauthentication-required`, and `code` without an authenticator\napp `409 auth.two-step-not-enabled`, checked here.\n')
 
 export const ReauthenticateInternalResponse = zod.object({
   "authenticatedAt": zod.iso.datetime({"offset":true}).describe('The recent authentication recorded for the session.'),
@@ -1062,9 +1066,13 @@ export const ListUserSessionsInternalResponse = zod.object({
 /**
  * Replaces the password of the actor, as `PUT /v1/me/password` says: the new password is
  * checked first (`422 auth.password-too-short`, `422 auth.password-compromised`), without
- * counting an attempt; then the current one (`422 auth.password-incorrect`, counted with the
- * failed sign-ins; `429 auth.account-locked`). A right current password records a recent
- * authentication of `sessionId`. Every session stays open, but a pending change of address is
+ * counting an attempt; then, for an account with two-step verification only, a recent
+ * two-step proof of `sessionId` (`403 auth.reauthentication-required` with
+ * `details.methods: [authenticator-app]`, before the current password is checked or
+ * counted); then the current one, always required (`422 auth.password-incorrect`, counted
+ * with the failed sign-ins; `429 auth.account-locked`). For an account without two-step
+ * verification, a right current password records a recent authentication of `sessionId`;
+ * for an account with it, it records none. Every session stays open, but a pending change of address is
  * dropped, the recent authentication of the other sessions ends with their pending two-step
  * setups and key registrations, the open challenge of the account is voided, and every
  * trusted device of the account is forgotten. Answers the account with
@@ -1354,8 +1362,11 @@ export const StartAuthenticatorAppSetupInternalResponse = zod.object({
  * Checks `code` against the secret of the pending setup of `sessionId` and, in one
  * transaction, makes it the authenticator app of the actor and ends the pending setup. When
  * two-step verification was off, it turns on with 10 new backup codes, returned once and
- * kept as HMAC-SHA-256 under a key derived from the pepper (`change: enabled`); otherwise the new app replaces the previous one and the
- * backup codes stay (`backupCodes: null`, `change: authenticator-app-replaced`). Emits
+ * kept as HMAC-SHA-256 under a key derived from the pepper (`change: enabled`); otherwise
+ * the new app replaces the previous one and the backup codes stay (`backupCodes: null`,
+ * `change: authenticator-app-replaced`). The right code records a recent two-step
+ * authentication of `sessionId`, and turning two-step verification on ends the recent
+ * authentication other sessions of the actor opened with a password. Emits
  * `user.two-step-verification-changed.v1` with the device of the `client`. No pending setup
  * of `sessionId`, or an expired one: `422 auth.two-step-setup-expired`; a wrong code:
  * `422 auth.two-step-code-invalid`, without a count. Recent authentication is not required

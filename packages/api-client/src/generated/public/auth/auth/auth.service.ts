@@ -906,11 +906,17 @@ export class AuthService {
 /**
  * Opens the window of recent authentication of this session for 10 minutes (see "Recent
  * authentication" above). The web application calls it when a route answered
- * `403 auth.reauthentication-required`, then repeats that request. It sends one of the
- * methods of `details.methods`: `password`, or `code`, the 6 digits of the authenticator app
- * of an account with two-step verification. Both or neither answer `400 request.invalid`;
- * `code` for an account without an authenticator app answers
- * `409 auth.two-step-not-enabled`.
+ * `403 auth.reauthentication-required`, then repeats that request. It sends the method of
+ * `details.methods`: `password` for an account without two-step verification, `code`, the 6
+ * digits of the authenticator app, for an account with it.
+ *
+ * - Both or neither answer `400 request.invalid`.
+ * - `password` for an account with two-step verification answers
+ *   `403 auth.reauthentication-required` with `details.methods: [authenticator-app]`: a
+ *   password alone never confirms such an account. The password is not checked and no
+ *   attempt is counted, so the route tells nothing about it.
+ * - `code` for an account without an authenticator app answers
+ *   `409 auth.two-step-not-enabled`.
  *
  * - A wrong password answers `422 auth.password-incorrect` with
  *   `details.remainingAttempts`. It counts with the failed sign-ins of the address of the
@@ -920,8 +926,7 @@ export class AuthService {
  * - A wrong or already used code answers `422 auth.two-step-code-invalid` with
  *   `details.remainingAttempts`. It counts with the wrong answers of the two-step challenges
  *   of the account: the fifth in a row, and every code during the lockout, answer
- *   `429 auth.two-step-locked` (15 minutes), which leaves this session open and the
- *   password usable.
+ *   `429 auth.two-step-locked` (15 minutes), which leaves this session open.
  *
  * Session only: a personal API token gets `403 auth.api-token-not-accepted`.
  * @summary Confirm who the signed-in person is

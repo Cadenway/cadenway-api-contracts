@@ -313,17 +313,23 @@ export interface PasswordResetCompleted {
 export type TwoStepCode = string;
 
 /**
- * One of the methods of `details.methods`: `password`, or `code` for `authenticator-app`.
- * Both or neither answer `400 request.invalid`, and `code` for an account without an
- * authenticator app `409 auth.two-step-not-enabled`, both checked by identity-service.
+ * The method of `details.methods`: `password` for an account without two-step verification,
+ * `code` (`authenticator-app`) for an account with it. Both or neither answer
+ * `400 request.invalid`, `password` for an account with two-step verification
+ * `403 auth.reauthentication-required`, and `code` for an account without an authenticator
+ * app `409 auth.two-step-not-enabled`, all checked by identity-service.
  */
 export interface ReauthenticationRequest {
   /**
-     * The current password of the account. Never logged.
+     * The current password of an account without two-step verification. Never logged.
      * @minLength 1
      * @maxLength 256
      */
   password?: string;
+  /**
+     * The 6 digits the authenticator app of an account with two-step verification shows now.
+     * Works once. Never logged.
+     */
   code?: TwoStepCode;
 }
 
@@ -1110,11 +1116,13 @@ export type SessionWriteForbiddenResponse = Problem;
 
 /**
  * - `auth.reauthentication-required`: the person of this session has not proved who they are
- *   in the last 10 minutes (see "Recent authentication"). `details.methods` lists the ways
- *   they can, in the order to offer them, for `POST /v1/auth/reauthentication`: `password`,
- *   then `authenticator-app` (its `code`) when the account has an authenticator app; later
- *   versions add methods, and a client ignores a method it does not know. The web
- *   application asks, confirms, then repeats the request;
+ *   in the last 10 minutes (see "Recent authentication"), or, on
+ *   `POST /v1/auth/reauthentication`, sent a password for an account with two-step
+ *   verification. `details.methods` lists the ways they can, for
+ *   `POST /v1/auth/reauthentication`: `[password]` for an account without two-step
+ *   verification, `[authenticator-app]` (its `code`) for an account with it, never the
+ *   password then; later versions add methods, and a client ignores a method it does not
+ *   know. The web application asks, confirms, then repeats the request;
  * - `auth.csrf-rejected`: see `CrossSiteRefused`;
  * - `auth.api-token-not-accepted`: a personal API token cannot call this route.
  */
