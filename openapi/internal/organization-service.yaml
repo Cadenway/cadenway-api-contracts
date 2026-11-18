@@ -60,7 +60,10 @@ info:
     history of these events, not only those published after it subscribed, and applies each
     account by its `version`, so that a late `user.signed-up.v1` never overwrites a newer profile.
     On `user.deleted.v1` it removes the memberships of the account (`member.removed.v1`) and
-    forgets its name and address.
+    forgets its name and address. It also keeps whether each account has two-step verification,
+    from the `enabled` of `user.two-step-verification-changed.v1`, applied by the `version` of the
+    account like the other parts, `false` until an event says otherwise, for the column "Deux
+    étapes" of the member list.
 
     **Errors.** The gateway forwards the `code` and the `details` and answers the French `title`
     of the public spec; the titles here are English. The internal client does not carry the
@@ -274,8 +277,10 @@ paths:
       summary: List the members
       description: |
         Lists the members of the organization of the token, with `total` and `counts` as
-        `GET /v1/members` says. A guest gets `403 organization.role-forbidden`. Internal token:
-        actor `user`, organization required.
+        `GET /v1/members` says. A guest gets `403 organization.role-forbidden`. For an actor who
+        is the owner or an admin, each member carries `twoStepVerificationEnabled` from the user
+        directory; for any other actor the member is absent. Internal token: actor `user`,
+        organization required.
       tags: [members]
       parameters:
         - $ref: '../../components/http.yaml#/components/parameters/Cursor'
@@ -1377,6 +1382,13 @@ components:
         version:
           type: integer
           minimum: 1
+        twoStepVerificationEnabled:
+          type: boolean
+          description: |
+            Whether the account has two-step verification, from the user directory
+            (`user.two-step-verification-changed.v1`), `false` until an event says otherwise.
+            Present when the actor is the owner or an admin of the organization, absent otherwise;
+            the gateway passes it on as is.
     MemberPage:
       type: object
       required: [items, nextCursor, total, counts]

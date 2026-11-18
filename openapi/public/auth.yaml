@@ -1,26 +1,54 @@
 # Public routes of authentication: sign-up, email verification, sign-in by password or by email
-# code, sign-out, password reset and recent re-authentication, the current user and its profile,
-# and the security of the account (password, address, open sessions, deletion). Served by
-# cadenway-api-gateway, which calls openapi/internal/identity-service.yaml for each of them.
+# code and its two-step challenge, sign-out, password reset and recent re-authentication, the
+# current user and its profile, and the security of the account (password, address, two-step
+# verification, open sessions, deletion). Served by cadenway-api-gateway, which calls
+# openapi/internal/identity-service.yaml for each of them.
 openapi: 3.1.0
 info:
   title: Cadenway authentication
   version: 1.0.0
   description: |
     How a person creates an account, proves the address, signs in and out, reads who they are, and
-    keeps the account safe: the password, its reset, the open sessions, the address and the
-    deletion of the account. The API gateway serves these routes and answers them through
-    identity-service.
+    keeps the account safe: the password, its reset, the two-step verification, the open sessions,
+    the address and the deletion of the account. The API gateway serves these routes and answers
+    them through identity-service.
 
     **Sessions.** A session travels only in the cookie `__Host-cw_session`, set by the gateway on the
     responses that sign in (`Set-Cookie`) and cleared by the sign-out and by the scheduling of the
     deletion of the account. The token is opaque: the gateway checks it on every request with
     identity-service, without a cache, so a revoked session stops at the next request. The web
     application never reads it (`HttpOnly`). A route without a session (`security: []`) ignores the
-    cookie and any bearer token: a stale one never makes it fail. The responses that sign in,
-    `GET /v1/me` and the routes of the tags `account` and `sessions` carry
-    `Cache-Control: no-store`. The person lists their open sessions and closes them
-    (`GET /v1/sessions`, `DELETE /v1/sessions/{sessionId}`, `POST /v1/sessions/revoke-others`).
+    cookie and any bearer token: a stale one never makes it fail. The responses that sign in or
+    answer a two-step challenge, `GET /v1/me` and the routes of the tags `account`,
+    `two-step-verification` and `sessions` carry `Cache-Control: no-store`. The person lists their
+    open sessions and closes them (`GET /v1/sessions`, `DELETE /v1/sessions/{sessionId}`,
+    `POST /v1/sessions/revoke-others`). A session ends after the inactivity the authentication
+    policy of its current organization sets (1 hour, 12 hours, 7 days or 30 days;
+    `openapi/public/organizations.yaml`), 12 hours without an organization.
+
+    **Two-step verification** ("Vérification en deux étapes"). The person turns it on from their
+    account with an authenticator app (TOTP, RFC 6238: 30-second steps, 6 digits, one step of
+    tolerance either way, a code accepted once only), which also gives them 10 backup codes
+    (`XXXX-XXXX`, shown once, each used once), and may then add security keys or biometrics
+    (WebAuthn). From then on, a sign-in whose password or email code is right answers `202` with a
+    challenge instead of a session, unless the browser is a trusted device; the person answers it
+    with a code of the app, a backup code or a security key (`/v1/auth/sign-in/challenge/…`), and
+    only the right answer opens the session. Five wrong answers in a row, across the challenges of
+    the account and the two-step confirmations of `POST /v1/auth/reauthentication`, lock the
+    answers of the account for 15 minutes (`429 auth.two-step-locked`). identity-service keeps the
+    secret of the app encrypted and the backup codes and challenge tokens hashed; the secret and the
+    backup codes reach the browser once each, in the answer of the route that creates them, and
+    never travel in an event or an email.
+
+    **Trusted devices.** An answer with `trustDevice: true` ("Faire confiance à cet appareil pendant
+    30 jours") makes the gateway set a second cookie, `__Host-cw_trusted_device`
+    (`Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=2592000`): for 30 days the sign-ins of that
+    account from this browser skip the challenge. The cookie holds an opaque token of the account,
+    which identity-service keeps hashed; the gateway sends it to identity-service on the two
+    sign-ins only and never logs it. A browser trusts one account at a time: trusting another one
+    replaces the cookie. A password change or reset, closing the other sessions, turning two-step
+    verification off and scheduling the deletion of the account forget every trusted device of the
+    account at once; a stale cookie is then ignored, and the sign-in answers the challenge.
 
     **Credentials and scopes.** Every public operation of Cadenway declares in its own `security`
     what may call it: `sessionCookie: []` for a session, `apiToken: [<scope>]` for a personal API
@@ -51,16 +79,20 @@ info:
     received it at that address.
 
     **Recent authentication.** Changing the address (`POST /v1/me/email-change`), scheduling the
-    deletion of the account (`POST /v1/me/deletion`) and creating a personal API token
-    (`POST /v1/api-tokens`, `openapi/public/api-tokens.yaml`) need a session whose person proved
-    who they are in the last 10 minutes: the sign-in that opened the session, a password confirmed
-    with `POST /v1/auth/reauthentication`, or the current password of a password change
+    deletion of the account (`POST /v1/me/deletion`), creating a personal API token
+    (`POST /v1/api-tokens`, `openapi/public/api-tokens.yaml`) and every change of the two-step
+    verification that starts or removes something (setting up or reconfiguring the app, turning it
+    off, regenerating the backup codes, starting the registration of a security key and removing
+    one) need a session whose person proved who they are in the last 10 minutes: the sign-in that
+    opened the session, a password or a code of the app confirmed with
+    `POST /v1/auth/reauthentication`, or the current password of a password change
     (`PUT /v1/me/password`). Otherwise they answer `403 auth.reauthentication-required`, with
-    `details.methods`, the ways the person can confirm (`password` today): the web application asks
-    for it, calls `POST /v1/auth/reauthentication`, then repeats the request. The window belongs to
-    one session: confirming in one browser does not open it in another. identity-service answers
-    this code, which the gateway forwards. Later versions add the routes of two-step verification
-    to the guarded ones and accept a two-step code as a confirmation.
+    `details.methods`, the ways the person can confirm (`password`, and `authenticator-app` once the
+    account has it): the web application asks for one, calls `POST /v1/auth/reauthentication`, then
+    repeats the request. The window belongs to one session: confirming in one browser does not open
+    it in another. identity-service answers this code, which the gateway forwards. The steps that
+    complete a started change (the code that confirms the app, the key that answers its
+    registration options) need no new confirmation: their start did.
 
     **Security emails.** identity-service tells notification-service what happened, through the
     events of `asyncapi/identity-service.yaml`, and notification-service sends the email, in French
@@ -68,7 +100,9 @@ info:
     travels only in a restricted event (`password-reset-link.issued.v1`), the code of a change of
     address in `one-time-code.issued.v1`; the other emails come from facts of the account
     (`user.password-changed.v1`, `user.email-changed.v1`, `session.opened-on-new-device.v1`,
-    `user.deletion-scheduled.v1`, `user.deletion-cancelled.v1`).
+    `user.deletion-scheduled.v1`, `user.deletion-cancelled.v1`,
+    `user.two-step-verification-changed.v1`). No email carries a secret of two-step verification:
+    the backup codes are shown once in the web application, never emailed.
 
     **Errors.** Every error is an `application/problem+json` problem with a stable `code`. The
     `code` is the contract. For a code the web application shows to the person, `title` is French
@@ -80,23 +114,22 @@ info:
     the person to the sign-in screen on it.
 
     **Status codes of actions.** These routes are actions, not resources: none answers `201` with a
-    `Location`. A route that sends a code or a link answers `202`, one that signs in answers `200`
-    with the cookie, the sign-out and the revocation of a session answer `204`, and the scheduling
-    of the deletion answers `202` and clears the cookie. No route here signs in other than the
-    sign-up verification and the two sign-ins: the password reset never does.
+    `Location`, but the addition of a security key. A route that sends a code or a link answers
+    `202`; one that signs in answers `200` with the cookie, or, for the two sign-ins of an account
+    with two-step verification, `202` with a challenge and no cookie; the answers of a challenge
+    answer `200` with the cookie; the sign-out, the revocation of a session and the removals answer
+    `204`; and the scheduling of the deletion answers `202` and clears the cookie. Only a `200`
+    means signed in: a client checks the status (or the presence of `session`) rather than taking
+    any success for a sign-in. No route here signs in other than the sign-up verification, the two
+    sign-ins and the answers of their challenge: the password reset never does.
 
     **Later versions** add, without changing what is here: OAuth providers and SAML single sign-on
-    (new method types in the discovery, new routes); two-step verification, whose sign-in answers
-    `202` with a challenge and no cookie, a `200` always carrying a session. Only a `200` means
-    signed in: a client built on this version checks the status (or the presence of `session`)
-    rather than taking any success for a sign-in, and the gateway answers an internal success other
-    than `200` on these routes as an upstream failure until it knows the challenge; a two-step code
-    as a confirmation of
-    `POST /v1/auth/reauthentication` (`password` then becomes optional beside it); the trusted
-    devices; the authentication policy of an organization; and the photo. The organizations, the
-    current organization of the session and the personal API tokens are in
-    `openapi/public/organizations.yaml`, `openapi/public/members.yaml` and
-    `openapi/public/api-tokens.yaml`.
+    (new method types in the discovery, new routes); new two-step methods (new values of the
+    method lists, which a client ignores when it does not know them); the list of the trusted
+    devices; the reset of the two-step verification of a member by an administrator; and the
+    photo. The organizations, the current organization of the session, its authentication policy
+    and the personal API tokens are in `openapi/public/organizations.yaml`,
+    `openapi/public/members.yaml` and `openapi/public/api-tokens.yaml`.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -107,7 +140,7 @@ info:
     - repository: cadenway-api-gateway
       uses: Serves every route, through openapi/internal/identity-service.yaml.
     - repository: cadenway-webapp
-      uses: Calls every route through @cadenway/api-client (sign-in, sign-up, code, password reset and sign-out screens, account "Profil", "Préférences" and "Sécurité").
+      uses: Calls every route through @cadenway/api-client (sign-in, sign-up, code, two-step challenge, password reset and sign-out screens, account "Profil", "Préférences" and "Sécurité").
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -118,10 +151,14 @@ security:
 tags:
   - name: auth
     description: |
-      Sign-up, email verification, sign-in, sign-out, password reset, recent re-authentication, and
-      the current user and its profile.
+      Sign-up, email verification, sign-in and its two-step challenge, sign-out, password reset,
+      recent re-authentication, and the current user and its profile.
   - name: account
     description: The security of the account of the signed-in person, its password, its address and its deletion.
+  - name: two-step-verification
+    description: |
+      The two-step verification of the account of the signed-in person: its authenticator app, its
+      backup codes and its security keys.
   - name: sessions
     description: The open sessions of the signed-in person.
 paths:
@@ -292,7 +329,11 @@ paths:
         application always sends `password`, the one typed in the sign-up form; on
         `auth.sign-up-replaced` the person signs up again (`POST /v1/auth/sign-up`), which
         replaces the pending sign-up and sends a new code. `auth.sign-up-replaced` needs the right
-        code, so it tells a caller without the code nothing. No session needed. Scopes: none.
+        code, so it tells a caller without the code nothing.
+
+        It never answers a two-step challenge: an account that has just proved its address has no
+        two-step verification yet, and belongs to no organization whose policy could require it. No
+        session needed. Scopes: none.
       tags: [auth]
       security: []
       requestBody:
@@ -339,11 +380,18 @@ paths:
           `user.deletion-cancelled.v1` is emitted. Signing in is the only way to cancel it.
         - A sign-in from a device the account did not use in the last 90 days (see
           `session.opened-on-new-device.v1`) sends the email "Nouvelle connexion".
+        - The right password of an account with two-step verification answers `202` with a
+          two-step challenge and no cookie ("Vérification en deux étapes"), unless the request
+          carries the cookie `__Host-cw_trusted_device` of a device this account trusts (see
+          "Trusted devices"). The web application then shows the challenge and answers it with one
+          of `/v1/auth/sign-in/challenge/authenticator-app`, `/backup-code` or `/security-key`;
+          only the `200` of that answer opens the session, cancels a scheduled deletion and counts
+          the device. A new challenge of the account makes the previous one stop working.
+          `rememberMe` is kept with the challenge and applies to the session its answer opens.
 
-        Later versions add two-step verification: a sign-in that needs it answers `202` with a
-        challenge and no cookie, and only the `200` that completes it opens the session, cancels a
-        scheduled deletion and counts the device. Only a `200` means signed in: a client checks the
-        status, not merely a success. No session needed. Scopes: none.
+        Only a `200` means signed in: a client checks the status, not merely a success. A wrong
+        password answers the same way whether or not the account has two-step verification. No
+        session needed. Scopes: none.
       tags: [auth]
       security: []
       requestBody:
@@ -359,6 +407,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/SignedIn'
+        '202':
+          $ref: '#/components/responses/ChallengeIssued'
         '400':
           $ref: '#/components/responses/BadRequest'
         '403':
@@ -420,9 +470,11 @@ paths:
 
         As with `POST /v1/auth/sign-in`, the sign-in cancels a scheduled deletion of the account
         (`deletionCancelled: true`, `user.deletion-cancelled.v1`) and, from a device the account did
-        not use in the last 90 days, sends "Nouvelle connexion"; later versions answer `202` with a
-        two-step challenge when the account needs one, and only a `200` means signed in. No session
-        needed. Scopes: none.
+        not use in the last 90 days, sends "Nouvelle connexion". The right code of an account with
+        two-step verification answers `202` with a two-step challenge and no cookie, unless the
+        browser is a trusted device of the account, as `POST /v1/auth/sign-in` says: the email code
+        proves the address, not the second step. Only a `200` means signed in. No session needed.
+        Scopes: none.
       tags: [auth]
       security: []
       requestBody:
@@ -438,6 +490,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/SignedIn'
+        '202':
+          $ref: '#/components/responses/ChallengeIssued'
         '400':
           $ref: '#/components/responses/BadRequest'
         '403':
@@ -446,6 +500,246 @@ paths:
           $ref: '#/components/responses/CodeRefused'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/sign-in/challenge/inspection:
+    post:
+      operationId: inspectSignInChallenge
+      summary: Read a two-step challenge
+      description: |
+        Returns a two-step challenge as the `202` of the sign-in gave it, without answering it: the
+        web application reads it again when the challenge screen opens anew, for example after a
+        reload, from the token it kept for the life of the challenge (`sessionStorage`, never a
+        URL). Reading a challenge does not use it and counts no attempt.
+
+        A challenge that expired (10 minutes after the sign-in), was answered, was replaced by a
+        newer one, or is unknown answers `422 auth.challenge-expired`: the person signs in again.
+        No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeTokenRequest'
+            example:
+              token: ExampleOnlyChallengeToken00000000000000000
+      responses:
+        '200':
+          description: The challenge, as the sign-in issued it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignInChallenge'
+              examples:
+                camilleMartin:
+                  $ref: '#/components/examples/SignInChallenge'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
+        '422':
+          $ref: '#/components/responses/ChallengeExpired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/sign-in/challenge/authenticator-app:
+    post:
+      operationId: answerSignInChallengeWithAuthenticatorApp
+      summary: Answer a two-step challenge with a code of the app
+      description: |
+        Checks the 6 digits the authenticator app shows ("Code de l'application", "Le code change
+        toutes les 30 secondes."). On success the session is opened, as a `200` sign-in does, and
+        the gateway sets the session cookie, and the device cookie with `trustDevice`.
+
+        - A wrong code, or one the account already used, answers `422 auth.two-step-code-invalid`
+          with `details.remainingAttempts`. The fifth wrong answer in a row of the account, and
+          every answer during the lockout, answer `429 auth.two-step-locked` with
+          `details.lockedUntil` (15 minutes) and `Retry-After`.
+        - A challenge no longer usable answers `422 auth.challenge-expired`; the challenge is
+          checked first, so it counts no attempt.
+        - The success uses the challenge up, cancels a scheduled deletion of the account
+          (`deletionCancelled: true`, `user.deletion-cancelled.v1`), counts the device for
+          "Nouvelle connexion" (`session.opened-on-new-device.v1`) and ends the count of wrong
+          answers.
+
+        No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticatorAppAnswer'
+            example:
+              token: ExampleOnlyChallengeToken00000000000000000
+              code: '261845'
+              trustDevice: true
+      responses:
+        '200':
+          $ref: '#/components/responses/ChallengeAnswered'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
+        '422':
+          $ref: '#/components/responses/TwoStepCodeRefused'
+        '429':
+          $ref: '#/components/responses/TwoStepLocked'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/sign-in/challenge/backup-code:
+    post:
+      operationId: answerSignInChallengeWithBackupCode
+      summary: Answer a two-step challenge with a backup code
+      description: |
+        Checks a backup code ("Code de secours", `XXXX-XXXX`), which works once: the success uses
+        it up, and `backupCodesRemaining` of the next challenges counts one less ("Il vous reste 7
+        codes inutilisés. Pensez à en générer de nouveaux depuis votre profil."). The code is read
+        without regard to case, with or without its dash. Otherwise as
+        `POST /v1/auth/sign-in/challenge/authenticator-app`: the same refusals
+        (`422 auth.two-step-code-invalid` for a wrong or used code, `422 auth.challenge-expired`,
+        `429 auth.two-step-locked`), counted with the other answers, and the same effects of the
+        success. No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackupCodeAnswer'
+            example:
+              token: ExampleOnlyChallengeToken00000000000000000
+              code: 4F7K-2M9Q
+              trustDevice: false
+      responses:
+        '200':
+          $ref: '#/components/responses/ChallengeAnswered'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
+        '422':
+          $ref: '#/components/responses/TwoStepCodeRefused'
+        '429':
+          $ref: '#/components/responses/TwoStepLocked'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/sign-in/challenge/security-key/options:
+    post:
+      operationId: getSignInChallengeSecurityKeyOptions
+      summary: Get the WebAuthn options to answer a challenge with a key
+      description: |
+        Returns the options the browser needs to ask a security key or the biometrics of the device
+        ("Utiliser ma clé de sécurité", "Touchez votre clé ou validez avec la biométrie…"): a new
+        WebAuthn challenge, valid 5 minutes, for the keys of the account only. The web application
+        passes `options` to `navigator.credentials.get` (through
+        `PublicKeyCredential.parseRequestOptionsFromJSON` or an equivalent), then sends the answer
+        of the key to `POST /v1/auth/sign-in/challenge/security-key`. Asking again replaces the
+        previous options of the challenge.
+
+        - A challenge no longer usable: `422 auth.challenge-expired`.
+        - An account without a security key: `422 auth.security-key-refused`.
+        - During the lockout of the answers: `429 auth.two-step-locked`.
+
+        No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeTokenRequest'
+            example:
+              token: ExampleOnlyChallengeToken00000000000000000
+      responses:
+        '200':
+          description: The options to pass to the browser.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityKeyAssertionOptions'
+              example:
+                options:
+                  challenge: ExampleOnlyWebAuthnChallenge000000000000000
+                  rpId: cadenway.com
+                  timeout: 300000
+                  userVerification: preferred
+                  allowCredentials:
+                    - id: ExampleOnlyCredentialIdYubiKey5CNfc0000000
+                      type: public-key
+                      transports: [usb, nfc]
+                    - id: ExampleOnlyCredentialIdTouchIdMacBookAir00
+                      type: public-key
+                      transports: [internal]
+                expiresAt: '2026-11-09T07:47:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
+        '422':
+          $ref: '#/components/responses/SecurityKeyAnswerRefused'
+        '429':
+          $ref: '#/components/responses/TwoStepLocked'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/sign-in/challenge/security-key:
+    post:
+      operationId: answerSignInChallengeWithSecurityKey
+      summary: Answer a two-step challenge with a security key
+      description: |
+        Checks the answer of a security key to the options of
+        `POST /v1/auth/sign-in/challenge/security-key/options` ("Clé reconnue : YubiKey 5C NFC").
+        The web application sends `credential` as the browser gave it, serialized as JSON
+        (`PublicKeyCredential.toJSON()` or an equivalent).
+
+        - An answer that does not verify (another key, another challenge, options that expired or
+          were replaced, a signature that does not check) answers `422 auth.security-key-refused`
+          with `details.remainingAttempts`, and counts with the other wrong answers
+          (`429 auth.two-step-locked` on the fifth).
+        - A challenge no longer usable: `422 auth.challenge-expired`.
+        - On success, the effects of `POST /v1/auth/sign-in/challenge/authenticator-app`, and the
+          key records its last use.
+
+        No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityKeyAnswer'
+            example:
+              token: ExampleOnlyChallengeToken00000000000000000
+              credential:
+                id: ExampleOnlyCredentialIdYubiKey5CNfc0000000
+                rawId: ExampleOnlyCredentialIdYubiKey5CNfc0000000
+                type: public-key
+                response:
+                  clientDataJSON: ExampleOnlyClientDataJson
+                  authenticatorData: ExampleOnlyAuthenticatorData
+                  signature: ExampleOnlySignature
+                  userHandle: ExampleOnlyUserHandle
+                authenticatorAttachment: cross-platform
+                clientExtensionResults: {}
+              trustDevice: true
+      responses:
+        '200':
+          $ref: '#/components/responses/ChallengeAnswered'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
+        '422':
+          $ref: '#/components/responses/SecurityKeyAnswerRefused'
+        '429':
+          $ref: '#/components/responses/TwoStepLocked'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/auth/sign-out:
@@ -604,9 +898,11 @@ paths:
         - A link that expired, was used, was replaced or is unknown answers
           `422 auth.reset-link-expired`.
         - The reset ends the lockout of the password sign-in of the address, drops a pending change
-          of address, ends the recent authentication of every session it leaves open, keeps the
-          personal API tokens, and does not cancel a scheduled deletion of the account: only a
-          sign-in does.
+          of address, ends the recent authentication of every session it leaves open, forgets every
+          trusted device of the account, keeps the personal API tokens and the two-step
+          verification, and does not cancel a scheduled deletion of the account: only a sign-in
+          does. The next sign-in of an account with two-step verification answers its challenge,
+          as before the reset.
 
         Emits `user.password-changed.v1` (`method: reset`), from which notification-service sends
         "Votre mot de passe a été modifié" to the address of the account ("Un e-mail de
@@ -647,19 +943,25 @@ paths:
   /v1/auth/reauthentication:
     post:
       operationId: reauthenticate
-      summary: Confirm the password of the signed-in person
+      summary: Confirm who the signed-in person is
       description: |
         Opens the window of recent authentication of this session for 10 minutes (see "Recent
         authentication" above). The web application calls it when a route answered
-        `403 auth.reauthentication-required`, then repeats that request.
+        `403 auth.reauthentication-required`, then repeats that request. It sends one of the
+        methods of `details.methods`: `password`, or `code`, the 6 digits of the authenticator app
+        of an account with two-step verification. Both or neither answer `400 request.invalid`, as
+        does `code` for an account without an authenticator app.
 
         - A wrong password answers `422 auth.password-incorrect` with
           `details.remainingAttempts`. It counts with the failed sign-ins of the address of the
           account: the failure that uses the last attempt, and every attempt during the lockout,
           answer `429 auth.account-locked` (15 minutes). The lockout also refuses the password
           sign-in of the address, but leaves this session open.
-        - Later versions accept a two-step code instead of the password: `password` then becomes
-          optional beside it.
+        - A wrong or already used code answers `422 auth.two-step-code-invalid` with
+          `details.remainingAttempts`. It counts with the wrong answers of the two-step challenges
+          of the account: the fifth in a row, and every code during the lockout, answer
+          `429 auth.two-step-locked` (15 minutes), which leaves this session open and the
+          password usable.
 
         Session only: a personal API token gets `403 auth.api-token-not-accepted`.
       tags: [auth]
@@ -671,11 +973,18 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ReauthenticationRequest'
-            example:
-              password: atelier-nord-sprint-14
+            examples:
+              password:
+                summary: With the password
+                value:
+                  password: atelier-nord-sprint-14
+              authenticatorApp:
+                summary: With a code of the authenticator app
+                value:
+                  code: '261845'
       responses:
         '200':
-          description: The password is right; the guarded routes accept this session until `expiresAt`.
+          description: The password or the code is right; the guarded routes accept this session until `expiresAt`.
           content:
             application/json:
               schema:
@@ -813,8 +1122,10 @@ paths:
            as a recent authentication of this session.
 
         Recent authentication is not required: the current password stands for it. The change
-        drops a pending change of address and ends the recent authentication of every other
-        session, which stay open. Answers the account, with its new `passwordChangedAt` ("Modifié
+        drops a pending change of address, ends the recent authentication of every other session,
+        which stay open, and forgets every trusted device of the account, this browser's included,
+        so that the next sign-in of an account with two-step verification answers its challenge
+        everywhere. Answers the account, with its new `passwordChangedAt` ("Modifié
         aujourd’hui") and the next `version`.
         Emits `user.password-changed.v1` (`method: change`, no session closed), from which
         notification-service sends "Votre mot de passe a été modifié" to the address of the
@@ -1000,8 +1311,10 @@ paths:
       summary: Schedule the deletion of the account
       description: |
         Schedules the deletion of the account in 30 days ("Supprimer mon compte"). At once, every
-        session of the account, this one included, and every personal API token are revoked: the
-        gateway clears the session cookie and the web application shows the sign-out screen.
+        session of the account, this one included, and every personal API token are revoked, and
+        every trusted device is forgotten: the gateway clears the session cookie and the web
+        application shows the sign-out screen. The two-step verification stays: the sign-in that
+        cancels the deletion answers its challenge first.
 
         - Until `deleteAt`, signing in again cancels the deletion ("une connexion suffit pour
           annuler"): `POST /v1/auth/sign-in` or `POST /v1/auth/sign-in/code/verification`, whose
@@ -1060,6 +1373,469 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/me/two-step-verification:
+    get:
+      operationId: getTwoStepVerification
+      summary: Read the two-step verification of the account
+      description: |
+        Returns the state of the card "Vérification en deux étapes" of the account: whether it is
+        on ("Activée" / "Désactivée"), the authenticator app ("Configurée le 3 mars 2026 · méthode
+        principale"), the security keys ("2 clés : YubiKey 5C NFC, Touch ID (MacBook Air)"), the
+        backup codes left ("7 codes inutilisés sur 10"), and the organizations whose policy
+        requires it of the person ("Exigée par Atelier Nord pour les propriétaires et
+        administrateurs."), which the web application names from `GET /v1/organizations`. Never
+        returns a secret. Session only: a personal API token gets
+        `403 auth.api-token-not-accepted`.
+      tags: [two-step-verification]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The two-step verification of the account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TwoStepVerification'
+              examples:
+                enabled:
+                  $ref: '#/components/examples/TwoStepVerificationEnabled'
+                disabled:
+                  summary: Turned off, required by Atelier Nord for its owner and admins
+                  value:
+                    enabled: false
+                    primaryMethod: null
+                    methods: []
+                    authenticatorApp: null
+                    securityKeys: []
+                    backupCodes: null
+                    requiredBy:
+                      - organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                        requiredFor: admins
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ApiTokenNotAccepted'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: disableTwoStepVerification
+      summary: Turn two-step verification off
+      description: |
+        Turns the two-step verification of the account off ("Désactiver"): the authenticator app,
+        the security keys and the backup codes are deleted, and every trusted device is forgotten.
+        The next sign-ins open a session with the password or the email code alone ("Votre compte
+        n'est protégé que par un mot de passe."). Turning it off when it is off answers `204` and
+        emits nothing.
+
+        The checks run in this order:
+
+        1. An organization whose policy requires two-step verification for a role the person has
+           in it: `409 auth.mfa-required-by-organization`, with `details.organizationIds`, from
+           identity-service's copy of the memberships.
+        2. Recent authentication of this session (`403 auth.reauthentication-required`).
+
+        Emits `user.two-step-verification-changed.v1` (`change: disabled`), from which
+        notification-service sends a security email and organization-service updates the column
+        "Deux étapes" of its members. Session only: a personal API token gets
+        `403 auth.api-token-not-accepted`.
+      tags: [two-step-verification]
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: Two-step verification is off.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/RecentAuthenticationForbidden'
+        '409':
+          $ref: '#/components/responses/MfaRequiredByOrganization'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/two-step-verification/authenticator-app/setup:
+    post:
+      operationId: startAuthenticatorAppSetup
+      summary: Start setting up the authenticator app
+      description: |
+        Starts the setup of an authenticator app ("Configurer l'application d'authentification",
+        step "Scanner"): returns a new secret, once, with the `otpauth://` URI the web application
+        draws as a QR code ("Scannez ce code avec votre application, ou saisissez la clé :"). The
+        secret is a secret: the web application shows it grouped by 4 and copies it without
+        spaces, and never keeps it. Nothing changes on the account until the confirmation with a
+        code of the app (`POST /v1/me/two-step-verification/authenticator-app/setup/confirmation`).
+
+        - The same route turns two-step verification on, when it is off, and reconfigures the app
+          ("Reconfigurer"), when it is on: the current app keeps working until the new one is
+          confirmed.
+        - The pending setup belongs to this session and expires 15 minutes later; a new start
+          replaces it and its secret.
+        - Recent authentication of this session is required
+          (`403 auth.reauthentication-required`): a stolen session cannot enroll a factor of its
+          own.
+
+        The body is an empty JSON object. Session only: a personal API token gets
+        `403 auth.api-token-not-accepted`.
+      tags: [two-step-verification]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The secret of the new app, returned once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatorAppSetup'
+              example:
+                secret: JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP
+                otpauthUri: otpauth://totp/Cadenway:camille.martin%40ateliernord.fr?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Cadenway&algorithm=SHA1&digits=6&period=30
+                expiresAt: '2026-11-09T13:35:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/RecentAuthenticationForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/two-step-verification/authenticator-app/setup/confirmation:
+    post:
+      operationId: confirmAuthenticatorAppSetup
+      summary: Confirm the authenticator app with one of its codes
+      description: |
+        Checks a code the new app shows ("Vérifier", "Code affiché par l'application") against the
+        secret of the pending setup of this session, then makes it the authenticator app of the
+        account.
+
+        - When two-step verification was off, it turns on, with 10 new backup codes returned here
+          once ("Application configurée", "Conservez ces codes de secours hors ligne : chacun ne
+          sert qu'une fois."; toast "Vérification en deux étapes activée", "Elle vous sera
+          demandée à la prochaine connexion."). `change: enabled`.
+        - When it was on, the new app replaces the previous one, whose codes stop working; the
+          backup codes stay, and `backupCodes` is `null`: the web application skips the step
+          "Codes de secours". `change: authenticator-app-replaced`.
+        - A wrong code answers `422 auth.two-step-code-invalid`, without a count of attempts: the
+          setup stays pending. A setup that expired, was replaced, or belongs to another session,
+          or no setup: `422 auth.two-step-setup-expired`, and the person starts again.
+
+        Recent authentication is not required again: the start required it. Emits
+        `user.two-step-verification-changed.v1`, from which notification-service sends a security
+        email ("La vérification en deux étapes est activée") and organization-service updates its
+        directory. Session only: a personal API token gets `403 auth.api-token-not-accepted`.
+      tags: [two-step-verification]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticatorAppConfirmation'
+            example:
+              code: '261845'
+      responses:
+        '200':
+          description: The app is the authenticator app of the account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatorAppConfigured'
+              example:
+                twoStepVerification:
+                  enabled: true
+                  primaryMethod: authenticator-app
+                  methods: [authenticator-app]
+                  authenticatorApp:
+                    configuredAt: '2026-11-09T13:21:00Z'
+                  securityKeys: []
+                  backupCodes:
+                    remaining: 10
+                    total: 10
+                    generatedAt: '2026-11-09T13:21:00Z'
+                  requiredBy:
+                    - organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                      requiredFor: admins
+                backupCodes:
+                  codes:
+                    - 4F7K-2M9Q
+                    - H3XP-8D2L
+                    - Q9TZ-5W1C
+                    - B6NR-7J4E
+                    - K2VD-9S8A
+                    - M8LC-3F6P
+                    - T5QW-1H7Z
+                    - R4GY-6B3N
+                    - C7EJ-2K5U
+                    - W1PS-8V9D
+                  generatedAt: '2026-11-09T13:21:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SessionWriteForbidden'
+        '422':
+          $ref: '#/components/responses/SetupCodeRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/two-step-verification/backup-codes/regenerate:
+    post:
+      operationId: regenerateBackupCodes
+      summary: Generate new backup codes
+      description: |
+        Replaces the backup codes of the account with 10 new ones, returned here once ("Nouveaux
+        codes de secours"); the previous ones stop working at once ("Les 7 codes précédents ne
+        fonctionnent plus."). The web application offers to copy them and to download
+        `cadenway-codes-de-secours.txt`. Two-step verification must be on
+        (`409 auth.two-step-not-enabled`), and recent authentication of this session is required
+        (`403 auth.reauthentication-required`). Emits `user.two-step-verification-changed.v1`
+        (`change: backup-codes-regenerated`), from which notification-service sends a security
+        email, without the codes. The body is an empty JSON object. Session only: a personal API
+        token gets `403 auth.api-token-not-accepted`.
+      tags: [two-step-verification]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The new backup codes, returned once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupCodes'
+              example:
+                codes:
+                  - 4F7K-2M9Q
+                  - H3XP-8D2L
+                  - Q9TZ-5W1C
+                  - B6NR-7J4E
+                  - K2VD-9S8A
+                  - M8LC-3F6P
+                  - T5QW-1H7Z
+                  - R4GY-6B3N
+                  - C7EJ-2K5U
+                  - W1PS-8V9D
+                generatedAt: '2026-11-08T16:05:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/RecentAuthenticationForbidden'
+        '409':
+          $ref: '#/components/responses/TwoStepNotEnabled'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/two-step-verification/security-keys/registration:
+    post:
+      operationId: startSecurityKeyRegistration
+      summary: Get the WebAuthn options to register a security key
+      description: |
+        Starts the registration of a security key or of the biometrics of the device ("Ajouter une
+        clé"): returns the options the web application passes to `navigator.credentials.create`
+        (through `PublicKeyCredential.parseCreationOptionsFromJSON` or an equivalent), with a new
+        WebAuthn challenge and the keys the account already has, so that the browser refuses to
+        register one twice. The pending registration belongs to this session and expires 5 minutes
+        later; a new start replaces it. The web application then sends the answer of the browser
+        and the name of the key to `POST /v1/me/two-step-verification/security-keys`.
+
+        The checks run in this order: two-step verification must be on, and the account has fewer
+        than 10 keys (`409 auth.two-step-not-enabled`, `409 auth.security-key-limit-reached`); then
+        recent authentication of this session (`403 auth.reauthentication-required`). The body is
+        an empty JSON object. Session only: a personal API token gets
+        `403 auth.api-token-not-accepted`.
+      tags: [two-step-verification]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The options to pass to the browser.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityKeyRegistration'
+              example:
+                options:
+                  challenge: ExampleOnlyWebAuthnChallenge000000000000000
+                  rp:
+                    id: cadenway.com
+                    name: Cadenway
+                  user:
+                    id: ExampleOnlyWebAuthnUserHandle00000000000000
+                    name: camille.martin@ateliernord.fr
+                    displayName: Camille Martin
+                  pubKeyCredParams:
+                    - type: public-key
+                      alg: -8
+                    - type: public-key
+                      alg: -7
+                    - type: public-key
+                      alg: -257
+                  timeout: 300000
+                  attestation: none
+                  authenticatorSelection:
+                    residentKey: preferred
+                    userVerification: preferred
+                  excludeCredentials:
+                    - id: ExampleOnlyCredentialIdYubiKey5CNfc0000000
+                      type: public-key
+                      transports: [usb, nfc]
+                expiresAt: '2026-11-09T13:26:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/RecentAuthenticationForbidden'
+        '409':
+          $ref: '#/components/responses/SecurityKeyNotAddable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/two-step-verification/security-keys:
+    post:
+      operationId: addSecurityKey
+      summary: Register a security key
+      description: |
+        Checks the answer of the browser to the options of
+        `POST /v1/me/two-step-verification/security-keys/registration` and adds the key to the
+        account under `name` ("Clé de sécurité ajoutée", "Elle pourra servir dès la prochaine
+        connexion."). The web application sends `credential` as the browser gave it, serialized as
+        JSON (`PublicKeyCredential.toJSON()` or an equivalent). The key then answers the two-step
+        challenges of the sign-ins.
+
+        - An answer that does not verify, or a key the account already has:
+          `422 auth.security-key-refused`.
+        - A registration that expired, was replaced, belongs to another session, or no
+          registration: `422 auth.two-step-setup-expired`.
+        - Two-step verification turned off since the start, or 10 keys already:
+          `409 auth.two-step-not-enabled`, `409 auth.security-key-limit-reached`.
+
+        Recent authentication is not required again: the start required it. Emits
+        `user.two-step-verification-changed.v1` (`change: security-key-added`), from which
+        notification-service sends a security email. Session only: a personal API token gets
+        `403 auth.api-token-not-accepted`.
+      tags: [two-step-verification]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityKeyAddition'
+            example:
+              name: YubiKey 5C NFC
+              credential:
+                id: ExampleOnlyCredentialIdYubiKey5CNfc0000000
+                rawId: ExampleOnlyCredentialIdYubiKey5CNfc0000000
+                type: public-key
+                response:
+                  clientDataJSON: ExampleOnlyClientDataJson
+                  attestationObject: ExampleOnlyAttestationObject
+                  transports: [usb, nfc]
+                authenticatorAttachment: cross-platform
+                clientExtensionResults: {}
+      responses:
+        '201':
+          description: The key is registered.
+          headers:
+            Location:
+              $ref: '#/components/headers/SecurityKeyLocation'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityKey'
+              example:
+                id: 019a6c52-1d2e-7f3a-8b4c-5d6e7f8a9b01
+                name: YubiKey 5C NFC
+                createdAt: '2026-11-09T13:22:00Z'
+                lastUsedAt: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SessionWriteForbidden'
+        '409':
+          $ref: '#/components/responses/SecurityKeyNotAddable'
+        '422':
+          $ref: '#/components/responses/SecurityKeyRegistrationRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/two-step-verification/security-keys/{securityKeyId}:
+    delete:
+      operationId: removeSecurityKey
+      summary: Remove a security key
+      description: |
+        Removes a security key of the account: it no longer answers the challenges. The
+        authenticator app and the other keys stay. A key of another account, an unknown id, or a
+        key already removed answers `404 security-key.not-found`. Recent authentication of this
+        session is required (`403 auth.reauthentication-required`), checked once the key is found.
+        Emits `user.two-step-verification-changed.v1` (`change: security-key-removed`), from which
+        notification-service sends a security email. Session only: a personal API token gets
+        `403 auth.api-token-not-accepted`.
+      tags: [two-step-verification]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: securityKeyId
+          in: path
+          required: true
+          description: Id of the key, as `GET /v1/me/two-step-verification` gave it.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a6c52-1d2e-7f3a-8b4c-5d6e7f8a9b01]
+      responses:
+        '204':
+          description: The key is removed.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/RecentAuthenticationForbidden'
+        '404':
+          $ref: '#/components/responses/SecurityKeyNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /v1/sessions:
     get:
       operationId: listSessions
@@ -1067,8 +1843,9 @@ paths:
       description: |
         Lists the open sessions of the account ("Sessions actives"): neither signed out, revoked,
         expired nor closed for inactivity. The session of the request is among them, marked
-        `current` ("Cet appareil"). A session closes after 12 hours of inactivity by default
-        ("Une session inactive pendant 12 heures est fermée automatiquement.").
+        `current` ("Cet appareil"). A session closes after the inactivity the policy of its current
+        organization sets, 12 hours by default, which `inactivityTimeoutMinutes` gives ("Une
+        session inactive pendant 12 heures est fermée automatiquement.").
 
         Sorted by sign-in, the most recent first, then by id: a session keeps its place whatever
         its activity, so the pages hold still. The web application shows the current session
@@ -1102,6 +1879,7 @@ paths:
                     signedInAt: '2026-11-09T07:58:00Z'
                     lastActiveAt: '2026-11-09T13:24:00Z'
                     expiresAt: '2026-12-09T07:58:00Z'
+                    inactivityTimeoutMinutes: 720
                   - id: 019a6914-2f7a-7b3c-9d4e-5f6a7b8c9d01
                     current: false
                     device:
@@ -1114,6 +1892,7 @@ paths:
                     signedInAt: '2026-11-09T07:42:00Z'
                     lastActiveAt: '2026-11-09T11:20:00Z'
                     expiresAt: '2026-12-09T07:42:00Z'
+                    inactivityTimeoutMinutes: 720
                   - id: 019a5f88-1c2d-7e3f-8a4b-6c7d8e9f0a12
                     current: false
                     device:
@@ -1126,6 +1905,7 @@ paths:
                     signedInAt: '2026-11-06T08:15:00Z'
                     lastActiveAt: '2026-11-08T17:40:00Z'
                     expiresAt: '2026-12-06T08:15:00Z'
+                    inactivityTimeoutMinutes: 720
                 nextCursor: null
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -1186,7 +1966,9 @@ paths:
       description: |
         Closes every open session of the account except the one of the request ("Déconnecter les
         autres"; "Tous vos appareils sauf celui-ci seront déconnectés."). `revokedCount` gives the
-        confirmation ("2 sessions fermées", "Seul cet appareil reste connecté."). The personal API
+        confirmation ("2 sessions fermées", "Seul cet appareil reste connecté."). Every trusted
+        device of the account is forgotten too, this browser's included: the next sign-in of an
+        account with two-step verification answers its challenge on every device. The personal API
         tokens stay. Recent authentication is not required. Emits `session.revoked.v1` for each
         closed session. The body is an empty JSON object. Session only: a personal API token gets
         `403 auth.api-token-not-accepted`.
@@ -1235,7 +2017,21 @@ components:
         `__Host-cw_session=<token>; Path=/; Secure; HttpOnly; SameSite=Lax`, plus
         `Max-Age=<seconds until session.expiresAt>` when `rememberMe` was `true`. Without it the
         cookie ends with the browser, and the session ends at `session.expiresAt` at the latest.
-        Either session also ends after 12 hours of inactivity by default.
+        Either session also ends after the inactivity the policy of its current organization sets,
+        12 hours by default.
+      schema:
+        type: string
+    SetSessionAndTrustedDeviceCookies:
+      description: |
+        One `Set-Cookie` for the session, as `SetSessionCookie` says, and, when the answer had
+        `trustDevice: true`, a second one for the trusted device:
+        `__Host-cw_trusted_device=<token>; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=2592000`
+        (30 days). The device token is opaque, bound to the account, kept hashed by
+        identity-service, and never readable by the web application.
+      schema:
+        type: string
+    SecurityKeyLocation:
+      description: '`/v1/me/two-step-verification/security-keys/<securityKeyId>`, where the key is removed.'
       schema:
         type: string
     ClearSessionCookie:
@@ -1274,6 +2070,45 @@ components:
             session:
               id: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
               expiresAt: '2026-12-08T13:07:00Z'
+    ChallengeIssued:
+      description: |
+        The address and its password, or its email code, are right, and the account has two-step
+        verification: no session is opened and no cookie is set. The body is the challenge to
+        answer ("Vérification en deux étapes"); its `token` is a secret the web application keeps
+        for the life of the challenge, sends in bodies only, and never puts in a URL.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SignInChallenge'
+          examples:
+            camilleMartin:
+              $ref: '#/components/examples/SignInChallenge'
+    ChallengeAnswered:
+      description: |
+        Signed in by the answer of the challenge, as a `200` sign-in. The body describes the
+        session; the session token is only in its cookie, and the device token, with
+        `trustDevice`, only in the second cookie.
+      headers:
+        Set-Cookie:
+          $ref: '#/components/headers/SetSessionAndTrustedDeviceCookies'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SignedIn'
+          example:
+            user:
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+              name: Camille Martin
+              email: camille.martin@ateliernord.fr
+              language: fr
+              displayName: camille
+              jobTitle: Responsable produit
+              timeZone: Europe/Paris
+              passwordChangedAt: '2026-08-12T09:30:00Z'
+              version: 9
+            session:
+              id: 019a6914-2f7a-7b3c-9d4e-5f6a7b8c9d01
+              expiresAt: '2026-12-09T07:42:00Z'
     BadRequest:
       description: |
         The body does not match the schema: `request.invalid`, with one `details.issues` entry per
@@ -1431,6 +2266,8 @@ components:
           Answered the same way when no account uses the address. The failed passwords of
           `POST /v1/auth/reauthentication` and `PUT /v1/me/password` count with those of the
           sign-in, and both routes answer this code during the lockout.
+        - `auth.two-step-locked`, on `POST /v1/auth/reauthentication` with a `code` only: see
+          `TwoStepLocked`.
         - `rate-limit.exceeded`: the gateway's own limit.
       headers:
         Retry-After:
@@ -1449,6 +2286,8 @@ components:
                 code: auth.account-locked
                 details:
                   lockedUntil: '2026-11-08T13:22:00Z'
+            twoStepLocked:
+              $ref: '#/components/examples/TwoStepLocked'
             rateLimited:
               $ref: '#/components/examples/RateLimited'
     CodeThrottled:
@@ -1666,9 +2505,13 @@ components:
               $ref: '#/components/examples/PasswordCompromised'
     PasswordRefused:
       description: |
-        `auth.password-incorrect`: the password is not the one of the account.
-        `details.remainingAttempts` is the number of failures left before the lockout of the
-        password sign-in of the address, at least 1.
+        - `auth.password-incorrect`: the password is not the one of the account.
+          `details.remainingAttempts` is the number of failures left before the lockout of the
+          password sign-in of the address, at least 1.
+        - `auth.two-step-code-invalid`, on `POST /v1/auth/reauthentication` with a `code`: the code
+          is not the current one of the authenticator app, or was used already.
+          `details.remainingAttempts` is the number of wrong answers left before the lockout of
+          the two-step answers of the account, at least 1.
       content:
         application/problem+json:
           schema:
@@ -1676,6 +2519,8 @@ components:
           examples:
             passwordIncorrect:
               $ref: '#/components/examples/PasswordIncorrect'
+            twoStepCodeInvalid:
+              $ref: '#/components/examples/TwoStepCodeInvalid'
     PasswordChangeRefused:
       description: |
         The password is not changed. The new password is checked first:
@@ -1712,10 +2557,10 @@ components:
       description: |
         - `auth.reauthentication-required`: the person of this session has not proved who they are
           in the last 10 minutes (see "Recent authentication"). `details.methods` lists the ways
-          they can, in the order to offer them: `password` today, for
-          `POST /v1/auth/reauthentication`; later versions add two-step methods, and a client
-          ignores a method it does not know. The web application asks, confirms, then repeats the
-          request;
+          they can, in the order to offer them, for `POST /v1/auth/reauthentication`: `password`,
+          then `authenticator-app` (its `code`) when the account has an authenticator app; later
+          versions add methods, and a client ignores a method it does not know. The web
+          application asks, confirms, then repeats the request;
         - `auth.csrf-rejected`: see `CrossSiteRefused`;
         - `auth.api-token-not-accepted`: a personal API token cannot call this route.
       content:
@@ -1732,6 +2577,15 @@ components:
                 code: auth.reauthentication-required
                 details:
                   methods: [password]
+            reauthenticationRequiredWithApp:
+              summary: No recent authentication, account with an authenticator app
+              value:
+                type: about:blank
+                title: Confirmez votre identité pour continuer.
+                status: 403
+                code: auth.reauthentication-required
+                details:
+                  methods: [password, authenticator-app]
             crossSiteRefused:
               $ref: '#/components/examples/CrossSiteRefused'
             apiTokenNotAccepted:
@@ -1792,6 +2646,187 @@ components:
             title: Session introuvable.
             status: 404
             code: session.not-found
+    ChallengeExpired:
+      description: |
+        `auth.challenge-expired`: the two-step challenge expired (10 minutes after the sign-in),
+        was answered, was replaced by a newer challenge of the account, or is unknown or
+        malformed. The person signs in again.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            challengeExpired:
+              $ref: '#/components/examples/ChallengeExpired'
+    TwoStepCodeRefused:
+      description: |
+        The answer is refused. The challenge is checked first:
+
+        - `auth.challenge-expired`: see `ChallengeExpired`; no attempt is counted;
+        - `auth.two-step-code-invalid`: the code is wrong, or was used already (a code of the app
+          works once, a backup code works once). `details.remainingAttempts` is the number of
+          wrong answers left before the lockout of the two-step answers of the account, at least 1.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            challengeExpired:
+              $ref: '#/components/examples/ChallengeExpired'
+            twoStepCodeInvalid:
+              $ref: '#/components/examples/TwoStepCodeInvalid'
+    SecurityKeyAnswerRefused:
+      description: |
+        The key cannot answer. The challenge is checked first:
+
+        - `auth.challenge-expired`: see `ChallengeExpired`; no attempt is counted;
+        - `auth.security-key-refused`: the account has no security key (options), or the answer of
+          the key does not verify against the latest options of the challenge (answer), with
+          `details.remainingAttempts` as for a wrong code.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            challengeExpired:
+              $ref: '#/components/examples/ChallengeExpired'
+            securityKeyRefused:
+              summary: Key not recognised
+              value:
+                type: about:blank
+                title: 'Clé de sécurité non reconnue : réessayez ou choisissez une autre méthode.'
+                status: 422
+                code: auth.security-key-refused
+                details:
+                  remainingAttempts: 4
+    TwoStepLocked:
+      description: |
+        - `auth.two-step-locked`: five wrong answers in a row, across the two-step challenges of
+          the account and the codes of `POST /v1/auth/reauthentication`, lock the two-step answers
+          of the account until `details.lockedUntil`, 15 minutes after the fifth. Every answer is
+          refused until then, even a right one; a sign-in still answers its challenge, with
+          `lockedUntil`. The end of the lockout, or a right answer after it, starts the count again.
+        - `rate-limit.exceeded`: the gateway's own limit.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            twoStepLocked:
+              $ref: '#/components/examples/TwoStepLocked'
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    MfaRequiredByOrganization:
+      description: |
+        `auth.mfa-required-by-organization`: the policy of at least one organization of the person
+        requires two-step verification for the role they have in it (see
+        `openapi/public/organizations.yaml`), so it cannot be turned off. `details.organizationIds`
+        lists those organizations; the web application names them from `GET /v1/organizations`
+        ("Exigée par Atelier Nord pour les propriétaires et administrateurs.").
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Une de vos organisations exige la vérification en deux étapes : elle ne peut pas être désactivée.'
+            status: 409
+            code: auth.mfa-required-by-organization
+            details:
+              organizationIds: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f]
+    SetupCodeRefused:
+      description: |
+        The authenticator app is not confirmed:
+
+        - `auth.two-step-setup-expired`: no pending setup of this session, or it expired (15
+          minutes) or was replaced by a newer start; the person starts again;
+        - `auth.two-step-code-invalid`: the code is not one the new app shows now; the setup stays
+          pending, and no attempt is counted (no `details.remainingAttempts`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            setupExpired:
+              $ref: '#/components/examples/TwoStepSetupExpired'
+            twoStepCodeInvalid:
+              summary: Wrong code of the new app
+              value:
+                type: about:blank
+                title: Code incorrect ou déjà utilisé.
+                status: 422
+                code: auth.two-step-code-invalid
+    TwoStepNotEnabled:
+      description: |
+        `auth.two-step-not-enabled`: the request needs two-step verification on the account of the
+        caller, which is off: regenerating backup codes, adding a security key, or, in
+        `openapi/public/organizations.yaml`, requiring two-step verification for a role the caller
+        has.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            twoStepNotEnabled:
+              $ref: '#/components/examples/TwoStepNotEnabled'
+    SecurityKeyNotAddable:
+      description: |
+        - `auth.two-step-not-enabled`: see `TwoStepNotEnabled`; a security key comes in addition to
+          the authenticator app;
+        - `auth.security-key-limit-reached`: the account has 10 security keys, the most it can
+          have; the person removes one first.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            twoStepNotEnabled:
+              $ref: '#/components/examples/TwoStepNotEnabled'
+            securityKeyLimitReached:
+              summary: Ten keys already
+              value:
+                type: about:blank
+                title: 'Nombre maximal de clés de sécurité atteint : retirez-en une pour en ajouter une autre.'
+                status: 409
+                code: auth.security-key-limit-reached
+                details:
+                  maxSecurityKeys: 10
+    SecurityKeyRegistrationRefused:
+      description: |
+        The key is not registered:
+
+        - `auth.two-step-setup-expired`: no pending registration of this session, or it expired (5
+          minutes) or was replaced by a newer start;
+        - `auth.security-key-refused`: the answer of the browser does not verify against the
+          pending registration, or the account already has this key.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            setupExpired:
+              $ref: '#/components/examples/TwoStepSetupExpired'
+            securityKeyRefused:
+              summary: Key answer that does not verify
+              value:
+                type: about:blank
+                title: 'Clé de sécurité non reconnue : réessayez ou choisissez une autre méthode.'
+                status: 422
+                code: auth.security-key-refused
+    SecurityKeyNotFound:
+      description: '`security-key.not-found`: no security key with this id belongs to the account.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Clé de sécurité introuvable.
+            status: 404
+            code: security-key.not-found
   examples:
     CamilleMartin:
       summary: Camille Martin, with the profile of the mockup
@@ -1872,6 +2907,83 @@ components:
         title: 'Trop de requêtes : réessayez dans un instant.'
         status: 429
         code: rate-limit.exceeded
+    SignInChallenge:
+      summary: The challenge of Camille Martin, with the app, two keys and 7 backup codes
+      value:
+        token: ExampleOnlyChallengeToken00000000000000000
+        expiresAt: '2026-11-09T07:52:00Z'
+        email: camille.martin@ateliernord.fr
+        name: Camille Martin
+        primaryMethod: authenticator-app
+        methods: [authenticator-app, security-key, backup-code]
+        securityKeys:
+          - name: YubiKey 5C NFC
+          - name: Touch ID (MacBook Air)
+        backupCodesRemaining: 7
+        lockedUntil: null
+    TwoStepVerificationEnabled:
+      summary: The card of Camille Martin in the mockup
+      value:
+        enabled: true
+        primaryMethod: authenticator-app
+        methods: [authenticator-app, security-key]
+        authenticatorApp:
+          configuredAt: '2026-03-03T10:15:00Z'
+        securityKeys:
+          - id: 019a6c52-1d2e-7f3a-8b4c-5d6e7f8a9b01
+            name: YubiKey 5C NFC
+            createdAt: '2026-03-03T10:20:00Z'
+            lastUsedAt: '2026-11-09T07:42:00Z'
+          - id: 019a6c52-1d2e-7f3a-8b4c-5d6e7f8a9b02
+            name: Touch ID (MacBook Air)
+            createdAt: '2026-04-14T08:05:00Z'
+            lastUsedAt: '2026-11-06T08:15:00Z'
+        backupCodes:
+          remaining: 7
+          total: 10
+          generatedAt: '2026-03-03T10:15:00Z'
+        requiredBy:
+          - organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            requiredFor: admins
+    ChallengeExpired:
+      summary: Challenge no longer usable
+      value:
+        type: about:blank
+        title: 'La vérification a expiré : connectez-vous de nouveau.'
+        status: 422
+        code: auth.challenge-expired
+    TwoStepCodeInvalid:
+      summary: Wrong or used two-step code
+      value:
+        type: about:blank
+        title: Code incorrect ou déjà utilisé.
+        status: 422
+        code: auth.two-step-code-invalid
+        details:
+          remainingAttempts: 4
+    TwoStepLocked:
+      summary: Two-step answers locked
+      value:
+        type: about:blank
+        title: 'Trop de tentatives échouées : réessayez dans 15 minutes.'
+        status: 429
+        code: auth.two-step-locked
+        details:
+          lockedUntil: '2026-11-09T08:02:00Z'
+    TwoStepNotEnabled:
+      summary: Two-step verification off
+      value:
+        type: about:blank
+        title: Activez d’abord la vérification en deux étapes.
+        status: 409
+        code: auth.two-step-not-enabled
+    TwoStepSetupExpired:
+      summary: Setup no longer pending
+      value:
+        type: about:blank
+        title: 'La configuration a expiré : recommencez.'
+        status: 422
+        code: auth.two-step-setup-expired
   schemas:
     Email:
       type: string
@@ -2048,7 +3160,8 @@ components:
           format: date-time
           description: |
             When the session ends at the latest: 30 days after the sign-in with `rememberMe`. It
-            also ends after 12 hours of inactivity by default.
+            also ends after the inactivity the policy of its current organization sets, 12 hours
+            by default.
     CurrentUser:
       type: object
       required: [id, name, email, language, displayName, jobTitle, timeZone, version]
@@ -2087,7 +3200,8 @@ components:
           minimum: 1
           description: |
             Version of the account, also sent as `ETag`. A change of the profile, of the password,
-            of the address or of the scheduled deletion makes it the next one.
+            of the address, of the two-step verification or of the scheduled deletion makes it the
+            next one.
     TimeZone:
       type: string
       minLength: 1
@@ -2214,13 +3328,17 @@ components:
           description: Sessions the reset closed; 0 when `closeOtherSessions` was `false` or none was open.
     ReauthenticationRequest:
       type: object
-      required: [password]
+      description: |
+        One of the methods of `details.methods`: `password`, or `code` for `authenticator-app`.
+        Both or neither answer `400 request.invalid`, checked by identity-service.
       properties:
         password:
           type: string
           minLength: 1
           maxLength: 256
           description: The current password of the account. Never logged.
+        code:
+          $ref: '#/components/schemas/TwoStepCode'
     RecentAuthentication:
       type: object
       required: [authenticatedAt, expiresAt]
@@ -2350,6 +3468,15 @@ components:
           type: string
           format: date-time
           description: When the session ends at the latest, whatever its activity.
+        inactivityTimeoutMinutes:
+          type: integer
+          minimum: 1
+          description: |
+            Minutes of inactivity after which the session closes: the policy of its current
+            organization (`60`, `720`, `10080` or `43200`), `720` (12 hours) without one ("Une
+            session inactive pendant 12 heures est fermée automatiquement."). Always present once
+            the gateway and identity-service run this version of the contracts.
+          examples: [720]
     OpenSessionPage:
       type: object
       required: [items, nextCursor]
@@ -2368,3 +3495,527 @@ components:
           type: integer
           minimum: 0
           description: Sessions closed by the request ("2 sessions fermées").
+    TwoStepCode:
+      type: string
+      pattern: '^[0-9]{6}$'
+      description: |
+        The 6 digits the authenticator app shows now, without a space. Works once: a code already
+        accepted is refused. Never logged.
+      examples: ['261845']
+    ChallengeToken:
+      type: string
+      minLength: 1
+      maxLength: 256
+      description: |
+        The token of a two-step challenge, as its `202` gave it. A secret: sent in bodies only,
+        never in a URL, never logged; identity-service keeps only its SHA-256 hash. A malformed
+        token answers like an unknown one (`422 auth.challenge-expired`).
+    ChallengeTokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          $ref: '#/components/schemas/ChallengeToken'
+    TwoStepMethod:
+      type: string
+      description: |
+        A way to answer a two-step challenge: `authenticator-app` ("Application", a code of the
+        app), `security-key` ("Clé de sécurité", WebAuthn) or `backup-code` ("Code de secours").
+        Later versions may add methods; a client ignores one it does not know.
+      x-extensible-enum: [authenticator-app, security-key, backup-code]
+    SignInChallenge:
+      type: object
+      required:
+        [
+          token,
+          expiresAt,
+          email,
+          name,
+          primaryMethod,
+          methods,
+          securityKeys,
+          backupCodesRemaining,
+          lockedUntil,
+        ]
+      description: |
+        A two-step challenge, the second step of a sign-in ("Vérification en deux étapes"). It
+        holds what the screen shows: the account above it, the tabs of `methods` in their order,
+        the one that opens first, the names of the keys and the backup codes left.
+      properties:
+        token:
+          type: string
+          minLength: 32
+          maxLength: 256
+          description: |
+            The secret of the challenge (256 random bits, base64url), to send with its answer.
+            Returned by the `202` of the sign-in and echoed by the inspection. Never logged.
+          examples: [ExampleOnlyChallengeToken00000000000000000]
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the challenge stops working, 10 minutes after the sign-in that issued it.
+        email:
+          $ref: '#/components/schemas/Email'
+          description: Address of the account, shown above the challenge.
+        name:
+          type: string
+          description: Full name of the account; the web application derives the initials from it.
+          examples: [Camille Martin]
+        primaryMethod:
+          $ref: '#/components/schemas/TwoStepMethod'
+          description: The method whose tab opens first, `authenticator-app` today.
+        methods:
+          type: array
+          minItems: 1
+          maxItems: 3
+          description: |
+            The methods the account can answer with, in the order of the tabs: `authenticator-app`
+            always, `security-key` when the account has a key, `backup-code` while a backup code is
+            left.
+          items:
+            $ref: '#/components/schemas/TwoStepMethod'
+        securityKeys:
+          type: array
+          maxItems: 10
+          description: |
+            The keys of the account, by name ("2 clés enregistrées : YubiKey 5C NFC, Touch ID
+            (MacBook Air).").
+          items:
+            type: object
+            required: [name]
+            properties:
+              name:
+                type: string
+                examples: [YubiKey 5C NFC]
+        backupCodesRemaining:
+          type: integer
+          minimum: 0
+          maximum: 10
+          description: Backup codes not used yet ("Il vous reste 7 codes inutilisés.").
+        lockedUntil:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the lockout of the two-step answers of the account ends, `null` when they are not
+            locked (see `TwoStepLocked`): until then every answer is refused.
+    AuthenticatorAppAnswer:
+      type: object
+      required: [token, code]
+      properties:
+        token:
+          $ref: '#/components/schemas/ChallengeToken'
+        code:
+          $ref: '#/components/schemas/TwoStepCode'
+        trustDevice:
+          $ref: '#/components/schemas/TrustDevice'
+    BackupCodeAnswer:
+      type: object
+      required: [token, code]
+      properties:
+        token:
+          $ref: '#/components/schemas/ChallengeToken'
+        code:
+          type: string
+          pattern: '^[0-9A-Za-z]{4}-?[0-9A-Za-z]{4}$'
+          description: |
+            A backup code, `XXXX-XXXX` (placeholder "XXXX-XXXX"), read without regard to case, with
+            or without its dash. Works once. Never logged.
+          examples: [4F7K-2M9Q]
+        trustDevice:
+          $ref: '#/components/schemas/TrustDevice'
+    SecurityKeyAnswer:
+      type: object
+      required: [token, credential]
+      properties:
+        token:
+          $ref: '#/components/schemas/ChallengeToken'
+        credential:
+          $ref: '#/components/schemas/SecurityKeyAssertion'
+        trustDevice:
+          $ref: '#/components/schemas/TrustDevice'
+    TrustDevice:
+      type: boolean
+      default: false
+      description: |
+        "Faire confiance à cet appareil pendant 30 jours": the gateway sets the device cookie, and
+        the sign-ins of this account from this browser skip the challenge for 30 days.
+    WebAuthnCredentialDescriptor:
+      type: object
+      required: [id, type]
+      additionalProperties: true
+      description: A WebAuthn credential of the account, by id (`PublicKeyCredentialDescriptorJSON`).
+      properties:
+        id:
+          type: string
+          description: Id of the credential, base64url.
+        type:
+          type: string
+          description: '`public-key`.'
+          examples: [public-key]
+        transports:
+          type: array
+          description: How the browser reaches the key (`usb`, `nfc`, `ble`, `internal`, `hybrid`).
+          items:
+            type: string
+    WebAuthnRequestOptions:
+      type: object
+      required: [challenge]
+      additionalProperties: true
+      description: |
+        `PublicKeyCredentialRequestOptionsJSON` of WebAuthn Level 3, as identity-service builds
+        it: the web application passes the whole object to the browser. Members not listed here
+        are passed on too.
+      properties:
+        challenge:
+          type: string
+          description: The WebAuthn challenge, base64url, valid once.
+        rpId:
+          type: string
+          description: The relying party, the domain of the web application.
+        timeout:
+          type: integer
+          minimum: 1
+          description: Milliseconds the browser waits for the key.
+        userVerification:
+          type: string
+          description: '`required`, `preferred` or `discouraged`.'
+        allowCredentials:
+          type: array
+          maxItems: 10
+          description: The keys of the account; no other key can answer.
+          items:
+            $ref: '#/components/schemas/WebAuthnCredentialDescriptor'
+    WebAuthnCreationOptions:
+      type: object
+      required: [challenge, rp, user, pubKeyCredParams]
+      additionalProperties: true
+      description: |
+        `PublicKeyCredentialCreationOptionsJSON` of WebAuthn Level 3, as identity-service builds
+        it: the web application passes the whole object to the browser. Members not listed here
+        (`authenticatorSelection`, `attestation`, `extensions`, `hints`) are passed on too.
+      properties:
+        challenge:
+          type: string
+          description: The WebAuthn challenge, base64url, valid once.
+        rp:
+          type: object
+          required: [name]
+          additionalProperties: true
+          properties:
+            id:
+              type: string
+              examples: [cadenway.com]
+            name:
+              type: string
+              examples: [Cadenway]
+        user:
+          type: object
+          required: [id, name, displayName]
+          additionalProperties: true
+          properties:
+            id:
+              type: string
+              description: Opaque handle of the account for WebAuthn, base64url; not its id nor its address.
+            name:
+              type: string
+              examples: [camille.martin@ateliernord.fr]
+            displayName:
+              type: string
+              examples: [Camille Martin]
+        pubKeyCredParams:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [type, alg]
+            additionalProperties: true
+            properties:
+              type:
+                type: string
+                examples: [public-key]
+              alg:
+                type: integer
+                description: COSE algorithm (`-8` EdDSA, `-7` ES256, `-257` RS256).
+        timeout:
+          type: integer
+          minimum: 1
+          description: Milliseconds the browser waits for the key.
+        excludeCredentials:
+          type: array
+          maxItems: 10
+          description: The keys the account already has, which the browser refuses to register again.
+          items:
+            $ref: '#/components/schemas/WebAuthnCredentialDescriptor'
+    SecurityKeyAssertion:
+      type: object
+      required: [id, rawId, type, response]
+      additionalProperties: true
+      description: |
+        The answer of the key (`AuthenticationResponseJSON`), as the browser serializes it. Members
+        not listed here are passed on to identity-service, which verifies it.
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        rawId:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        type:
+          type: string
+          examples: [public-key]
+        response:
+          type: object
+          required: [clientDataJSON, authenticatorData, signature]
+          additionalProperties: true
+          properties:
+            clientDataJSON:
+              type: string
+              maxLength: 16384
+            authenticatorData:
+              type: string
+              maxLength: 16384
+            signature:
+              type: string
+              maxLength: 16384
+            userHandle:
+              type: [string, 'null']
+              maxLength: 1024
+        authenticatorAttachment:
+          type: [string, 'null']
+        clientExtensionResults:
+          type: object
+          additionalProperties: true
+    SecurityKeyAttestation:
+      type: object
+      required: [id, rawId, type, response]
+      additionalProperties: true
+      description: |
+        The answer of the browser to the registration options (`RegistrationResponseJSON`), as it
+        serializes it. Members not listed here are passed on to identity-service, which verifies
+        it.
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        rawId:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        type:
+          type: string
+          examples: [public-key]
+        response:
+          type: object
+          required: [clientDataJSON, attestationObject]
+          additionalProperties: true
+          properties:
+            clientDataJSON:
+              type: string
+              maxLength: 16384
+            attestationObject:
+              type: string
+              maxLength: 65536
+            transports:
+              type: array
+              maxItems: 10
+              items:
+                type: string
+        authenticatorAttachment:
+          type: [string, 'null']
+        clientExtensionResults:
+          type: object
+          additionalProperties: true
+    SecurityKeyAssertionOptions:
+      type: object
+      required: [options, expiresAt]
+      properties:
+        options:
+          $ref: '#/components/schemas/WebAuthnRequestOptions'
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the options stop working, 5 minutes later.
+    TwoStepVerification:
+      type: object
+      required:
+        [enabled, primaryMethod, methods, authenticatorApp, securityKeys, backupCodes, requiredBy]
+      description: The two-step verification of the account, without any secret.
+      properties:
+        enabled:
+          type: boolean
+          description: '"Activée" or "Désactivée": on while the account has an authenticator app.'
+        primaryMethod:
+          type: [string, 'null']
+          description: |
+            The method a challenge opens on ("méthode principale"), `authenticator-app` today;
+            `null` while two-step verification is off.
+          x-extensible-enum: [authenticator-app]
+        methods:
+          type: array
+          maxItems: 2
+          description: |
+            The configured methods: `authenticator-app`, and `security-key` when the account has a
+            key; empty while two-step verification is off. Backup codes are in `backupCodes`.
+          items:
+            type: string
+            x-extensible-enum: [authenticator-app, security-key]
+        authenticatorApp:
+          type: [object, 'null']
+          required: [configuredAt]
+          description: The authenticator app ("Application d'authentification"), `null` while off.
+          properties:
+            configuredAt:
+              type: string
+              format: date-time
+              description: When the current app was confirmed ("Configurée le 3 mars 2026").
+        securityKeys:
+          type: array
+          maxItems: 10
+          description: The security keys ("Clés de sécurité et biométrie"), the oldest first.
+          items:
+            $ref: '#/components/schemas/SecurityKey'
+        backupCodes:
+          type: [object, 'null']
+          required: [remaining, total, generatedAt]
+          description: The backup codes ("Codes de secours"), `null` while off.
+          properties:
+            remaining:
+              type: integer
+              minimum: 0
+              maximum: 10
+              description: Codes not used yet ("7 codes inutilisés sur 10").
+            total:
+              type: integer
+              minimum: 1
+              description: Codes generated together, 10.
+            generatedAt:
+              type: string
+              format: date-time
+              description: When they were generated.
+        requiredBy:
+          type: array
+          description: |
+            The organizations whose authentication policy requires two-step verification of the
+            person, for the role they have in each ("Exigée par Atelier Nord pour les propriétaires
+            et administrateurs."): while one is listed, it cannot be turned off.
+          items:
+            $ref: '#/components/schemas/TwoStepRequirement'
+    TwoStepRequirement:
+      type: object
+      required: [organizationId, requiredFor]
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        requiredFor:
+          type: string
+          description: |
+            `admins`: the policy requires it of the owner and the admins; `everyone`: of every
+            member, guests included. Later versions may add values (`x-extensible-enum`).
+          x-extensible-enum: [admins, everyone]
+    SecurityKey:
+      type: object
+      required: [id, name, createdAt, lastUsedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: The name the person gave it.
+          examples: [YubiKey 5C NFC]
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Last answer of a challenge with the key; `null` before the first.
+    AuthenticatorAppSetup:
+      type: object
+      required: [secret, otpauthUri, expiresAt]
+      properties:
+        secret:
+          type: string
+          pattern: '^[A-Z2-7]{32}$'
+          description: |
+            The TOTP secret of the new app, 160 random bits in base32 without padding, returned
+            here once ("saisissez la clé"). A secret: never logged, never kept by the web
+            application or the gateway; identity-service keeps it encrypted.
+          examples: [JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP]
+        otpauthUri:
+          type: string
+          maxLength: 2048
+          description: |
+            `otpauth://totp/Cadenway:<address>?secret=<secret>&issuer=Cadenway&algorithm=SHA1&digits=6&period=30`,
+            drawn as a QR code by the web application. Holds the secret: never logged.
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the pending setup stops working, 15 minutes later.
+    AuthenticatorAppConfirmation:
+      type: object
+      required: [code]
+      properties:
+        code:
+          $ref: '#/components/schemas/TwoStepCode'
+    AuthenticatorAppConfigured:
+      type: object
+      required: [twoStepVerification, backupCodes]
+      properties:
+        twoStepVerification:
+          $ref: '#/components/schemas/TwoStepVerification'
+        backupCodes:
+          description: |
+            The 10 backup codes generated because two-step verification turned on, returned here
+            once; `null` for a reconfiguration, which keeps the current codes.
+          oneOf:
+            - $ref: '#/components/schemas/BackupCodes'
+            - type: 'null'
+    BackupCodes:
+      type: object
+      required: [codes, generatedAt]
+      description: Backup codes, returned once by the request that generates them.
+      properties:
+        codes:
+          type: array
+          minItems: 10
+          maxItems: 10
+          description: |
+            10 codes `XXXX-XXXX` of upper-case letters and digits, each working once. Secrets: the
+            web application shows them, offers to copy and download them, and never keeps them;
+            identity-service keeps only their hashes.
+          items:
+            type: string
+            pattern: '^[0-9A-Z]{4}-[0-9A-Z]{4}$'
+        generatedAt:
+          type: string
+          format: date-time
+    SecurityKeyRegistration:
+      type: object
+      required: [options, expiresAt]
+      properties:
+        options:
+          $ref: '#/components/schemas/WebAuthnCreationOptions'
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the pending registration stops working, 5 minutes later.
+    SecurityKeyAddition:
+      type: object
+      required: [name, credential]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+          description: |
+            Name of the key, as typed and trimmed (new field, new copy: "Nom de la clé", for
+            example "YubiKey 5C NFC" or "Touch ID (MacBook Air)"). A name made only of spaces
+            answers `400 request.invalid`.
+          examples: [YubiKey 5C NFC]
+        credential:
+          $ref: '#/components/schemas/SecurityKeyAttestation'

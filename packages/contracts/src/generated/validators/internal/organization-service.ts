@@ -179,8 +179,10 @@ export const UpdateOrganizationInternalResponse = zod.object({
 
 /**
  * Lists the members of the organization of the token, with `total` and `counts` as
- * `GET /v1/members` says. A guest gets `403 organization.role-forbidden`. Internal token:
- * actor `user`, organization required.
+ * `GET /v1/members` says. A guest gets `403 organization.role-forbidden`. For an actor who
+ * is the owner or an admin, each member carries `twoStepVerificationEnabled` from the user
+ * directory; for any other actor the member is absent. Internal token: actor `user`,
+ * organization required.
  * @summary List the members
  */
 export const listMembersInternalQueryLimitDefault = 50;
@@ -222,7 +224,8 @@ export const ListMembersInternalResponse = zod.object({
   "email": zod.email().max(listMembersInternalResponseItemsItemEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "joinedAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1)
+  "version": zod.int().min(1),
+  "twoStepVerificationEnabled": zod.boolean().optional().describe('Whether the account has two-step verification, from the user directory\n(`user.two-step-verification-changed.v1`), `false` until an event says otherwise.\nPresent when the actor is the owner or an admin of the organization, absent otherwise;\nthe gateway passes it on as is.\n')
 })),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(listMembersInternalResponseTotalMin),
@@ -257,7 +260,8 @@ export const GetMemberInternalResponse = zod.object({
   "email": zod.email().max(getMemberInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "joinedAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1)
+  "version": zod.int().min(1),
+  "twoStepVerificationEnabled": zod.boolean().optional().describe('Whether the account has two-step verification, from the user directory\n(`user.two-step-verification-changed.v1`), `false` until an event says otherwise.\nPresent when the actor is the owner or an admin of the organization, absent otherwise;\nthe gateway passes it on as is.\n')
 })
 
 
@@ -292,7 +296,8 @@ export const ChangeMemberRoleInternalResponse = zod.object({
   "email": zod.email().max(changeMemberRoleInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "joinedAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1)
+  "version": zod.int().min(1),
+  "twoStepVerificationEnabled": zod.boolean().optional().describe('Whether the account has two-step verification, from the user directory\n(`user.two-step-verification-changed.v1`), `false` until an event says otherwise.\nPresent when the actor is the owner or an admin of the organization, absent otherwise;\nthe gateway passes it on as is.\n')
 })
 
 

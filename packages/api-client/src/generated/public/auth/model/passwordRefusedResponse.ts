@@ -5,8 +5,12 @@
 import type { Problem } from './problem';
 
 /**
- * `auth.password-incorrect`: the password is not the one of the account.
- * `details.remainingAttempts` is the number of failures left before the lockout of the
- * password sign-in of the address, at least 1.
+ * - `auth.password-incorrect`: the password is not the one of the account.
+ *   `details.remainingAttempts` is the number of failures left before the lockout of the
+ *   password sign-in of the address, at least 1.
+ * - `auth.two-step-code-invalid`, on `POST /v1/auth/reauthentication` with a `code`: the code
+ *   is not the current one of the authenticator app, or was used already.
+ *   `details.remainingAttempts` is the number of wrong answers left before the lockout of
+ *   the two-step answers of the account, at least 1.
  */
 export type PasswordRefusedResponse = Problem;

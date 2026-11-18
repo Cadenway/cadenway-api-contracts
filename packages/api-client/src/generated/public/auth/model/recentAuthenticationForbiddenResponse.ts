@@ -7,10 +7,10 @@ import type { Problem } from './problem';
 /**
  * - `auth.reauthentication-required`: the person of this session has not proved who they are
  *   in the last 10 minutes (see "Recent authentication"). `details.methods` lists the ways
- *   they can, in the order to offer them: `password` today, for
- *   `POST /v1/auth/reauthentication`; later versions add two-step methods, and a client
- *   ignores a method it does not know. The web application asks, confirms, then repeats the
- *   request;
+ *   they can, in the order to offer them, for `POST /v1/auth/reauthentication`: `password`,
+ *   then `authenticator-app` (its `code`) when the account has an authenticator app; later
+ *   versions add methods, and a client ignores a method it does not know. The web
+ *   application asks, confirms, then repeats the request;
  * - `auth.csrf-rejected`: see `CrossSiteRefused`;
  * - `auth.api-token-not-accepted`: a personal API token cannot call this route.
  */

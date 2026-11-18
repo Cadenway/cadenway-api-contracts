@@ -159,7 +159,8 @@ export interface CurrentUser {
   passwordChangedAt?: string;
   /**
      * Version of the account, also sent as `ETag`. A change of the profile, of the password,
-     * of the address or of the scheduled deletion makes it the next one.
+     * of the address, of the two-step verification or of the scheduled deletion makes it the
+     * next one.
      * @minimum 1
      */
   version: number;
@@ -170,7 +171,8 @@ export interface Session {
   id: string;
   /**
      * When the session ends at the latest: 30 days after the sign-in with `rememberMe`. It
-     * also ends after 12 hours of inactivity by default.
+     * also ends after the inactivity the policy of its current organization sets, 12 hours
+     * by default.
      */
   expiresAt: string;
 }
@@ -303,13 +305,25 @@ export interface PasswordResetCompleted {
   closedSessionCount: number;
 }
 
+/**
+ * The 6 digits the authenticator app shows now, without a space. Works once: a code already
+ * accepted is refused. Never logged.
+ * @pattern ^[0-9]{6}$
+ */
+export type TwoStepCode = string;
+
+/**
+ * One of the methods of `details.methods`: `password`, or `code` for `authenticator-app`.
+ * Both or neither answer `400 request.invalid`, checked by identity-service.
+ */
 export interface ReauthenticationRequest {
   /**
      * The current password of the account. Never logged.
      * @minLength 1
      * @maxLength 256
      */
-  password: string;
+  password?: string;
+  code?: TwoStepCode;
 }
 
 export interface RecentAuthentication {
@@ -414,6 +428,14 @@ export interface OpenSession {
   lastActiveAt: string;
   /** When the session ends at the latest, whatever its activity. */
   expiresAt: string;
+  /**
+     * Minutes of inactivity after which the session closes: the policy of its current
+     * organization (`60`, `720`, `10080` or `43200`), `720` (12 hours) without one ("Une
+     * session inactive pendant 12 heures est fermée automatiquement."). Always present once
+     * the gateway and identity-service run this version of the contracts.
+     * @minimum 1
+     */
+  inactivityTimeoutMinutes?: number;
 }
 
 /**
@@ -433,6 +455,430 @@ export interface RevokedSessions {
      * @minimum 0
      */
   revokedCount: number;
+}
+
+/**
+ * The token of a two-step challenge, as its `202` gave it. A secret: sent in bodies only,
+ * never in a URL, never logged; identity-service keeps only its SHA-256 hash. A malformed
+ * token answers like an unknown one (`422 auth.challenge-expired`).
+ * @minLength 1
+ * @maxLength 256
+ */
+export type ChallengeToken = string;
+
+export interface ChallengeTokenRequest {
+  token: ChallengeToken;
+}
+
+/**
+ * A way to answer a two-step challenge: `authenticator-app` ("Application", a code of the
+ * app), `security-key` ("Clé de sécurité", WebAuthn) or `backup-code` ("Code de secours").
+ * Later versions may add methods; a client ignores one it does not know.
+ */
+export type TwoStepMethod = string;
+
+export type SignInChallengeSecurityKeysItem = {
+  name: string;
+};
+
+/**
+ * A two-step challenge, the second step of a sign-in ("Vérification en deux étapes"). It
+ * holds what the screen shows: the account above it, the tabs of `methods` in their order,
+ * the one that opens first, the names of the keys and the backup codes left.
+ */
+export interface SignInChallenge {
+  /**
+     * The secret of the challenge (256 random bits, base64url), to send with its answer.
+     * Returned by the `202` of the sign-in and echoed by the inspection. Never logged.
+     * @minLength 32
+     * @maxLength 256
+     */
+  token: string;
+  /** When the challenge stops working, 10 minutes after the sign-in that issued it. */
+  expiresAt: string;
+  /** Address of the account, shown above the challenge. */
+  email: Email;
+  /** Full name of the account; the web application derives the initials from it. */
+  name: string;
+  /** The method whose tab opens first, `authenticator-app` today. */
+  primaryMethod: TwoStepMethod;
+  /**
+     * The methods the account can answer with, in the order of the tabs: `authenticator-app`
+     * always, `security-key` when the account has a key, `backup-code` while a backup code is
+     * left.
+     * @minItems 1
+     * @maxItems 3
+     */
+  methods: TwoStepMethod[];
+  /**
+     * The keys of the account, by name ("2 clés enregistrées : YubiKey 5C NFC, Touch ID
+     * (MacBook Air).").
+     * @maxItems 10
+     */
+  securityKeys: SignInChallengeSecurityKeysItem[];
+  /**
+     * Backup codes not used yet ("Il vous reste 7 codes inutilisés.").
+     * @minimum 0
+     * @maximum 10
+     */
+  backupCodesRemaining: number;
+  /**
+     * When the lockout of the two-step answers of the account ends, `null` when they are not
+     * locked (see `TwoStepLocked`): until then every answer is refused.
+     * @nullable
+     */
+  lockedUntil: string | null;
+}
+
+/**
+ * "Faire confiance à cet appareil pendant 30 jours": the gateway sets the device cookie, and
+ * the sign-ins of this account from this browser skip the challenge for 30 days.
+ */
+export type TrustDevice = boolean;
+
+export interface AuthenticatorAppAnswer {
+  token: ChallengeToken;
+  code: TwoStepCode;
+  trustDevice?: TrustDevice;
+}
+
+export interface BackupCodeAnswer {
+  token: ChallengeToken;
+  /**
+     * A backup code, `XXXX-XXXX` (placeholder "XXXX-XXXX"), read without regard to case, with
+     * or without its dash. Works once. Never logged.
+     * @pattern ^[0-9A-Za-z]{4}-?[0-9A-Za-z]{4}$
+     */
+  code: string;
+  trustDevice?: TrustDevice;
+}
+
+export type SecurityKeyAssertionResponse = {
+  /** @maxLength 16384 */
+  clientDataJSON: string;
+  /** @maxLength 16384 */
+  authenticatorData: string;
+  /** @maxLength 16384 */
+  signature: string;
+  /**
+     * @maxLength 1024
+     * @nullable
+     */
+  userHandle?: string | null;
+  [key: string]: unknown;
+ };
+
+export type SecurityKeyAssertionClientExtensionResults = { [key: string]: unknown };
+
+/**
+ * The answer of the key (`AuthenticationResponseJSON`), as the browser serializes it. Members
+ * not listed here are passed on to identity-service, which verifies it.
+ */
+export interface SecurityKeyAssertion {
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  rawId: string;
+  type: string;
+  response: SecurityKeyAssertionResponse;
+  /** @nullable */
+  authenticatorAttachment?: string | null;
+  clientExtensionResults?: SecurityKeyAssertionClientExtensionResults;
+  [key: string]: unknown;
+ }
+
+export interface SecurityKeyAnswer {
+  token: ChallengeToken;
+  credential: SecurityKeyAssertion;
+  trustDevice?: TrustDevice;
+}
+
+/**
+ * A WebAuthn credential of the account, by id (`PublicKeyCredentialDescriptorJSON`).
+ */
+export interface WebAuthnCredentialDescriptor {
+  /** Id of the credential, base64url. */
+  id: string;
+  /** `public-key`. */
+  type: string;
+  /** How the browser reaches the key (`usb`, `nfc`, `ble`, `internal`, `hybrid`). */
+  transports?: string[];
+  [key: string]: unknown;
+ }
+
+/**
+ * `PublicKeyCredentialRequestOptionsJSON` of WebAuthn Level 3, as identity-service builds
+ * it: the web application passes the whole object to the browser. Members not listed here
+ * are passed on too.
+ */
+export interface WebAuthnRequestOptions {
+  /** The WebAuthn challenge, base64url, valid once. */
+  challenge: string;
+  /** The relying party, the domain of the web application. */
+  rpId?: string;
+  /**
+     * Milliseconds the browser waits for the key.
+     * @minimum 1
+     */
+  timeout?: number;
+  /** `required`, `preferred` or `discouraged`. */
+  userVerification?: string;
+  /**
+     * The keys of the account; no other key can answer.
+     * @maxItems 10
+     */
+  allowCredentials?: WebAuthnCredentialDescriptor[];
+  [key: string]: unknown;
+ }
+
+export type WebAuthnCreationOptionsRp = {
+  id?: string;
+  name: string;
+  [key: string]: unknown;
+ };
+
+export type WebAuthnCreationOptionsUser = {
+  /** Opaque handle of the account for WebAuthn, base64url; not its id nor its address. */
+  id: string;
+  name: string;
+  displayName: string;
+  [key: string]: unknown;
+ };
+
+export type WebAuthnCreationOptionsPubKeyCredParamsItem = {
+  type: string;
+  /** COSE algorithm (`-8` EdDSA, `-7` ES256, `-257` RS256). */
+  alg: number;
+  [key: string]: unknown;
+ };
+
+/**
+ * `PublicKeyCredentialCreationOptionsJSON` of WebAuthn Level 3, as identity-service builds
+ * it: the web application passes the whole object to the browser. Members not listed here
+ * (`authenticatorSelection`, `attestation`, `extensions`, `hints`) are passed on too.
+ */
+export interface WebAuthnCreationOptions {
+  /** The WebAuthn challenge, base64url, valid once. */
+  challenge: string;
+  rp: WebAuthnCreationOptionsRp;
+  user: WebAuthnCreationOptionsUser;
+  /** @minItems 1 */
+  pubKeyCredParams: WebAuthnCreationOptionsPubKeyCredParamsItem[];
+  /**
+     * Milliseconds the browser waits for the key.
+     * @minimum 1
+     */
+  timeout?: number;
+  /**
+     * The keys the account already has, which the browser refuses to register again.
+     * @maxItems 10
+     */
+  excludeCredentials?: WebAuthnCredentialDescriptor[];
+  [key: string]: unknown;
+ }
+
+export type SecurityKeyAttestationResponse = {
+  /** @maxLength 16384 */
+  clientDataJSON: string;
+  /** @maxLength 65536 */
+  attestationObject: string;
+  /** @maxItems 10 */
+  transports?: string[];
+  [key: string]: unknown;
+ };
+
+export type SecurityKeyAttestationClientExtensionResults = { [key: string]: unknown };
+
+/**
+ * The answer of the browser to the registration options (`RegistrationResponseJSON`), as it
+ * serializes it. Members not listed here are passed on to identity-service, which verifies
+ * it.
+ */
+export interface SecurityKeyAttestation {
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  rawId: string;
+  type: string;
+  response: SecurityKeyAttestationResponse;
+  /** @nullable */
+  authenticatorAttachment?: string | null;
+  clientExtensionResults?: SecurityKeyAttestationClientExtensionResults;
+  [key: string]: unknown;
+ }
+
+export interface SecurityKeyAssertionOptions {
+  options: WebAuthnRequestOptions;
+  /** When the options stop working, 5 minutes later. */
+  expiresAt: string;
+}
+
+/**
+ * The authenticator app ("Application d'authentification"), `null` while off.
+ * @nullable
+ */
+export type TwoStepVerificationAuthenticatorApp = {
+  /** When the current app was confirmed ("Configurée le 3 mars 2026"). */
+  configuredAt: string;
+} | null;
+
+/**
+ * The backup codes ("Codes de secours"), `null` while off.
+ * @nullable
+ */
+export type TwoStepVerificationBackupCodes = {
+  /**
+     * Codes not used yet ("7 codes inutilisés sur 10").
+     * @minimum 0
+     * @maximum 10
+     */
+  remaining: number;
+  /**
+     * Codes generated together, 10.
+     * @minimum 1
+     */
+  total: number;
+  /** When they were generated. */
+  generatedAt: string;
+} | null;
+
+export interface SecurityKey {
+  id: string;
+  /** The name the person gave it. */
+  name: string;
+  createdAt: string;
+  /**
+     * Last answer of a challenge with the key; `null` before the first.
+     * @nullable
+     */
+  lastUsedAt: string | null;
+}
+
+export interface TwoStepRequirement {
+  organizationId: string;
+  /**
+     * `admins`: the policy requires it of the owner and the admins; `everyone`: of every
+     * member, guests included. Later versions may add values (`x-extensible-enum`).
+     */
+  requiredFor: string;
+}
+
+/**
+ * The two-step verification of the account, without any secret.
+ */
+export interface TwoStepVerification {
+  /** "Activée" or "Désactivée": on while the account has an authenticator app. */
+  enabled: boolean;
+  /**
+     * The method a challenge opens on ("méthode principale"), `authenticator-app` today;
+     * `null` while two-step verification is off.
+     * @nullable
+     */
+  primaryMethod: string | null;
+  /**
+     * The configured methods: `authenticator-app`, and `security-key` when the account has a
+     * key; empty while two-step verification is off. Backup codes are in `backupCodes`.
+     * @maxItems 2
+     */
+  methods: string[];
+  /**
+     * The authenticator app ("Application d'authentification"), `null` while off.
+     * @nullable
+     */
+  authenticatorApp: TwoStepVerificationAuthenticatorApp;
+  /**
+     * The security keys ("Clés de sécurité et biométrie"), the oldest first.
+     * @maxItems 10
+     */
+  securityKeys: SecurityKey[];
+  /**
+     * The backup codes ("Codes de secours"), `null` while off.
+     * @nullable
+     */
+  backupCodes: TwoStepVerificationBackupCodes;
+  /**
+     * The organizations whose authentication policy requires two-step verification of the
+     * person, for the role they have in each ("Exigée par Atelier Nord pour les propriétaires
+     * et administrateurs."): while one is listed, it cannot be turned off.
+     */
+  requiredBy: TwoStepRequirement[];
+}
+
+export interface AuthenticatorAppSetup {
+  /**
+     * The TOTP secret of the new app, 160 random bits in base32 without padding, returned
+     * here once ("saisissez la clé"). A secret: never logged, never kept by the web
+     * application or the gateway; identity-service keeps it encrypted.
+     * @pattern ^[A-Z2-7]{32}$
+     */
+  secret: string;
+  /**
+     * `otpauth://totp/Cadenway:<address>?secret=<secret>&issuer=Cadenway&algorithm=SHA1&digits=6&period=30`,
+     * drawn as a QR code by the web application. Holds the secret: never logged.
+     * @maxLength 2048
+     */
+  otpauthUri: string;
+  /** When the pending setup stops working, 15 minutes later. */
+  expiresAt: string;
+}
+
+export interface AuthenticatorAppConfirmation {
+  code: TwoStepCode;
+}
+
+/**
+ * Backup codes, returned once by the request that generates them.
+ */
+export interface BackupCodes {
+  /**
+     * 10 codes `XXXX-XXXX` of upper-case letters and digits, each working once. Secrets: the
+     * web application shows them, offers to copy and download them, and never keeps them;
+     * identity-service keeps only their hashes.
+     * @minItems 10
+     * @maxItems 10
+     * @items.pattern ^[0-9A-Z]{4}-[0-9A-Z]{4}$
+     */
+  codes: string[];
+  generatedAt: string;
+}
+
+export interface AuthenticatorAppConfigured {
+  twoStepVerification: TwoStepVerification;
+  /**
+     * The 10 backup codes generated because two-step verification turned on, returned here
+     * once; `null` for a reconfiguration, which keeps the current codes.
+     */
+  backupCodes: BackupCodes | null;
+}
+
+export interface SecurityKeyRegistration {
+  options: WebAuthnCreationOptions;
+  /** When the pending registration stops working, 5 minutes later. */
+  expiresAt: string;
+}
+
+export interface SecurityKeyAddition {
+  /**
+     * Name of the key, as typed and trimmed (new field, new copy: "Nom de la clé", for
+     * example "YubiKey 5C NFC" or "Touch ID (MacBook Air)"). A name made only of spaces
+     * answers `400 request.invalid`.
+     * @minLength 1
+     * @maxLength 60
+     */
+  name: string;
+  credential: SecurityKeyAttestation;
 }
 
 /**
@@ -464,6 +910,21 @@ export interface Problem {
  * Signed in. The body describes the session; the token itself is only in the cookie.
  */
 export type SignedInResponse = SignedIn;
+
+/**
+ * The address and its password, or its email code, are right, and the account has two-step
+ * verification: no session is opened and no cookie is set. The body is the challenge to
+ * answer ("Vérification en deux étapes"); its `token` is a secret the web application keeps
+ * for the life of the challenge, sends in bodies only, and never puts in a URL.
+ */
+export type ChallengeIssuedResponse = SignInChallenge;
+
+/**
+ * Signed in by the answer of the challenge, as a `200` sign-in. The body describes the
+ * session; the session token is only in its cookie, and the device token, with
+ * `trustDevice`, only in the second cookie.
+ */
+export type ChallengeAnsweredResponse = SignedIn;
 
 /**
  * The body does not match the schema: `request.invalid`, with one `details.issues` entry per
@@ -528,6 +989,8 @@ export type EmailNotVerifiedResponse = Problem;
  *   Answered the same way when no account uses the address. The failed passwords of
  *   `POST /v1/auth/reauthentication` and `PUT /v1/me/password` count with those of the
  *   sign-in, and both routes answer this code during the lockout.
+ * - `auth.two-step-locked`, on `POST /v1/auth/reauthentication` with a `code` only: see
+ *   `TwoStepLocked`.
  * - `rate-limit.exceeded`: the gateway's own limit.
  */
 export type AccountLockedResponse = Problem;
@@ -618,9 +1081,13 @@ export type ResetLinkExpiredResponse = Problem;
 export type PasswordResetRefusedResponse = Problem;
 
 /**
- * `auth.password-incorrect`: the password is not the one of the account.
- * `details.remainingAttempts` is the number of failures left before the lockout of the
- * password sign-in of the address, at least 1.
+ * - `auth.password-incorrect`: the password is not the one of the account.
+ *   `details.remainingAttempts` is the number of failures left before the lockout of the
+ *   password sign-in of the address, at least 1.
+ * - `auth.two-step-code-invalid`, on `POST /v1/auth/reauthentication` with a `code`: the code
+ *   is not the current one of the authenticator app, or was used already.
+ *   `details.remainingAttempts` is the number of wrong answers left before the lockout of
+ *   the two-step answers of the account, at least 1.
  */
 export type PasswordRefusedResponse = Problem;
 
@@ -643,10 +1110,10 @@ export type SessionWriteForbiddenResponse = Problem;
 /**
  * - `auth.reauthentication-required`: the person of this session has not proved who they are
  *   in the last 10 minutes (see "Recent authentication"). `details.methods` lists the ways
- *   they can, in the order to offer them: `password` today, for
- *   `POST /v1/auth/reauthentication`; later versions add two-step methods, and a client
- *   ignores a method it does not know. The web application asks, confirms, then repeats the
- *   request;
+ *   they can, in the order to offer them, for `POST /v1/auth/reauthentication`: `password`,
+ *   then `authenticator-app` (its `code`) when the account has an authenticator app; later
+ *   versions add methods, and a client ignores a method it does not know. The web
+ *   application asks, confirms, then repeats the request;
  * - `auth.csrf-rejected`: see `CrossSiteRefused`;
  * - `auth.api-token-not-accepted`: a personal API token cannot call this route.
  */
@@ -679,6 +1146,93 @@ export type OrganizationOwnerResponse = Problem;
  * `session.not-found`: no session with this id belongs to the account.
  */
 export type SessionNotFoundResponse = Problem;
+
+/**
+ * `auth.challenge-expired`: the two-step challenge expired (10 minutes after the sign-in),
+ * was answered, was replaced by a newer challenge of the account, or is unknown or
+ * malformed. The person signs in again.
+ */
+export type ChallengeExpiredResponse = Problem;
+
+/**
+ * The answer is refused. The challenge is checked first:
+ *
+ * - `auth.challenge-expired`: see `ChallengeExpired`; no attempt is counted;
+ * - `auth.two-step-code-invalid`: the code is wrong, or was used already (a code of the app
+ *   works once, a backup code works once). `details.remainingAttempts` is the number of
+ *   wrong answers left before the lockout of the two-step answers of the account, at least 1.
+ */
+export type TwoStepCodeRefusedResponse = Problem;
+
+/**
+ * The key cannot answer. The challenge is checked first:
+ *
+ * - `auth.challenge-expired`: see `ChallengeExpired`; no attempt is counted;
+ * - `auth.security-key-refused`: the account has no security key (options), or the answer of
+ *   the key does not verify against the latest options of the challenge (answer), with
+ *   `details.remainingAttempts` as for a wrong code.
+ */
+export type SecurityKeyAnswerRefusedResponse = Problem;
+
+/**
+ * - `auth.two-step-locked`: five wrong answers in a row, across the two-step challenges of
+ *   the account and the codes of `POST /v1/auth/reauthentication`, lock the two-step answers
+ *   of the account until `details.lockedUntil`, 15 minutes after the fifth. Every answer is
+ *   refused until then, even a right one; a sign-in still answers its challenge, with
+ *   `lockedUntil`. The end of the lockout, or a right answer after it, starts the count again.
+ * - `rate-limit.exceeded`: the gateway's own limit.
+ */
+export type TwoStepLockedResponse = Problem;
+
+/**
+ * `auth.mfa-required-by-organization`: the policy of at least one organization of the person
+ * requires two-step verification for the role they have in it (see
+ * `openapi/public/organizations.yaml`), so it cannot be turned off. `details.organizationIds`
+ * lists those organizations; the web application names them from `GET /v1/organizations`
+ * ("Exigée par Atelier Nord pour les propriétaires et administrateurs.").
+ */
+export type MfaRequiredByOrganizationResponse = Problem;
+
+/**
+ * The authenticator app is not confirmed:
+ *
+ * - `auth.two-step-setup-expired`: no pending setup of this session, or it expired (15
+ *   minutes) or was replaced by a newer start; the person starts again;
+ * - `auth.two-step-code-invalid`: the code is not one the new app shows now; the setup stays
+ *   pending, and no attempt is counted (no `details.remainingAttempts`).
+ */
+export type SetupCodeRefusedResponse = Problem;
+
+/**
+ * `auth.two-step-not-enabled`: the request needs two-step verification on the account of the
+ * caller, which is off: regenerating backup codes, adding a security key, or, in
+ * `openapi/public/organizations.yaml`, requiring two-step verification for a role the caller
+ * has.
+ */
+export type TwoStepNotEnabledResponse = Problem;
+
+/**
+ * - `auth.two-step-not-enabled`: see `TwoStepNotEnabled`; a security key comes in addition to
+ *   the authenticator app;
+ * - `auth.security-key-limit-reached`: the account has 10 security keys, the most it can
+ *   have; the person removes one first.
+ */
+export type SecurityKeyNotAddableResponse = Problem;
+
+/**
+ * The key is not registered:
+ *
+ * - `auth.two-step-setup-expired`: no pending registration of this session, or it expired (5
+ *   minutes) or was replaced by a newer start;
+ * - `auth.security-key-refused`: the answer of the browser does not verify against the
+ *   pending registration, or the account already has this key.
+ */
+export type SecurityKeyRegistrationRefusedResponse = Problem;
+
+/**
+ * `security-key.not-found`: no security key with this id belongs to the account.
+ */
+export type SecurityKeyNotFoundResponse = Problem;
 
 export type ListSessionsParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */

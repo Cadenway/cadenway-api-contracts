@@ -6,7 +6,9 @@ import type { Problem } from './problem';
 
 /**
  * - `organization.not-selected`: the session has no current organization;
- * - `organization.role-forbidden`: only the owner and the admins change the organization;
+ * - `organization.mfa-required`: see `OrganizationReadForbidden`;
+ * - `organization.role-forbidden`: only the owner and the admins change the organization and
+ *   its authentication policy;
  * - `auth.csrf-rejected`, `auth.api-token-not-accepted`: see `SessionWriteForbidden`.
  */
 export type OrganizationWriteForbiddenResponse = Problem;

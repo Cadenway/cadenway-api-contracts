@@ -7,6 +7,12 @@ import type { Problem } from './problem';
 /**
  * - `organization.not-selected`: the session has no current organization; the web
  *   application shows the picker;
+ * - `organization.mfa-required`: the authentication policy of the current organization
+ *   requires two-step verification for the role of the caller, who has none;
+ *   `details.organizationId` names it, and the web application offers to set it up from the
+ *   account;
+ * - `organization.role-forbidden`: on the authentication policy, only the owner and the
+ *   admins read it;
  * - `auth.api-token-not-accepted`: a personal API token cannot call this route.
  */
 export type OrganizationReadForbiddenResponse = Problem;

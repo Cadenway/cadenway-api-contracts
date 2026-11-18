@@ -100,6 +100,16 @@ export interface SignUpVerification {
   client: Client;
 }
 
+/**
+ * Value of the cookie `__Host-cw_trusted_device` of the request, which the gateway forwards
+ * when the browser sent one. A secret, never logged; identity-service compares its SHA-256
+ * hash with the trusted devices of the account. Unknown, expired, forgotten, of another
+ * account or malformed: ignored, the sign-in answers its challenge.
+ * @minLength 1
+ * @maxLength 256
+ */
+export type TrustedDeviceToken = string;
+
 export interface CodeVerification {
   email: Email;
   /**
@@ -109,6 +119,7 @@ export interface CodeVerification {
   code: string;
   rememberMe?: boolean;
   client: Client;
+  trustedDeviceToken?: TrustedDeviceToken;
 }
 
 export interface PasswordSignIn {
@@ -121,6 +132,7 @@ export interface PasswordSignIn {
   password: string;
   rememberMe?: boolean;
   client: Client;
+  trustedDeviceToken?: TrustedDeviceToken;
 }
 
 export interface Session {
@@ -162,11 +174,27 @@ export interface User {
      */
   passwordChangedAt?: string;
   /**
-     * Version of the account. A change of the profile, of the password, of the address or of
-     * the scheduled deletion makes it the next one.
+     * Version of the account. A change of the profile, of the password, of the address, of
+     * the two-step verification or of the scheduled deletion makes it the next one.
      * @minimum 1
      */
   version: number;
+}
+
+/**
+ * The device the answer of a challenge with `trustDevice` made trusted. The gateway writes
+ * `token` into `__Host-cw_trusted_device` with `Max-Age` until `expiresAt`, and passes nothing
+ * of it on in the public body.
+ */
+export interface TrustedDevice {
+  /**
+     * Opaque device token (256 random bits, base64url), returned once. A secret, never logged.
+     * @minLength 32
+     * @maxLength 256
+     */
+  token: string;
+  /** 30 days after the answer. */
+  expiresAt: string;
 }
 
 export interface SessionIssued {
@@ -184,6 +212,7 @@ export interface SessionIssued {
      * passes it on in the public answer. Absent or `false` otherwise.
      */
   deletionCancelled?: boolean;
+  trustedDevice?: TrustedDevice;
 }
 
 export interface IntrospectionRequest {
@@ -193,6 +222,18 @@ export interface IntrospectionRequest {
      * @maxLength 256
      */
   token: string;
+}
+
+/**
+ * The organization a session or a token would act on, withheld because its authentication
+ * policy requires two-step verification for the role of the person, who has none. The
+ * gateway answers `403` with `code` and `details.organizationId` on the routes that need an
+ * organization. Absent when nothing is withheld.
+ */
+export interface WithheldOrganization {
+  organizationId: string;
+  /** The code the gateway answers, `organization.mfa-required` today (`x-extensible-enum`). */
+  code: string;
 }
 
 export interface ActiveToken {
@@ -229,6 +270,7 @@ export interface ActiveToken {
   scopes: string[];
   /** When the session ends at the latest. */
   expiresAt: string;
+  withheldOrganization?: WithheldOrganization;
 }
 
 export const InactiveTokenValue = {
@@ -421,6 +463,7 @@ export interface ActiveApiToken {
      * @nullable
      */
   expiresAt: string | null;
+  withheldOrganization?: WithheldOrganization;
 }
 
 export type ApiTokenIntrospection = ActiveApiToken | InactiveToken;
@@ -485,7 +528,14 @@ export interface PasswordResetCompleted {
 }
 
 /**
- * Later versions add a two-step code; `password` then becomes optional beside it.
+ * The 6 digits of the authenticator app. A time step already accepted is refused. Never logged.
+ * @pattern ^[0-9]{6}$
+ */
+export type TwoStepCode = string;
+
+/**
+ * `password`, or `code` for an account with an authenticator app; both or neither answer
+ * `400 request.invalid`, checked here.
  */
 export interface ReauthenticationRequest {
   /**
@@ -493,7 +543,8 @@ export interface ReauthenticationRequest {
      * @minLength 1
      * @maxLength 256
      */
-  password: string;
+  password?: string;
+  code?: TwoStepCode;
 }
 
 export interface RecentAuthentication {
@@ -593,6 +644,13 @@ export interface OpenSession {
   /** Last active introspection, recorded at most once a minute. */
   lastActiveAt: string;
   expiresAt: string;
+  /**
+     * Minutes of inactivity after which the session closes, from the policy of its current
+     * organization, 720 without one. Always sent from this version on; optional so that the
+     * gateway can move to this version first.
+     * @minimum 1
+     */
+  inactivityTimeoutMinutes?: number;
 }
 
 export interface OpenSessionPage {
@@ -606,6 +664,433 @@ export interface RevokedSessions {
      * @minimum 0
      */
   revokedCount: number;
+}
+
+/**
+ * The token of a two-step challenge, as the public request carried it. A secret, never
+ * logged; identity-service keeps only its SHA-256 hash.
+ * @minLength 1
+ * @maxLength 256
+ */
+export type ChallengeToken = string;
+
+export interface ChallengeTokenRequest {
+  token: ChallengeToken;
+}
+
+/**
+ * `authenticator-app`, `security-key` or `backup-code` today; more later (`x-extensible-enum`).
+ */
+export type TwoStepMethod = string;
+
+export type SignInChallengeSecurityKeysItem = {
+  name: string;
+};
+
+/**
+ * A two-step challenge, the `202` of the sign-ins and the `200` of its inspection, which the
+ * gateway answers as is.
+ */
+export interface SignInChallenge {
+  /**
+     * The secret of the challenge (256 random bits, base64url). Never logged.
+     * @minLength 32
+     * @maxLength 256
+     */
+  token: string;
+  /** 10 minutes after the sign-in that issued it. */
+  expiresAt: string;
+  email: Email;
+  name: string;
+  primaryMethod: TwoStepMethod;
+  /**
+     * `authenticator-app`, then `security-key` with a key, then `backup-code` while one is left.
+     * @minItems 1
+     * @maxItems 3
+     */
+  methods: TwoStepMethod[];
+  /** @maxItems 10 */
+  securityKeys: SignInChallengeSecurityKeysItem[];
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  backupCodesRemaining: number;
+  /**
+     * End of the lockout of the two-step answers of the account, `null` without one.
+     * @nullable
+     */
+  lockedUntil: string | null;
+}
+
+/**
+ * Make the browser a trusted device of the account for 30 days (`trustedDevice` in the answer).
+ */
+export type TrustDevice = boolean;
+
+export interface AuthenticatorAppAnswer {
+  token: ChallengeToken;
+  code: TwoStepCode;
+  trustDevice?: TrustDevice;
+  /** The browser the session opens for. */
+  client: Client;
+}
+
+export interface BackupCodeAnswer {
+  token: ChallengeToken;
+  /**
+     * A backup code, compared upper-cased and without its dash. Never logged.
+     * @pattern ^[0-9A-Za-z]{4}-?[0-9A-Za-z]{4}$
+     */
+  code: string;
+  trustDevice?: TrustDevice;
+  /** The browser the session opens for. */
+  client: Client;
+}
+
+export type SecurityKeyAssertionResponse = {
+  /** @maxLength 16384 */
+  clientDataJSON: string;
+  /** @maxLength 16384 */
+  authenticatorData: string;
+  /** @maxLength 16384 */
+  signature: string;
+  /**
+     * @maxLength 1024
+     * @nullable
+     */
+  userHandle?: string | null;
+  [key: string]: unknown;
+ };
+
+export type SecurityKeyAssertionClientExtensionResults = { [key: string]: unknown };
+
+/**
+ * `AuthenticationResponseJSON`, as the public request carried it; members not listed here are kept.
+ */
+export interface SecurityKeyAssertion {
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  rawId: string;
+  type: string;
+  response: SecurityKeyAssertionResponse;
+  /** @nullable */
+  authenticatorAttachment?: string | null;
+  clientExtensionResults?: SecurityKeyAssertionClientExtensionResults;
+  [key: string]: unknown;
+ }
+
+export interface SecurityKeyAnswer {
+  token: ChallengeToken;
+  credential: SecurityKeyAssertion;
+  trustDevice?: TrustDevice;
+  /** The browser the session opens for. */
+  client: Client;
+}
+
+/**
+ * `PublicKeyCredentialDescriptorJSON`; members not listed here are kept.
+ */
+export interface WebAuthnCredentialDescriptor {
+  id: string;
+  type: string;
+  transports?: string[];
+  [key: string]: unknown;
+ }
+
+/**
+ * `PublicKeyCredentialRequestOptionsJSON`, as `@simplewebauthn/server` generates it; members
+ * not listed here are kept, and the gateway passes the whole object on.
+ */
+export interface WebAuthnRequestOptions {
+  challenge: string;
+  rpId?: string;
+  /** @minimum 1 */
+  timeout?: number;
+  userVerification?: string;
+  /** @maxItems 10 */
+  allowCredentials?: WebAuthnCredentialDescriptor[];
+  [key: string]: unknown;
+ }
+
+export type WebAuthnCreationOptionsRp = {
+  id?: string;
+  name: string;
+  [key: string]: unknown;
+ };
+
+export type WebAuthnCreationOptionsUser = {
+  /** Opaque WebAuthn handle of the account; not its id nor its address. */
+  id: string;
+  name: string;
+  displayName: string;
+  [key: string]: unknown;
+ };
+
+export type WebAuthnCreationOptionsPubKeyCredParamsItem = {
+  type: string;
+  alg: number;
+  [key: string]: unknown;
+ };
+
+/**
+ * `PublicKeyCredentialCreationOptionsJSON`, as `@simplewebauthn/server` generates it; members
+ * not listed here are kept, and the gateway passes the whole object on.
+ */
+export interface WebAuthnCreationOptions {
+  challenge: string;
+  rp: WebAuthnCreationOptionsRp;
+  user: WebAuthnCreationOptionsUser;
+  /** @minItems 1 */
+  pubKeyCredParams: WebAuthnCreationOptionsPubKeyCredParamsItem[];
+  /** @minimum 1 */
+  timeout?: number;
+  /** @maxItems 10 */
+  excludeCredentials?: WebAuthnCredentialDescriptor[];
+  [key: string]: unknown;
+ }
+
+export type SecurityKeyAttestationResponse = {
+  /** @maxLength 16384 */
+  clientDataJSON: string;
+  /** @maxLength 65536 */
+  attestationObject: string;
+  /** @maxItems 10 */
+  transports?: string[];
+  [key: string]: unknown;
+ };
+
+export type SecurityKeyAttestationClientExtensionResults = { [key: string]: unknown };
+
+/**
+ * `RegistrationResponseJSON`, as the public request carried it; members not listed here are kept.
+ */
+export interface SecurityKeyAttestation {
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  rawId: string;
+  type: string;
+  response: SecurityKeyAttestationResponse;
+  /** @nullable */
+  authenticatorAttachment?: string | null;
+  clientExtensionResults?: SecurityKeyAttestationClientExtensionResults;
+  [key: string]: unknown;
+ }
+
+export interface SecurityKeyAssertionOptions {
+  options: WebAuthnRequestOptions;
+  /** 5 minutes after they were issued. */
+  expiresAt: string;
+}
+
+/**
+ * @nullable
+ */
+export type TwoStepVerificationAuthenticatorApp = {
+  configuredAt: string;
+} | null;
+
+/**
+ * @nullable
+ */
+export type TwoStepVerificationBackupCodes = {
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  remaining: number;
+  /** @minimum 1 */
+  total: number;
+  generatedAt: string;
+} | null;
+
+export interface SecurityKey {
+  id: string;
+  name: string;
+  createdAt: string;
+  /** @nullable */
+  lastUsedAt: string | null;
+}
+
+export interface TwoStepRequirement {
+  organizationId: string;
+  /** `admins` (owner and admins) or `everyone` today (`x-extensible-enum`). */
+  requiredFor: string;
+}
+
+/**
+ * The two-step verification of an account, without any secret.
+ */
+export interface TwoStepVerification {
+  /** On while the account has an authenticator app. */
+  enabled: boolean;
+  /**
+     * `authenticator-app` today; `null` while off (`x-extensible-enum`).
+     * @nullable
+     */
+  primaryMethod: string | null;
+  /** @maxItems 2 */
+  methods: string[];
+  /** @nullable */
+  authenticatorApp: TwoStepVerificationAuthenticatorApp;
+  /**
+     * The oldest first.
+     * @maxItems 10
+     */
+  securityKeys: SecurityKey[];
+  /** @nullable */
+  backupCodes: TwoStepVerificationBackupCodes;
+  /**
+     * The organizations of the copy of the memberships whose policy requires two-step
+     * verification for the role of the person in them.
+     */
+  requiredBy: TwoStepRequirement[];
+}
+
+export interface SessionReference {
+  /** The session of the public request, whose recent authentication is checked and which the pending setup belongs to. */
+  sessionId: string;
+}
+
+export interface TwoStepChange {
+  /** The session of the public request, whose recent authentication is checked. */
+  sessionId: string;
+  /** The browser of the change, shown in the security email. */
+  client: Client;
+}
+
+export interface AuthenticatorAppSetup {
+  /**
+     * The TOTP secret (160 bits, base32 without padding), returned once. Never logged.
+     * @pattern ^[A-Z2-7]{32}$
+     */
+  secret: string;
+  /**
+     * The `otpauth://totp/…` URI of the secret, issuer `Cadenway`. Never logged.
+     * @maxLength 2048
+     */
+  otpauthUri: string;
+  /** 15 minutes after the start. */
+  expiresAt: string;
+}
+
+export interface AuthenticatorAppConfirmation {
+  /** The session of the public request, whose pending setup is confirmed. */
+  sessionId: string;
+  code: TwoStepCode;
+  /** The browser of the change, shown in the security email. */
+  client: Client;
+}
+
+export interface BackupCodes {
+  /**
+     * 10 codes `XXXX-XXXX`, returned once; identity-service keeps only their hashes. Never logged.
+     * @minItems 10
+     * @maxItems 10
+     * @items.pattern ^[0-9A-Z]{4}-[0-9A-Z]{4}$
+     */
+  codes: string[];
+  generatedAt: string;
+}
+
+export interface AuthenticatorAppConfigured {
+  twoStepVerification: TwoStepVerification;
+  /** The 10 backup codes when two-step verification turned on, returned once; `null` for a reconfiguration. */
+  backupCodes: BackupCodes | null;
+}
+
+export interface SecurityKeyRegistration {
+  options: WebAuthnCreationOptions;
+  /** 5 minutes after the start. */
+  expiresAt: string;
+}
+
+export interface SecurityKeyAddition {
+  /** The session of the public request, whose pending registration is answered. */
+  sessionId: string;
+  /**
+     * Trimmed here; a name made only of spaces answers `400 request.invalid`.
+     * @minLength 1
+     * @maxLength 60
+     */
+  name: string;
+  credential: SecurityKeyAttestation;
+  /** The browser of the change, shown in the security email. */
+  client: Client;
+}
+
+/**
+ * Members of the copy of the memberships whose account has no two-step verification.
+ */
+export type AuthenticationPolicyMembersWithoutTwoStepVerification = {
+  /**
+     * The owner and the admins among them.
+     * @minimum 0
+     */
+  admins: number;
+  /**
+     * All of them, guests included.
+     * @minimum 0
+     */
+  everyone: number;
+};
+
+export interface AuthenticationPolicy {
+  /** `nobody` (default), `admins` or `everyone` today (`x-extensible-enum`). */
+  twoStepVerificationRequiredFor: string;
+  /**
+     * `60`, `720` (default), `10080` or `43200` today (`x-extensible-enum`).
+     * @minimum 1
+     */
+  sessionInactivityTimeoutMinutes: number;
+  /** Members of the copy of the memberships whose account has no two-step verification. */
+  membersWithoutTwoStepVerification: AuthenticationPolicyMembersWithoutTwoStepVerification;
+  /**
+     * Version of the policy, also sent as `ETag`; 1 for the default policy.
+     * @minimum 1
+     */
+  version: number;
+}
+
+export type AuthenticationPolicyPatchTwoStepVerificationRequiredFor = typeof AuthenticationPolicyPatchTwoStepVerificationRequiredFor[keyof typeof AuthenticationPolicyPatchTwoStepVerificationRequiredFor];
+
+
+export const AuthenticationPolicyPatchTwoStepVerificationRequiredFor = {
+  nobody: 'nobody',
+  admins: 'admins',
+  everyone: 'everyone',
+} as const;
+
+export type AuthenticationPolicyPatchSessionInactivityTimeoutMinutes = typeof AuthenticationPolicyPatchSessionInactivityTimeoutMinutes[keyof typeof AuthenticationPolicyPatchSessionInactivityTimeoutMinutes];
+
+
+export const AuthenticationPolicyPatchSessionInactivityTimeoutMinutes = {
+  NUMBER_60: 60,
+  NUMBER_720: 720,
+  NUMBER_10080: 10080,
+  NUMBER_43200: 43200,
+} as const;
+
+/**
+ * JSON Merge Patch of the policy, as the public request carried it.
+ */
+export interface AuthenticationPolicyPatch {
+  twoStepVerificationRequiredFor?: AuthenticationPolicyPatchTwoStepVerificationRequiredFor;
+  sessionInactivityTimeoutMinutes?: AuthenticationPolicyPatchSessionInactivityTimeoutMinutes;
 }
 
 /**
@@ -632,6 +1117,105 @@ export interface Problem {
   /** Members specific to the code, for example the fields that failed validation. */
   details?: ProblemDetails;
 }
+
+/**
+ * The account has two-step verification: no session, no token. The body is the challenge, the
+ * schema `POST /internal/v1/auth/sign-in/challenge/inspection` answers; `token` is a secret.
+ */
+export type ChallengeIssuedResponse = SignInChallenge;
+
+/**
+ * A session is open, as for `SessionIssued`; with `trustDevice`, `trustedDevice` holds the
+ * device token, returned once, that the gateway writes into `__Host-cw_trusted_device`.
+ */
+export type ChallengeAnsweredResponse = SessionIssued;
+
+/**
+ * `auth.challenge-expired`: the challenge expired (10 minutes), was answered, was replaced,
+ * or is unknown or malformed.
+ */
+export type ChallengeExpiredResponse = Problem;
+
+/**
+ * `auth.challenge-expired` (checked first, no attempt counted), then
+ * `auth.two-step-code-invalid` with `details.remainingAttempts` (at least 1): the code is
+ * wrong or was used already.
+ */
+export type TwoStepCodeRefusedResponse = Problem;
+
+/**
+ * `auth.challenge-expired` (checked first), then `auth.security-key-refused`: no key on the
+ * account (options), or an answer that does not verify (answer, with
+ * `details.remainingAttempts`).
+ */
+export type SecurityKeyAnswerRefusedResponse = Problem;
+
+/**
+ * `auth.two-step-locked`: the two-step answers of the account are locked until
+ * `details.lockedUntil`, 15 minutes after the fifth wrong answer in a row.
+ */
+export type TwoStepLockedResponse = Problem;
+
+/**
+ * `auth.mfa-required-by-organization`: the policy of an organization of the copy of the
+ * memberships requires two-step verification for the role of the actor in it;
+ * `details.organizationIds` lists them.
+ */
+export type MfaRequiredByOrganizationResponse = Problem;
+
+/**
+ * `auth.two-step-setup-expired`: no pending setup of the session, or it expired or was
+ * replaced; `auth.two-step-code-invalid`: a wrong code, without `details.remainingAttempts`.
+ */
+export type SetupCodeRefusedResponse = Problem;
+
+/**
+ * `auth.two-step-not-enabled`: the request needs two-step verification on the account of the actor.
+ */
+export type TwoStepNotEnabledResponse = Problem;
+
+/**
+ * `auth.two-step-not-enabled` (two-step verification off), or
+ * `auth.security-key-limit-reached` (10 keys, with `details.maxSecurityKeys`).
+ */
+export type SecurityKeyNotAddableResponse = Problem;
+
+/**
+ * `auth.two-step-setup-expired`: no pending registration of the session, or it expired or
+ * was replaced; `auth.security-key-refused`: the answer does not verify, or the account
+ * already has the key.
+ */
+export type SecurityKeyRegistrationRefusedResponse = Problem;
+
+/**
+ * - `user.not-found`: the user id is not the actor, or no account has it;
+ * - `session.not-found`: the session of the request is not an open session of the actor. The
+ *   gateway answers it as `401 auth.session-expired`;
+ * - `security-key.not-found`: no key with this id belongs to the actor.
+ */
+export type UserSessionOrSecurityKeyNotFoundResponse = Problem;
+
+/**
+ * - `organization.mfa-required`: the policy of the organization requires two-step
+ *   verification for the role of the actor, who has none; `details.organizationId` names it.
+ *   The gateway forwards it with the French title of `openapi/public/organizations.yaml`;
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`: see the internal token.
+ */
+export type OrganizationChoiceRefusedResponse = Problem;
+
+/**
+ * - `organization.role-forbidden`: only the owner and the admins of the organization, in the
+ *   copy of the memberships, read and change its policy;
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
+ *   the internal token.
+ */
+export type PolicyAccessRefusedResponse = Problem;
+
+/**
+ * `organization.not-found`: the copy of the memberships holds no membership of the actor in
+ * the organization of the token.
+ */
+export type OrganizationNotFoundResponse = Problem;
 
 /**
  * A session is open. `token` is returned here only, once: the gateway sets the cookie from it
@@ -696,7 +1280,8 @@ export type CredentialsRefusedResponse = Problem;
 
 /**
  * `auth.account-locked`: the password sign-in of the address is locked until
- * `details.lockedUntil`, 15 minutes after the failure that used the last attempt.
+ * `details.lockedUntil`, 15 minutes after the failure that used the last attempt. On the
+ * re-authentication with a `code`: `auth.two-step-locked` instead (see `TwoStepLocked`).
  */
 export type AccountLockedResponse = Problem;
 
@@ -761,7 +1346,9 @@ export type PasswordResetRefusedResponse = Problem;
 
 /**
  * `auth.password-incorrect`, with `details.remainingAttempts` (at least 1): the failures left
- * before the lockout of the password sign-in of the address of the account.
+ * before the lockout of the password sign-in of the address of the account. On the
+ * re-authentication with a `code`: `auth.two-step-code-invalid`, with
+ * `details.remainingAttempts` before the lockout of the two-step answers of the account.
  */
 export type PasswordRefusedResponse = Problem;
 
@@ -774,9 +1361,9 @@ export type PasswordChangeRefusedResponse = Problem;
 
 /**
  * - `auth.reauthentication-required`: the session has no authentication in the last 10
- *   minutes. `details.methods` lists the ways its person can confirm, `password` today; the
- *   gateway forwards the code, its `details` and the French title of
- *   `openapi/public/auth.yaml`;
+ *   minutes. `details.methods` lists the ways its person can confirm: `password`, then
+ *   `authenticator-app` for an account with an authenticator app; the gateway forwards the
+ *   code, its `details` and the French title of `openapi/public/auth.yaml`;
  * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, and `auth.organization-required` on
  *   a route that requires an organization: see the internal token.
  */

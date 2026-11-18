@@ -187,6 +187,13 @@ export interface Member {
   joinedAt: string;
   /** @minimum 1 */
   version: number;
+  /**
+     * Whether the account has two-step verification, from the user directory
+     * (`user.two-step-verification-changed.v1`), `false` until an event says otherwise.
+     * Present when the actor is the owner or an admin of the organization, absent otherwise;
+     * the gateway passes it on as is.
+     */
+  twoStepVerificationEnabled?: boolean;
 }
 
 /**

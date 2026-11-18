@@ -154,8 +154,9 @@ export class SessionsService {
 /**
  * Lists the open sessions of the account ("Sessions actives"): neither signed out, revoked,
  * expired nor closed for inactivity. The session of the request is among them, marked
- * `current` ("Cet appareil"). A session closes after 12 hours of inactivity by default
- * ("Une session inactive pendant 12 heures est fermée automatiquement.").
+ * `current` ("Cet appareil"). A session closes after the inactivity the policy of its current
+ * organization sets, 12 hours by default, which `inactivityTimeoutMinutes` gives ("Une
+ * session inactive pendant 12 heures est fermée automatiquement.").
  *
  * Sorted by sign-in, the most recent first, then by id: a session keeps its place whatever
  * its activity, so the pages hold still. The web application shows the current session
@@ -242,7 +243,9 @@ export class SessionsService {
 /**
  * Closes every open session of the account except the one of the request ("Déconnecter les
  * autres"; "Tous vos appareils sauf celui-ci seront déconnectés."). `revokedCount` gives the
- * confirmation ("2 sessions fermées", "Seul cet appareil reste connecté."). The personal API
+ * confirmation ("2 sessions fermées", "Seul cet appareil reste connecté."). Every trusted
+ * device of the account is forgotten too, this browser's included: the next sign-in of an
+ * account with two-step verification answers its challenge on every device. The personal API
  * tokens stay. Recent authentication is not required. Emits `session.revoked.v1` for each
  * closed session. The body is an empty JSON object. Session only: a personal API token gets
  * `403 auth.api-token-not-accepted`.

@@ -6,9 +6,12 @@ import type { Problem } from './problem';
 
 /**
  * - `auth.reauthentication-required`: the person of this session has not proved who they are
- *   in the last 10 minutes. `details.methods` lists the ways they can, `password` today
+ *   in the last 10 minutes. `details.methods` lists the ways they can, `password`, then
+ *   `authenticator-app` for an account with an authenticator app
  *   (`POST /v1/auth/reauthentication`); a client ignores a method it does not know;
  * - `organization.not-selected`: the session has no current organization;
+ * - `organization.mfa-required`: the authentication policy of the current organization
+ *   requires two-step verification for the role of the caller, who has none;
  * - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
  * - `auth.api-token-not-accepted`: a personal API token never manages tokens.
  */

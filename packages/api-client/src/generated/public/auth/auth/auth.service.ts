@@ -21,6 +21,11 @@ import type {
 } from 'rxjs';
 
 import type {
+  AuthenticatorAppAnswer,
+  BackupCodeAnswer,
+  ChallengeAnsweredResponse,
+  ChallengeIssuedResponse,
+  ChallengeTokenRequest,
   CodeRequest,
   CodeSent,
   CodeVerification,
@@ -35,6 +40,9 @@ import type {
   ProfilePatch,
   ReauthenticationRequest,
   RecentAuthentication,
+  SecurityKeyAnswer,
+  SecurityKeyAssertionOptions,
+  SignInChallenge,
   SignInMethods,
   SignInMethodsRequest,
   SignOutRequest,
@@ -258,7 +266,11 @@ export class AuthService {
  * application always sends `password`, the one typed in the sign-up form; on
  * `auth.sign-up-replaced` the person signs up again (`POST /v1/auth/sign-up`), which
  * replaces the pending sign-up and sends a new code. `auth.sign-up-replaced` needs the right
- * code, so it tells a caller without the code nothing. No session needed. Scopes: none.
+ * code, so it tells a caller without the code nothing.
+ *
+ * It never answers a two-step challenge: an account that has just proved its address has no
+ * two-step verification yet, and belongs to no organization whose policy could require it. No
+ * session needed. Scopes: none.
  * @summary Verify the address and sign in
  */
  verifySignUp<TData = SignedInResponse>(signUpVerification: SignUpVerification, options?: HttpClientBodyOptions): Observable<TData>;
@@ -310,17 +322,24 @@ export class AuthService {
  *   `user.deletion-cancelled.v1` is emitted. Signing in is the only way to cancel it.
  * - A sign-in from a device the account did not use in the last 90 days (see
  *   `session.opened-on-new-device.v1`) sends the email "Nouvelle connexion".
+ * - The right password of an account with two-step verification answers `202` with a
+ *   two-step challenge and no cookie ("Vérification en deux étapes"), unless the request
+ *   carries the cookie `__Host-cw_trusted_device` of a device this account trusts (see
+ *   "Trusted devices"). The web application then shows the challenge and answers it with one
+ *   of `/v1/auth/sign-in/challenge/authenticator-app`, `/backup-code` or `/security-key`;
+ *   only the `200` of that answer opens the session, cancels a scheduled deletion and counts
+ *   the device. A new challenge of the account makes the previous one stop working.
+ *   `rememberMe` is kept with the challenge and applies to the session its answer opens.
  *
- * Later versions add two-step verification: a sign-in that needs it answers `202` with a
- * challenge and no cookie, and only the `200` that completes it opens the session, cancels a
- * scheduled deletion and counts the device. Only a `200` means signed in: a client checks the
- * status, not merely a success. No session needed. Scopes: none.
+ * Only a `200` means signed in: a client checks the status, not merely a success. A wrong
+ * password answers the same way whether or not the account has two-step verification. No
+ * session needed. Scopes: none.
  * @summary Sign in with a password
  */
- signInWithPassword<TData = SignedInResponse>(passwordSignIn: PasswordSignIn, options?: HttpClientBodyOptions): Observable<TData>;
- signInWithPassword<TData = SignedInResponse>(passwordSignIn: PasswordSignIn, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
- signInWithPassword<TData = SignedInResponse>(passwordSignIn: PasswordSignIn, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
-  signInWithPassword<TData = SignedInResponse>(
+ signInWithPassword<TData = SignedInResponse | ChallengeIssuedResponse>(passwordSignIn: PasswordSignIn, options?: HttpClientBodyOptions): Observable<TData>;
+ signInWithPassword<TData = SignedInResponse | ChallengeIssuedResponse>(passwordSignIn: PasswordSignIn, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ signInWithPassword<TData = SignedInResponse | ChallengeIssuedResponse>(passwordSignIn: PasswordSignIn, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  signInWithPassword<TData = SignedInResponse | ChallengeIssuedResponse>(
     passwordSignIn: PasswordSignIn, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
     if (options?.observe === 'events') {
       return this.http.post<TData>(
@@ -399,15 +418,17 @@ export class AuthService {
  *
  * As with `POST /v1/auth/sign-in`, the sign-in cancels a scheduled deletion of the account
  * (`deletionCancelled: true`, `user.deletion-cancelled.v1`) and, from a device the account did
- * not use in the last 90 days, sends "Nouvelle connexion"; later versions answer `202` with a
- * two-step challenge when the account needs one, and only a `200` means signed in. No session
- * needed. Scopes: none.
+ * not use in the last 90 days, sends "Nouvelle connexion". The right code of an account with
+ * two-step verification answers `202` with a two-step challenge and no cookie, unless the
+ * browser is a trusted device of the account, as `POST /v1/auth/sign-in` says: the email code
+ * proves the address, not the second step. Only a `200` means signed in. No session needed.
+ * Scopes: none.
  * @summary Sign in with a code
  */
- signInWithCode<TData = SignedInResponse>(codeVerification: CodeVerification, options?: HttpClientBodyOptions): Observable<TData>;
- signInWithCode<TData = SignedInResponse>(codeVerification: CodeVerification, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
- signInWithCode<TData = SignedInResponse>(codeVerification: CodeVerification, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
-  signInWithCode<TData = SignedInResponse>(
+ signInWithCode<TData = SignedInResponse | ChallengeIssuedResponse>(codeVerification: CodeVerification, options?: HttpClientBodyOptions): Observable<TData>;
+ signInWithCode<TData = SignedInResponse | ChallengeIssuedResponse>(codeVerification: CodeVerification, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ signInWithCode<TData = SignedInResponse | ChallengeIssuedResponse>(codeVerification: CodeVerification, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  signInWithCode<TData = SignedInResponse | ChallengeIssuedResponse>(
     codeVerification: CodeVerification, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
     if (options?.observe === 'events') {
       return this.http.post<TData>(
@@ -432,6 +453,245 @@ export class AuthService {
     return this.http.post<TData>(
       `/v1/auth/sign-in/code/verification`,
       codeVerification,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Returns a two-step challenge as the `202` of the sign-in gave it, without answering it: the
+ * web application reads it again when the challenge screen opens anew, for example after a
+ * reload, from the token it kept for the life of the challenge (`sessionStorage`, never a
+ * URL). Reading a challenge does not use it and counts no attempt.
+ *
+ * A challenge that expired (10 minutes after the sign-in), was answered, was replaced by a
+ * newer one, or is unknown answers `422 auth.challenge-expired`: the person signs in again.
+ * No session needed. Scopes: none.
+ * @summary Read a two-step challenge
+ */
+ inspectSignInChallenge<TData = SignInChallenge>(challengeTokenRequest: ChallengeTokenRequest, options?: HttpClientBodyOptions): Observable<TData>;
+ inspectSignInChallenge<TData = SignInChallenge>(challengeTokenRequest: ChallengeTokenRequest, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ inspectSignInChallenge<TData = SignInChallenge>(challengeTokenRequest: ChallengeTokenRequest, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  inspectSignInChallenge<TData = SignInChallenge>(
+    challengeTokenRequest: ChallengeTokenRequest, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/inspection`,
+      challengeTokenRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/inspection`,
+      challengeTokenRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/inspection`,
+      challengeTokenRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Checks the 6 digits the authenticator app shows ("Code de l'application", "Le code change
+ * toutes les 30 secondes."). On success the session is opened, as a `200` sign-in does, and
+ * the gateway sets the session cookie, and the device cookie with `trustDevice`.
+ *
+ * - A wrong code, or one the account already used, answers `422 auth.two-step-code-invalid`
+ *   with `details.remainingAttempts`. The fifth wrong answer in a row of the account, and
+ *   every answer during the lockout, answer `429 auth.two-step-locked` with
+ *   `details.lockedUntil` (15 minutes) and `Retry-After`.
+ * - A challenge no longer usable answers `422 auth.challenge-expired`; the challenge is
+ *   checked first, so it counts no attempt.
+ * - The success uses the challenge up, cancels a scheduled deletion of the account
+ *   (`deletionCancelled: true`, `user.deletion-cancelled.v1`), counts the device for
+ *   "Nouvelle connexion" (`session.opened-on-new-device.v1`) and ends the count of wrong
+ *   answers.
+ *
+ * No session needed. Scopes: none.
+ * @summary Answer a two-step challenge with a code of the app
+ */
+ answerSignInChallengeWithAuthenticatorApp<TData = ChallengeAnsweredResponse>(authenticatorAppAnswer: AuthenticatorAppAnswer, options?: HttpClientBodyOptions): Observable<TData>;
+ answerSignInChallengeWithAuthenticatorApp<TData = ChallengeAnsweredResponse>(authenticatorAppAnswer: AuthenticatorAppAnswer, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ answerSignInChallengeWithAuthenticatorApp<TData = ChallengeAnsweredResponse>(authenticatorAppAnswer: AuthenticatorAppAnswer, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  answerSignInChallengeWithAuthenticatorApp<TData = ChallengeAnsweredResponse>(
+    authenticatorAppAnswer: AuthenticatorAppAnswer, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/authenticator-app`,
+      authenticatorAppAnswer,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/authenticator-app`,
+      authenticatorAppAnswer,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/authenticator-app`,
+      authenticatorAppAnswer,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Checks a backup code ("Code de secours", `XXXX-XXXX`), which works once: the success uses
+ * it up, and `backupCodesRemaining` of the next challenges counts one less ("Il vous reste 7
+ * codes inutilisés. Pensez à en générer de nouveaux depuis votre profil."). The code is read
+ * without regard to case, with or without its dash. Otherwise as
+ * `POST /v1/auth/sign-in/challenge/authenticator-app`: the same refusals
+ * (`422 auth.two-step-code-invalid` for a wrong or used code, `422 auth.challenge-expired`,
+ * `429 auth.two-step-locked`), counted with the other answers, and the same effects of the
+ * success. No session needed. Scopes: none.
+ * @summary Answer a two-step challenge with a backup code
+ */
+ answerSignInChallengeWithBackupCode<TData = ChallengeAnsweredResponse>(backupCodeAnswer: BackupCodeAnswer, options?: HttpClientBodyOptions): Observable<TData>;
+ answerSignInChallengeWithBackupCode<TData = ChallengeAnsweredResponse>(backupCodeAnswer: BackupCodeAnswer, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ answerSignInChallengeWithBackupCode<TData = ChallengeAnsweredResponse>(backupCodeAnswer: BackupCodeAnswer, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  answerSignInChallengeWithBackupCode<TData = ChallengeAnsweredResponse>(
+    backupCodeAnswer: BackupCodeAnswer, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/backup-code`,
+      backupCodeAnswer,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/backup-code`,
+      backupCodeAnswer,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/backup-code`,
+      backupCodeAnswer,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Returns the options the browser needs to ask a security key or the biometrics of the device
+ * ("Utiliser ma clé de sécurité", "Touchez votre clé ou validez avec la biométrie…"): a new
+ * WebAuthn challenge, valid 5 minutes, for the keys of the account only. The web application
+ * passes `options` to `navigator.credentials.get` (through
+ * `PublicKeyCredential.parseRequestOptionsFromJSON` or an equivalent), then sends the answer
+ * of the key to `POST /v1/auth/sign-in/challenge/security-key`. Asking again replaces the
+ * previous options of the challenge.
+ *
+ * - A challenge no longer usable: `422 auth.challenge-expired`.
+ * - An account without a security key: `422 auth.security-key-refused`.
+ * - During the lockout of the answers: `429 auth.two-step-locked`.
+ *
+ * No session needed. Scopes: none.
+ * @summary Get the WebAuthn options to answer a challenge with a key
+ */
+ getSignInChallengeSecurityKeyOptions<TData = SecurityKeyAssertionOptions>(challengeTokenRequest: ChallengeTokenRequest, options?: HttpClientBodyOptions): Observable<TData>;
+ getSignInChallengeSecurityKeyOptions<TData = SecurityKeyAssertionOptions>(challengeTokenRequest: ChallengeTokenRequest, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getSignInChallengeSecurityKeyOptions<TData = SecurityKeyAssertionOptions>(challengeTokenRequest: ChallengeTokenRequest, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getSignInChallengeSecurityKeyOptions<TData = SecurityKeyAssertionOptions>(
+    challengeTokenRequest: ChallengeTokenRequest, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/security-key/options`,
+      challengeTokenRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/security-key/options`,
+      challengeTokenRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/security-key/options`,
+      challengeTokenRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Checks the answer of a security key to the options of
+ * `POST /v1/auth/sign-in/challenge/security-key/options` ("Clé reconnue : YubiKey 5C NFC").
+ * The web application sends `credential` as the browser gave it, serialized as JSON
+ * (`PublicKeyCredential.toJSON()` or an equivalent).
+ *
+ * - An answer that does not verify (another key, another challenge, options that expired or
+ *   were replaced, a signature that does not check) answers `422 auth.security-key-refused`
+ *   with `details.remainingAttempts`, and counts with the other wrong answers
+ *   (`429 auth.two-step-locked` on the fifth).
+ * - A challenge no longer usable: `422 auth.challenge-expired`.
+ * - On success, the effects of `POST /v1/auth/sign-in/challenge/authenticator-app`, and the
+ *   key records its last use.
+ *
+ * No session needed. Scopes: none.
+ * @summary Answer a two-step challenge with a security key
+ */
+ answerSignInChallengeWithSecurityKey<TData = ChallengeAnsweredResponse>(securityKeyAnswer: SecurityKeyAnswer, options?: HttpClientBodyOptions): Observable<TData>;
+ answerSignInChallengeWithSecurityKey<TData = ChallengeAnsweredResponse>(securityKeyAnswer: SecurityKeyAnswer, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ answerSignInChallengeWithSecurityKey<TData = ChallengeAnsweredResponse>(securityKeyAnswer: SecurityKeyAnswer, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  answerSignInChallengeWithSecurityKey<TData = ChallengeAnsweredResponse>(
+    securityKeyAnswer: SecurityKeyAnswer, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/security-key`,
+      securityKeyAnswer,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/security-key`,
+      securityKeyAnswer,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/sign-in/challenge/security-key`,
+      securityKeyAnswer,{
         ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
       }
@@ -597,9 +857,11 @@ export class AuthService {
  * - A link that expired, was used, was replaced or is unknown answers
  *   `422 auth.reset-link-expired`.
  * - The reset ends the lockout of the password sign-in of the address, drops a pending change
- *   of address, ends the recent authentication of every session it leaves open, keeps the
- *   personal API tokens, and does not cancel a scheduled deletion of the account: only a
- *   sign-in does.
+ *   of address, ends the recent authentication of every session it leaves open, forgets every
+ *   trusted device of the account, keeps the personal API tokens and the two-step
+ *   verification, and does not cancel a scheduled deletion of the account: only a sign-in
+ *   does. The next sign-in of an account with two-step verification answers its challenge,
+ *   as before the reset.
  *
  * Emits `user.password-changed.v1` (`method: reset`), from which notification-service sends
  * "Votre mot de passe a été modifié" to the address of the account ("Un e-mail de
@@ -643,18 +905,24 @@ export class AuthService {
 /**
  * Opens the window of recent authentication of this session for 10 minutes (see "Recent
  * authentication" above). The web application calls it when a route answered
- * `403 auth.reauthentication-required`, then repeats that request.
+ * `403 auth.reauthentication-required`, then repeats that request. It sends one of the
+ * methods of `details.methods`: `password`, or `code`, the 6 digits of the authenticator app
+ * of an account with two-step verification. Both or neither answer `400 request.invalid`, as
+ * does `code` for an account without an authenticator app.
  *
  * - A wrong password answers `422 auth.password-incorrect` with
  *   `details.remainingAttempts`. It counts with the failed sign-ins of the address of the
  *   account: the failure that uses the last attempt, and every attempt during the lockout,
  *   answer `429 auth.account-locked` (15 minutes). The lockout also refuses the password
  *   sign-in of the address, but leaves this session open.
- * - Later versions accept a two-step code instead of the password: `password` then becomes
- *   optional beside it.
+ * - A wrong or already used code answers `422 auth.two-step-code-invalid` with
+ *   `details.remainingAttempts`. It counts with the wrong answers of the two-step challenges
+ *   of the account: the fifth in a row, and every code during the lockout, answer
+ *   `429 auth.two-step-locked` (15 minutes), which leaves this session open and the
+ *   password usable.
  *
  * Session only: a personal API token gets `403 auth.api-token-not-accepted`.
- * @summary Confirm the password of the signed-in person
+ * @summary Confirm who the signed-in person is
  */
  reauthenticate<TData = RecentAuthentication>(reauthenticationRequest: ReauthenticationRequest, options?: HttpClientBodyOptions): Observable<TData>;
  reauthenticate<TData = RecentAuthentication>(reauthenticationRequest: ReauthenticationRequest, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
@@ -784,9 +1052,14 @@ export type DiscoverSignInMethodsClientResult = NonNullable<SignInMethods>
 export type SignUpClientResult = NonNullable<CodeSent>
 export type ResendSignUpCodeClientResult = NonNullable<CodeSent>
 export type VerifySignUpClientResult = NonNullable<SignedInResponse>
-export type SignInWithPasswordClientResult = NonNullable<SignedInResponse>
+export type SignInWithPasswordClientResult = NonNullable<SignedInResponse | ChallengeIssuedResponse>
 export type RequestSignInCodeClientResult = NonNullable<CodeSent>
-export type SignInWithCodeClientResult = NonNullable<SignedInResponse>
+export type SignInWithCodeClientResult = NonNullable<SignedInResponse | ChallengeIssuedResponse>
+export type InspectSignInChallengeClientResult = NonNullable<SignInChallenge>
+export type AnswerSignInChallengeWithAuthenticatorAppClientResult = NonNullable<ChallengeAnsweredResponse>
+export type AnswerSignInChallengeWithBackupCodeClientResult = NonNullable<ChallengeAnsweredResponse>
+export type GetSignInChallengeSecurityKeyOptionsClientResult = NonNullable<SecurityKeyAssertionOptions>
+export type AnswerSignInChallengeWithSecurityKeyClientResult = NonNullable<ChallengeAnsweredResponse>
 export type SignOutClientResult = NonNullable<void>
 export type RequestPasswordResetClientResult = NonNullable<PasswordResetLinkSent>
 export type InspectPasswordResetLinkClientResult = NonNullable<PasswordResetLink>

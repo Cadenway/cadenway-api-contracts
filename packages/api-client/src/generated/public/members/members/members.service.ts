@@ -158,7 +158,8 @@ export class MembersService {
  * `role=owner,admin`). `total` counts the members that match, for "{a}–{b} sur {n}
  * personnes"; `counts` counts every member by role, whatever the filters, for the tabs and
  * the summary. Owner, admins and members only: a guest gets
- * `403 organization.role-forbidden`.
+ * `403 organization.role-forbidden`. For the owner and the admins, each member carries
+ * `twoStepVerificationEnabled` (column "Deux étapes").
  *
  * Scope `members:read` for a personal API token.
  * @summary List the members

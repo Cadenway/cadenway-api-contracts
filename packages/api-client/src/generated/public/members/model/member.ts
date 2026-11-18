@@ -20,4 +20,13 @@ export interface Member {
      * @minimum 1
      */
   version: number;
+  /**
+     * Whether the account of the member has two-step verification ("Deux étapes":
+     * "Configurée" / "Non configurée"), as organization-service last learnt it from
+     * `user.two-step-verification-changed.v1`; `false` until it learns otherwise. Present for
+     * the owner and the admins only, absent for a member or a personal API token of a member,
+     * so that nobody else learns which accounts have none. Present for them once the gateway
+     * and organization-service run this version of the contracts.
+     */
+  twoStepVerificationEnabled?: boolean;
 }

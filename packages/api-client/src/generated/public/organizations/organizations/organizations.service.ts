@@ -355,6 +355,10 @@ export class OrganizationsService {
  *   the one their next sessions start in, also when another session of theirs chose
  *   another organization since.
  * - A session that ended meanwhile answers `401 auth.session-expired`.
+ * - An organization whose authentication policy requires two-step verification for the role
+ *   of the caller, who has none, answers `403 organization.mfa-required` with
+ *   `details.organizationId`, and nothing changes: the web application offers to set it up
+ *   from the account, then chooses again.
  *
  * Session only: a personal API token, bound to the organization it was created in, cannot
  * call it.

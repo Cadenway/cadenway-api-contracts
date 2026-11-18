@@ -24,6 +24,7 @@ import {
   ListApiTokensInternalQueryParams,
 } from '../../packages/contracts/src/generated/validators/internal/identity-service';
 import {
+  GetMemberInternalResponse,
   ListInvitationsInternalQueryParams,
   ListMembersInternalQueryParams,
 } from '../../packages/contracts/src/generated/validators/internal/organization-service';
@@ -31,6 +32,7 @@ import { CreateApiTokenBody } from '../../packages/contracts/src/generated/valid
 import { UpdateCurrentUserBody } from '../../packages/contracts/src/generated/validators/public/auth';
 import {
   ChangeMemberRoleBody,
+  GetMemberResponse,
   InviteMembersBody,
   ListMembersQueryParams,
 } from '../../packages/contracts/src/generated/validators/public/members';
@@ -246,6 +248,26 @@ describe('routes of organizations and members', () => {
       limit: 50,
     });
     expect(ListMembersQueryParams.safeParse({ role: ['viewer'] }).success).toBe(false);
+  });
+
+  it('shows the column "Deux étapes" to the owner and the admins, and nothing to the others', () => {
+    const member: Record<string, unknown> = {
+      id: '019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41',
+      userId: '019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31',
+      name: 'Inès Robert',
+      email: 'ines.robert@ateliernord.fr',
+      role: 'admin',
+      joinedAt: '2026-03-03T09:40:00Z',
+      version: 2,
+    };
+
+    expect(
+      GetMemberInternalResponse.parse({ ...member, twoStepVerificationEnabled: true }),
+    ).toEqual({ ...member, twoStepVerificationEnabled: true });
+    expect(GetMemberResponse.parse(member)).toEqual(member);
+    expect(
+      GetMemberResponse.safeParse({ ...member, twoStepVerificationEnabled: 'Configurée' }).success,
+    ).toBe(false);
   });
 });
 

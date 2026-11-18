@@ -1,6 +1,6 @@
-# Events of identity-service: accounts, their verified address, profile, password, address change
-# and deletion, sessions, and the restricted events that carry a single-use code or link to
-# cadenway-notification-service only.
+# Events of identity-service: accounts, their verified address, profile, password, address change,
+# two-step verification and deletion, sessions, and the restricted events that carry a single-use
+# code or link to cadenway-notification-service only.
 asyncapi: 3.0.0
 info:
   title: identity-service events
@@ -15,8 +15,9 @@ info:
     a system transaction.
 
     **Aggregates.** An event of the account (`user.*`) carries the version of the account, which
-    the sign-up, the verification, a change of the profile, of the password or of the address, the
-    scheduling and the cancellation of the deletion, and the deletion each move to the next one. An
+    the sign-up, the verification, a change of the profile, of the password, of the address or of
+    the two-step verification, the scheduling and the cancellation of the deletion, and the
+    deletion each move to the next one. An
     event of a session (`session.*`) carries the version of the session. A consumer that keeps
     several parts of the account, as the directory of organization-service keeps the name and the
     address, orders each part by the versions of the events that carry it.
@@ -34,6 +35,9 @@ info:
     address of the browser where it applies) and nothing secret, except the restricted ones. The
     device is what identity-service reads from the `User-Agent`; no place is derived from the
     address. notification-service sends one email per event, whose `id` is the idempotency key.
+    The secrets of two-step verification (the secret of the authenticator app, the backup codes,
+    the challenge and trusted device tokens) never travel in an event: they reach the browser only,
+    in the answer of the route that creates them, so no two-step event is restricted.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -51,11 +55,11 @@ info:
       description: Single-use password reset links sent by email.
   x-consumers:
     - repository: cadenway-notification-service
-      uses: one-time-code.issued.v1, to send the verification, sign-in and change of address code emails; password-reset-link.issued.v1, user.password-changed.v1, user.email-changed.v1, session.opened-on-new-device.v1, user.deletion-scheduled.v1 and user.deletion-cancelled.v1, to send the security emails. Planned, user.signed-up.v1, user.profile-updated.v1, user.email-changed.v1 and user.deleted.v1 for its projection of user profiles.
+      uses: one-time-code.issued.v1, to send the verification, sign-in and change of address code emails; password-reset-link.issued.v1, user.password-changed.v1, user.email-changed.v1, session.opened-on-new-device.v1, user.deletion-scheduled.v1, user.deletion-cancelled.v1 and user.two-step-verification-changed.v1, to send the security emails. Planned, user.signed-up.v1, user.profile-updated.v1, user.email-changed.v1 and user.deleted.v1 for its projection of user profiles.
     - repository: cadenway-realtime-gateway
       uses: Planned, session.revoked.v1, to close the sockets of the revoked session.
     - repository: cadenway-organization-service
-      uses: user.signed-up.v1, user.email-verified.v1, user.profile-updated.v1 and user.email-changed.v1, for its user directory (names and addresses of the members, invitations matched with the account that verified their address); user.deleted.v1, to remove the memberships of a deleted account.
+      uses: user.signed-up.v1, user.email-verified.v1, user.profile-updated.v1 and user.email-changed.v1, for its user directory (names and addresses of the members, invitations matched with the account that verified their address); user.two-step-verification-changed.v1, for the column "Deux étapes" of its member list; user.deleted.v1, to remove the memberships of a deleted account.
 servers:
   nats:
     host: nats:4222
@@ -102,6 +106,15 @@ channels:
     messages:
       userEmailChangedV1:
         $ref: '#/components/messages/userEmailChangedV1'
+  userTwoStepVerificationChangedV1:
+    address: evt.user.two-step-verification-changed.v1
+    description: |
+      The two-step verification of an account changed: turned on or off, its app replaced, its
+      backup codes regenerated, a security key added or removed. Emitted by identity-service.
+      Consumers: cadenway-notification-service and cadenway-organization-service.
+    messages:
+      userTwoStepVerificationChangedV1:
+        $ref: '#/components/messages/userTwoStepVerificationChangedV1'
   userDeletionScheduledV1:
     address: evt.user.deletion-scheduled.v1
     description: |
@@ -201,6 +214,14 @@ operations:
       $ref: '#/channels/userEmailChangedV1'
     messages:
       - $ref: '#/channels/userEmailChangedV1/messages/userEmailChangedV1'
+  publishUserTwoStepVerificationChangedV1:
+    action: send
+    summary: identity-service publishes a change of the two-step verification of an account.
+    description: Sent from the outbox of identity-service once the change is committed.
+    channel:
+      $ref: '#/channels/userTwoStepVerificationChangedV1'
+    messages:
+      - $ref: '#/channels/userTwoStepVerificationChangedV1/messages/userTwoStepVerificationChangedV1'
   publishUserDeletionScheduledV1:
     action: send
     summary: identity-service publishes the scheduling of a deletion.
@@ -901,6 +922,183 @@ components:
                 os: Windows
                 osVersion: null
               ipAddress: 192.0.2.14
+            language: fr
+            timeZone: Europe/Paris
+    userTwoStepVerificationChangedV1:
+      name: user.two-step-verification-changed.v1
+      title: User two-step verification changed
+      summary: The two-step verification of an account changed.
+      description: |
+        Emitted when a change of the two-step verification of an account is committed, from a
+        session of the person (`openapi/public/auth.yaml`, tag `two-step-verification`). `change`
+        says which; the other members give the state after it. `actor` is the user. Using a backup
+        code, trusting a device and answering a challenge change nothing here and emit nothing.
+
+        - notification-service sends one security email per event to `recipient` ("Sécurité ·
+          toujours envoyé"), with the rows "Appareil", "Adresse IP" and "Date" from `client` and
+          `occurredAt` in `timeZone`: `enabled` is the mockup's "La vérification en deux étapes est
+          activée" ("Méthode" Application d’authentification, "Codes de récupération" from
+          `backupCodesRemaining`, "Activée le"; its button leads to `<web
+          application>/account/security`, since the codes cannot be shown again); `disabled`,
+          `authenticator-app-replaced`, `backup-codes-regenerated`, `security-key-added` and
+          `security-key-removed` are new templates (new copy), the last two naming
+          `securityKey.name`. Each says what to do if it was not the person.
+        - organization-service keeps `enabled` in its user directory, by `version`, for the column
+          "Deux étapes" of the member list.
+
+        Personal data: `recipient` (address and name of the account), `client` (device and IP
+        address of the browser), `language` and `timeZone`, and the name of a key. No secret: no
+        secret of the app, no backup code, no token.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            userId,
+            change,
+            enabled,
+            methods,
+            backupCodesRemaining,
+            securityKey,
+            client,
+            recipient,
+            language,
+            timeZone,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key and the idempotency key of the email.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: [string, 'null']
+            format: uuid
+            description: Always `null`, an account belongs to no organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the account after the change.
+          userId:
+            type: string
+            format: uuid
+          change:
+            type: string
+            description: |
+              What changed: `enabled` (turned on with its first authenticator app and 10 backup
+              codes), `disabled` (turned off: app, keys, backup codes and trusted devices deleted),
+              `authenticator-app-replaced`, `backup-codes-regenerated`, `security-key-added` or
+              `security-key-removed`. Later versions may add values without a new event version
+              (an administrator's reset, for example): a consumer sends no email for a value it
+              does not know, and still applies `enabled`.
+            examples: [enabled]
+          enabled:
+            type: boolean
+            description: Whether two-step verification is on after the change.
+          methods:
+            type: array
+            maxItems: 2
+            description: |
+              The configured methods after the change: `authenticator-app`, and `security-key`
+              when the account has a key; empty when it is off. A consumer ignores a value it does
+              not know.
+            items:
+              type: string
+              examples: [authenticator-app]
+          backupCodesRemaining:
+            type: integer
+            minimum: 0
+            maximum: 10
+            description: Backup codes not used yet after the change ("10 codes générés"); 0 when it is off.
+          securityKey:
+            type: [object, 'null']
+            description: |
+              The key added or removed, for `security-key-added` and `security-key-removed`;
+              `null` for the other changes.
+            required: [id, name]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+                minLength: 1
+                maxLength: 60
+                examples: [YubiKey 5C NFC]
+          client:
+            $ref: '#/components/schemas/Client'
+          recipient:
+            $ref: '#/components/schemas/Recipient'
+          language:
+            type: string
+            description: BCP 47 language tag of the email, the language of the account.
+            examples: [fr]
+          timeZone:
+            type: string
+            minLength: 1
+            maxLength: 64
+            description: IANA time zone of the account, in which the email shows the date.
+            examples: [Europe/Paris]
+      examples:
+        - name: enabled
+          summary: Camille Martin turns two-step verification on, as in the mockup email
+          payload:
+            id: 019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e08
+            occurredAt: '2026-11-09T13:21:00Z'
+            organizationId: null
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 8
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            change: enabled
+            enabled: true
+            methods: [authenticator-app]
+            backupCodesRemaining: 10
+            securityKey: null
+            client:
+              device:
+                type: desktop
+                browser: Firefox
+                browserVersion: '132'
+                os: Windows
+                osVersion: null
+              ipAddress: 192.0.2.14
+            recipient: { email: camille.martin@ateliernord.fr, name: Camille Martin }
+            language: fr
+            timeZone: Europe/Paris
+        - name: securityKeyAdded
+          summary: Camille Martin adds her YubiKey
+          payload:
+            id: 019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e09
+            occurredAt: '2026-11-09T13:22:00Z'
+            organizationId: null
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 9
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            change: security-key-added
+            enabled: true
+            methods: [authenticator-app, security-key]
+            backupCodesRemaining: 10
+            securityKey: { id: 019a6c52-1d2e-7f3a-8b4c-5d6e7f8a9b01, name: YubiKey 5C NFC }
+            client:
+              device:
+                type: desktop
+                browser: Firefox
+                browserVersion: '132'
+                os: Windows
+                osVersion: null
+              ipAddress: 192.0.2.14
+            recipient: { email: camille.martin@ateliernord.fr, name: Camille Martin }
             language: fr
             timeZone: Europe/Paris
     userDeletionScheduledV1:
