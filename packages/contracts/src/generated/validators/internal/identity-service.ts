@@ -1072,10 +1072,10 @@ export const ListUserSessionsInternalResponse = zod.object({
  * counted); then the current one, always required (`422 auth.password-incorrect`, counted
  * with the failed sign-ins; `429 auth.account-locked`). For an account without two-step
  * verification, a right current password records a recent authentication of `sessionId`;
- * for an account with it, it records none. Every session stays open, but a pending change of address is
- * dropped, the recent authentication of the other sessions ends with their pending two-step
- * setups and key registrations, the open challenge of the account is voided, and every
- * trusted device of the account is forgotten. Answers the account with
+ * for an account with it, it records none. Every session stays open, but a pending change of
+ * address is dropped, the recent authentication of the other sessions ends with their
+ * pending two-step setups and key registrations, the open challenge of the account is voided,
+ * and every trusted device of the account is forgotten. Answers the account with
  * the next `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
  * `method: change`, no closed session and the device of the `client`. Another user id, or an
  * unknown one, answers `404 user.not-found`; a `sessionId` that is not an open session of the
