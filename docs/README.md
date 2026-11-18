@@ -4,7 +4,7 @@ Planned role: cadenway-api-contracts is the common language of Cadenway: what th
 
 ## Current status
 
-The tooling exists and runs: lint, generation, breaking-change check, build and CI. The contracts are those of identity-service (sign-up, sign-in, sessions, the current user and its profile, personal API tokens, and their events) and of organization-service (organizations, members, invitations and their events); the packages publish them with the shared enumerations.
+The tooling exists and runs: lint, generation, breaking-change check, build and CI. The contracts are those of identity-service (sign-up, sign-in, sessions, the current user and its profile, personal API tokens, and their events), of organization-service (organizations, members, invitations and their events) and of task-service (spaces, lists and sprints, tasks, subtasks, checklists, activity logs, task queries, "Mes tâches" and "Accueil", and their events); the packages publish them with the shared enumerations.
 
 ## Read the guides
 

@@ -1,0 +1,942 @@
+# Public routes of spaces: create, list, read and change the spaces of the current organization (name,
+# prefix, appearance, visibility, renamed or hidden statuses), and read the overview of a space with
+# the counts of its lists. Served by cadenway-api-gateway, which calls
+# openapi/internal/task-service.yaml for each of them.
+openapi: 3.1.0
+info:
+  title: Cadenway spaces
+  version: 1.0.0
+  description: |
+    The spaces of the current organization ("Espaces"): each groups the lists and the sprints of a
+    team or a domain ("Un espace regroupe les listes et les sprints d’une équipe ou d’un domaine."),
+    gives the prefix of their task keys, and names its statuses. The API gateway serves these
+    routes and answers them through task-service. The lists of a space are in
+    `openapi/public/lists.yaml`, its tasks in `openapi/public/tasks.yaml`.
+
+    **Current organization.** Every route acts on the current organization of the session
+    (`PUT /v1/session/organization`, `openapi/public/organizations.yaml`) or on the organization
+    of the personal API token; without one it answers `403 organization.not-selected`, and
+    `403 organization.mfa-required` while the authentication policy of the organization requires
+    two-step verification of the caller, who has none.
+
+    **Members.** task-service keeps its own copy of the members and their roles, from
+    `member.joined.v1`, `member.role-changed.v1` and `member.removed.v1` of organization-service
+    (`asyncapi/organization-service.yaml`), never from the token; the copy follows within seconds.
+    Until it knows the caller, right after a creation of the organization or an acceptance of an
+    invitation, every route answers `404 organization.not-found`, and the web application retries
+    for a few seconds.
+
+    **Who sees a space.** A space is `organization` ("Tout Atelier Nord": every member but the
+    guests sees it) or `private` ("Privé"). In this version a private space is seen by its owner
+    only, the member who created it, not even by the owner or the admins of the organization
+    ("Seules les personnes invitées le voient"); sharing it comes in a later version. A guest sees
+    no space in this version. A space the caller does not see answers `404 space.not-found`, as an
+    unknown one does, and is left out of every collection and every count: its lists and tasks
+    too.
+
+    **Who changes what.** Every member but the guests creates spaces; a guest gets
+    `403 organization.role-forbidden`. Any member who sees a space changes it, its lists and its
+    tasks, except its visibility: only the owner of the space, or the owner or an admin of the
+    organization, changes it (`403 space.visibility-forbidden`). When the owner of a private space
+    leaves the organization, the owner of the organization becomes its owner.
+
+    **Prefixes and keys.** A space has a prefix of 2 to 5 letters ("CAD"), and its tasks are
+    numbered after it ("CAD-482"), one counter per prefix, never going back: a number is never given
+    again, even after the task is deleted or archived. A prefix belongs for good to the space that
+    used it: another space of the organization can take neither its current prefix nor a former one
+    (`409 space.prefix-taken`); a space may take back one of its own former prefixes and continues
+    its numbering. A new prefix numbers the new tasks only: the existing tasks keep their key ("Les
+    nouvelles tâches seront numérotées RH-1, RH-2… ; les tâches existantes gardent leur
+    identifiant."), as does a task moved to another space.
+
+    **Statuses.** The ten status keys and their three categories never change
+    (`@cadenway/contracts`). A space gives a status another name, at most 24 characters, or stops
+    using it ("Ne plus utiliser …"); `todo` and `done` are always used
+    (`422 space.status-required`). A task keeps a status its space no longer uses; the status menus
+    and the list groups leave it out ("Les catégories ne changent pas : les compteurs restent
+    justes.").
+
+    **Versions.** Each space carries a `version`, returned as `ETag`; a change may send it back in
+    `If-Match` and answers `412 request.version-mismatch` when the space changed meanwhile.
+
+    **Creations.** A creation may carry an `Idempotency-Key`, which the web application always
+    sends: the same key with the same body within 24 hours answers what the first request answered,
+    without creating anything again; with another body, `422 idempotency.key-reused`; while the
+    first request still runs, `409 idempotency.request-in-progress`. Keys are kept per caller.
+
+    **Credentials and scopes.** Each operation declares in `security` what may call it: the
+    session cookie, or a personal API token with `tasks:read` to read and `tasks:write` to change
+    (`403 auth.scope-missing` without it). A token acts with the rights of its user. When a
+    request carries `Authorization: Bearer`, the gateway authenticates it with that token alone.
+
+    **Cross-site requests.** A request with an unsafe method authenticated by the cookie carries an
+    `Origin` equal to one of the gateway's allowed origins; a `POST`, `PUT` or `PATCH` also
+    carries `Content-Type: application/json`, which is why the actions without input take the
+    empty object `{}`. A `DELETE` has no body: a browser sends one cross-site only after a CORS
+    preflight, so its `Origin` is the check; one that carries a body or a `Content-Type` all the
+    same declares `application/json`. The gateway refuses any other request before the route runs
+    (`403 auth.csrf-rejected`). A request authenticated by a personal token carries no ambient
+    credential and needs no `Origin`. A `PATCH` is a JSON Merge Patch (RFC 7396) sent as
+    `application/json`.
+
+    **Rate limit.** 600 requests per minute per session or personal token; beyond,
+    `429 rate-limit.exceeded` with `Retry-After`.
+
+    **Errors.** As in `openapi/public/auth.yaml`: a stable `code`, a French `title` for the codes
+    the web application shows to the person, the English reason phrase otherwise.
+
+    **Later versions** add, without changing what is here: sharing a space or a list with
+    members and guests, access requests and the page "Accès refusé", favorites, the deletion of a
+    space, templates and the creation from the onboarding assistant.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves every route, through openapi/internal/task-service.yaml, and checks the scopes of every operation.
+    - repository: cadenway-webapp
+      uses: Calls every route through @cadenway/api-client (sidebar "Espaces", dialogs "Créer un espace" and "Modifier l’espace", "Statuts de l’espace", space overview).
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging. The local stack of cadenway-ops serves the same routes on `api.<DOMAIN>`.
+tags:
+  - name: spaces
+    description: Spaces of the current organization.
+paths:
+  /v1/spaces:
+    post:
+      operationId: createSpace
+      summary: Create a space
+      description: |
+        Creates a space whose owner is the caller ("Créer l’espace"), with a first list named
+        "Première liste", in one transaction ("Espace créé", "Ressources humaines · une première
+        liste est prête."). The answer carries both, so that the web application opens the list.
+        Every status of a new space keeps its default label and is used.
+
+        - `prefix` is required: the form derives one from the name (its first three letters
+          without accents, completed with `X`), the API does not. A prefix another space of the
+          organization uses or used answers `409 space.prefix-taken`.
+        - A guest gets `403 organization.role-forbidden`.
+
+        Emits `space.created.v1` and `list.created.v1`. Scope `tasks:write` for a personal API
+        token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpaceCreation'
+            example:
+              name: Ressources humaines
+              prefix: RH
+              description: null
+              icon: users
+              color: lagon
+              visibility: organization
+      responses:
+        '201':
+          description: The space exists, with its first list.
+          headers:
+            Location:
+              $ref: '#/components/headers/SpaceLocation'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpaceCreated'
+              example:
+                space:
+                  id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e05
+                  name: Ressources humaines
+                  prefix: RH
+                  description: null
+                  icon: users
+                  color: lagon
+                  visibility: organization
+                  owner:
+                    userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  statuses:
+                    triage: { category: open, name: null, hidden: false }
+                    backlog: { category: open, name: null, hidden: false }
+                    todo: { category: open, name: null, hidden: false }
+                    progress: { category: active, name: null, hidden: false }
+                    review: { category: active, name: null, hidden: false }
+                    testing: { category: active, name: null, hidden: false }
+                    waiting: { category: active, name: null, hidden: false }
+                    blocked: { category: active, name: null, hidden: false }
+                    done: { category: closed, name: null, hidden: false }
+                    cancelled: { category: closed, name: null, hidden: false }
+                  nextKey: RH-1
+                  createdAt: '2026-11-08T10:15:00Z'
+                  version: 1
+                firstList:
+                  id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f20
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e05
+                  name: Première liste
+                  icon: null
+                  color: gris
+                  sprint: null
+                  createdAt: '2026-11-08T10:15:00Z'
+                  version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SpaceCreationForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/SpaceCreationConflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    get:
+      operationId: listSpaces
+      summary: List the spaces
+      description: |
+        Lists the spaces the caller sees ("Espaces"), in the order of their creation, the order of
+        the sidebar. A guest gets an empty list in this version. The lists of each space and their
+        counts are read with `GET /v1/spaces/{spaceId}/overview`.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of spaces.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpacePage'
+              example:
+                items:
+                  - id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    name: Produit
+                    prefix: CAD
+                    description: 'Développement de Cadenway : sprints, bugs et feuille de route.'
+                    icon: rocket
+                    color: violet
+                    visibility: organization
+                    owner:
+                      userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    statuses:
+                      triage: { category: open, name: null, hidden: false }
+                      backlog: { category: open, name: null, hidden: false }
+                      todo: { category: open, name: null, hidden: false }
+                      progress: { category: active, name: null, hidden: false }
+                      review: { category: active, name: null, hidden: false }
+                      testing: { category: active, name: null, hidden: false }
+                      waiting: { category: active, name: null, hidden: false }
+                      blocked: { category: active, name: null, hidden: false }
+                      done: { category: closed, name: null, hidden: false }
+                      cancelled: { category: closed, name: null, hidden: false }
+                    nextKey: CAD-732
+                    createdAt: '2026-03-02T09:30:00Z'
+                    version: 4
+                  - id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02
+                    name: Design
+                    prefix: DES
+                    description: Système de design et recherche utilisateur.
+                    icon: paint
+                    color: orange
+                    visibility: private
+                    owner:
+                      userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    statuses:
+                      triage: { category: open, name: null, hidden: true }
+                      backlog: { category: open, name: null, hidden: false }
+                      todo: { category: open, name: null, hidden: false }
+                      progress: { category: active, name: null, hidden: false }
+                      review: { category: active, name: Relecture, hidden: false }
+                      testing: { category: active, name: null, hidden: true }
+                      waiting: { category: active, name: null, hidden: false }
+                      blocked: { category: active, name: null, hidden: false }
+                      done: { category: closed, name: null, hidden: false }
+                      cancelled: { category: closed, name: null, hidden: false }
+                    nextKey: DES-122
+                    createdAt: '2026-03-04T14:00:00Z'
+                    version: 7
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/spaces/{spaceId}:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: getSpace
+      summary: Read a space
+      description: |
+        Returns a space the caller sees, with its statuses and the key its next task would take
+        ("Les tâches seront numérotées CAD-1, CAD-2…"). A space the caller does not see answers
+        `404 space.not-found`.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The space.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+              examples:
+                produit:
+                  $ref: '#/components/examples/Produit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateSpace
+      summary: Change a space
+      description: |
+        Applies a JSON Merge Patch to a space ("Modifier l’espace", "Espace modifié"): a member
+        left out is unchanged, `null` clears `description` or `icon`.
+
+        - `prefix`: a prefix another space uses or used answers `409 space.prefix-taken`. The new
+          tasks are numbered after the new prefix, from the next number never given under it; the
+          existing tasks keep their key.
+        - `statuses` ("Statuts de « Produit »"): by key, a new `name` (`null` for the default
+          label) or `hidden`; `null` for a key puts back its default, `null` for `statuses` puts
+          back every default ("Rétablir par défaut"). Hiding `todo` or `done` answers
+          `422 space.status-required`.
+        - `visibility`: only the owner of the space, or the owner or an admin of the organization,
+          changes it (`403 space.visibility-forbidden`). An admin who makes the space private gets
+          the answer, then no longer sees it.
+        - `If-Match` is optional (`412 request.version-mismatch`).
+
+        Emits `space.updated.v1` when something changed; a patch that changes nothing answers `200`
+        with the same version and emits nothing. Scope `tasks:write` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpacePatch'
+            examples:
+              statuses:
+                summary: Rename "En revue" and stop using "En validation"
+                value:
+                  statuses:
+                    review:
+                      name: Relecture
+                    testing:
+                      hidden: true
+              prefix:
+                summary: Change the prefix
+                value:
+                  prefix: PRD
+      responses:
+        '200':
+          description: The space after the change.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+              examples:
+                produit:
+                  $ref: '#/components/examples/Produit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SpaceWriteForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '409':
+          $ref: '#/components/responses/PrefixTaken'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/StatusRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/spaces/{spaceId}/overview:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: getSpaceOverview
+      summary: Read the overview of a space
+      description: |
+        Returns the lists of a space with the counts of their tasks, in the order of their
+        creation: the space overview ("Vue d’ensemble": "4 listes · 108 tâches", and on each list
+        card "32 tâches", "12 / 32 terminées", "38 %", "14 ouvertes", "3 en retard") and the
+        sidebar (the count of each list, the total of the space). The counts are those of the
+        top-level tasks, subtasks left out; `listCount` and `taskCount` count the whole space, on
+        every page.
+
+        `today` is the date of the caller, in their time zone, which task-service does not know: a
+        task is late when it is not closed and its due date is before it.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/Today'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the lists of the space, with their counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpaceOverview'
+              example:
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                listCount: 4
+                taskCount: 108
+                items:
+                  - list:
+                      id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f11
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      name: Backlog
+                      icon: null
+                      color: gris
+                      sprint: null
+                      createdAt: '2026-03-02T09:30:00Z'
+                      version: 1
+                    counts:
+                      total: 4
+                      open: 4
+                      done: 0
+                      cancelled: 0
+                      late: 0
+                  - list:
+                      id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      name: Sprint 14
+                      icon: lightning
+                      color: violet
+                      sprint:
+                        startDate: '2026-11-03'
+                        endDate: '2026-11-17'
+                        goal: Livrer la connexion SSO et la page des quotas d’organisation.
+                      createdAt: '2026-10-30T16:00:00Z'
+                      version: 2
+                    counts:
+                      total: 98
+                      open: 72
+                      done: 24
+                      cancelled: 2
+                      late: 3
+                nextCursor: eyJsaXN0SWQiOiIwMTlhNzAwMS0yYjNjIn0
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: |
+        Opaque session token of `openapi/public/auth.yaml`, set by the gateway on sign-in and checked
+        with identity-service on every request. A session holds every scope.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: |
+        Personal API token (`cw_pat_…`) of `openapi/public/api-tokens.yaml`, sent as
+        `Authorization: Bearer`. It acts with the rights of its user in the organization it was
+        created in, within the scopes each operation lists.
+  parameters:
+    SpaceId:
+      name: spaceId
+      in: path
+      required: true
+      description: Id of the space, as the list of spaces gives it.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01]
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: '`"<version>"` the change was made from, as the `ETag` gave it.'
+      schema:
+        type: string
+        examples: ['"4"']
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Key of this creation, chosen by the client, a UUID for example; the same key with the same
+        body within 24 hours answers what the first request answered.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        examples: [5d0c6f1e-2a3b-4c5d-8e9f-0a1b2c3d4e5f]
+    Today:
+      $ref: '../../components/task.yaml#/components/parameters/Today'
+  headers:
+    ETag:
+      description: Version of the space, `"<version>"`.
+      schema:
+        type: string
+    SpaceLocation:
+      description: '`/v1/spaces/<spaceId>`, where the space reads.'
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110).
+      schema:
+        type: integer
+        minimum: 1
+  examples:
+    Produit:
+      summary: The space "Produit" of Atelier Nord
+      value:
+        id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+        name: Produit
+        prefix: CAD
+        description: 'Développement de Cadenway : sprints, bugs et feuille de route.'
+        icon: rocket
+        color: violet
+        visibility: organization
+        owner:
+          userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+        statuses:
+          triage: { category: open, name: null, hidden: false }
+          backlog: { category: open, name: null, hidden: false }
+          todo: { category: open, name: null, hidden: false }
+          progress: { category: active, name: null, hidden: false }
+          review: { category: active, name: null, hidden: false }
+          testing: { category: active, name: null, hidden: false }
+          waiting: { category: active, name: null, hidden: false }
+          blocked: { category: active, name: null, hidden: false }
+          done: { category: closed, name: null, hidden: false }
+          cancelled: { category: closed, name: null, hidden: false }
+        nextKey: CAD-732
+        createdAt: '2026-03-02T09:30:00Z'
+        version: 4
+    CrossSiteRefused:
+      summary: Request from another site
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.csrf-rejected
+    ScopeMissingRead:
+      summary: Personal API token without `tasks:read`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:read]
+    ScopeMissingWrite:
+      summary: Personal API token without `tasks:write`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:write]
+    OrganizationNotSelected:
+      summary: No current organization
+      value:
+        type: about:blank
+        title: Choisissez une organisation pour continuer.
+        status: 403
+        code: organization.not-selected
+    OrganizationMfaRequired:
+      summary: Two-step verification required by the organization
+      value:
+        type: about:blank
+        title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
+        status: 403
+        code: organization.mfa-required
+        details:
+          organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+    RoleForbidden:
+      summary: A guest creates a space
+      value:
+        type: about:blank
+        title: Votre rôle ne permet pas cette action.
+        status: 403
+        code: organization.role-forbidden
+    VisibilityForbidden:
+      summary: A member who does not own the space changes its visibility
+      value:
+        type: about:blank
+        title: Seuls le propriétaire de l’espace et les administrateurs changent sa confidentialité.
+        status: 403
+        code: space.visibility-forbidden
+    PrefixTaken:
+      summary: Prefix of another space
+      value:
+        type: about:blank
+        title: Ce préfixe est déjà utilisé par un autre espace.
+        status: 409
+        code: space.prefix-taken
+        details:
+          prefix: CAD
+    RequestInProgress:
+      summary: The first request with this key still runs
+      value:
+        type: about:blank
+        title: Conflict
+        status: 409
+        code: idempotency.request-in-progress
+    RateLimited:
+      summary: Gateway limit reached
+      value:
+        type: about:blank
+        title: 'Trop de requêtes : réessayez dans un instant.'
+        status: 429
+        code: rate-limit.exceeded
+  responses:
+    BadRequest:
+      description: |
+        The request does not match the schema: `request.invalid`, with one `details.issues` entry
+        per failed member (`path` is the dotted path of the member, empty for the body itself).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: body
+                  path: prefix
+                  code: invalid_format
+                  message: Invalid string
+    Unauthenticated:
+      description: |
+        - `auth.session-required`: the request carries neither a session cookie nor a bearer token;
+        - `auth.session-expired`: the cookie names a session that ended;
+        - `auth.api-token-invalid`: the bearer token is unknown, revoked or expired, or its user
+          no longer belongs to its organization.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sessionRequired:
+              summary: No credential
+              value:
+                type: about:blank
+                title: Connectez-vous pour continuer.
+                status: 401
+                code: auth.session-required
+            sessionExpired:
+              summary: Session ended
+              value:
+                type: about:blank
+                title: Session expirée
+                status: 401
+                code: auth.session-expired
+            apiTokenInvalid:
+              summary: Personal API token no longer valid
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    TasksReadForbidden:
+      description: |
+        - `auth.scope-missing`: the personal API token lacks `tasks:read`; `details.requiredScopes`
+          lists what the route needs;
+        - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the organization requires
+          two-step verification for the role of the caller, who has none; `details.organizationId`
+          names it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingRead'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+    SpaceCreationForbidden:
+      description: |
+        - `organization.role-forbidden`: a guest does not create spaces;
+        - `auth.scope-missing`: the personal API token lacks `tasks:write`;
+        - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
+        - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roleForbidden:
+              $ref: '#/components/examples/RoleForbidden'
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    SpaceWriteForbidden:
+      description: |
+        - `space.visibility-forbidden`: only the owner of the space, and the owner and the admins
+          of the organization, change its visibility;
+        - `auth.scope-missing`: the personal API token lacks `tasks:write`;
+        - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
+        - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            visibilityForbidden:
+              $ref: '#/components/examples/VisibilityForbidden'
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    OrganizationNotFound:
+      description: |
+        `organization.not-found`: the caller no longer belongs to the current organization, or,
+        for a few seconds after they joined it, task-service does not know them yet.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    SpaceNotFound:
+      description: |
+        - `space.not-found`: no space with this id that the caller sees;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Espace introuvable.
+            status: 404
+            code: space.not-found
+    PrefixTaken:
+      description: |
+        `space.prefix-taken`: another space of the organization uses or used this prefix;
+        `details.prefix` repeats it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            prefixTaken:
+              $ref: '#/components/examples/PrefixTaken'
+    SpaceCreationConflict:
+      description: |
+        - `space.prefix-taken`: another space of the organization uses or used this prefix;
+        - `idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            prefixTaken:
+              $ref: '#/components/examples/PrefixTaken'
+            requestInProgress:
+              $ref: '#/components/examples/RequestInProgress'
+    IdempotencyKeyReused:
+      description: '`idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: idempotency.key-reused
+    StatusRequired:
+      description: '`space.status-required`: the patch hides `todo` or `done`; `details.status` names it.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ce statut est obligatoire : il ne peut pas être masqué.'
+            status: 422
+            code: space.status-required
+            details:
+              status: done
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 5
+    RateLimited:
+      description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    Unavailable:
+      description: |
+        task-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+        `upstream.deadline-exceeded`, with `details.service`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+            details:
+              service: task-service
+  schemas:
+    Space:
+      $ref: '../../components/task.yaml#/components/schemas/Space'
+    SpaceCreation:
+      $ref: '../../components/task.yaml#/components/schemas/SpaceCreation'
+    SpacePatch:
+      $ref: '../../components/task.yaml#/components/schemas/SpacePatch'
+    TaskList:
+      $ref: '../../components/task.yaml#/components/schemas/TaskList'
+    ListSummary:
+      $ref: '../../components/task.yaml#/components/schemas/ListSummary'
+    SpaceCreated:
+      type: object
+      required: [space, firstList]
+      properties:
+        space:
+          $ref: '#/components/schemas/Space'
+        firstList:
+          $ref: '#/components/schemas/TaskList'
+          description: The list "Première liste" created with the space, which the web application opens.
+    SpacePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Space'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    SpaceOverview:
+      type: object
+      required: [spaceId, listCount, taskCount, items, nextCursor]
+      properties:
+        spaceId:
+          type: string
+          format: uuid
+        listCount:
+          type: integer
+          minimum: 0
+          description: Lists of the space, on every page ("4 listes").
+        taskCount:
+          type: integer
+          minimum: 0
+          description: Top-level tasks of the space, on every page ("108 tâches").
+        items:
+          type: array
+          description: The lists of this page, in the order of their creation, with their counts.
+          items:
+            $ref: '#/components/schemas/ListSummary'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'

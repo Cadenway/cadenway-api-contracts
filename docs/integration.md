@@ -2,7 +2,7 @@
 
 [Documentation index](README.md) · [Repository instructions](../AGENTS.md)
 
-**Status:** The contract style below is enforced by `pnpm lint:specs` where a rule exists and reviewed otherwise. The contracts are those of identity-service (`openapi/public/auth.yaml`, `openapi/public/api-tokens.yaml`, `openapi/internal/identity-service.yaml`, `asyncapi/identity-service.yaml`) and of organization-service (`openapi/public/organizations.yaml`, `openapi/public/members.yaml`, `openapi/internal/organization-service.yaml`, `asyncapi/organization-service.yaml`). The generators are also proven on the documents of `tests/redocly/valid/`.
+**Status:** The contract style below is enforced by `pnpm lint:specs` where a rule exists and reviewed otherwise. The contracts are those of identity-service (`openapi/public/auth.yaml`, `openapi/public/api-tokens.yaml`, `openapi/internal/identity-service.yaml`, `asyncapi/identity-service.yaml`), of organization-service (`openapi/public/organizations.yaml`, `openapi/public/members.yaml`, `openapi/internal/organization-service.yaml`, `asyncapi/organization-service.yaml`) and of task-service (`openapi/public/spaces.yaml`, `openapi/public/lists.yaml`, `openapi/public/tasks.yaml`, `openapi/internal/task-service.yaml`, `asyncapi/task-service.yaml`, with the shared `components/task.yaml`). The generators are also proven on the documents of `tests/redocly/valid/`.
 
 ## What a consumer imports
 
@@ -60,15 +60,15 @@ Source: `cw-contract-style` ([Claude](../.claude/skills/cw-contract-style/SKILL.
 
 ### Events
 
-| Concern       | Rule                                                                                                                                                                              |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Spec version  | AsyncAPI 3.0.0 exactly: `pnpm generate:events` refuses any other version                                                                                                          |
-| Payload       | declares `properties` and `required` itself, without `allOf`; uses the JSON Schema keywords the event generator turns into a validator, which refuses the others                  |
-| Compatibility | the AsyncAPI check compares event names, routing and payloads with `main`; incompatible changes, including optional additions to closed schemas, take a new versioned name        |
-| `version`     | the version of the aggregate, in every event; a consumer ignores a version it has already applied                                                                                 |
-| `actor`       | `{ type: 'user' \| 'automation' \| 'git' \| 'system', id }`                                                                                                                       |
-| Subject       | `evt.<name>`, the address of the channel; `restricted.<name>` for a message marked `x-cadenway-restricted: true`, which carries a secret and is read by notification-service only |
-| Trace         | `traceparent` (W3C Trace Context), in HTTP and in the message headers                                                                                                             |
+| Concern       | Rule                                                                                                                                                                                                                                                           |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spec version  | AsyncAPI 3.0.0 exactly: `pnpm generate:events` refuses any other version                                                                                                                                                                                       |
+| Payload       | declares `properties` and `required` itself, without `allOf`; uses the JSON Schema keywords the event generator turns into a validator, which refuses the others                                                                                               |
+| Compatibility | the AsyncAPI check compares event names, routing and payloads with `main`; incompatible changes, including optional additions to closed schemas, take a new versioned name                                                                                     |
+| `version`     | the version of the aggregate, in every event; a consumer that keeps a copy ignores a version it has already applied, and one that reacts to facts sharing the version of their change (`task.status-changed.v1`, `task.assigned.v1`) deduplicates them on `id` |
+| `actor`       | `{ type: 'user' \| 'automation' \| 'git' \| 'system', id }`                                                                                                                                                                                                    |
+| Subject       | `evt.<name>`, the address of the channel; `restricted.<name>` for a message marked `x-cadenway-restricted: true`, which carries a secret and is read by notification-service only                                                                              |
+| Trace         | `traceparent` (W3C Trace Context), in HTTP and in the message headers                                                                                                                                                                                          |
 
 ### Checked by `pnpm lint:specs`
 
