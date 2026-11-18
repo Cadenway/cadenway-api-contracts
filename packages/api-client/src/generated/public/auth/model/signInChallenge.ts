@@ -30,9 +30,9 @@ export interface SignInChallenge {
   /**
      * The methods the account can answer with, in the order of the tabs: `authenticator-app`
      * always, `security-key` when the account has a key, `backup-code` while a backup code is
-     * left.
+     * left. Later versions may add methods: a client skips one it does not know, so the list
+     * has no upper bound.
      * @minItems 1
-     * @maxItems 3
      */
   methods: TwoStepMethod[];
   /**

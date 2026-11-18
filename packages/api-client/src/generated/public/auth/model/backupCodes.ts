@@ -8,9 +8,10 @@
  */
 export interface BackupCodes {
   /**
-     * 10 codes `XXXX-XXXX` of upper-case letters and digits, each working once. Secrets: the
-     * web application shows them, offers to copy and download them, and never keeps them;
-     * identity-service keeps only their hashes.
+     * 10 codes `XXXX-XXXX` of upper-case letters and digits (about 41 bits each), each
+     * working once. Secrets: the web application shows them, offers to copy and download
+     * them, and never keeps them; identity-service keeps only their HMAC-SHA-256 under a key
+     * kept outside the database, as for the one-time codes.
      * @minItems 10
      * @maxItems 10
      * @items.pattern ^[0-9A-Z]{4}-[0-9A-Z]{4}$

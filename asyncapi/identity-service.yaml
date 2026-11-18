@@ -1008,11 +1008,10 @@ components:
             description: Whether two-step verification is on after the change.
           methods:
             type: array
-            maxItems: 2
             description: |
               The configured methods after the change: `authenticator-app`, and `security-key`
               when the account has a key; empty when it is off. A consumer ignores a value it does
-              not know.
+              not know; the list has no upper bound, so that a new method needs no new version.
             items:
               type: string
               examples: [authenticator-app]

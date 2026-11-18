@@ -211,6 +211,7 @@ export type { OrganizationNotFoundResponse } from './generated/public/organizati
 export type { OrganizationPatch } from './generated/public/organizations/model/organizationPatch';
 export type { OrganizationReadForbiddenResponse } from './generated/public/organizations/model/organizationReadForbiddenResponse';
 export type { OrganizationWriteForbiddenResponse } from './generated/public/organizations/model/organizationWriteForbiddenResponse';
+export type { PolicyWriteForbiddenResponse } from './generated/public/organizations/model/policyWriteForbiddenResponse';
 export { Role } from './generated/public/organizations/model/role';
 export type { SessionOrganization } from './generated/public/organizations/model/sessionOrganization';
 export type { SessionReadForbiddenResponse } from './generated/public/organizations/model/sessionReadForbiddenResponse';

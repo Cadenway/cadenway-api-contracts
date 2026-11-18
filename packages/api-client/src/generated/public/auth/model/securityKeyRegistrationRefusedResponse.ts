@@ -10,6 +10,6 @@ import type { Problem } from './problem';
  * - `auth.two-step-setup-expired`: no pending registration of this session, or it expired (5
  *   minutes) or was replaced by a newer start;
  * - `auth.security-key-refused`: the answer of the browser does not verify against the
- *   pending registration, or the account already has this key.
+ *   pending registration, or the key is already registered, to this account or another one.
  */
 export type SecurityKeyRegistrationRefusedResponse = Problem;

@@ -99,9 +99,10 @@ export class AccountService {
  *
  * Recent authentication is not required: the current password stands for it. The change
  * drops a pending change of address, ends the recent authentication of every other session,
- * which stay open, and forgets every trusted device of the account, this browser's included,
- * so that the next sign-in of an account with two-step verification answers its challenge
- * everywhere. Answers the account, with its new `passwordChangedAt` ("Modifié
+ * which stay open, drops their pending two-step setups and key registrations and the open
+ * challenge of the account, and forgets every trusted device of the account, this browser's
+ * included, so that the next sign-in of an account with two-step verification answers its
+ * challenge everywhere. Answers the account, with its new `passwordChangedAt` ("Modifié
  * aujourd’hui") and the next `version`.
  * Emits `user.password-changed.v1` (`method: change`, no session closed), from which
  * notification-service sends "Votre mot de passe a été modifié" to the address of the

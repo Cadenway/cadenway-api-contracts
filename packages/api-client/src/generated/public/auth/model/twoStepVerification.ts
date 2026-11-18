@@ -3,6 +3,7 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 import type { SecurityKey } from './securityKey';
+import type { TwoStepMethod } from './twoStepMethod';
 import type { TwoStepRequirement } from './twoStepRequirement';
 import type { TwoStepVerificationAuthenticatorApp } from './twoStepVerificationAuthenticatorApp';
 import type { TwoStepVerificationBackupCodes } from './twoStepVerificationBackupCodes';
@@ -16,15 +17,14 @@ export interface TwoStepVerification {
   /**
      * The method a challenge opens on ("méthode principale"), `authenticator-app` today;
      * `null` while two-step verification is off.
-     * @nullable
      */
-  primaryMethod: string | null;
+  primaryMethod: TwoStepMethod | null;
   /**
      * The configured methods: `authenticator-app`, and `security-key` when the account has a
-     * key; empty while two-step verification is off. Backup codes are in `backupCodes`.
-     * @maxItems 2
+     * key; empty while two-step verification is off. Backup codes are in `backupCodes`, never
+     * here. Later versions may add methods: a client skips one it does not know.
      */
-  methods: string[];
+  methods: TwoStepMethod[];
   /**
      * The authenticator app ("Application d'authentification"), `null` while off.
      * @nullable

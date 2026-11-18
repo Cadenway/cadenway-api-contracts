@@ -181,7 +181,7 @@ export const UpdateOrganizationInternalResponse = zod.object({
  * Lists the members of the organization of the token, with `total` and `counts` as
  * `GET /v1/members` says. A guest gets `403 organization.role-forbidden`. For an actor who
  * is the owner or an admin, each member carries `twoStepVerificationEnabled` from the user
- * directory; for any other actor the member is absent. Internal token: actor `user`,
+ * directory; for any other actor `twoStepVerificationEnabled` is absent. Internal token: actor `user`,
  * organization required.
  * @summary List the members
  */

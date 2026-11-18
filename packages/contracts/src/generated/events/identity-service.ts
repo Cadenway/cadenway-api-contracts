@@ -880,7 +880,7 @@ export interface UserTwoStepVerificationChangedV1 {
   /**
    * The configured methods after the change: `authenticator-app`, and `security-key`
    * when the account has a key; empty when it is off. A consumer ignores a value it does
-   * not know.
+   * not know; the list has no upper bound, so that a new method needs no new version.
    */
   methods: string[];
   /** Backup codes not used yet after the change ("10 codes générés"); 0 when it is off. */
@@ -949,7 +949,7 @@ export const userTwoStepVerificationChangedV1Schema = zod.object({
   userId: zod.uuid(),
   change: zod.string(),
   enabled: zod.boolean(),
-  methods: zod.array(zod.string()).max(2),
+  methods: zod.array(zod.string()),
   backupCodesRemaining: zod.int().min(0).max(10),
   securityKey: zod.object({
     id: zod.uuid(),

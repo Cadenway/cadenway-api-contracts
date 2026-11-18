@@ -49,7 +49,7 @@ info:
     | `POST /v1/me/two-step-verification/security-keys` | `POST /internal/v1/users/{userId}/two-step-verification/security-keys` with the user and the session the introspection returned |
     | `DELETE /v1/me/two-step-verification/security-keys/{securityKeyId}` | `POST /internal/v1/users/{userId}/two-step-verification/security-keys/{securityKeyId}/remove` with the user and the session the introspection returned |
     | `GET /v1/organization/authentication-policy` | `GET /internal/v1/organization/authentication-policy` |
-    | `PATCH /v1/organization/authentication-policy` | `PATCH /internal/v1/organization/authentication-policy` |
+    | `PATCH /v1/organization/authentication-policy` | `PATCH /internal/v1/organization/authentication-policy?sessionId=` with the session the introspection returned |
     | `GET /v1/sessions` | `GET /internal/v1/users/{userId}/sessions` with the user and, as `currentSessionId`, the session the introspection returned |
     | `DELETE /v1/sessions/{sessionId}` | `DELETE /internal/v1/sessions/{sessionId}` with the id of the path |
     | `POST /v1/sessions/revoke-others` | `POST /internal/v1/sessions/{sessionId}/revoke-others` with the session the introspection returned |
@@ -125,7 +125,8 @@ info:
     `POST /internal/v1/sessions/{sessionId}/reauthentication` with a password or a code of the
     authenticator app, or the right current password of `PUT /internal/v1/users/{userId}/password`.
     The request of a change of address, the scheduling of the deletion, the creation of a personal
-    API token, and the routes of two-step verification that start or remove something (the start
+    API token, the change of the authentication policy of an organization, and the routes of
+    two-step verification that start or remove something (the start
     of the setup of the app, its disabling, the regeneration of the backup codes, the start of the
     registration of a security key and its removal) require it within the last 10 minutes, else
     they answer `403 auth.reauthentication-required` with `details.methods` (`password`, and
@@ -179,7 +180,7 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Calls every route through its generated client, for openapi/public/auth.yaml, openapi/public/api-tokens.yaml, the choice of the current organization, and the guard of every authenticated route (session and personal API token introspection).
+      uses: Calls every route through its generated client, for openapi/public/auth.yaml, openapi/public/api-tokens.yaml, the choice of the current organization and its authentication policy, and the guard of every authenticated route (session and personal API token introspection, including the withheld organization).
 servers:
   - url: http://identity-service:3010
     description: identity-service on the internal network of each environment (`IDENTITY_SERVICE_URL`).
@@ -187,7 +188,7 @@ security:
   - internalToken: []
 tags:
   - name: auth
-    description: Sign-up, email verification, sign-in and password reset, before a session exists.
+    description: Sign-up, email verification, sign-in and its two-step challenge, and password reset, before a session exists.
   - name: sessions
     description: Introspection, list, recent re-authentication and revocation of sessions.
   - name: users
@@ -195,7 +196,7 @@ tags:
   - name: api-tokens
     description: Personal API tokens and their introspection.
   - name: two-step-verification
-    description: The two-step verification of a user and the challenge of its sign-ins.
+    description: The two-step verification of a user.
   - name: authentication-policy
     description: The authentication policy of the organization of the token.
 paths:
@@ -670,8 +671,10 @@ paths:
       summary: Answer a two-step challenge with a security key
       description: |
         Checks the challenge, then verifies `credential` against the latest options of the
-        challenge and the keys of its account (`@simplewebauthn/server`: the WebAuthn challenge,
-        the origin of the web application, the relying party, the signature and the counter). An
+        challenge and the keys of its account (`@simplewebauthn/server`: the WebAuthn challenge;
+        the exact origin of the web application of the environment, cross-origin answers refused;
+        the relying party of the environment; the signature; the counter; and `userHandle`, when
+        present, equal to the handle of the account of the challenge). An
         answer that does not verify answers `422 auth.security-key-refused` with
         `details.remainingAttempts`, counted with the other wrong answers. On success, the effects
         of `POST /internal/v1/auth/sign-in/challenge/authenticator-app`, and the key records its
@@ -731,7 +734,8 @@ paths:
         current organization sets (12 hours by default and without an organization); a session
         idle for longer is inactive. A current organization withheld for want of two-step
         verification gives `withheldOrganization` and no organization (see "Withheld
-        organization"). Calling it twice has the same effect as once, so the call can be retried.
+        organization"); the inactivity of the policy of that organization still applies to the
+        session. Calling it twice has the same effect as once, so the call can be retried.
         Internal token: actor `system`, no organization.
       tags: [sessions]
       requestBody:
@@ -773,7 +777,7 @@ paths:
                     scopes: [tasks:read, tasks:write, members:read, webhooks:manage]
                     expiresAt: '2026-12-08T13:07:00Z'
                 withheldOrganization:
-                  summary: Théo Bernard, without two-step verification, in Atelier Nord, which requires it of everyone
+                  summary: Théo Bernard, without two-step verification, once Atelier Nord requires it of everyone
                   value:
                     active: true
                     tokenType: session
@@ -948,7 +952,13 @@ paths:
         the actor in it, while the account has none, answers `403 organization.mfa-required` with
         `details.organizationId`, and the session and the last choice stay as they were: the
         person sets two-step verification up, then chooses again. Checked once the membership is
-        found. Internal token: actor `user`, no organization.
+        found.
+
+        The inactivity of the session counts against the policy of the organization chosen: a
+        session that had been idle, before this request, for longer than that policy allows is
+        closed instead, and answers `404 session.not-found`, so that choosing an organization never
+        revives a session its own policy would have closed. Internal token: actor `user`, no
+        organization.
       tags: [sessions]
       parameters:
         - name: sessionId
@@ -1079,8 +1089,9 @@ paths:
         - `closeOtherSessions` (`true` by default) revokes every open session of the account, each
           with `session.revoked.v1`.
         - Ends the lockout of the password sign-in of the address, drops a pending change of
-          address, ends the recent authentication of the sessions it leaves open and forgets every
-          trusted device of the account; keeps the personal API tokens and the two-step
+          address, ends the recent authentication of the sessions it leaves open, voids the open
+          challenge and every pending two-step setup and key registration of the account, and
+          forgets every trusted device of the account; keeps the personal API tokens and the two-step
           verification; does not cancel a scheduled deletion.
 
         Emits `user.password-changed.v1` with `method: reset`, the number of closed sessions and
@@ -1124,8 +1135,8 @@ paths:
       description: |
         Checks the password, or the `code` of the authenticator app, of the actor and records a
         recent authentication of the session, which opens the 10-minute window of the guarded
-        routes. Both or neither, and a `code` for an account without an authenticator app, answer
-        `400 request.invalid`. A wrong password answers `422 auth.password-incorrect` and counts
+        routes. Both or neither answer `400 request.invalid`, and a `code` for an account without
+        an authenticator app `409 auth.two-step-not-enabled`. A wrong password answers `422 auth.password-incorrect` and counts
         with the failed sign-ins of the address (`429 auth.account-locked` once locked); a wrong or
         used code answers `422 auth.two-step-code-invalid` and counts with the wrong answers of the
         two-step challenges of the account (`429 auth.two-step-locked` once locked); the session
@@ -1167,6 +1178,8 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/SessionNotFound'
+        '409':
+          $ref: '#/components/responses/TwoStepNotEnabled'
         '422':
           $ref: '#/components/responses/PasswordRefused'
         '429':
@@ -1278,8 +1291,9 @@ paths:
         counting an attempt; then the current one (`422 auth.password-incorrect`, counted with the
         failed sign-ins; `429 auth.account-locked`). A right current password records a recent
         authentication of `sessionId`. Every session stays open, but a pending change of address is
-        dropped, the recent authentication of the other sessions ends and every trusted device of
-        the account is forgotten. Answers the account with
+        dropped, the recent authentication of the other sessions ends with their pending two-step
+        setups and key registrations, the open challenge of the account is voided, and every
+        trusted device of the account is forgotten. Answers the account with
         the next `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
         `method: change`, no closed session and the device of the `client`. Another user id, or an
         unknown one, answers `404 user.not-found`; a `sessionId` that is not an open session of the
@@ -1626,7 +1640,7 @@ paths:
         Checks `code` against the secret of the pending setup of `sessionId` and, in one
         transaction, makes it the authenticator app of the actor and ends the pending setup. When
         two-step verification was off, it turns on with 10 new backup codes, returned once and
-        kept hashed (`change: enabled`); otherwise the new app replaces the previous one and the
+        kept as HMAC-SHA-256 under a key derived from the pepper (`change: enabled`); otherwise the new app replaces the previous one and the
         backup codes stay (`backupCodes: null`, `change: authenticator-app-replaced`). Emits
         `user.two-step-verification-changed.v1` with the device of the `client`. No pending setup
         of `sessionId`, or an expired one: `422 auth.two-step-setup-expired`; a wrong code:
@@ -1668,7 +1682,9 @@ paths:
                     remaining: 10
                     total: 10
                     generatedAt: '2026-11-09T13:21:00Z'
-                  requiredBy: []
+                  requiredBy:
+                    - organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                      requiredFor: admins
                 backupCodes:
                   codes:
                     - 4F7K-2M9Q
@@ -1821,10 +1837,12 @@ paths:
       description: |
         Verifies `credential` against the pending registration of `sessionId` and, in one
         transaction, stores the key (its credential id, public key, counter, transports and flags,
-        so that passkeys can come later without a migration) under `name`, ends the pending
+        so that passkeys can come later without a migration) under `name`, after the same checks
+        of origin and relying party as the answers of a challenge, ends the pending
         registration, and emits `user.two-step-verification-changed.v1`
         (`change: security-key-added`) with the device of the `client`. An answer that does not
-        verify, or a credential the account already has: `422 auth.security-key-refused`; no
+        verify, or a credential id already registered, to this account or another one:
+        `422 auth.security-key-refused`; no
         pending registration of `sessionId`, or an expired one: `422 auth.two-step-setup-expired`;
         two-step verification turned off since, or 10 keys: `409 auth.two-step-not-enabled`,
         `409 auth.security-key-limit-reached`. Recent authentication is not required again.
@@ -1972,14 +1990,23 @@ paths:
         Applies a JSON Merge Patch to the authentication policy of the organization of the token,
         as `PATCH /v1/organization/authentication-policy` says. The checks run in this order: the
         role of the actor in the copy of the memberships (`403 organization.role-forbidden`, or
-        `404 organization.not-found`), `If-Match` (`412 request.version-mismatch`), then, when the
-        patch requires two-step verification for a role the actor has, the two-step verification
-        of the actor (`409 auth.two-step-not-enabled`). A patch that changes nothing answers `200`
-        with the same version. From the next introspection, the sessions and tokens acting on the
-        organization follow the new policy. Emits nothing. Internal token: actor `user`,
-        organization required.
+        `404 organization.not-found`), `If-Match` (`412 request.version-mismatch`), when the patch
+        requires two-step verification for a role the actor has, the two-step verification of the
+        actor (`409 auth.two-step-not-enabled`), then the recent authentication of `sessionId`
+        (`403 auth.reauthentication-required`; `404 session.not-found` for a session that is not
+        an open session of the actor). A patch that changes nothing answers `200` with the same
+        version. From the next introspection, the sessions and tokens acting on the organization
+        follow the new policy. Emits nothing. Internal token: actor `user`, organization required.
       tags: [authentication-policy]
       parameters:
+        - name: sessionId
+          in: query
+          required: true
+          description: The session of the public request, as the introspection returned it, whose recent authentication is checked.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60]
         - name: If-Match
           in: header
           required: false
@@ -2017,7 +2044,7 @@ paths:
         '403':
           $ref: '#/components/responses/PolicyAccessRefused'
         '404':
-          $ref: '#/components/responses/OrganizationNotFound'
+          $ref: '#/components/responses/OrganizationOrSessionNotFound'
         '409':
           $ref: '#/components/responses/TwoStepNotEnabled'
         '412':
@@ -2197,7 +2224,7 @@ paths:
                     scopes: [tasks:read]
                     expiresAt: '2026-12-08T14:02:00Z'
                 withheldOrganization:
-                  summary: Token of Théo Bernard while Atelier Nord requires two-step verification of everyone
+                  summary: Token of Théo Bernard, once Atelier Nord requires two-step verification of everyone
                   value:
                     active: true
                     tokenType: api-token
@@ -2456,7 +2483,10 @@ components:
             status: 422
             code: auth.two-step-setup-expired
     TwoStepNotEnabled:
-      description: '`auth.two-step-not-enabled`: the request needs two-step verification on the account of the actor.'
+      description: |
+        `auth.two-step-not-enabled`: the request needs two-step verification on the account of the
+        actor: backup codes, a security key, a `code` of the re-authentication, or a policy that
+        requires it for a role of the actor.
       content:
         application/problem+json:
           schema:
@@ -2541,6 +2571,8 @@ components:
       description: |
         - `organization.role-forbidden`: only the owner and the admins of the organization, in the
           copy of the memberships, read and change its policy;
+        - `auth.reauthentication-required`, on a change: the session has no authentication in the
+          last 10 minutes, with `details.methods`; the gateway forwards it with its French title;
         - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
           the internal token.
       content:
@@ -2562,6 +2594,21 @@ components:
                 title: Forbidden
                 status: 403
                 code: auth.organization-required
+    OrganizationOrSessionNotFound:
+      description: |
+        - `organization.not-found`: the copy of the memberships holds no membership of the actor
+          in the organization of the token;
+        - `session.not-found`: `sessionId` is not an open session of the actor. The gateway
+          answers it as `401 auth.session-expired`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: organization.not-found
     OrganizationNotFound:
       description: |
         `organization.not-found`: the copy of the memberships holds no membership of the actor in
@@ -3282,8 +3329,10 @@ components:
           format: uuid
           description: |
             Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);
-            `null` when it has none, or when the membership it was chosen through was removed
-            (`member.removed.v1`). A session whose organization was emptied by a removal stays
+            `null` when it has none, when the membership it was chosen through was removed
+            (`member.removed.v1`), or while it is withheld for want of two-step verification, which
+            `withheldOrganization` then names: the gateway never builds an organization context
+            from an answer that carries `withheldOrganization`. A session whose organization was emptied by a removal stays
             without one, even after the person joins the organization again with a new membership,
             until an organization is chosen again; a new session starts in the last organization
             the person chose, if they are a member of it.
@@ -3291,8 +3340,9 @@ components:
           type: [string, 'null']
           description: |
             Role of the user in that organization, from the copy of the memberships: `owner`,
-            `admin`, `member` or `guest`; `null` without an organization. The gateway carries it
-            in the internal token; organization-service decides from its own members.
+            `admin`, `member` or `guest`; `null` without an organization, also while it is
+            withheld. The gateway carries it in the internal token; organization-service decides
+            from its own members.
         scopes:
           type: array
           description: |
@@ -3521,13 +3571,19 @@ components:
         organizationId:
           type: string
           format: uuid
-          description: Organization the token acts in, the one it was created in.
+          description: |
+            Organization the token acts in, the one it was created in; still set while it is
+            withheld (`withheldOrganization`), when the token acts on nothing.
         role:
           $ref: '#/components/schemas/Role'
-          description: Role of the user in it, from the copy of the memberships.
+          description: Role of the user in it, from the copy of the memberships; still set while withheld.
         scopes:
           type: array
-          description: Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a scope it lacks.
+          description: |
+            Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a
+            scope it lacks. Empty while the organization is withheld (`withheldOrganization`), so
+            that a gateway that does not read `withheldOrganization` refuses every route too; the
+            gateway never builds an organization context from such an answer.
           items:
             type: string
         expiresAt:
@@ -3617,7 +3673,8 @@ components:
       type: object
       description: |
         `password`, or `code` for an account with an authenticator app; both or neither answer
-        `400 request.invalid`, checked here.
+        `400 request.invalid`, and `code` without an authenticator app
+        `409 auth.two-step-not-enabled`, checked here.
       properties:
         password:
           type: string
@@ -3799,16 +3856,18 @@ components:
       maxLength: 256
       description: |
         Value of the cookie `__Host-cw_trusted_device` of the request, which the gateway forwards
-        when the browser sent one. A secret, never logged; identity-service compares its SHA-256
-        hash with the trusted devices of the account. Unknown, expired, forgotten, of another
-        account or malformed: ignored, the sign-in answers its challenge.
+        when the browser sent one of 1 to 256 characters, and leaves out otherwise. A secret, never
+        logged; identity-service compares its SHA-256 hash with the trusted devices of the
+        account. Unknown, expired, forgotten, of another account or malformed: ignored, the
+        sign-in answers its challenge.
     TrustedDevice:
       type: object
       required: [token, expiresAt]
       description: |
         The device the answer of a challenge with `trustDevice` made trusted. The gateway writes
-        `token` into `__Host-cw_trusted_device` with `Max-Age` until `expiresAt`, and passes nothing
-        of it on in the public body.
+        `token` into `__Host-cw_trusted_device` (`Path=/; Secure; HttpOnly; SameSite=Strict;
+        Max-Age=2592000`, 30 days, which is `expiresAt`), and passes nothing of it on in the public
+        body.
       properties:
         token:
           type: string
@@ -3895,8 +3954,9 @@ components:
         methods:
           type: array
           minItems: 1
-          maxItems: 3
-          description: '`authenticator-app`, then `security-key` with a key, then `backup-code` while one is left.'
+          description: |
+            `authenticator-app`, then `security-key` with a key, then `backup-code` while one is
+            left. No upper bound: later versions may add methods, which the gateway passes on.
           items:
             $ref: '#/components/schemas/TwoStepMethod'
         securityKeys:
@@ -4146,15 +4206,17 @@ components:
           type: boolean
           description: On while the account has an authenticator app.
         primaryMethod:
-          type: [string, 'null']
-          description: '`authenticator-app` today; `null` while off (`x-extensible-enum`).'
-          x-extensible-enum: [authenticator-app]
+          description: '`authenticator-app` today; `null` while off.'
+          oneOf:
+            - $ref: '#/components/schemas/TwoStepMethod'
+            - type: 'null'
         methods:
           type: array
-          maxItems: 2
+          description: |
+            The configured methods, `authenticator-app` and `security-key` today, never
+            `backup-code`; empty while off. No upper bound: later versions may add methods.
           items:
-            type: string
-            x-extensible-enum: [authenticator-app, security-key]
+            $ref: '#/components/schemas/TwoStepMethod'
         authenticatorApp:
           type: [object, 'null']
           required: [configuredAt]
@@ -4284,7 +4346,10 @@ components:
           type: array
           minItems: 10
           maxItems: 10
-          description: 10 codes `XXXX-XXXX`, returned once; identity-service keeps only their hashes. Never logged.
+          description: |
+            10 codes `XXXX-XXXX`, returned once; identity-service keeps only their HMAC-SHA-256
+            under a key derived from the pepper, outside the database, as for the one-time codes.
+            Never logged.
           items:
             type: string
             pattern: '^[0-9A-Z]{4}-[0-9A-Z]{4}$'

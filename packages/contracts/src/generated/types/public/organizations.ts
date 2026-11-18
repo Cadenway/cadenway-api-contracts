@@ -398,6 +398,17 @@ export type OrganizationReadForbiddenResponse = Problem;
 export type OrganizationWriteForbiddenResponse = Problem;
 
 /**
+ * - `organization.not-selected`, `organization.mfa-required`, `organization.role-forbidden`:
+ *   see `OrganizationWriteForbidden`;
+ * - `auth.reauthentication-required`: the person of this session has not proved who they are
+ *   in the last 10 minutes; `details.methods` lists the ways they can
+ *   (`POST /v1/auth/reauthentication`), and the web application asks, confirms, then repeats
+ *   the request;
+ * - `auth.csrf-rejected`, `auth.api-token-not-accepted`: see `SessionWriteForbidden`.
+ */
+export type PolicyWriteForbiddenResponse = Problem;
+
+/**
  * - `organization.mfa-required`: the authentication policy of the organization requires
  *   two-step verification for the role of the caller, who has none; `details.organizationId`
  *   names it. Nothing changed;

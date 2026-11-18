@@ -314,7 +314,8 @@ export type TwoStepCode = string;
 
 /**
  * One of the methods of `details.methods`: `password`, or `code` for `authenticator-app`.
- * Both or neither answer `400 request.invalid`, checked by identity-service.
+ * Both or neither answer `400 request.invalid`, and `code` for an account without an
+ * authenticator app `409 auth.two-step-not-enabled`, both checked by identity-service.
  */
 export interface ReauthenticationRequest {
   /**
@@ -505,9 +506,9 @@ export interface SignInChallenge {
   /**
      * The methods the account can answer with, in the order of the tabs: `authenticator-app`
      * always, `security-key` when the account has a key, `backup-code` while a backup code is
-     * left.
+     * left. Later versions may add methods: a client skips one it does not know, so the list
+     * has no upper bound.
      * @minItems 1
-     * @maxItems 3
      */
   methods: TwoStepMethod[];
   /**
@@ -784,15 +785,14 @@ export interface TwoStepVerification {
   /**
      * The method a challenge opens on ("méthode principale"), `authenticator-app` today;
      * `null` while two-step verification is off.
-     * @nullable
      */
-  primaryMethod: string | null;
+  primaryMethod: TwoStepMethod | null;
   /**
      * The configured methods: `authenticator-app`, and `security-key` when the account has a
-     * key; empty while two-step verification is off. Backup codes are in `backupCodes`.
-     * @maxItems 2
+     * key; empty while two-step verification is off. Backup codes are in `backupCodes`, never
+     * here. Later versions may add methods: a client skips one it does not know.
      */
-  methods: string[];
+  methods: TwoStepMethod[];
   /**
      * The authenticator app ("Application d'authentification"), `null` while off.
      * @nullable
@@ -843,9 +843,10 @@ export interface AuthenticatorAppConfirmation {
  */
 export interface BackupCodes {
   /**
-     * 10 codes `XXXX-XXXX` of upper-case letters and digits, each working once. Secrets: the
-     * web application shows them, offers to copy and download them, and never keeps them;
-     * identity-service keeps only their hashes.
+     * 10 codes `XXXX-XXXX` of upper-case letters and digits (about 41 bits each), each
+     * working once. Secrets: the web application shows them, offers to copy and download
+     * them, and never keeps them; identity-service keeps only their HMAC-SHA-256 under a key
+     * kept outside the database, as for the one-time codes.
      * @minItems 10
      * @maxItems 10
      * @items.pattern ^[0-9A-Z]{4}-[0-9A-Z]{4}$
@@ -1205,9 +1206,9 @@ export type SetupCodeRefusedResponse = Problem;
 
 /**
  * `auth.two-step-not-enabled`: the request needs two-step verification on the account of the
- * caller, which is off: regenerating backup codes, adding a security key, or, in
- * `openapi/public/organizations.yaml`, requiring two-step verification for a role the caller
- * has.
+ * caller, which is off: regenerating backup codes, adding a security key, confirming with a
+ * `code` in `POST /v1/auth/reauthentication`, or, in `openapi/public/organizations.yaml`,
+ * requiring two-step verification for a role the caller has.
  */
 export type TwoStepNotEnabledResponse = Problem;
 
@@ -1215,7 +1216,7 @@ export type TwoStepNotEnabledResponse = Problem;
  * - `auth.two-step-not-enabled`: see `TwoStepNotEnabled`; a security key comes in addition to
  *   the authenticator app;
  * - `auth.security-key-limit-reached`: the account has 10 security keys, the most it can
- *   have; the person removes one first.
+ *   have (`details.maxSecurityKeys`); the person removes one first.
  */
 export type SecurityKeyNotAddableResponse = Problem;
 
@@ -1225,7 +1226,7 @@ export type SecurityKeyNotAddableResponse = Problem;
  * - `auth.two-step-setup-expired`: no pending registration of this session, or it expired (5
  *   minutes) or was replaced by a newer start;
  * - `auth.security-key-refused`: the answer of the browser does not verify against the
- *   pending registration, or the account already has this key.
+ *   pending registration, or the key is already registered, to this account or another one.
  */
 export type SecurityKeyRegistrationRefusedResponse = Problem;
 

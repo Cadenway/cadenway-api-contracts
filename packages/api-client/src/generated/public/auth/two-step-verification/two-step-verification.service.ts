@@ -179,9 +179,9 @@ export class TwoStepVerificationService {
 /**
  * Starts the setup of an authenticator app ("Configurer l'application d'authentification",
  * step "Scanner"): returns a new secret, once, with the `otpauth://` URI the web application
- * draws as a QR code ("Scannez ce code avec votre application, ou saisissez la clé :"). The
- * secret is a secret: the web application shows it grouped by 4 and copies it without
- * spaces, and never keeps it. Nothing changes on the account until the confirmation with a
+ * draws as a QR code ("Scannez ce code avec votre application, ou saisissez la clé :"), in
+ * the browser, never through a remote service or a URL. The secret is a secret: the web
+ * application shows it grouped by 4 and copies it without spaces, and never keeps it. Nothing changes on the account until the confirmation with a
  * code of the app (`POST /v1/me/two-step-verification/authenticator-app/setup/confirmation`).
  *
  * - The same route turns two-step verification on, when it is off, and reconfigures the app
@@ -387,8 +387,8 @@ export class TwoStepVerificationService {
  * JSON (`PublicKeyCredential.toJSON()` or an equivalent). The key then answers the two-step
  * challenges of the sign-ins.
  *
- * - An answer that does not verify, or a key the account already has:
- *   `422 auth.security-key-refused`.
+ * - An answer that does not verify, or a key already registered, to this account or another
+ *   one: `422 auth.security-key-refused`.
  * - A registration that expired, was replaced, belongs to another session, or no
  *   registration: `422 auth.two-step-setup-expired`.
  * - Two-step verification turned off since the start, or 10 keys already:

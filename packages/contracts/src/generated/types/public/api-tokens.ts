@@ -146,6 +146,7 @@ export type UnauthenticatedResponse = Problem;
  * - `organization.not-selected`: the session has no current organization;
  * - `organization.mfa-required`: the authentication policy of the current organization
  *   requires two-step verification for the role of the caller, who has none;
+ *   `details.organizationId` names it;
  * - `auth.api-token-not-accepted`: a personal API token never manages tokens.
  */
 export type TokenReadForbiddenResponse = Problem;
@@ -158,6 +159,7 @@ export type TokenReadForbiddenResponse = Problem;
  * - `organization.not-selected`: the session has no current organization;
  * - `organization.mfa-required`: the authentication policy of the current organization
  *   requires two-step verification for the role of the caller, who has none;
+ *   `details.organizationId` names it;
  * - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
  * - `auth.api-token-not-accepted`: a personal API token never manages tokens.
  */
@@ -167,6 +169,7 @@ export type TokenCreationForbiddenResponse = Problem;
  * - `organization.not-selected`: the session has no current organization;
  * - `organization.mfa-required`: the authentication policy of the current organization
  *   requires two-step verification for the role of the caller, who has none;
+ *   `details.organizationId` names it;
  * - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
  * - `auth.api-token-not-accepted`: a personal API token never manages tokens.
  */

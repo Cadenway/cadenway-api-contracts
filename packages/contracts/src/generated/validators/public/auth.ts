@@ -349,7 +349,6 @@ export const inspectSignInChallengeResponseTokenMax = 256;
 
 export const inspectSignInChallengeResponseEmailMax = 254;
 
-export const inspectSignInChallengeResponseMethodsMax = 3;
 
 export const inspectSignInChallengeResponseSecurityKeysMax = 10;
 
@@ -364,7 +363,7 @@ export const InspectSignInChallengeResponse = zod.object({
   "email": zod.email().max(inspectSignInChallengeResponseEmailMax).describe('Address of the account, shown above the challenge.'),
   "name": zod.string().describe('Full name of the account; the web application derives the initials from it.'),
   "primaryMethod": zod.string().describe('The method whose tab opens first, `authenticator-app` today.'),
-  "methods": zod.array(zod.string().describe('A way to answer a two-step challenge: `authenticator-app` ("Application", a code of the\napp), `security-key` ("Clé de sécurité", WebAuthn) or `backup-code` ("Code de secours").\nLater versions may add methods; a client ignores one it does not know.\n')).min(1).max(inspectSignInChallengeResponseMethodsMax).describe('The methods the account can answer with, in the order of the tabs: `authenticator-app`\nalways, `security-key` when the account has a key, `backup-code` while a backup code is\nleft.\n'),
+  "methods": zod.array(zod.string().describe('A way to answer a two-step challenge: `authenticator-app` ("Application", a code of the\napp), `security-key` ("Clé de sécurité", WebAuthn) or `backup-code` ("Code de secours").\nLater versions may add methods; a client ignores one it does not know.\n')).min(1).describe('The methods the account can answer with, in the order of the tabs: `authenticator-app`\nalways, `security-key` when the account has a key, `backup-code` while a backup code is\nleft. Later versions may add methods: a client skips one it does not know, so the list\nhas no upper bound.\n'),
   "securityKeys": zod.array(zod.object({
   "name": zod.string()
 })).max(inspectSignInChallengeResponseSecurityKeysMax).describe('The keys of the account, by name ("2 clés enregistrées : YubiKey 5C NFC, Touch ID\n(MacBook Air).").\n'),
@@ -710,9 +709,10 @@ export const InspectPasswordResetLinkResponse = zod.object({
  * - A link that expired, was used, was replaced or is unknown answers
  *   `422 auth.reset-link-expired`.
  * - The reset ends the lockout of the password sign-in of the address, drops a pending change
- *   of address, ends the recent authentication of every session it leaves open, forgets every
- *   trusted device of the account, keeps the personal API tokens and the two-step
- *   verification, and does not cancel a scheduled deletion of the account: only a sign-in
+ *   of address, ends the recent authentication of every session it leaves open, drops the open
+ *   two-step challenge and every pending two-step setup and key registration of the account,
+ *   forgets every trusted device of the account, keeps the personal API tokens and the
+ *   two-step verification, and does not cancel a scheduled deletion of the account: only a sign-in
  *   does. The next sign-in of an account with two-step verification answers its challenge,
  *   as before the reset.
  *
@@ -751,8 +751,9 @@ export const ConfirmPasswordResetResponse = zod.object({
  * authentication" above). The web application calls it when a route answered
  * `403 auth.reauthentication-required`, then repeats that request. It sends one of the
  * methods of `details.methods`: `password`, or `code`, the 6 digits of the authenticator app
- * of an account with two-step verification. Both or neither answer `400 request.invalid`, as
- * does `code` for an account without an authenticator app.
+ * of an account with two-step verification. Both or neither answer `400 request.invalid`;
+ * `code` for an account without an authenticator app answers
+ * `409 auth.two-step-not-enabled`.
  *
  * - A wrong password answers `422 auth.password-incorrect` with
  *   `details.remainingAttempts`. It counts with the failed sign-ins of the address of the
@@ -776,7 +777,7 @@ export const reauthenticateBodyCodeRegExp = new RegExp('^[0-9]{6}$');
 export const ReauthenticateBody = zod.object({
   "password": zod.string().min(1).max(reauthenticateBodyPasswordMax).optional().describe('The current password of the account. Never logged.'),
   "code": zod.string().regex(reauthenticateBodyCodeRegExp).optional().describe('The 6 digits the authenticator app shows now, without a space. Works once: a code already\naccepted is refused. Never logged.\n')
-}).describe('One of the methods of `details.methods`: `password`, or `code` for `authenticator-app`.\nBoth or neither answer `400 request.invalid`, checked by identity-service.\n')
+}).describe('One of the methods of `details.methods`: `password`, or `code` for `authenticator-app`.\nBoth or neither answer `400 request.invalid`, and `code` for an account without an\nauthenticator app `409 auth.two-step-not-enabled`, both checked by identity-service.\n')
 
 export const ReauthenticateResponse = zod.object({
   "authenticatedAt": zod.iso.datetime({"offset":true}).describe('When the person last proved who they are in this session.'),
@@ -888,9 +889,10 @@ export const UpdateCurrentUserResponse = zod.object({
  *
  * Recent authentication is not required: the current password stands for it. The change
  * drops a pending change of address, ends the recent authentication of every other session,
- * which stay open, and forgets every trusted device of the account, this browser's included,
- * so that the next sign-in of an account with two-step verification answers its challenge
- * everywhere. Answers the account, with its new `passwordChangedAt` ("Modifié
+ * which stay open, drops their pending two-step setups and key registrations and the open
+ * challenge of the account, and forgets every trusted device of the account, this browser's
+ * included, so that the next sign-in of an account with two-step verification answers its
+ * challenge everywhere. Answers the account, with its new `passwordChangedAt` ("Modifié
  * aujourd’hui") and the next `version`.
  * Emits `user.password-changed.v1` (`method: change`, no session closed), from which
  * notification-service sends "Votre mot de passe a été modifié" to the address of the
@@ -1072,8 +1074,6 @@ export const ScheduleAccountDeletionResponse = zod.object({
  * `403 auth.api-token-not-accepted`.
  * @summary Read the two-step verification of the account
  */
-export const getTwoStepVerificationResponseMethodsMax = 2;
-
 export const getTwoStepVerificationResponseSecurityKeysMax = 10;
 
 export const getTwoStepVerificationResponseBackupCodesRemainingMin = 0;
@@ -1084,8 +1084,8 @@ export const getTwoStepVerificationResponseBackupCodesRemainingMax = 10;
 
 export const GetTwoStepVerificationResponse = zod.object({
   "enabled": zod.boolean().describe('"Activée" or "Désactivée": on while the account has an authenticator app.'),
-  "primaryMethod": zod.string().nullable().describe('The method a challenge opens on ("méthode principale"), `authenticator-app` today;\n`null` while two-step verification is off.\n'),
-  "methods": zod.array(zod.string()).max(getTwoStepVerificationResponseMethodsMax).describe('The configured methods: `authenticator-app`, and `security-key` when the account has a\nkey; empty while two-step verification is off. Backup codes are in `backupCodes`.\n'),
+  "primaryMethod": zod.union([zod.string().describe('A way to answer a two-step challenge: `authenticator-app` ("Application", a code of the\napp), `security-key` ("Clé de sécurité", WebAuthn) or `backup-code` ("Code de secours").\nLater versions may add methods; a client ignores one it does not know.\n'),zod.null()]).describe('The method a challenge opens on ("méthode principale"), `authenticator-app` today;\n`null` while two-step verification is off.\n'),
+  "methods": zod.array(zod.string().describe('A way to answer a two-step challenge: `authenticator-app` ("Application", a code of the\napp), `security-key` ("Clé de sécurité", WebAuthn) or `backup-code` ("Code de secours").\nLater versions may add methods; a client ignores one it does not know.\n')).describe('The configured methods: `authenticator-app`, and `security-key` when the account has a\nkey; empty while two-step verification is off. Backup codes are in `backupCodes`, never\nhere. Later versions may add methods: a client skips one it does not know.\n'),
   "authenticatorApp": zod.object({
   "configuredAt": zod.iso.datetime({"offset":true}).describe('When the current app was confirmed ("Configurée le 3 mars 2026").')
 }).nullable().describe('The authenticator app ("Application d\'authentification"), `null` while off.'),
@@ -1133,9 +1133,9 @@ export const DisableTwoStepVerificationResponse = zod.void()
 /**
  * Starts the setup of an authenticator app ("Configurer l'application d'authentification",
  * step "Scanner"): returns a new secret, once, with the `otpauth://` URI the web application
- * draws as a QR code ("Scannez ce code avec votre application, ou saisissez la clé :"). The
- * secret is a secret: the web application shows it grouped by 4 and copies it without
- * spaces, and never keeps it. Nothing changes on the account until the confirmation with a
+ * draws as a QR code ("Scannez ce code avec votre application, ou saisissez la clé :"), in
+ * the browser, never through a remote service or a URL. The secret is a secret: the web
+ * application shows it grouped by 4 and copies it without spaces, and never keeps it. Nothing changes on the account until the confirmation with a
  * code of the app (`POST /v1/me/two-step-verification/authenticator-app/setup/confirmation`).
  *
  * - The same route turns two-step verification on, when it is off, and reconfigures the app
@@ -1196,8 +1196,6 @@ export const ConfirmAuthenticatorAppSetupBody = zod.object({
   "code": zod.string().regex(confirmAuthenticatorAppSetupBodyCodeRegExp).describe('The 6 digits the authenticator app shows now, without a space. Works once: a code already\naccepted is refused. Never logged.\n')
 })
 
-export const confirmAuthenticatorAppSetupResponseTwoStepVerificationMethodsMax = 2;
-
 export const confirmAuthenticatorAppSetupResponseTwoStepVerificationSecurityKeysMax = 10;
 
 export const confirmAuthenticatorAppSetupResponseTwoStepVerificationBackupCodesRemainingMin = 0;
@@ -1213,8 +1211,8 @@ export const confirmAuthenticatorAppSetupResponseBackupCodesOneCodesMax = 10;
 export const ConfirmAuthenticatorAppSetupResponse = zod.object({
   "twoStepVerification": zod.object({
   "enabled": zod.boolean().describe('"Activée" or "Désactivée": on while the account has an authenticator app.'),
-  "primaryMethod": zod.string().nullable().describe('The method a challenge opens on ("méthode principale"), `authenticator-app` today;\n`null` while two-step verification is off.\n'),
-  "methods": zod.array(zod.string()).max(confirmAuthenticatorAppSetupResponseTwoStepVerificationMethodsMax).describe('The configured methods: `authenticator-app`, and `security-key` when the account has a\nkey; empty while two-step verification is off. Backup codes are in `backupCodes`.\n'),
+  "primaryMethod": zod.union([zod.string().describe('A way to answer a two-step challenge: `authenticator-app` ("Application", a code of the\napp), `security-key` ("Clé de sécurité", WebAuthn) or `backup-code` ("Code de secours").\nLater versions may add methods; a client ignores one it does not know.\n'),zod.null()]).describe('The method a challenge opens on ("méthode principale"), `authenticator-app` today;\n`null` while two-step verification is off.\n'),
+  "methods": zod.array(zod.string().describe('A way to answer a two-step challenge: `authenticator-app` ("Application", a code of the\napp), `security-key` ("Clé de sécurité", WebAuthn) or `backup-code` ("Code de secours").\nLater versions may add methods; a client ignores one it does not know.\n')).describe('The configured methods: `authenticator-app`, and `security-key` when the account has a\nkey; empty while two-step verification is off. Backup codes are in `backupCodes`, never\nhere. Later versions may add methods: a client skips one it does not know.\n'),
   "authenticatorApp": zod.object({
   "configuredAt": zod.iso.datetime({"offset":true}).describe('When the current app was confirmed ("Configurée le 3 mars 2026").')
 }).nullable().describe('The authenticator app ("Application d\'authentification"), `null` while off.'),
@@ -1235,7 +1233,7 @@ export const ConfirmAuthenticatorAppSetupResponse = zod.object({
 })).describe('The organizations whose authentication policy requires two-step verification of the\nperson, for the role they have in each ("Exigée par Atelier Nord pour les propriétaires\net administrateurs."): while one is listed, it cannot be turned off.\n')
 }).describe('The two-step verification of the account, without any secret.'),
   "backupCodes": zod.union([zod.object({
-  "codes": zod.array(zod.string().regex(confirmAuthenticatorAppSetupResponseBackupCodesOneCodesItemRegExp)).min(confirmAuthenticatorAppSetupResponseBackupCodesOneCodesMin).max(confirmAuthenticatorAppSetupResponseBackupCodesOneCodesMax).describe('10 codes `XXXX-XXXX` of upper-case letters and digits, each working once. Secrets: the\nweb application shows them, offers to copy and download them, and never keeps them;\nidentity-service keeps only their hashes.\n'),
+  "codes": zod.array(zod.string().regex(confirmAuthenticatorAppSetupResponseBackupCodesOneCodesItemRegExp)).min(confirmAuthenticatorAppSetupResponseBackupCodesOneCodesMin).max(confirmAuthenticatorAppSetupResponseBackupCodesOneCodesMax).describe('10 codes `XXXX-XXXX` of upper-case letters and digits (about 41 bits each), each\nworking once. Secrets: the web application shows them, offers to copy and download\nthem, and never keeps them; identity-service keeps only their HMAC-SHA-256 under a key\nkept outside the database, as for the one-time codes.\n'),
   "generatedAt": zod.iso.datetime({"offset":true})
 }).describe('Backup codes, returned once by the request that generates them.'),zod.null()]).describe('The 10 backup codes generated because two-step verification turned on, returned here\nonce; `null` for a reconfiguration, which keeps the current codes.\n')
 })
@@ -1264,7 +1262,7 @@ export const regenerateBackupCodesResponseCodesMax = 10;
 
 
 export const RegenerateBackupCodesResponse = zod.object({
-  "codes": zod.array(zod.string().regex(regenerateBackupCodesResponseCodesItemRegExp)).min(regenerateBackupCodesResponseCodesMin).max(regenerateBackupCodesResponseCodesMax).describe('10 codes `XXXX-XXXX` of upper-case letters and digits, each working once. Secrets: the\nweb application shows them, offers to copy and download them, and never keeps them;\nidentity-service keeps only their hashes.\n'),
+  "codes": zod.array(zod.string().regex(regenerateBackupCodesResponseCodesItemRegExp)).min(regenerateBackupCodesResponseCodesMin).max(regenerateBackupCodesResponseCodesMax).describe('10 codes `XXXX-XXXX` of upper-case letters and digits (about 41 bits each), each\nworking once. Secrets: the web application shows them, offers to copy and download\nthem, and never keeps them; identity-service keeps only their HMAC-SHA-256 under a key\nkept outside the database, as for the one-time codes.\n'),
   "generatedAt": zod.iso.datetime({"offset":true})
 }).describe('Backup codes, returned once by the request that generates them.')
 
@@ -1330,8 +1328,8 @@ export const StartSecurityKeyRegistrationResponse = zod.object({
  * JSON (`PublicKeyCredential.toJSON()` or an equivalent). The key then answers the two-step
  * challenges of the sign-ins.
  *
- * - An answer that does not verify, or a key the account already has:
- *   `422 auth.security-key-refused`.
+ * - An answer that does not verify, or a key already registered, to this account or another
+ *   one: `422 auth.security-key-refused`.
  * - A registration that expired, was replaced, belongs to another session, or no
  *   registration: `422 auth.two-step-setup-expired`.
  * - Two-step verification turned off since the start, or 10 keys already:

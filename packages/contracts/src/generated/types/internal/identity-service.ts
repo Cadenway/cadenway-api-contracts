@@ -102,9 +102,10 @@ export interface SignUpVerification {
 
 /**
  * Value of the cookie `__Host-cw_trusted_device` of the request, which the gateway forwards
- * when the browser sent one. A secret, never logged; identity-service compares its SHA-256
- * hash with the trusted devices of the account. Unknown, expired, forgotten, of another
- * account or malformed: ignored, the sign-in answers its challenge.
+ * when the browser sent one of 1 to 256 characters, and leaves out otherwise. A secret, never
+ * logged; identity-service compares its SHA-256 hash with the trusted devices of the
+ * account. Unknown, expired, forgotten, of another account or malformed: ignored, the
+ * sign-in answers its challenge.
  * @minLength 1
  * @maxLength 256
  */
@@ -183,8 +184,9 @@ export interface User {
 
 /**
  * The device the answer of a challenge with `trustDevice` made trusted. The gateway writes
- * `token` into `__Host-cw_trusted_device` with `Max-Age` until `expiresAt`, and passes nothing
- * of it on in the public body.
+ * `token` into `__Host-cw_trusted_device` (`Path=/; Secure; HttpOnly; SameSite=Strict;
+ * Max-Age=2592000`, 30 days, which is `expiresAt`), and passes nothing of it on in the public
+ * body.
  */
 export interface TrustedDevice {
   /**
@@ -248,8 +250,10 @@ export interface ActiveToken {
   userId: string;
   /**
      * Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);
-     * `null` when it has none, or when the membership it was chosen through was removed
-     * (`member.removed.v1`). A session whose organization was emptied by a removal stays
+     * `null` when it has none, when the membership it was chosen through was removed
+     * (`member.removed.v1`), or while it is withheld for want of two-step verification, which
+     * `withheldOrganization` then names: the gateway never builds an organization context
+     * from an answer that carries `withheldOrganization`. A session whose organization was emptied by a removal stays
      * without one, even after the person joins the organization again with a new membership,
      * until an organization is chosen again; a new session starts in the last organization
      * the person chose, if they are a member of it.
@@ -258,8 +262,9 @@ export interface ActiveToken {
   organizationId: string | null;
   /**
      * Role of the user in that organization, from the copy of the memberships: `owner`,
-     * `admin`, `member` or `guest`; `null` without an organization. The gateway carries it
-     * in the internal token; organization-service decides from its own members.
+     * `admin`, `member` or `guest`; `null` without an organization, also while it is
+     * withheld. The gateway carries it in the internal token; organization-service decides
+     * from its own members.
      * @nullable
      */
   role: string | null;
@@ -452,11 +457,19 @@ export interface ActiveApiToken {
   /** Id of the token; the gateway counts its rate limit on it. */
   apiTokenId: string;
   userId: string;
-  /** Organization the token acts in, the one it was created in. */
+  /**
+     * Organization the token acts in, the one it was created in; still set while it is
+     * withheld (`withheldOrganization`), when the token acts on nothing.
+     */
   organizationId: string;
-  /** Role of the user in it, from the copy of the memberships. */
+  /** Role of the user in it, from the copy of the memberships; still set while withheld. */
   role: Role;
-  /** Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a scope it lacks. */
+  /**
+     * Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a
+     * scope it lacks. Empty while the organization is withheld (`withheldOrganization`), so
+     * that a gateway that does not read `withheldOrganization` refuses every route too; the
+     * gateway never builds an organization context from such an answer.
+     */
   scopes: string[];
   /**
      * When the token stops working; `null` for a token without expiry.
@@ -535,7 +548,8 @@ export type TwoStepCode = string;
 
 /**
  * `password`, or `code` for an account with an authenticator app; both or neither answer
- * `400 request.invalid`, checked here.
+ * `400 request.invalid`, and `code` without an authenticator app
+ * `409 auth.two-step-not-enabled`, checked here.
  */
 export interface ReauthenticationRequest {
   /**
@@ -704,9 +718,9 @@ export interface SignInChallenge {
   name: string;
   primaryMethod: TwoStepMethod;
   /**
-     * `authenticator-app`, then `security-key` with a key, then `backup-code` while one is left.
+     * `authenticator-app`, then `security-key` with a key, then `backup-code` while one is
+     * left. No upper bound: later versions may add methods, which the gateway passes on.
      * @minItems 1
-     * @maxItems 3
      */
   methods: TwoStepMethod[];
   /** @maxItems 10 */
@@ -938,13 +952,13 @@ export interface TwoStepRequirement {
 export interface TwoStepVerification {
   /** On while the account has an authenticator app. */
   enabled: boolean;
+  /** `authenticator-app` today; `null` while off. */
+  primaryMethod: TwoStepMethod | null;
   /**
-     * `authenticator-app` today; `null` while off (`x-extensible-enum`).
-     * @nullable
+     * The configured methods, `authenticator-app` and `security-key` today, never
+     * `backup-code`; empty while off. No upper bound: later versions may add methods.
      */
-  primaryMethod: string | null;
-  /** @maxItems 2 */
-  methods: string[];
+  methods: TwoStepMethod[];
   /** @nullable */
   authenticatorApp: TwoStepVerificationAuthenticatorApp;
   /**
@@ -998,7 +1012,9 @@ export interface AuthenticatorAppConfirmation {
 
 export interface BackupCodes {
   /**
-     * 10 codes `XXXX-XXXX`, returned once; identity-service keeps only their hashes. Never logged.
+     * 10 codes `XXXX-XXXX`, returned once; identity-service keeps only their HMAC-SHA-256
+     * under a key derived from the pepper, outside the database, as for the one-time codes.
+     * Never logged.
      * @minItems 10
      * @maxItems 10
      * @items.pattern ^[0-9A-Z]{4}-[0-9A-Z]{4}$
@@ -1170,7 +1186,9 @@ export type MfaRequiredByOrganizationResponse = Problem;
 export type SetupCodeRefusedResponse = Problem;
 
 /**
- * `auth.two-step-not-enabled`: the request needs two-step verification on the account of the actor.
+ * `auth.two-step-not-enabled`: the request needs two-step verification on the account of the
+ * actor: backup codes, a security key, a `code` of the re-authentication, or a policy that
+ * requires it for a role of the actor.
  */
 export type TwoStepNotEnabledResponse = Problem;
 
@@ -1206,10 +1224,20 @@ export type OrganizationChoiceRefusedResponse = Problem;
 /**
  * - `organization.role-forbidden`: only the owner and the admins of the organization, in the
  *   copy of the memberships, read and change its policy;
+ * - `auth.reauthentication-required`, on a change: the session has no authentication in the
+ *   last 10 minutes, with `details.methods`; the gateway forwards it with its French title;
  * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
  *   the internal token.
  */
 export type PolicyAccessRefusedResponse = Problem;
+
+/**
+ * - `organization.not-found`: the copy of the memberships holds no membership of the actor
+ *   in the organization of the token;
+ * - `session.not-found`: `sessionId` is not an open session of the actor. The gateway
+ *   answers it as `401 auth.session-expired`.
+ */
+export type OrganizationOrSessionNotFoundResponse = Problem;
 
 /**
  * `organization.not-found`: the copy of the memberships holds no membership of the actor in
@@ -1404,6 +1432,11 @@ export type ListUserSessionsInternalParams = {
    * @maximum 100
    */
   limit?: number;
+};
+
+export type UpdateAuthenticationPolicyInternalParams = {
+  /** The session of the public request, as the introspection returned it, whose recent authentication is checked. */
+  sessionId: string;
 };
 
 export type ListApiTokensInternalParams = {

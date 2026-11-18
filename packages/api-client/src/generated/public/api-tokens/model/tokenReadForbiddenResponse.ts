@@ -8,6 +8,7 @@ import type { Problem } from './problem';
  * - `organization.not-selected`: the session has no current organization;
  * - `organization.mfa-required`: the authentication policy of the current organization
  *   requires two-step verification for the role of the caller, who has none;
+ *   `details.organizationId` names it;
  * - `auth.api-token-not-accepted`: a personal API token never manages tokens.
  */
 export type TokenReadForbiddenResponse = Problem;

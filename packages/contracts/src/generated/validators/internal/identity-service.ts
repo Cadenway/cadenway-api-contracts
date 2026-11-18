@@ -168,7 +168,7 @@ export const VerifySignUpInternalResponse = zod.object({
   "trustedDevice": zod.object({
   "token": zod.string().min(verifySignUpInternalResponseTrustedDeviceTokenMin).max(verifySignUpInternalResponseTrustedDeviceTokenMax).describe('Opaque device token (256 random bits, base64url), returned once. A secret, never logged.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('30 days after the answer.')
-}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` with `Max-Age` until `expiresAt`, and passes nothing\nof it on in the public body.\n')
+}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` (`Path=/; Secure; HttpOnly; SameSite=Strict;\nMax-Age=2592000`, 30 days, which is `expiresAt`), and passes nothing of it on in the public\nbody.\n')
 })
 
 
@@ -211,7 +211,7 @@ export const SignInWithPasswordInternalBody = zod.object({
   "ipAddress": zod.string().min(signInWithPasswordInternalBodyClientIpAddressMin).max(signInWithPasswordInternalBodyClientIpAddressMax).describe('IPv4 or IPv6 address of the browser, from the one proxy hop the gateway trusts.'),
   "userAgent": zod.string().max(signInWithPasswordInternalBodyClientUserAgentMax).nullable().describe('`User-Agent` header of the browser, `null` when it sent none.')
 }).describe('The browser a request came from, as the gateway saw it. Stored with the session it opens,\nto show its device and address; shown in the security email of the request. No place is\nderived from the address. Never logged with a token.\n'),
-  "trustedDeviceToken": zod.string().min(1).max(signInWithPasswordInternalBodyTrustedDeviceTokenMax).optional().describe('Value of the cookie `__Host-cw_trusted_device` of the request, which the gateway forwards\nwhen the browser sent one. A secret, never logged; identity-service compares its SHA-256\nhash with the trusted devices of the account. Unknown, expired, forgotten, of another\naccount or malformed: ignored, the sign-in answers its challenge.\n')
+  "trustedDeviceToken": zod.string().min(1).max(signInWithPasswordInternalBodyTrustedDeviceTokenMax).optional().describe('Value of the cookie `__Host-cw_trusted_device` of the request, which the gateway forwards\nwhen the browser sent one of 1 to 256 characters, and leaves out otherwise. A secret, never\nlogged; identity-service compares its SHA-256 hash with the trusted devices of the\naccount. Unknown, expired, forgotten, of another account or malformed: ignored, the\nsign-in answers its challenge.\n')
 })
 
 export const signInWithPasswordInternalResponseTokenMax = 256;
@@ -246,7 +246,7 @@ export const SignInWithPasswordInternalResponse = zod.object({
   "trustedDevice": zod.object({
   "token": zod.string().min(signInWithPasswordInternalResponseTrustedDeviceTokenMin).max(signInWithPasswordInternalResponseTrustedDeviceTokenMax).describe('Opaque device token (256 random bits, base64url), returned once. A secret, never logged.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('30 days after the answer.')
-}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` with `Max-Age` until `expiresAt`, and passes nothing\nof it on in the public body.\n')
+}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` (`Path=/; Secure; HttpOnly; SameSite=Strict;\nMax-Age=2592000`, 30 days, which is `expiresAt`), and passes nothing of it on in the public\nbody.\n')
 })
 
 
@@ -309,7 +309,7 @@ export const SignInWithCodeInternalBody = zod.object({
   "ipAddress": zod.string().min(signInWithCodeInternalBodyClientIpAddressMin).max(signInWithCodeInternalBodyClientIpAddressMax).describe('IPv4 or IPv6 address of the browser, from the one proxy hop the gateway trusts.'),
   "userAgent": zod.string().max(signInWithCodeInternalBodyClientUserAgentMax).nullable().describe('`User-Agent` header of the browser, `null` when it sent none.')
 }).describe('The browser a request came from, as the gateway saw it. Stored with the session it opens,\nto show its device and address; shown in the security email of the request. No place is\nderived from the address. Never logged with a token.\n'),
-  "trustedDeviceToken": zod.string().min(1).max(signInWithCodeInternalBodyTrustedDeviceTokenMax).optional().describe('Value of the cookie `__Host-cw_trusted_device` of the request, which the gateway forwards\nwhen the browser sent one. A secret, never logged; identity-service compares its SHA-256\nhash with the trusted devices of the account. Unknown, expired, forgotten, of another\naccount or malformed: ignored, the sign-in answers its challenge.\n')
+  "trustedDeviceToken": zod.string().min(1).max(signInWithCodeInternalBodyTrustedDeviceTokenMax).optional().describe('Value of the cookie `__Host-cw_trusted_device` of the request, which the gateway forwards\nwhen the browser sent one of 1 to 256 characters, and leaves out otherwise. A secret, never\nlogged; identity-service compares its SHA-256 hash with the trusted devices of the\naccount. Unknown, expired, forgotten, of another account or malformed: ignored, the\nsign-in answers its challenge.\n')
 })
 
 export const signInWithCodeInternalResponseTokenMax = 256;
@@ -344,7 +344,7 @@ export const SignInWithCodeInternalResponse = zod.object({
   "trustedDevice": zod.object({
   "token": zod.string().min(signInWithCodeInternalResponseTrustedDeviceTokenMin).max(signInWithCodeInternalResponseTrustedDeviceTokenMax).describe('Opaque device token (256 random bits, base64url), returned once. A secret, never logged.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('30 days after the answer.')
-}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` with `Max-Age` until `expiresAt`, and passes nothing\nof it on in the public body.\n')
+}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` (`Path=/; Secure; HttpOnly; SameSite=Strict;\nMax-Age=2592000`, 30 days, which is `expiresAt`), and passes nothing of it on in the public\nbody.\n')
 })
 
 
@@ -369,7 +369,6 @@ export const inspectSignInChallengeInternalResponseTokenMax = 256;
 
 export const inspectSignInChallengeInternalResponseEmailMax = 254;
 
-export const inspectSignInChallengeInternalResponseMethodsMax = 3;
 
 export const inspectSignInChallengeInternalResponseSecurityKeysMax = 10;
 
@@ -384,7 +383,7 @@ export const InspectSignInChallengeInternalResponse = zod.object({
   "email": zod.email().max(inspectSignInChallengeInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
   "name": zod.string(),
   "primaryMethod": zod.string().describe('`authenticator-app`, `security-key` or `backup-code` today; more later (`x-extensible-enum`).'),
-  "methods": zod.array(zod.string().describe('`authenticator-app`, `security-key` or `backup-code` today; more later (`x-extensible-enum`).')).min(1).max(inspectSignInChallengeInternalResponseMethodsMax).describe('`authenticator-app`, then `security-key` with a key, then `backup-code` while one is left.'),
+  "methods": zod.array(zod.string().describe('`authenticator-app`, `security-key` or `backup-code` today; more later (`x-extensible-enum`).')).min(1).describe('`authenticator-app`, then `security-key` with a key, then `backup-code` while one is\nleft. No upper bound: later versions may add methods, which the gateway passes on.\n'),
   "securityKeys": zod.array(zod.object({
   "name": zod.string()
 })).max(inspectSignInChallengeInternalResponseSecurityKeysMax),
@@ -462,7 +461,7 @@ export const AnswerSignInChallengeWithAuthenticatorAppInternalResponse = zod.obj
   "trustedDevice": zod.object({
   "token": zod.string().min(answerSignInChallengeWithAuthenticatorAppInternalResponseTrustedDeviceTokenMin).max(answerSignInChallengeWithAuthenticatorAppInternalResponseTrustedDeviceTokenMax).describe('Opaque device token (256 random bits, base64url), returned once. A secret, never logged.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('30 days after the answer.')
-}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` with `Max-Age` until `expiresAt`, and passes nothing\nof it on in the public body.\n')
+}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` (`Path=/; Secure; HttpOnly; SameSite=Strict;\nMax-Age=2592000`, 30 days, which is `expiresAt`), and passes nothing of it on in the public\nbody.\n')
 })
 
 
@@ -528,7 +527,7 @@ export const AnswerSignInChallengeWithBackupCodeInternalResponse = zod.object({
   "trustedDevice": zod.object({
   "token": zod.string().min(answerSignInChallengeWithBackupCodeInternalResponseTrustedDeviceTokenMin).max(answerSignInChallengeWithBackupCodeInternalResponseTrustedDeviceTokenMax).describe('Opaque device token (256 random bits, base64url), returned once. A secret, never logged.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('30 days after the answer.')
-}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` with `Max-Age` until `expiresAt`, and passes nothing\nof it on in the public body.\n')
+}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` (`Path=/; Secure; HttpOnly; SameSite=Strict;\nMax-Age=2592000`, 30 days, which is `expiresAt`), and passes nothing of it on in the public\nbody.\n')
 })
 
 
@@ -572,8 +571,10 @@ export const GetSignInChallengeSecurityKeyOptionsInternalResponse = zod.object({
 
 /**
  * Checks the challenge, then verifies `credential` against the latest options of the
- * challenge and the keys of its account (`@simplewebauthn/server`: the WebAuthn challenge,
- * the origin of the web application, the relying party, the signature and the counter). An
+ * challenge and the keys of its account (`@simplewebauthn/server`: the WebAuthn challenge;
+ * the exact origin of the web application of the environment, cross-origin answers refused;
+ * the relying party of the environment; the signature; the counter; and `userHandle`, when
+ * present, equal to the handle of the account of the challenge). An
  * answer that does not verify answers `422 auth.security-key-refused` with
  * `details.remainingAttempts`, counted with the other wrong answers. On success, the effects
  * of `POST /internal/v1/auth/sign-in/challenge/authenticator-app`, and the key records its
@@ -656,7 +657,7 @@ export const AnswerSignInChallengeWithSecurityKeyInternalResponse = zod.object({
   "trustedDevice": zod.object({
   "token": zod.string().min(answerSignInChallengeWithSecurityKeyInternalResponseTrustedDeviceTokenMin).max(answerSignInChallengeWithSecurityKeyInternalResponseTrustedDeviceTokenMax).describe('Opaque device token (256 random bits, base64url), returned once. A secret, never logged.'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('30 days after the answer.')
-}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` with `Max-Age` until `expiresAt`, and passes nothing\nof it on in the public body.\n')
+}).optional().describe('The device the answer of a challenge with `trustDevice` made trusted. The gateway writes\n`token` into `__Host-cw_trusted_device` (`Path=/; Secure; HttpOnly; SameSite=Strict;\nMax-Age=2592000`, 30 days, which is `expiresAt`), and passes nothing of it on in the public\nbody.\n')
 })
 
 
@@ -674,7 +675,8 @@ export const AnswerSignInChallengeWithSecurityKeyInternalResponse = zod.object({
  * current organization sets (12 hours by default and without an organization); a session
  * idle for longer is inactive. A current organization withheld for want of two-step
  * verification gives `withheldOrganization` and no organization (see "Withheld
- * organization"). Calling it twice has the same effect as once, so the call can be retried.
+ * organization"); the inactivity of the policy of that organization still applies to the
+ * session. Calling it twice has the same effect as once, so the call can be retried.
  * Internal token: actor `system`, no organization.
  * @summary Introspect a session token
  */
@@ -691,8 +693,8 @@ export const IntrospectTokenResponse = zod.union([zod.object({
   "tokenType": zod.string().describe('Kind of token: always `session` on this route. A personal API token is introspected by\n`POST /internal/v1/api-tokens/introspect`, which answers `api-token`. Later versions\nmay add kinds without a new version (`x-extensible-enum`).\n'),
   "sessionId": zod.uuid(),
   "userId": zod.uuid(),
-  "organizationId": zod.uuid().nullable().describe('Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);\n`null` when it has none, or when the membership it was chosen through was removed\n(`member.removed.v1`). A session whose organization was emptied by a removal stays\nwithout one, even after the person joins the organization again with a new membership,\nuntil an organization is chosen again; a new session starts in the last organization\nthe person chose, if they are a member of it.\n'),
-  "role": zod.string().nullable().describe('Role of the user in that organization, from the copy of the memberships: `owner`,\n`admin`, `member` or `guest`; `null` without an organization. The gateway carries it\nin the internal token; organization-service decides from its own members.\n'),
+  "organizationId": zod.uuid().nullable().describe('Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);\n`null` when it has none, when the membership it was chosen through was removed\n(`member.removed.v1`), or while it is withheld for want of two-step verification, which\n`withheldOrganization` then names: the gateway never builds an organization context\nfrom an answer that carries `withheldOrganization`. A session whose organization was emptied by a removal stays\nwithout one, even after the person joins the organization again with a new membership,\nuntil an organization is chosen again; a new session starts in the last organization\nthe person chose, if they are a member of it.\n'),
+  "role": zod.string().nullable().describe('Role of the user in that organization, from the copy of the memberships: `owner`,\n`admin`, `member` or `guest`; `null` without an organization, also while it is\nwithheld. The gateway carries it in the internal token; organization-service decides\nfrom its own members.\n'),
   "scopes": zod.array(zod.string()).describe('Scopes the token grants. A session holds every scope: `tasks:read`, `tasks:write`,\n`members:read` and `webhooks:manage` today, more as they are added.\n'),
   "expiresAt": zod.iso.datetime({"offset":true}).describe('When the session ends at the latest.'),
   "withheldOrganization": zod.object({
@@ -815,7 +817,13 @@ export const UpdateUserResponse = zod.object({
  * the actor in it, while the account has none, answers `403 organization.mfa-required` with
  * `details.organizationId`, and the session and the last choice stay as they were: the
  * person sets two-step verification up, then chooses again. Checked once the membership is
- * found. Internal token: actor `user`, no organization.
+ * found.
+ *
+ * The inactivity of the session counts against the policy of the organization chosen: a
+ * session that had been idle, before this request, for longer than that policy allows is
+ * closed instead, and answers `404 session.not-found`, so that choosing an organization never
+ * revives a session its own policy would have closed. Internal token: actor `user`, no
+ * organization.
  * @summary Choose the current organization of a session
  */
 export const SwitchSessionOrganizationParams = zod.object({
@@ -908,8 +916,9 @@ export const InspectPasswordResetLinkInternalResponse = zod.object({
  * - `closeOtherSessions` (`true` by default) revokes every open session of the account, each
  *   with `session.revoked.v1`.
  * - Ends the lockout of the password sign-in of the address, drops a pending change of
- *   address, ends the recent authentication of the sessions it leaves open and forgets every
- *   trusted device of the account; keeps the personal API tokens and the two-step
+ *   address, ends the recent authentication of the sessions it leaves open, voids the open
+ *   challenge and every pending two-step setup and key registration of the account, and
+ *   forgets every trusted device of the account; keeps the personal API tokens and the two-step
  *   verification; does not cancel a scheduled deletion.
  *
  * Emits `user.password-changed.v1` with `method: reset`, the number of closed sessions and
@@ -953,8 +962,8 @@ export const ConfirmPasswordResetInternalResponse = zod.object({
 /**
  * Checks the password, or the `code` of the authenticator app, of the actor and records a
  * recent authentication of the session, which opens the 10-minute window of the guarded
- * routes. Both or neither, and a `code` for an account without an authenticator app, answer
- * `400 request.invalid`. A wrong password answers `422 auth.password-incorrect` and counts
+ * routes. Both or neither answer `400 request.invalid`, and a `code` for an account without
+ * an authenticator app `409 auth.two-step-not-enabled`. A wrong password answers `422 auth.password-incorrect` and counts
  * with the failed sign-ins of the address (`429 auth.account-locked` once locked); a wrong or
  * used code answers `422 auth.two-step-code-invalid` and counts with the wrong answers of the
  * two-step challenges of the account (`429 auth.two-step-locked` once locked); the session
@@ -974,7 +983,7 @@ export const reauthenticateInternalBodyCodeRegExp = new RegExp('^[0-9]{6}$');
 export const ReauthenticateInternalBody = zod.object({
   "password": zod.string().min(1).max(reauthenticateInternalBodyPasswordMax).optional().describe('Never logged.'),
   "code": zod.string().regex(reauthenticateInternalBodyCodeRegExp).optional().describe('The 6 digits of the authenticator app. A time step already accepted is refused. Never logged.')
-}).describe('`password`, or `code` for an account with an authenticator app; both or neither answer\n`400 request.invalid`, checked here.\n')
+}).describe('`password`, or `code` for an account with an authenticator app; both or neither answer\n`400 request.invalid`, and `code` without an authenticator app\n`409 auth.two-step-not-enabled`, checked here.\n')
 
 export const ReauthenticateInternalResponse = zod.object({
   "authenticatedAt": zod.iso.datetime({"offset":true}).describe('The recent authentication recorded for the session.'),
@@ -1056,8 +1065,9 @@ export const ListUserSessionsInternalResponse = zod.object({
  * counting an attempt; then the current one (`422 auth.password-incorrect`, counted with the
  * failed sign-ins; `429 auth.account-locked`). A right current password records a recent
  * authentication of `sessionId`. Every session stays open, but a pending change of address is
- * dropped, the recent authentication of the other sessions ends and every trusted device of
- * the account is forgotten. Answers the account with
+ * dropped, the recent authentication of the other sessions ends with their pending two-step
+ * setups and key registrations, the open challenge of the account is voided, and every
+ * trusted device of the account is forgotten. Answers the account with
  * the next `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
  * `method: change`, no closed session and the device of the `client`. Another user id, or an
  * unknown one, answers `404 user.not-found`; a `sessionId` that is not an open session of the
@@ -1241,8 +1251,6 @@ export const GetTwoStepVerificationInternalParams = zod.object({
   "userId": zod.uuid().describe('Id of the account, the actor.')
 })
 
-export const getTwoStepVerificationInternalResponseMethodsMax = 2;
-
 export const getTwoStepVerificationInternalResponseSecurityKeysMax = 10;
 
 export const getTwoStepVerificationInternalResponseBackupCodesRemainingMin = 0;
@@ -1253,8 +1261,8 @@ export const getTwoStepVerificationInternalResponseBackupCodesRemainingMax = 10;
 
 export const GetTwoStepVerificationInternalResponse = zod.object({
   "enabled": zod.boolean().describe('On while the account has an authenticator app.'),
-  "primaryMethod": zod.string().nullable().describe('`authenticator-app` today; `null` while off (`x-extensible-enum`).'),
-  "methods": zod.array(zod.string()).max(getTwoStepVerificationInternalResponseMethodsMax),
+  "primaryMethod": zod.union([zod.string().describe('`authenticator-app`, `security-key` or `backup-code` today; more later (`x-extensible-enum`).'),zod.null()]).describe('`authenticator-app` today; `null` while off.'),
+  "methods": zod.array(zod.string().describe('`authenticator-app`, `security-key` or `backup-code` today; more later (`x-extensible-enum`).')).describe('The configured methods, `authenticator-app` and `security-key` today, never\n`backup-code`; empty while off. No upper bound: later versions may add methods.\n'),
   "authenticatorApp": zod.object({
   "configuredAt": zod.iso.datetime({"offset":true})
 }).nullable(),
@@ -1346,7 +1354,7 @@ export const StartAuthenticatorAppSetupInternalResponse = zod.object({
  * Checks `code` against the secret of the pending setup of `sessionId` and, in one
  * transaction, makes it the authenticator app of the actor and ends the pending setup. When
  * two-step verification was off, it turns on with 10 new backup codes, returned once and
- * kept hashed (`change: enabled`); otherwise the new app replaces the previous one and the
+ * kept as HMAC-SHA-256 under a key derived from the pepper (`change: enabled`); otherwise the new app replaces the previous one and the
  * backup codes stay (`backupCodes: null`, `change: authenticator-app-replaced`). Emits
  * `user.two-step-verification-changed.v1` with the device of the `client`. No pending setup
  * of `sessionId`, or an expired one: `422 auth.two-step-setup-expired`; a wrong code:
@@ -1377,8 +1385,6 @@ export const ConfirmAuthenticatorAppSetupInternalBody = zod.object({
 }).describe('The browser of the change, shown in the security email.')
 })
 
-export const confirmAuthenticatorAppSetupInternalResponseTwoStepVerificationMethodsMax = 2;
-
 export const confirmAuthenticatorAppSetupInternalResponseTwoStepVerificationSecurityKeysMax = 10;
 
 export const confirmAuthenticatorAppSetupInternalResponseTwoStepVerificationBackupCodesRemainingMin = 0;
@@ -1394,8 +1400,8 @@ export const confirmAuthenticatorAppSetupInternalResponseBackupCodesOneCodesMax 
 export const ConfirmAuthenticatorAppSetupInternalResponse = zod.object({
   "twoStepVerification": zod.object({
   "enabled": zod.boolean().describe('On while the account has an authenticator app.'),
-  "primaryMethod": zod.string().nullable().describe('`authenticator-app` today; `null` while off (`x-extensible-enum`).'),
-  "methods": zod.array(zod.string()).max(confirmAuthenticatorAppSetupInternalResponseTwoStepVerificationMethodsMax),
+  "primaryMethod": zod.union([zod.string().describe('`authenticator-app`, `security-key` or `backup-code` today; more later (`x-extensible-enum`).'),zod.null()]).describe('`authenticator-app` today; `null` while off.'),
+  "methods": zod.array(zod.string().describe('`authenticator-app`, `security-key` or `backup-code` today; more later (`x-extensible-enum`).')).describe('The configured methods, `authenticator-app` and `security-key` today, never\n`backup-code`; empty while off. No upper bound: later versions may add methods.\n'),
   "authenticatorApp": zod.object({
   "configuredAt": zod.iso.datetime({"offset":true})
 }).nullable(),
@@ -1416,7 +1422,7 @@ export const ConfirmAuthenticatorAppSetupInternalResponse = zod.object({
 })).describe('The organizations of the copy of the memberships whose policy requires two-step\nverification for the role of the person in them.\n')
 }).describe('The two-step verification of an account, without any secret.'),
   "backupCodes": zod.union([zod.object({
-  "codes": zod.array(zod.string().regex(confirmAuthenticatorAppSetupInternalResponseBackupCodesOneCodesItemRegExp)).min(confirmAuthenticatorAppSetupInternalResponseBackupCodesOneCodesMin).max(confirmAuthenticatorAppSetupInternalResponseBackupCodesOneCodesMax).describe('10 codes `XXXX-XXXX`, returned once; identity-service keeps only their hashes. Never logged.'),
+  "codes": zod.array(zod.string().regex(confirmAuthenticatorAppSetupInternalResponseBackupCodesOneCodesItemRegExp)).min(confirmAuthenticatorAppSetupInternalResponseBackupCodesOneCodesMin).max(confirmAuthenticatorAppSetupInternalResponseBackupCodesOneCodesMax).describe('10 codes `XXXX-XXXX`, returned once; identity-service keeps only their HMAC-SHA-256\nunder a key derived from the pepper, outside the database, as for the one-time codes.\nNever logged.\n'),
   "generatedAt": zod.iso.datetime({"offset":true})
 }),zod.null()]).describe('The 10 backup codes when two-step verification turned on, returned once; `null` for a reconfiguration.')
 })
@@ -1459,7 +1465,7 @@ export const regenerateBackupCodesInternalResponseCodesMax = 10;
 
 
 export const RegenerateBackupCodesInternalResponse = zod.object({
-  "codes": zod.array(zod.string().regex(regenerateBackupCodesInternalResponseCodesItemRegExp)).min(regenerateBackupCodesInternalResponseCodesMin).max(regenerateBackupCodesInternalResponseCodesMax).describe('10 codes `XXXX-XXXX`, returned once; identity-service keeps only their hashes. Never logged.'),
+  "codes": zod.array(zod.string().regex(regenerateBackupCodesInternalResponseCodesItemRegExp)).min(regenerateBackupCodesInternalResponseCodesMin).max(regenerateBackupCodesInternalResponseCodesMax).describe('10 codes `XXXX-XXXX`, returned once; identity-service keeps only their HMAC-SHA-256\nunder a key derived from the pepper, outside the database, as for the one-time codes.\nNever logged.\n'),
   "generatedAt": zod.iso.datetime({"offset":true})
 })
 
@@ -1519,10 +1525,12 @@ export const StartSecurityKeyRegistrationInternalResponse = zod.object({
 /**
  * Verifies `credential` against the pending registration of `sessionId` and, in one
  * transaction, stores the key (its credential id, public key, counter, transports and flags,
- * so that passkeys can come later without a migration) under `name`, ends the pending
+ * so that passkeys can come later without a migration) under `name`, after the same checks
+ * of origin and relying party as the answers of a challenge, ends the pending
  * registration, and emits `user.two-step-verification-changed.v1`
  * (`change: security-key-added`) with the device of the `client`. An answer that does not
- * verify, or a credential the account already has: `422 auth.security-key-refused`; no
+ * verify, or a credential id already registered, to this account or another one:
+ * `422 auth.security-key-refused`; no
  * pending registration of `sessionId`, or an expired one: `422 auth.two-step-setup-expired`;
  * two-step verification turned off since, or 10 keys: `409 auth.two-step-not-enabled`,
  * `409 auth.security-key-limit-reached`. Recent authentication is not required again.
@@ -1648,14 +1656,19 @@ export const GetAuthenticationPolicyInternalResponse = zod.object({
  * Applies a JSON Merge Patch to the authentication policy of the organization of the token,
  * as `PATCH /v1/organization/authentication-policy` says. The checks run in this order: the
  * role of the actor in the copy of the memberships (`403 organization.role-forbidden`, or
- * `404 organization.not-found`), `If-Match` (`412 request.version-mismatch`), then, when the
- * patch requires two-step verification for a role the actor has, the two-step verification
- * of the actor (`409 auth.two-step-not-enabled`). A patch that changes nothing answers `200`
- * with the same version. From the next introspection, the sessions and tokens acting on the
- * organization follow the new policy. Emits nothing. Internal token: actor `user`,
- * organization required.
+ * `404 organization.not-found`), `If-Match` (`412 request.version-mismatch`), when the patch
+ * requires two-step verification for a role the actor has, the two-step verification of the
+ * actor (`409 auth.two-step-not-enabled`), then the recent authentication of `sessionId`
+ * (`403 auth.reauthentication-required`; `404 session.not-found` for a session that is not
+ * an open session of the actor). A patch that changes nothing answers `200` with the same
+ * version. From the next introspection, the sessions and tokens acting on the organization
+ * follow the new policy. Emits nothing. Internal token: actor `user`, organization required.
  * @summary Update the authentication policy of the organization
  */
+export const UpdateAuthenticationPolicyInternalQueryParams = zod.object({
+  "sessionId": zod.uuid().describe('The session of the public request, as the introspection returned it, whose recent authentication is checked.')
+})
+
 export const UpdateAuthenticationPolicyInternalHeader = zod.object({
   "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
 })
@@ -1815,9 +1828,9 @@ export const IntrospectApiTokenResponse = zod.union([zod.object({
   "tokenType": zod.string().describe('Always `api-token` on this route (`x-extensible-enum`).'),
   "apiTokenId": zod.uuid().describe('Id of the token; the gateway counts its rate limit on it.'),
   "userId": zod.uuid(),
-  "organizationId": zod.uuid().describe('Organization the token acts in, the one it was created in.'),
-  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role of the user in it, from the copy of the memberships.'),
-  "scopes": zod.array(zod.string()).describe('Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a scope it lacks.'),
+  "organizationId": zod.uuid().describe('Organization the token acts in, the one it was created in; still set while it is\nwithheld (`withheldOrganization`), when the token acts on nothing.\n'),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role of the user in it, from the copy of the memberships; still set while withheld.'),
+  "scopes": zod.array(zod.string()).describe('Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a\nscope it lacks. Empty while the organization is withheld (`withheldOrganization`), so\nthat a gateway that does not read `withheldOrganization` refuses every route too; the\ngateway never builds an organization context from such an answer.\n'),
   "expiresAt": zod.iso.datetime({"offset":true}).nullable().describe('When the token stops working; `null` for a token without expiry.'),
   "withheldOrganization": zod.object({
   "organizationId": zod.uuid(),

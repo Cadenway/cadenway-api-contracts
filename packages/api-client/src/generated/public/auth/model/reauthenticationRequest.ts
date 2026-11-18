@@ -6,7 +6,8 @@ import type { TwoStepCode } from './twoStepCode';
 
 /**
  * One of the methods of `details.methods`: `password`, or `code` for `authenticator-app`.
- * Both or neither answer `400 request.invalid`, checked by identity-service.
+ * Both or neither answer `400 request.invalid`, and `code` for an account without an
+ * authenticator app `409 auth.two-step-not-enabled`, both checked by identity-service.
  */
 export interface ReauthenticationRequest {
   /**

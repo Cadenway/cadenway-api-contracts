@@ -30,6 +30,7 @@ export * from './organizationNotFoundResponse';
 export * from './organizationPatch';
 export * from './organizationReadForbiddenResponse';
 export * from './organizationWriteForbiddenResponse';
+export * from './policyWriteForbiddenResponse';
 export * from './problem';
 export * from './problemDetails';
 export * from './rateLimitedResponse';

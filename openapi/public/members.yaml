@@ -76,8 +76,8 @@ info:
     two-step verification ("Deux étapes": "Configurée" / "Non configurée"), in
     `twoStepVerificationEnabled`. organization-service learns it from
     `user.two-step-verification-changed.v1` of identity-service (`asyncapi/identity-service.yaml`)
-    for its directory, within seconds of the change. A member or a personal API token of a member
-    does not see it: the member is absent from their answers.
+    for its directory, within seconds of the change. A member, a guest or a personal API token of
+    one does not see it: `twoStepVerificationEnabled` is absent from their answers.
 
     **Later versions** add, without changing what is here: seats and their checks (billing),
     presence and last activity (realtime), verified domains, auto-join and the reusable invitation

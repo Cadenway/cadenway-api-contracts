@@ -280,6 +280,12 @@ describe('events of identity-service', () => {
     expect(schema.safeParse({ ...twoStepEnabled, change: 'reset-by-administrator' }).success).toBe(
       true,
     );
+    expect(
+      schema.safeParse({
+        ...twoStepEnabled,
+        methods: ['authenticator-app', 'security-key', 'passkey'],
+      }).success,
+    ).toBe(true);
     expect(schema.safeParse(withoutState).success).toBe(false);
   });
 
@@ -561,6 +567,12 @@ describe('routes of two-step verification', () => {
 
   it('validates the challenge of a sign-in with the validator of its inspection', () => {
     expect(InspectSignInChallengeInternalResponse.parse(signInChallenge)).toEqual(signInChallenge);
+    expect(
+      InspectSignInChallengeInternalResponse.safeParse({
+        ...signInChallenge,
+        methods: ['authenticator-app', 'security-key', 'backup-code', 'passkey'],
+      }).success,
+    ).toBe(true);
     expect(
       InspectSignInChallengeInternalResponse.safeParse({ ...signInChallenge, token: 'short' })
         .success,

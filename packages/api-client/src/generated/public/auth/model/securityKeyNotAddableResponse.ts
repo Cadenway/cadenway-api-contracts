@@ -8,6 +8,6 @@ import type { Problem } from './problem';
  * - `auth.two-step-not-enabled`: see `TwoStepNotEnabled`; a security key comes in addition to
  *   the authenticator app;
  * - `auth.security-key-limit-reached`: the account has 10 security keys, the most it can
- *   have; the person removes one first.
+ *   have (`details.maxSecurityKeys`); the person removes one first.
  */
 export type SecurityKeyNotAddableResponse = Problem;

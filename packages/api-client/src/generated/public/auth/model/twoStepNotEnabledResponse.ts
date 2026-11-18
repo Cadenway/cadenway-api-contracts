@@ -6,8 +6,8 @@ import type { Problem } from './problem';
 
 /**
  * `auth.two-step-not-enabled`: the request needs two-step verification on the account of the
- * caller, which is off: regenerating backup codes, adding a security key, or, in
- * `openapi/public/organizations.yaml`, requiring two-step verification for a role the caller
- * has.
+ * caller, which is off: regenerating backup codes, adding a security key, confirming with a
+ * `code` in `POST /v1/auth/reauthentication`, or, in `openapi/public/organizations.yaml`,
+ * requiring two-step verification for a role the caller has.
  */
 export type TwoStepNotEnabledResponse = Problem;

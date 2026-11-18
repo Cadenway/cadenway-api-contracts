@@ -857,9 +857,10 @@ export class AuthService {
  * - A link that expired, was used, was replaced or is unknown answers
  *   `422 auth.reset-link-expired`.
  * - The reset ends the lockout of the password sign-in of the address, drops a pending change
- *   of address, ends the recent authentication of every session it leaves open, forgets every
- *   trusted device of the account, keeps the personal API tokens and the two-step
- *   verification, and does not cancel a scheduled deletion of the account: only a sign-in
+ *   of address, ends the recent authentication of every session it leaves open, drops the open
+ *   two-step challenge and every pending two-step setup and key registration of the account,
+ *   forgets every trusted device of the account, keeps the personal API tokens and the
+ *   two-step verification, and does not cancel a scheduled deletion of the account: only a sign-in
  *   does. The next sign-in of an account with two-step verification answers its challenge,
  *   as before the reset.
  *
@@ -907,8 +908,9 @@ export class AuthService {
  * authentication" above). The web application calls it when a route answered
  * `403 auth.reauthentication-required`, then repeats that request. It sends one of the
  * methods of `details.methods`: `password`, or `code`, the 6 digits of the authenticator app
- * of an account with two-step verification. Both or neither answer `400 request.invalid`, as
- * does `code` for an account without an authenticator app.
+ * of an account with two-step verification. Both or neither answer `400 request.invalid`;
+ * `code` for an account without an authenticator app answers
+ * `409 auth.two-step-not-enabled`.
  *
  * - A wrong password answers `422 auth.password-incorrect` with
  *   `details.remainingAttempts`. It counts with the failed sign-ins of the address of the

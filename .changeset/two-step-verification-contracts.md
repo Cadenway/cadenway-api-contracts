@@ -28,10 +28,10 @@ of identity-service:
 - `OpenSession` gains an optional `inactivityTimeoutMinutes`.
 
 `openapi/public/organizations.yaml`: `GET` and `PATCH /v1/organization/authentication-policy`
-(owner and admins), two-step verification required for nobody, the owner and admins, or everyone,
-and the inactivity of the sessions, 1 hour, 12 hours, 7 days or 30 days. A person who must have
-two-step verification and has none gets `403 organization.mfa-required` on the routes of that
-organization and when choosing it. `openapi/public/members.yaml`: `Member` gains an optional
+(owner and admins; a change needs a recent authentication), two-step verification required for
+nobody, the owner and admins, or everyone, and the inactivity of the sessions, 1 hour, 12 hours,
+7 days or 30 days. A person who must have two-step verification and has none gets
+`403 organization.mfa-required` on the routes of that organization and when choosing it. `openapi/public/members.yaml`: `Member` gains an optional
 `twoStepVerificationEnabled`, present for the owner and the admins (column "Deux étapes").
 
 New codes: `auth.challenge-expired`, `auth.two-step-code-invalid`, `auth.security-key-refused`,

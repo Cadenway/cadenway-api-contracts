@@ -251,6 +251,15 @@ components:
         title: Choisissez une organisation pour continuer.
         status: 403
         code: organization.not-selected
+    OrganizationMfaRequired:
+      summary: Two-step verification required by the organization
+      value:
+        type: about:blank
+        title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
+        status: 403
+        code: organization.mfa-required
+        details:
+          organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
     ReauthenticationRequired:
       summary: No recent authentication
       value:
@@ -324,6 +333,7 @@ components:
         - `organization.not-selected`: the session has no current organization;
         - `organization.mfa-required`: the authentication policy of the current organization
           requires two-step verification for the role of the caller, who has none;
+          `details.organizationId` names it;
         - `auth.api-token-not-accepted`: a personal API token never manages tokens.
       content:
         application/problem+json:
@@ -333,14 +343,7 @@ components:
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
             organizationMfaRequired:
-              summary: Two-step verification required by the organization
-              value:
-                type: about:blank
-                title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
-                status: 403
-                code: organization.mfa-required
-                details:
-                  organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+              $ref: '#/components/examples/OrganizationMfaRequired'
             apiTokenNotAccepted:
               $ref: '#/components/examples/ApiTokenNotAccepted'
     TokenCreationForbidden:
@@ -352,6 +355,7 @@ components:
         - `organization.not-selected`: the session has no current organization;
         - `organization.mfa-required`: the authentication policy of the current organization
           requires two-step verification for the role of the caller, who has none;
+          `details.organizationId` names it;
         - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
         - `auth.api-token-not-accepted`: a personal API token never manages tokens.
       content:
@@ -364,14 +368,7 @@ components:
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
             organizationMfaRequired:
-              summary: Two-step verification required by the organization
-              value:
-                type: about:blank
-                title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
-                status: 403
-                code: organization.mfa-required
-                details:
-                  organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+              $ref: '#/components/examples/OrganizationMfaRequired'
             crossSiteRefused:
               summary: Request from another site
               value:
@@ -386,6 +383,7 @@ components:
         - `organization.not-selected`: the session has no current organization;
         - `organization.mfa-required`: the authentication policy of the current organization
           requires two-step verification for the role of the caller, who has none;
+          `details.organizationId` names it;
         - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused;
         - `auth.api-token-not-accepted`: a personal API token never manages tokens.
       content:
@@ -396,14 +394,7 @@ components:
             organizationNotSelected:
               $ref: '#/components/examples/OrganizationNotSelected'
             organizationMfaRequired:
-              summary: Two-step verification required by the organization
-              value:
-                type: about:blank
-                title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
-                status: 403
-                code: organization.mfa-required
-                details:
-                  organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+              $ref: '#/components/examples/OrganizationMfaRequired'
             crossSiteRefused:
               summary: Request from another site
               value:

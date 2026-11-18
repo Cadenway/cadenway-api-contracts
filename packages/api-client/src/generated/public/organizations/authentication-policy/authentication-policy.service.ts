@@ -140,8 +140,11 @@ export class AuthenticationPolicyService {
  *   `412 request.version-mismatch`. A patch that changes nothing answers `200` with the same
  *   version.
  *
- * Recent authentication is not required. Emits nothing in this version. Session only: a
- * personal API token cannot call it.
+ * Checked once the role is: a recent authentication of this session (the sign-in, a password
+ * or a code of the app in the last 10 minutes, see "Recent authentication" in
+ * `openapi/public/auth.yaml`), else `403 auth.reauthentication-required` with
+ * `details.methods`: a stolen session cannot loosen the policy. Emits nothing in this
+ * version. Session only: a personal API token cannot call it.
  * @summary Update the authentication policy of the current organization
  */
  updateAuthenticationPolicy<TData = AuthenticationPolicy>(authenticationPolicyPatch: AuthenticationPolicyPatch, options?: HttpClientBodyOptions): Observable<TData>;
