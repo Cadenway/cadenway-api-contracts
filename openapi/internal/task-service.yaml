@@ -1,15 +1,19 @@
 # Internal routes of task-service, called by cadenway-api-gateway: the spaces of
-# openapi/public/spaces.yaml, the lists and sprints of openapi/public/lists.yaml, and the tasks,
-# queries, "Mes tâches" and "Accueil" of openapi/public/tasks.yaml.
+# openapi/public/spaces.yaml, the lists and sprints of openapi/public/lists.yaml, the tasks,
+# queries, "Mes tâches" and "Accueil" of openapi/public/tasks.yaml, the grants and access requests
+# of openapi/public/access.yaml, the archives of openapi/public/archives.yaml and the trash of
+# openapi/public/trash.yaml; and the access checks called by cadenway-realtime-gateway.
 openapi: 3.1.0
 info:
   title: task-service internal routes
   version: 1.0.0
   description: |
-    What task-service exposes to the API gateway for spaces, lists, sprints and tasks. The service
-    has no public route: the gateway serves `openapi/public/spaces.yaml`,
-    `openapi/public/lists.yaml` and `openapi/public/tasks.yaml` and calls these routes, with the
-    same bodies, the same answers and the same codes.
+    What task-service exposes to the API gateway for spaces, lists, sprints, tasks, access,
+    archives and the trash, and to the realtime gateway for its access checks. The service has no
+    public route: the gateway serves `openapi/public/spaces.yaml`, `openapi/public/lists.yaml`,
+    `openapi/public/tasks.yaml`, `openapi/public/access.yaml`, `openapi/public/archives.yaml` and
+    `openapi/public/trash.yaml` and calls these routes, with the same bodies, the same answers and
+    the same codes.
 
     | Public route | Internal call |
     | --- | --- |
@@ -42,20 +46,48 @@ info:
     | `GET /v1/labels` | `GET /internal/v1/labels` |
     | `GET /v1/me/tasks` | `GET /internal/v1/users/{userId}/tasks` with the user the introspection returned |
     | `GET /v1/me/home` | `GET /internal/v1/users/{userId}/home` with the user the introspection returned |
+    | `DELETE /v1/spaces/{spaceId}` | `DELETE /internal/v1/spaces/{spaceId}` |
+    | `DELETE /v1/lists/{listId}` | `DELETE /internal/v1/lists/{listId}` |
+    | `GET /v1/spaces/{spaceId}/grants` | `GET /internal/v1/spaces/{spaceId}/grants` |
+    | `PUT /v1/spaces/{spaceId}/grants/{userId}` | `PUT /internal/v1/spaces/{spaceId}/grants/{userId}` |
+    | `DELETE /v1/spaces/{spaceId}/grants/{userId}` | `DELETE /internal/v1/spaces/{spaceId}/grants/{userId}` |
+    | `GET /v1/lists/{listId}/grants` | `GET /internal/v1/lists/{listId}/grants` |
+    | `PUT /v1/lists/{listId}/grants/{userId}` | `PUT /internal/v1/lists/{listId}/grants/{userId}` |
+    | `DELETE /v1/lists/{listId}/grants/{userId}` | `DELETE /internal/v1/lists/{listId}/grants/{userId}` |
+    | `POST /v1/access-requests` | `POST /internal/v1/access-requests` |
+    | `GET /v1/access-requests` | `GET /internal/v1/access-requests` |
+    | `POST /v1/access-requests/{accessRequestId}/approval` | `POST /internal/v1/access-requests/{accessRequestId}/approval` |
+    | `POST /v1/access-requests/{accessRequestId}/refusal` | `POST /internal/v1/access-requests/{accessRequestId}/refusal` |
+    | `POST /v1/lists/{listId}/archive` | `POST /internal/v1/lists/{listId}/archive` |
+    | `POST /v1/lists/{listId}/unarchive` | `POST /internal/v1/lists/{listId}/unarchive` |
+    | `POST /v1/tasks/{taskKey}/archive` | `POST /internal/v1/tasks/{taskKey}/archive` |
+    | `POST /v1/tasks/{taskKey}/unarchive` | `POST /internal/v1/tasks/{taskKey}/unarchive` |
+    | `GET /v1/archives/lists` | `GET /internal/v1/archives/lists` |
+    | `GET /v1/archives/tasks` | `GET /internal/v1/archives/tasks` |
+    | `POST /v1/tasks/{taskKey}/trash` | `POST /internal/v1/tasks/{taskKey}/trash` |
+    | `GET /v1/trash/entries` | `GET /internal/v1/trash/entries` |
+    | `DELETE /v1/trash/entries/{entryId}` | `DELETE /internal/v1/trash/entries/{entryId}` |
+    | `POST /v1/trash/entries/{entryId}/restore` | `POST /internal/v1/trash/entries/{entryId}/restore` |
+    | `POST /v1/trash/empty` | `POST /internal/v1/trash/empty` |
+
+    The realtime gateway calls `GET /internal/v1/lists/{listId}/access` and
+    `GET /internal/v1/tasks/{taskKey}/access`, which have no public route.
 
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
     (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `task-service`). Every route accepts the
-    issuer `api-gateway` and the actor `user` only, and requires an organization: it acts on the
-    organization of the token, the current organization of the session or the organization of the
-    personal API token, and runs in the tenant transaction of that organization. The actor and the
-    organization come from the token, never from a body or a path; the `userId` of a path under
-    `/internal/v1/users/` that is not the actor answers `404 user.not-found` (the `userId` of
-    `/internal/v1/tasks/{taskKey}/assignees/{userId}` is the person assigned). The guard of the kit
+    issuer `api-gateway` and the actor `user` only, but for the two access checks, which accept the
+    issuer `realtime-gateway` only, with the actor `user`; every route requires an organization: it
+    acts on the organization of the token, the current organization of the session or the
+    organization of the personal API token, and runs in the tenant transaction of that
+    organization. The actor and the organization come from the token, never from a body or a path;
+    the `userId` of a path under `/internal/v1/users/` that is not the actor answers
+    `404 user.not-found` (the `userId` of `/internal/v1/tasks/{taskKey}/assignees/{userId}` is the
+    person assigned, that of `…/grants/{userId}` the person given access). The guard of the kit
     answers `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
     `403 auth.actor-not-allowed` and `403 auth.organization-required`. The gateway answers
     `403 organization.not-selected` itself, before the call, when the session has no current
     organization. Later versions accept other issuers (the automation and Git integrations, with
-    their actors, and the realtime gateway).
+    their actors).
 
     **Members.** task-service decides every rule from its own copy of the members of each
     organization and their roles, never from the `role` of the token. It builds the copy from
@@ -68,14 +100,34 @@ info:
     hold as a member of the organization of the token, for a few seconds after they joined or
     after their removal, gets `404 organization.not-found`. On `member.removed.v1`, task-service
     removes the member from the assignees of every task (an entry `assign` of the activity log and
-    `task.updated.v1`, by the actor `{ type: system, id: task-service }`) and gives the private
-    spaces the member owned to the owner of the organization (`space.updated.v1`). On
-    `member.role-changed.v1`, task-service only records the new role in this version: a member who
-    becomes a guest stays among the assignees they had and keeps the spaces they own.
+    `task.updated.v1`, by the actor `{ type: system, id: task-service }`), gives the private
+    spaces the member owned to the owner of the organization (`space.updated.v1`), removes their
+    grants (`space.access-changed.v1` and `list.access-changed.v1`, by the same actor) and drops
+    their pending access requests, in bounded batches. On `member.role-changed.v1`, task-service
+    only records the new role: a member who becomes a guest stays among the assignees they had,
+    keeps the spaces they own and their grants, and their grants of spaces give them nothing while
+    they are a guest.
 
-    **Visibility.** task-service applies "Who sees a space" of `openapi/public/spaces.yaml` to every
-    route: what the actor does not see answers `404` and is left out of every collection, query and
-    count. A guest sees nothing in this version.
+    **Visibility and roles.** task-service applies "Access" and "Who sees a space" of
+    `openapi/public/spaces.yaml` to every route: what the actor does not see answers `404` and is
+    left out of every collection, query and count; what they see without the role a change needs
+    answers `403 access.role-insufficient` or `403 space.manage-forbidden`. The role of a list is
+    the highest of the rule of the organization, the owner of the space, the grant of the space and
+    the grant of the list: one indexed read of the grants of the actor on the space and the list.
+
+    **Jobs.** Three jobs of `@cadenway/nest-jobs` work in bounded batches, each in the tenant
+    transaction of its organization, and can stop and resume: the deletion of a list or a space
+    moves its tasks to the trash, one entry per top-level task, with the actor of the deletion; the
+    daily purge erases the entries 30 days after their deletion, and the tombstone of a deleted
+    list or space once its last entry is erased; "Vider la corbeille" hands its entries to the
+    purge. A job that moves or erases a task emits its events as it goes.
+
+    **Access requests.** task-service counts the requests of each actor over the last hour, stored
+    or not, and answers the eleventh `429 access-request.limit-reached` with
+    `details.nextAvailableAt`, when the oldest request counted leaves the hour, and `Retry-After`,
+    the seconds until then. The internal client does not carry the headers of a problem: the
+    gateway derives the public `Retry-After` from `details.nextAvailableAt`, as for
+    organization-service.
 
     **Creations.** A creation that carries `Idempotency-Key` is recorded with its key, the actor
     and a fingerprint of its body for 24 hours: the same key and body answer the recorded answer
@@ -101,7 +153,9 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Calls every route through its generated client, for openapi/public/spaces.yaml, openapi/public/lists.yaml and openapi/public/tasks.yaml, and composes the task detail.
+      uses: Calls every route but the access checks through its generated client, for openapi/public/spaces.yaml, openapi/public/lists.yaml, openapi/public/tasks.yaml, openapi/public/access.yaml, openapi/public/archives.yaml and openapi/public/trash.yaml, and composes the task detail.
+    - repository: cadenway-realtime-gateway
+      uses: Planned, the access checks of a list and a task, before a socket joins their room.
 servers:
   - url: http://task-service:3013
     description: task-service on the internal network of each environment (`TASK_SERVICE_URL`).
@@ -118,6 +172,14 @@ tags:
     description: The tasks of a list, filtered, sorted and counted by group, and the labels.
   - name: users
     description: '"Mes tâches" and "Accueil" of the actor.'
+  - name: access
+    description: The grants of spaces and lists, and the access checks of the realtime gateway.
+  - name: access-requests
+    description: The requests for access and their answers.
+  - name: archives
+    description: Archived lists and tasks.
+  - name: trash
+    description: The trash and its entries.
 paths:
   /internal/v1/spaces:
     post:
@@ -170,8 +232,9 @@ paths:
       operationId: listSpacesInternal
       summary: List the spaces
       description: |
-        Lists the spaces the actor sees, in the order of their creation. Internal token: actor
-        `user`, organization required.
+        Lists the spaces the actor sees, as `GET /v1/spaces` says: in the order of the sidebar, a
+        space restored from the trash at the end, and for a guest the spaces of the lists shared
+        with them. Internal token: actor `user`, organization required.
       tags: [spaces]
       parameters:
         - $ref: '../../components/http.yaml#/components/parameters/Cursor'
@@ -223,8 +286,10 @@ paths:
       operationId: updateSpaceInternal
       summary: Change a space
       description: |
-        Applies a JSON Merge Patch to a space the actor sees, as `PATCH /v1/spaces/{spaceId}` says:
-        `403 space.visibility-forbidden`, `409 space.prefix-taken`, `412 request.version-mismatch`,
+        Applies a JSON Merge Patch to a space the actor has `edit` on, as
+        `PATCH /v1/spaces/{spaceId}` says: `403 access.role-insufficient` without it,
+        `403 space.visibility-forbidden` for a change of the visibility by an actor who does not
+        manage the space, `409 space.prefix-taken`, `412 request.version-mismatch`,
         `422 space.status-required`. Emits `space.updated.v1` when something changed. Internal
         token: actor `user`, organization required.
       tags: [spaces]
@@ -264,6 +329,32 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/StatusRequired'
+    delete:
+      operationId: deleteSpaceInternal
+      summary: Delete a space
+      description: |
+        Deletes a space the actor manages, as `DELETE /v1/spaces/{spaceId}` says
+        (`403 space.manage-forbidden`, `412 request.version-mismatch`): the space and its lists
+        become tombstones that every route answers `404`, its pending access requests are dropped,
+        and the deletion job moves its tasks to the trash. Emits `space.deleted.v1`, then
+        `task.trashed.v1` for each task the job moves. Internal token: actor `user`, organization
+        required.
+      tags: [spaces]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The space is deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/ManageForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
   /internal/v1/spaces/{spaceId}/overview:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -301,9 +392,10 @@ paths:
       operationId: createListInternal
       summary: Create a list or a sprint
       description: |
-        Creates a list in a space the actor sees, as `POST /v1/spaces/{spaceId}/lists` says:
-        `422 list.sprint-dates-invalid` for an end before the start. Emits `list.created.v1`.
-        Internal token: actor `user`, organization required.
+        Creates a list in a space the actor has `edit` on, as `POST /v1/spaces/{spaceId}/lists`
+        says: `403 access.role-insufficient` without it, `422 list.sprint-dates-invalid` for an end
+        before the start, `organizationAccess` on unless the body turns it off. Emits
+        `list.created.v1`. Internal token: actor `user`, organization required.
       tags: [lists]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -339,7 +431,7 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/WriteForbidden'
         '404':
           $ref: '#/components/responses/SpaceNotFound'
         '409':
@@ -350,8 +442,8 @@ paths:
       operationId: listListsInternal
       summary: List the lists of a space
       description: |
-        Lists the lists of a space the actor sees, in the order of their creation. Internal token:
-        actor `user`, organization required.
+        Lists the lists of a space that the actor sees, in the order of the sidebar, archived
+        lists left out. Internal token: actor `user`, organization required.
       tags: [lists]
       parameters:
         - $ref: '../../components/http.yaml#/components/parameters/Cursor'
@@ -378,8 +470,9 @@ paths:
       operationId: getListInternal
       summary: Read a list
       description: |
-        Returns a list the actor sees; any other answers `404 list.not-found`. Internal token: actor
-        `user`, organization required.
+        Returns a list the actor sees, an archived one included, with `callerRole`; any other, a
+        deleted one included, answers `404 list.not-found`. Internal token: actor `user`,
+        organization required.
       tags: [lists]
       responses:
         '200':
@@ -403,9 +496,11 @@ paths:
       operationId: updateListInternal
       summary: Change a list or a sprint
       description: |
-        Applies a JSON Merge Patch to a list the actor sees, as `PATCH /v1/lists/{listId}` says:
-        `412 request.version-mismatch`, `422 list.sprint-dates-invalid`. Emits `list.updated.v1`
-        when something changed. Internal token: actor `user`, organization required.
+        Applies a JSON Merge Patch to a list the actor has `edit` on, as `PATCH /v1/lists/{listId}`
+        says: `403 access.role-insufficient`, `412 request.version-mismatch`,
+        `422 list.sprint-dates-invalid`. Emits `list.updated.v1` when its name, appearance or
+        sprint changed, `list.access-changed.v1` when `organizationAccess` did. Internal token:
+        actor `user`, organization required.
       tags: [lists]
       parameters:
         - $ref: '#/components/parameters/IfMatch'
@@ -432,13 +527,39 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/WriteForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/SprintDatesInvalid'
+    delete:
+      operationId: deleteListInternal
+      summary: Delete a list or a sprint
+      description: |
+        Deletes a list the actor has `edit` on, archived or not, as `DELETE /v1/lists/{listId}`
+        says (`403 access.role-insufficient`, `412 request.version-mismatch`): the list becomes a
+        tombstone that every route answers `404`, its pending access requests and those of its
+        tasks are dropped, and the deletion job moves its tasks to the trash. Emits
+        `list.deleted.v1`, then `task.trashed.v1` for each task the job moves. Internal token:
+        actor `user`, organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The list is deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
   /internal/v1/lists/{listId}/counts:
     parameters:
       - $ref: '#/components/parameters/ListId'
@@ -544,7 +665,7 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/WriteForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
         '409':
@@ -631,8 +752,10 @@ paths:
       operationId: getTaskInternal
       summary: Read a task
       description: |
-        Returns a task the actor sees; any other key answers `404 task.not-found`. Internal token:
-        actor `user`, organization required.
+        Returns a task the actor sees, an archived one included; any other key answers
+        `404 task.not-found`, and a task in the trash `404 task.trashed` with its `details` when
+        the actor could change its list. Every route of a key answers a task in the trash so.
+        Internal token: actor `user`, organization required.
       tags: [tasks]
       responses:
         '200':
@@ -660,11 +783,13 @@ paths:
         the status and its cancel reason, checked against the statuses of the space the task is in
         after the patch, the due date that moves the start and keeps the duration, the move of the
         task and its subtasks, the parent, `If-Match` required with `description`
-        (`400 request.invalid` with an issue on the header). Records the changes of status,
-        priority and due date, the changes of the priority and the due date of a task by the same
-        actor within 60 seconds merged into one entry. Emits `task.updated.v1` and
-        `task.status-changed.v1` as the public route says. Internal token: actor `user`,
-        organization required.
+        (`400 request.invalid` with an issue on the header), `edit` on the list of the task and on
+        the list it moves to (`403 access.role-insufficient`), `409 task.archived` for an archived
+        task or parent. Records the changes of status, priority and due date, the changes of the
+        priority and the due date of a task by the same actor within 60 seconds merged into one
+        entry. Emits `task.updated.v1` and `task.status-changed.v1` as the public route says. The
+        assignee, label, subtask and checklist routes below refuse an archived task the same way.
+        Internal token: actor `user`, organization required.
       tags: [tasks]
       parameters:
         - $ref: '#/components/parameters/IfMatch'
@@ -692,9 +817,11 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/WriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '422':
@@ -738,9 +865,11 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/WriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '422':
@@ -767,9 +896,11 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/WriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
   /internal/v1/tasks/{taskKey}/labels/add:
@@ -809,9 +940,11 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/WriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '422':
@@ -852,9 +985,11 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/WriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
   /internal/v1/tasks/{taskKey}/detail:
@@ -864,9 +999,12 @@ paths:
       operationId: getTaskDetailInternal
       summary: Read the detail of a task
       description: |
-        Returns task-service's part of the task detail: the task, its space, its list, its parent
-        and its direct subtasks, read in one transaction. The gateway adds `partial` and, in later
-        versions, the parts of other services. Internal token: actor `user`, organization required.
+        Returns task-service's part of the task detail: the task, its space, its list with
+        `callerRole`, its parent and its direct subtasks, read in one transaction, as
+        `GET /v1/tasks/{taskKey}/detail` says: the subtasks archived or in the trash left out, but
+        for an archived task, whose detail shows the subtasks archived with it. The gateway adds
+        `partial` and, in later versions, the parts of other services. Internal token: actor
+        `user`, organization required.
       tags: [tasks]
       responses:
         '200':
@@ -893,8 +1031,9 @@ paths:
       operationId: listSubtasksInternal
       summary: List the subtasks of a task
       description: |
-        Lists the direct subtasks of a task the actor sees, in the order of their creation.
-        Internal token: actor `user`, organization required.
+        Lists the direct subtasks of a task the actor sees, in the order of their creation, those
+        archived or in the trash left out, but for an archived task, which lists the subtasks
+        archived with it. Internal token: actor `user`, organization required.
       tags: [tasks]
       parameters:
         - $ref: '../../components/http.yaml#/components/parameters/Cursor'
@@ -919,9 +1058,12 @@ paths:
       summary: Create a subtask
       description: |
         Creates a subtask of a task the actor sees, in its list, as
-        `POST /v1/tasks/{taskKey}/subtasks` says: `422 task.subtask-depth-exceeded`,
-        `422 task.subtask-limit-reached` and the refusals of a creation. Emits `task.created.v1` and
-        `task.assigned.v1` per assignee. Internal token: actor `user`, organization required.
+        `POST /v1/tasks/{taskKey}/subtasks` says: `edit` on the list
+        (`403 access.role-insufficient`), `409 task.archived` for an archived parent,
+        `422 task.subtask-depth-exceeded`, `422 task.subtask-limit-reached`, the archived subtasks
+        and those in the trash not counted among the 25, and the refusals of a creation. Emits
+        `task.created.v1` and `task.assigned.v1` per assignee. Internal token: actor `user`,
+        organization required.
       tags: [tasks]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -952,11 +1094,11 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/WriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
         '409':
-          $ref: '#/components/responses/RequestInProgress'
+          $ref: '#/components/responses/TaskCreationConflict'
         '422':
           $ref: '#/components/responses/TaskRefused'
   /internal/v1/tasks/{taskKey}/checklist-items:
@@ -999,11 +1141,11 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/WriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
         '409':
-          $ref: '#/components/responses/RequestInProgress'
+          $ref: '#/components/responses/TaskCreationConflict'
         '422':
           $ref: '#/components/responses/ChecklistItemRefused'
   /internal/v1/tasks/{taskKey}/checklist-items/{checklistItemId}:
@@ -1044,9 +1186,11 @@ paths:
         '401':
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
-          $ref: '#/components/responses/InternalAccessRefused'
+          $ref: '#/components/responses/WriteForbidden'
         '404':
           $ref: '#/components/responses/ChecklistItemNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
   /internal/v1/tasks/{taskKey}/activity:
@@ -1163,6 +1307,805 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/UserNotFound'
+  /internal/v1/spaces/{spaceId}/grants:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: listSpaceGrantsInternal
+      summary: List the grants of a space
+      description: |
+        Lists the grants of a space the actor sees, in the order they were first given, as
+        `GET /v1/spaces/{spaceId}/grants` says. Internal token: actor `user`, organization
+        required.
+      tags: [access]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the grants of the space.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+  /internal/v1/spaces/{spaceId}/grants/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+      - $ref: '#/components/parameters/GrantUserId'
+    put:
+      operationId: setSpaceGrantInternal
+      summary: Give or change a role on a space
+      description: |
+        Gives a person a role on a space the actor manages, or changes it, as
+        `PUT /v1/spaces/{spaceId}/grants/{userId}` says: `403 space.manage-forbidden`,
+        `412 request.version-mismatch`, `422 access.grantee-invalid`,
+        `422 access.guest-space-forbidden`, `422 access.owner-unchangeable`,
+        `422 access.grant-limit-reached`; the same role again answers `200` with the same version.
+        Emits `space.access-changed.v1` when it changed. Internal token: actor `user`, organization
+        required.
+      tags: [access]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantChange'
+            example:
+              role: edit
+      responses:
+        '200':
+          description: The grant.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Grant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/ManageForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/GrantRefused'
+    delete:
+      operationId: removeSpaceGrantInternal
+      summary: Remove a role on a space
+      description: |
+        Removes the grant of a person on a space the actor manages, as
+        `DELETE /v1/spaces/{spaceId}/grants/{userId}` says; without one, `204` with the same
+        version; the owner of the space, `422 access.owner-unchangeable`. `ETag` gives the version
+        after the change. Emits `space.access-changed.v1` when there was a grant. Internal token:
+        actor `user`, organization required.
+      tags: [access]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The person holds no grant on the space.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/ManageForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/OwnerUnchangeable'
+  /internal/v1/lists/{listId}/grants:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: listListGrantsInternal
+      summary: List the grants of a list
+      description: |
+        Lists the grants of a list the actor sees, in the order they were first given, as
+        `GET /v1/lists/{listId}/grants` says. Internal token: actor `user`, organization required.
+      tags: [access]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the grants of the list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+  /internal/v1/lists/{listId}/grants/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+      - $ref: '#/components/parameters/GrantUserId'
+    put:
+      operationId: setListGrantInternal
+      summary: Give or change a role on a list
+      description: |
+        Gives a person a role on a list the actor has `edit` on, or changes it, as
+        `PUT /v1/lists/{listId}/grants/{userId}` says: `403 access.role-insufficient`,
+        `412 request.version-mismatch`, `422 access.grantee-invalid`,
+        `422 access.owner-unchangeable`, `422 access.grant-limit-reached`; the same role again
+        answers `200` with the same version. Emits `list.access-changed.v1` when it changed.
+        Internal token: actor `user`, organization required.
+      tags: [access]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantChange'
+            example:
+              role: comment
+      responses:
+        '200':
+          description: The grant.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Grant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/GrantRefused'
+    delete:
+      operationId: removeListGrantInternal
+      summary: Remove a role on a list
+      description: |
+        Removes the grant of a person on a list the actor has `edit` on, as
+        `DELETE /v1/lists/{listId}/grants/{userId}` says; without one, `204` with the same version;
+        the owner of the space, `422 access.owner-unchangeable`. `ETag` gives the version after the
+        change. Emits `list.access-changed.v1` when there was a grant. Internal token: actor
+        `user`, organization required.
+      tags: [access]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The person holds no grant on the list.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/OwnerUnchangeable'
+  /internal/v1/access-requests:
+    post:
+      operationId: createAccessRequestInternal
+      summary: Ask for access
+      description: |
+        Records a request of the actor for access, as `POST /v1/access-requests` says: always
+        `202` with no body, a request stored only for a target of the organization, live or
+        archived, on which the actor has no role, once per requester and target while pending, a
+        space not for a guest; `400 request.invalid` for none or several targets;
+        `429 access-request.limit-reached` with `Retry-After` beyond 10 requests within the hour.
+        Emits `space.access-requested.v1`, `list.access-requested.v1` or
+        `task.access-requested.v1` when stored. Internal token: actor `user`, organization
+        required.
+      tags: [access-requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessRequestCreation'
+            example:
+              spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09
+              message: Je dois chiffrer la part outillage du budget 2027.
+      responses:
+        '202':
+          description: The request is taken; nothing tells whether it was stored.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/AccessRequestLimitReached'
+    get:
+      operationId: listAccessRequestsInternal
+      summary: List the pending access requests
+      description: |
+        Lists the pending requests the actor may answer, the most recent first, as
+        `GET /v1/access-requests` says. Internal token: actor `user`, organization required.
+      tags: [access-requests]
+      parameters:
+        - $ref: '#/components/parameters/SpaceIdFilter'
+        - $ref: '#/components/parameters/ListIdFilter'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of pending requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRequestPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/access-requests/{accessRequestId}/approval:
+    parameters:
+      - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: approveAccessRequestInternal
+      summary: Approve an access request
+      description: |
+        Approves a pending request the actor may answer with a role, as
+        `POST /v1/access-requests/{accessRequestId}/approval` says: the grant of the space or of
+        the list, `404 access-request.not-found`, `409 access-request.already-decided`, and the
+        refusals of a grant. Emits the `…access-request-decided.v1` of the target and the
+        `space.access-changed.v1` or `list.access-changed.v1` of the grant. Internal token: actor
+        `user`, organization required.
+      tags: [access-requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessRequestApproval'
+            example:
+              role: view
+      responses:
+        '200':
+          description: The request, approved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/AccessRequestNotFound'
+        '409':
+          $ref: '#/components/responses/AccessRequestDecided'
+        '422':
+          $ref: '#/components/responses/GrantRefused'
+  /internal/v1/access-requests/{accessRequestId}/refusal:
+    parameters:
+      - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: refuseAccessRequestInternal
+      summary: Refuse an access request
+      description: |
+        Refuses a pending request the actor may answer, as
+        `POST /v1/access-requests/{accessRequestId}/refusal` says: `404 access-request.not-found`,
+        `409 access-request.already-decided`. Emits the `…access-request-decided.v1` of the target.
+        Internal token: actor `user`, organization required.
+      tags: [access-requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The request, refused.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/AccessRequestNotFound'
+        '409':
+          $ref: '#/components/responses/AccessRequestDecided'
+  /internal/v1/lists/{listId}/archive:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    post:
+      operationId: archiveListInternal
+      summary: Archive a list or a sprint
+      description: |
+        Archives a list the actor has `edit` on, as `POST /v1/lists/{listId}/archive` says; an
+        archived one answers `200` with the same version. Emits `list.archived.v1`. Internal token:
+        actor `user`, organization required.
+      tags: [archives]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The list, archived.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/lists/{listId}/unarchive:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    post:
+      operationId: unarchiveListInternal
+      summary: Restore an archived list
+      description: |
+        Restores an archived list the actor has `edit` on at the end of its space, as
+        `POST /v1/lists/{listId}/unarchive` says; a list that is not archived answers `200` with
+        the same version. Emits `list.unarchived.v1`. Internal token: actor `user`, organization
+        required.
+      tags: [archives]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The list, back in its space.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/tasks/{taskKey}/archive:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: archiveTaskInternal
+      summary: Archive a task with its subtasks
+      description: |
+        Archives a task and its subtasks at every level, as `POST /v1/tasks/{taskKey}/archive`
+        says: `edit` on its list (`403 access.role-insufficient`), an archived one answers `200`
+        with the same version, the subtasks archived before keep their own archive. Emits
+        `task.archived.v1` for each task archived, the root first. Internal token: actor `user`,
+        organization required.
+      tags: [archives]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The task, archived.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/tasks/{taskKey}/unarchive:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: unarchiveTaskInternal
+      summary: Restore an archived task with its subtasks
+      description: |
+        Restores the archive a task belongs to, from its root, as
+        `POST /v1/tasks/{taskKey}/unarchive` says: its list restored with it when archived, the
+        root detached from a parent that is no longer live or can no longer take it, a task that is
+        not archived `200` with the same version. Emits `list.unarchived.v1` for a list restored
+        with it, then `task.unarchived.v1` for each task, the root first. Internal token: actor
+        `user`, organization required.
+      tags: [archives]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The root of the archive, back in its list.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/archives/lists:
+    get:
+      operationId: listArchivedListsInternal
+      summary: List the archived lists
+      description: |
+        Lists the archived lists the actor sees, the most recently archived first, as
+        `GET /v1/archives/lists` says. Internal token: actor `user`, organization required.
+      tags: [archives]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of archived lists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchivedListPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/archives/tasks:
+    get:
+      operationId: listArchivedTasksInternal
+      summary: List the archived tasks
+      description: |
+        Lists the roots of the archived subtrees the actor sees, the most recently archived first,
+        as `GET /v1/archives/tasks` says. Internal token: actor `user`, organization required.
+      tags: [archives]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of archived tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchivedTaskPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/tasks/{taskKey}/trash:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: trashTaskInternal
+      summary: Delete a task with its subtasks
+      description: |
+        Moves a task and its subtasks at every level to the trash as one entry, as
+        `POST /v1/tasks/{taskKey}/trash` says: `edit` on its list (`403 access.role-insufficient`),
+        `409 task.archived`, `404 task.trashed` for a task in the trash already. Emits
+        `task.trashed.v1` for each task of the entry, the root first. Internal token: actor `user`,
+        organization required.
+      tags: [trash]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The entry the task and its subtasks make in the trash.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrashEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/trash/entries:
+    get:
+      operationId: listTrashInternal
+      summary: List the trash
+      description: |
+        Lists the trash entries the actor may restore, the most recently deleted first, as
+        `GET /v1/trash/entries` says. Internal token: actor `user`, organization required.
+      tags: [trash]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of trash entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrashEntryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/trash/entries/{entryId}:
+    parameters:
+      - $ref: '#/components/parameters/EntryId'
+    delete:
+      operationId: purgeTrashEntryInternal
+      summary: Erase a trash entry for good
+      description: |
+        Erases an entry the actor may restore at once, as `DELETE /v1/trash/entries/{entryId}`
+        says; any other answers `404 trash-entry.not-found`. Emits `task.purged.v1` for each task
+        of the entry. Internal token: actor `user`, organization required.
+      tags: [trash]
+      responses:
+        '204':
+          description: The entry is erased.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TrashEntryNotFound'
+  /internal/v1/trash/entries/{entryId}/restore:
+    parameters:
+      - $ref: '#/components/parameters/EntryId'
+    post:
+      operationId: restoreTrashEntryInternal
+      summary: Restore a trash entry
+      description: |
+        Brings an entry the actor may restore back to its list, as
+        `POST /v1/trash/entries/{entryId}/restore` says: the root detached from a parent that is no
+        longer live or can no longer take it, a deleted list and space brought back with it; any
+        other entry answers `404 trash-entry.not-found`. Emits `space.restored.v1` and
+        `list.restored.v1` for what came back with it, then `task.restored.v1` for each task, the
+        root first. Internal token: actor `user`, organization required.
+      tags: [trash]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The root of the entry, back in its list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrashRestored'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TrashEntryNotFound'
+  /internal/v1/trash/empty:
+    post:
+      operationId: emptyTrashInternal
+      summary: Empty the trash
+      description: |
+        Takes every entry the actor may restore out of the trash at once and hands them to the
+        purge job, as `POST /v1/trash/empty` says: `202` with their count. Emits `task.purged.v1`
+        for each task as the job erases it. Internal token: actor `user`, organization required.
+      tags: [trash]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '202':
+          description: The entries are out of the trash and on their way to be erased.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrashEmptied'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/lists/{listId}/access:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: checkListAccessInternal
+      summary: Check the access of a person to a list
+      description: |
+        Answers whether the actor, the person of a socket of the realtime gateway, sees a list and
+        with which role, before the socket joins the room of the list. A list they do not see, a
+        deleted one included, answers `404 list.not-found`, as everywhere; an archived list they
+        see answers its role. One indexed read of the grants of the actor on the list and its
+        space, with the space and the copy of the members; nothing is written and nothing is
+        emitted.
+
+        Internal token: issuer `realtime-gateway` only (`403 auth.issuer-not-allowed` for any
+        other), actor `user`, organization required.
+      tags: [access]
+      responses:
+        '200':
+          description: The actor sees the list, with this role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessCheck'
+              example:
+                role: edit
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                taskKey: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/AccessCheckRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+  /internal/v1/tasks/{taskKey}/access:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: checkTaskAccessInternal
+      summary: Check the access of a person to a task
+      description: |
+        Answers whether the actor, the person of a socket of the realtime gateway, sees a task and
+        with which role, the role of its list, before the socket joins the room of the task. A
+        task they do not see, a task in the trash included, answers `404 task.not-found`, never
+        `task.trashed`; an archived task they see answers its role. One indexed read, as for a
+        list; nothing is written and nothing is emitted.
+
+        Internal token: issuer `realtime-gateway` only (`403 auth.issuer-not-allowed` for any
+        other), actor `user`, organization required.
+      tags: [access]
+      responses:
+        '200':
+          description: The actor sees the task, with this role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessCheck'
+              example:
+                role: comment
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                taskKey: CAD-482
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/AccessCheckRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
 components:
   securitySchemes:
     internalToken:
@@ -1171,7 +2114,7 @@ components:
       bearerFormat: JWT
       description: |
         Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` = `task-service`,
-        issuer `api-gateway`.
+        issuer `api-gateway`, or `realtime-gateway` for the access checks.
   parameters:
     UserId:
       name: userId
@@ -1225,6 +2168,49 @@ components:
         type: string
         format: uuid
         examples: [019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+    GrantUserId:
+      name: userId
+      in: path
+      required: true
+      description: Account of the person given access, not the actor.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32]
+    AccessRequestId:
+      name: accessRequestId
+      in: path
+      required: true
+      description: Id of the access request.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01]
+    EntryId:
+      name: entryId
+      in: path
+      required: true
+      description: Id of the trash entry.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01]
+    SpaceIdFilter:
+      name: spaceId
+      in: query
+      required: false
+      description: Keep the requests of this space, its lists and their tasks.
+      schema:
+        type: string
+        format: uuid
+    ListIdFilter:
+      name: listId
+      in: query
+      required: false
+      description: Keep the requests of this list and its tasks.
+      schema:
+        type: string
+        format: uuid
     IfMatch:
       name: If-Match
       in: header
@@ -1274,7 +2260,45 @@ components:
       description: Version of the space, the list or the task, `"<version>"`.
       schema:
         type: string
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110).
+      schema:
+        type: integer
+        minimum: 1
   examples:
+    RoleInsufficient:
+      summary: The actor sees the list without `edit`
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: access.role-insufficient
+        details:
+          role: view
+          requiredRole: edit
+    ManageForbidden:
+      summary: The actor does not manage the space
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: space.manage-forbidden
+    IssuerNotAllowed:
+      summary: An issuer the route does not accept
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.issuer-not-allowed
+    TaskArchived:
+      summary: An archived task
+      value:
+        type: about:blank
+        title: Conflict
+        status: 409
+        code: task.archived
+        details:
+          key: CAD-430
     ActorNotAllowed:
       summary: Actor not accepted
       value:
@@ -1382,6 +2406,9 @@ components:
       description: |
         - `space.visibility-forbidden`: only the owner of the space, and the owner and the admins
           of the organization, change its visibility;
+        - `access.role-insufficient`: the actor sees the space without `edit` on it;
+          `details.role` is their role there (`null` for a space they see only through some of its
+          lists), `details.requiredRole` is `edit`;
         - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
           the internal token.
       content:
@@ -1396,8 +2423,55 @@ components:
                 title: Forbidden
                 status: 403
                 code: space.visibility-forbidden
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
             actorNotAllowed:
               $ref: '#/components/examples/ActorNotAllowed'
+    ManageForbidden:
+      description: |
+        - `space.manage-forbidden`: the actor does not manage the space: neither its owner nor,
+          for a space `organization`, the owner or an admin of the organization;
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
+          the internal token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            manageForbidden:
+              $ref: '#/components/examples/ManageForbidden'
+            actorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+    WriteForbidden:
+      description: |
+        - `access.role-insufficient`: the actor sees the list, or the space for a creation of a
+          list, without `edit` on it; `details.role` is their role there (`null` for a space they
+          see only through some of its lists), `details.requiredRole` is `edit`;
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
+          the internal token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
+            actorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+    AccessCheckRefused:
+      description: |
+        The internal token is valid but is not from `realtime-gateway` (`auth.issuer-not-allowed`),
+        its actor is not `user` (`auth.actor-not-allowed`), or it carries no organization
+        (`auth.organization-required`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            issuerNotAllowed:
+              $ref: '#/components/examples/IssuerNotAllowed'
+            organizationRequired:
+              $ref: '#/components/examples/OrganizationRequired'
     OrganizationNotFound:
       description: |
         `organization.not-found`: task-service does not hold the actor as a member of the
@@ -1452,7 +2526,45 @@ components:
             code: list.not-found
     TaskNotFound:
       description: |
-        - `task.not-found`: no task with this key that the actor sees;
+        - `task.not-found`: no task with this key that the actor sees, or a task in the trash the
+          actor could not change;
+        - `task.trashed`: the task is in the trash and the actor could change its list, with
+          `details.key`, `details.name`, `details.entryId`, `details.rootKey`,
+          `details.trashedAt`, `details.trashedBy` and `details.purgeAt` (see `TaskNotFound` in
+          `openapi/public/tasks.yaml`); the access checks never answer it;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskNotFound:
+              summary: No task the actor sees
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: task.not-found
+            taskTrashed:
+              summary: CAD-452 in the trash
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: task.trashed
+                details:
+                  key: CAD-452
+                  name: Ancien écran de connexion
+                  entryId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01
+                  rootKey: CAD-452
+                  trashedAt: '2026-11-06T16:20:00Z'
+                  trashedBy:
+                    type: user
+                    id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  purgeAt: '2026-12-06T16:20:00Z'
+    TrashEntryNotFound:
+      description: |
+        - `trash-entry.not-found`: no entry with this id that the actor may restore;
         - `organization.not-found`: see `OrganizationNotFound`.
       content:
         application/problem+json:
@@ -1462,7 +2574,111 @@ components:
             type: about:blank
             title: Not Found
             status: 404
-            code: task.not-found
+            code: trash-entry.not-found
+    AccessRequestNotFound:
+      description: |
+        - `access-request.not-found`: no request with this id that the actor may answer;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: access-request.not-found
+    AccessRequestDecided:
+      description: '`access-request.already-decided`: the request was approved or refused first, with `details.state`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            code: access-request.already-decided
+            details:
+              state: refused
+    AccessRequestLimitReached:
+      description: |
+        `access-request.limit-reached`: the actor asked 10 times within the last hour;
+        `details.nextAvailableAt` is when the oldest request counted leaves the hour, and
+        `Retry-After` the seconds until then, from which the gateway answers its own.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Too Many Requests
+            status: 429
+            code: access-request.limit-reached
+            details:
+              nextAvailableAt: '2026-11-08T12:02:00Z'
+    GrantRefused:
+      description: |
+        A grant rule refuses the request, with the codes of the public route:
+        `access.grantee-invalid` (`details.userId`), `access.guest-space-forbidden`,
+        `access.owner-unchangeable` or `access.grant-limit-reached`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            granteeInvalid:
+              summary: Someone who is not in the organization
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: access.grantee-invalid
+                details:
+                  userId: 019a6f00-1b2c-7d3e-8f4a-5b6c7d8e9f41
+            grantLimitReached:
+              summary: 200 grants already
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: access.grant-limit-reached
+    OwnerUnchangeable:
+      description: '`access.owner-unchangeable`: the person is the owner of the space, who always has `edit`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: access.owner-unchangeable
+    TaskArchived:
+      description: '`task.archived`: the task, or the parent a patch names, is archived; `details.key` names it.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskArchived:
+              $ref: '#/components/examples/TaskArchived'
+    TaskCreationConflict:
+      description: |
+        `task.archived` (`details.key`): the task that would hold the new subtask or checklist item
+        is archived; or `idempotency.request-in-progress`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskArchived:
+              $ref: '#/components/examples/TaskArchived'
+            requestInProgress:
+              $ref: '#/components/examples/RequestInProgress'
     ChecklistItemNotFound:
       description: |
         - `checklist-item.not-found`: the task has no item with this id;
@@ -1678,6 +2894,112 @@ components:
       $ref: '../../components/task.yaml#/components/schemas/ChecklistItemPatch'
     ActivityEntry:
       $ref: '../../components/task.yaml#/components/schemas/ActivityEntry'
+    Grant:
+      $ref: '../../components/task.yaml#/components/schemas/Grant'
+    GrantChange:
+      $ref: '../../components/task.yaml#/components/schemas/GrantChange'
+    AccessRequest:
+      $ref: '../../components/task.yaml#/components/schemas/AccessRequest'
+    AccessRequestCreation:
+      $ref: '../../components/task.yaml#/components/schemas/AccessRequestCreation'
+    AccessRequestApproval:
+      $ref: '../../components/task.yaml#/components/schemas/AccessRequestApproval'
+    ArchivedList:
+      $ref: '../../components/task.yaml#/components/schemas/ArchivedList'
+    ArchivedTask:
+      $ref: '../../components/task.yaml#/components/schemas/ArchivedTask'
+    TrashEntry:
+      $ref: '../../components/task.yaml#/components/schemas/TrashEntry'
+    TrashRestored:
+      $ref: '../../components/task.yaml#/components/schemas/TrashRestored'
+    TrashEmptied:
+      $ref: '../../components/task.yaml#/components/schemas/TrashEmptied'
+    AccessCheck:
+      type: object
+      required: [role, spaceId, listId, taskKey]
+      description: |
+        What the realtime gateway needs to let a socket join the room of a list or a task: the role
+        of the actor and where the list or the task is.
+      properties:
+        role:
+          $ref: '../../components/task.yaml#/components/schemas/AccessRoleValue'
+        spaceId:
+          type: string
+          format: uuid
+        listId:
+          type: string
+          format: uuid
+          description: The list checked, or the list of the task checked.
+        taskKey:
+          description: The task checked; `null` for a list.
+          oneOf:
+            - $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+            - type: 'null'
+    GrantPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+    AccessRequestPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessRequest'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+    ArchivedListPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArchivedList'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+    ArchivedTaskPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArchivedTask'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+    TrashEntryPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrashEntry'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
     SpaceCreated:
       type: object
       required: [space, firstList]

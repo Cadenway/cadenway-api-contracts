@@ -75,7 +75,8 @@ import {
 // Pins what the consumers of the task contracts rely on: the shared enumerations of
 // @cadenway/contracts in every generated entry point, the defaults a creation fills, the pattern
 // of keys and prefixes, the typed query parameters, the sets a later version may grow, and the
-// eight events of task-service.
+// first eight events of task-service. The access, archive and trash contracts are pinned by
+// tests/contracts/task-access.spec.ts.
 
 /**
  * Constant ORGANIZATION_ID
@@ -420,17 +421,19 @@ describe('sets a later version may grow', () => {
 });
 
 describe('events of task-service', () => {
-  it('names the eight events and restricts none of them', () => {
-    expect(EVENT_NAMES).toEqual([
-      'list.created.v1',
-      'list.updated.v1',
-      'space.created.v1',
-      'space.updated.v1',
-      'task.assigned.v1',
-      'task.created.v1',
-      'task.status-changed.v1',
-      'task.updated.v1',
-    ]);
+  it('keeps the first eight events and restricts none of them', () => {
+    expect(EVENT_NAMES).toEqual(
+      expect.arrayContaining([
+        'list.created.v1',
+        'list.updated.v1',
+        'space.created.v1',
+        'space.updated.v1',
+        'task.assigned.v1',
+        'task.created.v1',
+        'task.status-changed.v1',
+        'task.updated.v1',
+      ]),
+    );
     expect(RESTRICTED_EVENT_NAMES).toEqual([]);
   });
 

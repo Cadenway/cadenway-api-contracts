@@ -6,6 +6,6 @@ import type { Problem } from './problem';
 
 /**
  * - `checklist-item.not-found`: the task has no item with this id;
- * - `task.not-found`, `organization.not-found`: see `TaskNotFound`.
+ * - `task.not-found`, `task.trashed`, `organization.not-found`: see `TaskNotFound`.
  */
 export type ChecklistItemNotFoundResponse = Problem;

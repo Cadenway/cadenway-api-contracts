@@ -205,8 +205,9 @@ export class SpacesService {
   }
 /**
  * Lists the spaces the caller sees ("Espaces"), in the order of their creation, the order of
- * the sidebar. A guest gets an empty list in this version. The lists of each space and their
- * counts are read with `GET /v1/spaces/{spaceId}/overview`.
+ * the sidebar; a space restored from the trash comes at the end. A guest gets the spaces of
+ * the lists shared with them. The lists of each space and their counts are read with
+ * `GET /v1/spaces/{spaceId}/overview`.
  *
  * Scope `tasks:read` for a personal API token.
  * @summary List the spaces
@@ -283,7 +284,9 @@ export class SpacesService {
   }
 /**
  * Applies a JSON Merge Patch to a space ("Modifier l’espace", "Espace modifié"): a member
- * left out is unchanged, `null` clears `description` or `icon`.
+ * left out is unchanged, `null` clears `description` or `icon`. It needs `edit` on the space
+ * (`403 access.role-insufficient` for a caller who sees it without, a `view` grant or the
+ * grants of some of its lists only); `visibility` needs more, see below.
  *
  * - `prefix`: a prefix another space uses or used answers `409 space.prefix-taken`. The new
  *   tasks are numbered after the new prefix, from the next number never given under it; the
@@ -292,9 +295,11 @@ export class SpacesService {
  *   label) or `hidden`; `null` for a key puts back its default, `null` for `statuses` puts
  *   back every default ("Rétablir par défaut"). Hiding `todo` or `done` answers
  *   `422 space.status-required`.
- * - `visibility`: only the owner of the space, or the owner or an admin of the organization,
- *   changes it (`403 space.visibility-forbidden`). An admin who makes the space private gets
- *   the answer, then no longer sees it.
+ * - `visibility`: only the people who manage the space (`callerCanManage`: its owner, and for
+ *   a space `organization` the owner and the admins of the organization) change it
+ *   (`403 space.visibility-forbidden`). An admin who makes the space private gets the answer,
+ *   then no longer sees it, unless it is shared with them. The grants and the switches of the
+ *   lists stay as they are.
  * - `If-Match` is optional (`412 request.version-mismatch`).
  *
  * Emits `space.updated.v1` when something changed; a patch that changes nothing answers `200`
@@ -339,12 +344,62 @@ export class SpacesService {
     );
   }
 /**
- * Returns the lists of a space with the counts of their tasks, in the order of their
- * creation: the space overview ("Vue d’ensemble": "4 listes · 108 tâches", and on each list
- * card "32 tâches", "12 / 32 terminées", "38 %", "14 ouvertes", "3 en retard") and the
- * sidebar (the count of each list, the total of the space). The counts are those of the
- * top-level tasks, subtasks left out; `listCount` and `taskCount` count the whole space, on
- * every page.
+ * Deletes a space ("Supprimer l’espace", "Espace « Marketing » supprimé"), which only the
+ * people who manage it do (`403 space.manage-forbidden`): its owner, and for a space
+ * `organization` the owner and the admins of the organization. The web application asks
+ * first for the name of the space ("Pour confirmer, saisissez Marketing").
+ *
+ * The space, its lists, archived ones included, and their tasks disappear at once for
+ * everyone: they answer `404` and leave every collection and count. A job then moves the tasks
+ * to the trash in bounded batches, one entry per top-level task with its subtasks
+ * (`openapi/public/trash.yaml`), within minutes; the trash shows them as they arrive, to the
+ * people who could change their list. Restoring one of them brings back its list and the
+ * space, at the end of the sidebar, without the other lists. The pending access requests of
+ * the space and its lists are dropped. The prefixes of the space stay reserved and its keys
+ * are never given again. `If-Match` is optional (`412 request.version-mismatch`).
+ *
+ * Not recorded in the activity log. Emits `space.deleted.v1`, then `task.trashed.v1` for each
+ * task the job moves. Scope `tasks:write` for a personal API token.
+ * @summary Delete a space
+ */
+ deleteSpace<TData = void>(spaceId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ deleteSpace<TData = void>(spaceId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ deleteSpace<TData = void>(spaceId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  deleteSpace<TData = void>(
+    spaceId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/spaces/${spaceId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/spaces/${spaceId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/spaces/${spaceId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Returns the lists of a space with the counts of their tasks, in the order of the sidebar
+ * (their creation, a restored list at the end): the space overview ("Vue d’ensemble": "4
+ * listes · 108 tâches", and on each list card "32 tâches", "12 / 32 terminées", "38 %", "14
+ * ouvertes", "3 en retard") and the sidebar (the count of each list, the total of the space).
+ * The counts are those of the top-level tasks, subtasks left out; `listCount` and `taskCount`
+ * count the whole space, on every page. Only the lists the caller sees count, and neither the
+ * archived lists nor the archived tasks do.
  *
  * `today` is the date of the caller, in their time zone, which task-service does not know: a
  * task is late when it is not closed and its due date is before it.
@@ -394,4 +449,5 @@ export type CreateSpaceClientResult = NonNullable<SpaceCreated>
 export type ListSpacesClientResult = NonNullable<SpacePage>
 export type GetSpaceClientResult = NonNullable<Space>
 export type UpdateSpaceClientResult = NonNullable<Space>
+export type DeleteSpaceClientResult = NonNullable<void>
 export type GetSpaceOverviewClientResult = NonNullable<SpaceOverview>

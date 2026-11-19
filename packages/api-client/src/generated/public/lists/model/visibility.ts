@@ -5,7 +5,8 @@
 
 /**
  * Who sees a space ("Confidentialité"): `organization` ("Tout Atelier Nord": every member of
- * the organization but the guests) or `private` ("Privé": its owner only in this version).
+ * the organization but the guests) or `private` ("Privé": its owner and the people it is
+ * shared with).
  */
 export type Visibility = typeof Visibility[keyof typeof Visibility];
 

@@ -157,12 +157,14 @@ function filterParams(
 export class ListsService {
   private readonly http = inject(HttpClient);
 /**
- * Creates a list in a space the caller sees, after its other lists ("Créer la liste", "Liste
- * créée"); with `sprint`, a sprint ("Créer le sprint", "Sprint créé"). An end before the
- * start answers `422 list.sprint-dates-invalid` ("La fin doit suivre le début."). The web
- * application proposes the name, the dates and the appearance of a new sprint ("Sprint 15",
- * the day after the end of the last sprint, 14 days, the lightning and "Améthyste"); the API
- * takes what it is sent.
+ * Creates a list in a space the caller has `edit` on, after its other lists ("Créer la
+ * liste", "Liste créée"); with `sprint`, a sprint ("Créer le sprint", "Sprint créé"). An end
+ * before the start answers `422 list.sprint-dates-invalid` ("La fin doit suivre le début.").
+ * The web application proposes the name, the dates and the appearance of a new sprint
+ * ("Sprint 15", the day after the end of the last sprint, 14 days, the lightning and
+ * "Améthyste"); the API takes what it is sent. `organizationAccess` is on unless the body
+ * turns it off. A caller who sees the space without `edit` on it, through the grants of some
+ * of its lists for example, gets `403 access.role-insufficient`.
  *
  * Emits `list.created.v1`. Scope `tasks:write` for a personal API token.
  * @summary Create a list or a sprint
@@ -205,8 +207,10 @@ export class ListsService {
     );
   }
 /**
- * Lists the lists and the sprints of a space the caller sees, in the order of their creation,
- * the order of the sidebar. Their counts are read with
+ * Lists the lists and the sprints of a space that the caller sees, in the order of the
+ * sidebar: the order of their creation, a list restored from the archives or the trash at
+ * the end. The archived lists are left out (`GET /v1/archives/lists`,
+ * `openapi/public/archives.yaml`). Their counts are read with
  * `GET /v1/spaces/{spaceId}/overview` (`openapi/public/spaces.yaml`).
  *
  * Scope `tasks:read` for a personal API token.
@@ -249,7 +253,9 @@ export class ListsService {
     );
   }
 /**
- * Returns a list or a sprint the caller sees. Scope `tasks:read` for a personal API token.
+ * Returns a list or a sprint the caller sees, an archived one included (`archivedAt`), with
+ * the role of the caller on it (`callerRole`). A deleted list answers `404 list.not-found`.
+ * Scope `tasks:read` for a personal API token.
  * @summary Read a list
  */
  getList<TData = TaskList>(listId: string, options?: HttpClientBodyOptions): Observable<TData>;
@@ -291,11 +297,17 @@ export class ListsService {
  *   end before the start answers `422 list.sprint-dates-invalid` ("La fin doit suivre le
  *   début."). `sprint: null` makes a sprint a list again, without dates or goal; its tasks
  *   stay in it.
+ * - `organizationAccess` turns the switch "Accès de l’organisation" of the dialog
+ *   "Partager" ("Tous les membres de Atelier Nord peuvent voir cette liste"). Off, in a space
+ *   `organization`, the members of the organization who hold no grant stop seeing the list
+ *   and its tasks at once; in a private space it changes nothing.
  * - `If-Match` is optional (`412 request.version-mismatch`).
  *
- * A list never moves to another space in this version. Emits `list.updated.v1` when something
- * changed; a patch that changes nothing answers `200` with the same version and emits
- * nothing. Scope `tasks:write` for a personal API token.
+ * It needs `edit` on the list (`403 access.role-insufficient`); an archived list changes
+ * too. A list never moves to another space in this version. Emits `list.updated.v1` when
+ * its name, appearance or sprint changed, and `list.access-changed.v1` when its switch did,
+ * with the same version; a patch that changes nothing answers `200` with the same version
+ * and emits nothing. Scope `tasks:write` for a personal API token.
  * @summary Change a list or a sprint
  */
  updateList<TData = TaskList>(listId: string,
@@ -330,6 +342,54 @@ export class ListsService {
     return this.http.patch<TData>(
       `/v1/lists/${listId}`,
       listPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Deletes a list ("Supprimer la liste", "Liste « Bugs » supprimée"), archived or not, which
+ * needs `edit` on it (`403 access.role-insufficient`). The web application asks first for
+ * the name of the list ("Pour confirmer, saisissez Bugs") and offers to archive it instead
+ * ("Pour la garder de côté, archivez-la plutôt.").
+ *
+ * The list and its tasks disappear at once for everyone: they answer `404` and leave every
+ * collection and count. A job then moves the tasks to the trash in bounded batches, one entry
+ * per top-level task with its subtasks (`openapi/public/trash.yaml`), within minutes ("N
+ * tâches dans la corbeille, restaurables pendant 30 jours."); archived tasks go too and leave
+ * the archives. Restoring one of them brings the list back, at the end of its space, without
+ * its other tasks. The pending access requests of the list and its tasks are dropped.
+ * `If-Match` is optional (`412 request.version-mismatch`).
+ *
+ * Not recorded in the activity log. Emits `list.deleted.v1`, then `task.trashed.v1` for each
+ * task the job moves. Scope `tasks:write` for a personal API token.
+ * @summary Delete a list or a sprint
+ */
+ deleteList<TData = void>(listId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ deleteList<TData = void>(listId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ deleteList<TData = void>(listId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  deleteList<TData = void>(
+    listId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/lists/${listId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/lists/${listId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/lists/${listId}`,{
         ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
       }
@@ -385,8 +445,8 @@ export class ListsService {
  * `kind` keeps the given kinds (the chips "Statuts", "Assignations", "Créations",
  * "Priorités", "Échéances"), `actorId` the given actors ("Tout le monde" when absent);
  * `total` counts what matches ("18 événements"). An entry shows the task with its name and
- * status as they are now; the entries of a task the caller no longer sees are left out of
- * `items` and `total`.
+ * status as they are now; the entries of a task the caller no longer sees, or that is
+ * archived or in the trash, are left out of `items` and `total`.
  *
  * Scope `tasks:read` for a personal API token.
  * @summary Read the activity log of a list
@@ -433,5 +493,6 @@ export type CreateListClientResult = NonNullable<TaskList>
 export type ListListsClientResult = NonNullable<TaskListPage>
 export type GetListClientResult = NonNullable<TaskList>
 export type UpdateListClientResult = NonNullable<TaskList>
+export type DeleteListClientResult = NonNullable<void>
 export type GetListCountsClientResult = NonNullable<ListSummary>
 export type ListListActivityClientResult = NonNullable<ActivityPage>

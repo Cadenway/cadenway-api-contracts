@@ -4,6 +4,240 @@
  */
 import * as zod from 'zod';
 
+/** Name of the event `list.access-changed.v1`. The grants or the switch "Accès de l’organisation" of a list changed. */
+export const LIST_ACCESS_CHANGED_V1 = 'list.access-changed.v1';
+
+/** Payload of the event `list.access-changed.v1`. */
+export interface ListAccessChangedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the change was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the list after the change. */
+  version: number;
+  listId: string;
+  spaceId: string;
+  /**
+   * The switch "Accès de l’organisation": on, every owner, admin and member of the
+   * organization has `edit` on the list when its space is `organization`.
+   */
+  organizationAccess: boolean;
+  /**
+   * Every grant after the change, in the order they were first given; 200 at most today. The
+   * owner of the space holds none.
+   */
+  grants: {
+    /** Account of the person given access. */
+    userId: string;
+    /**
+     * A role given by a grant: `edit` ("Peut modifier"), `comment` ("Peut commenter") or `view`
+     * ("Lecture seule") today, from the most to the least. The set may grow without a new event
+     * version: a consumer treats an unknown role as `view`.
+     */
+    role: string;
+  }[];
+  /** Names of the members that changed; later versions may name others, which a consumer ignores. */
+  changed: string[];
+  /** The people whose grant was given, changed or removed; empty when only the switch changed. */
+  changedUserIds: string[];
+}
+
+/** Validator of the payload of the event `list.access-changed.v1`. */
+export const listAccessChangedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  listId: zod.uuid(),
+  spaceId: zod.uuid(),
+  organizationAccess: zod.boolean(),
+  grants: zod.array(zod.object({
+    userId: zod.uuid(),
+    role: zod.string(),
+  })),
+  changed: zod.array(zod.string()).min(1),
+  changedUserIds: zod.array(zod.uuid()),
+}) satisfies zod.ZodType<ListAccessChangedV1>;
+
+/** Name of the event `list.access-request-decided.v1`. A request for access to a list was approved or refused. */
+export const LIST_ACCESS_REQUEST_DECIDED_V1 = 'list.access-request-decided.v1';
+
+/** Payload of the event `list.access-request-decided.v1`. */
+export interface ListAccessRequestDecidedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the answer was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the request after the answer, 2. */
+  version: number;
+  accessRequestId: string;
+  spaceId: string;
+  listId: string;
+  requesterUserId: string;
+  /** `approved` or `refused` today. */
+  decision: string;
+  /** The role an approval gave; `null` for a refusal. */
+  role: string | null;
+}
+
+/** Validator of the payload of the event `list.access-request-decided.v1`. */
+export const listAccessRequestDecidedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  accessRequestId: zod.uuid(),
+  spaceId: zod.uuid(),
+  listId: zod.uuid(),
+  requesterUserId: zod.uuid(),
+  decision: zod.string(),
+  role: zod.union([zod.string(), zod.null()]),
+}) satisfies zod.ZodType<ListAccessRequestDecidedV1>;
+
+/** Name of the event `list.access-requested.v1`. Someone asked for access to a list. */
+export const LIST_ACCESS_REQUESTED_V1 = 'list.access-requested.v1';
+
+/** Payload of the event `list.access-requested.v1`. */
+export interface ListAccessRequestedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the request was stored. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the request, 1. */
+  version: number;
+  accessRequestId: string;
+  spaceId: string;
+  listId: string;
+  /** Name of the space of the list. */
+  spaceName: string;
+  /** Name of the list ("Budget"). */
+  listName: string;
+  /** Account of the requester, also `actor.id`. */
+  requesterUserId: string;
+  /** Account of the owner of the space of the list. */
+  spaceOwnerUserId: string;
+  /** The message of the requester; `null` when there is none. */
+  message: string | null;
+}
+
+/** Validator of the payload of the event `list.access-requested.v1`. */
+export const listAccessRequestedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  accessRequestId: zod.uuid(),
+  spaceId: zod.uuid(),
+  listId: zod.uuid(),
+  spaceName: zod.string().min(1),
+  listName: zod.string().min(1),
+  requesterUserId: zod.uuid(),
+  spaceOwnerUserId: zod.uuid(),
+  message: zod.string().nullable(),
+}) satisfies zod.ZodType<ListAccessRequestedV1>;
+
+/** Name of the event `list.archived.v1`. A list or a sprint was archived. */
+export const LIST_ARCHIVED_V1 = 'list.archived.v1';
+
+/** Payload of the event `list.archived.v1`. */
+export interface ListArchivedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the archive was committed, the `archivedAt` of the list. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the list after the archive. */
+  version: number;
+  listId: string;
+  spaceId: string;
+  name: string;
+  /**
+   * Key of the icon (`rocket`, `paint`, `lightning`…, the keys of `LOOK_ICONS`); `null` for the
+   * default. The set may grow without a new event version: a consumer treats an unknown key as
+   * `null`.
+   */
+  icon: string | null;
+  /**
+   * Key of the color (`gris`, `violet`, `orange`…, the keys of `LOOK_COLORS`). The set may grow
+   * without a new event version: a consumer treats an unknown key as `gris`.
+   */
+  color: string;
+  /** The dates and the goal of a sprint; `null` for a list that is not a sprint. */
+  sprint: {
+    startDate: string;
+    endDate: string;
+    goal: string | null;
+  } | null;
+  /** The switch "Accès de l’organisation". */
+  organizationAccess: boolean;
+}
+
+/** Validator of the payload of the event `list.archived.v1`. */
+export const listArchivedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  listId: zod.uuid(),
+  spaceId: zod.uuid(),
+  name: zod.string().min(1),
+  icon: zod.string().nullable(),
+  color: zod.string(),
+  sprint: zod.object({
+    startDate: zod.iso.date(),
+    endDate: zod.iso.date(),
+    goal: zod.string().nullable(),
+  }).nullable(),
+  organizationAccess: zod.boolean(),
+}) satisfies zod.ZodType<ListArchivedV1>;
+
 /** Name of the event `list.created.v1`. A list or a sprint was created. */
 export const LIST_CREATED_V1 = 'list.created.v1';
 
@@ -43,6 +277,8 @@ export interface ListCreatedV1 {
     endDate: string;
     goal: string | null;
   } | null;
+  /** The switch "Accès de l’organisation" of the new list; absent, it reads as `true`. */
+  organizationAccess?: boolean;
 }
 
 /** Validator of the payload of the event `list.created.v1`. */
@@ -65,7 +301,177 @@ export const listCreatedV1Schema = zod.object({
     endDate: zod.iso.date(),
     goal: zod.string().nullable(),
   }).nullable(),
+  organizationAccess: zod.boolean().optional(),
 }) satisfies zod.ZodType<ListCreatedV1>;
+
+/** Name of the event `list.deleted.v1`. A list or a sprint was deleted, with its tasks. */
+export const LIST_DELETED_V1 = 'list.deleted.v1';
+
+/** Payload of the event `list.deleted.v1`. */
+export interface ListDeletedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the deletion was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the list after the deletion. */
+  version: number;
+  listId: string;
+  spaceId: string;
+}
+
+/** Validator of the payload of the event `list.deleted.v1`. */
+export const listDeletedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  listId: zod.uuid(),
+  spaceId: zod.uuid(),
+}) satisfies zod.ZodType<ListDeletedV1>;
+
+/** Name of the event `list.restored.v1`. A deleted list came back with a task restored from the trash. */
+export const LIST_RESTORED_V1 = 'list.restored.v1';
+
+/** Payload of the event `list.restored.v1`. */
+export interface ListRestoredV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the restoration was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the list after the restoration. */
+  version: number;
+  listId: string;
+  spaceId: string;
+  name: string;
+  /**
+   * Key of the icon (`rocket`, `paint`, `lightning`…, the keys of `LOOK_ICONS`); `null` for the
+   * default. The set may grow without a new event version: a consumer treats an unknown key as
+   * `null`.
+   */
+  icon: string | null;
+  /**
+   * Key of the color (`gris`, `violet`, `orange`…, the keys of `LOOK_COLORS`). The set may grow
+   * without a new event version: a consumer treats an unknown key as `gris`.
+   */
+  color: string;
+  /** The dates and the goal of a sprint; `null` for a list that is not a sprint. */
+  sprint: {
+    startDate: string;
+    endDate: string;
+    goal: string | null;
+  } | null;
+  /** The switch "Accès de l’organisation". */
+  organizationAccess: boolean;
+}
+
+/** Validator of the payload of the event `list.restored.v1`. */
+export const listRestoredV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  listId: zod.uuid(),
+  spaceId: zod.uuid(),
+  name: zod.string().min(1),
+  icon: zod.string().nullable(),
+  color: zod.string(),
+  sprint: zod.object({
+    startDate: zod.iso.date(),
+    endDate: zod.iso.date(),
+    goal: zod.string().nullable(),
+  }).nullable(),
+  organizationAccess: zod.boolean(),
+}) satisfies zod.ZodType<ListRestoredV1>;
+
+/** Name of the event `list.unarchived.v1`. An archived list or sprint was restored. */
+export const LIST_UNARCHIVED_V1 = 'list.unarchived.v1';
+
+/** Payload of the event `list.unarchived.v1`. */
+export interface ListUnarchivedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the restoration was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the list after the restoration. */
+  version: number;
+  listId: string;
+  spaceId: string;
+  name: string;
+  /**
+   * Key of the icon (`rocket`, `paint`, `lightning`…, the keys of `LOOK_ICONS`); `null` for the
+   * default. The set may grow without a new event version: a consumer treats an unknown key as
+   * `null`.
+   */
+  icon: string | null;
+  /**
+   * Key of the color (`gris`, `violet`, `orange`…, the keys of `LOOK_COLORS`). The set may grow
+   * without a new event version: a consumer treats an unknown key as `gris`.
+   */
+  color: string;
+  /** The dates and the goal of a sprint; `null` for a list that is not a sprint. */
+  sprint: {
+    startDate: string;
+    endDate: string;
+    goal: string | null;
+  } | null;
+  /** The switch "Accès de l’organisation". */
+  organizationAccess: boolean;
+}
+
+/** Validator of the payload of the event `list.unarchived.v1`. */
+export const listUnarchivedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(3),
+  listId: zod.uuid(),
+  spaceId: zod.uuid(),
+  name: zod.string().min(1),
+  icon: zod.string().nullable(),
+  color: zod.string(),
+  sprint: zod.object({
+    startDate: zod.iso.date(),
+    endDate: zod.iso.date(),
+    goal: zod.string().nullable(),
+  }).nullable(),
+  organizationAccess: zod.boolean(),
+}) satisfies zod.ZodType<ListUnarchivedV1>;
 
 /** Name of the event `list.updated.v1`. A list or a sprint changed. */
 export const LIST_UPDATED_V1 = 'list.updated.v1';
@@ -132,6 +538,156 @@ export const listUpdatedV1Schema = zod.object({
   }).nullable(),
   changed: zod.array(zod.string()).min(1),
 }) satisfies zod.ZodType<ListUpdatedV1>;
+
+/** Name of the event `space.access-changed.v1`. The grants of a space changed. */
+export const SPACE_ACCESS_CHANGED_V1 = 'space.access-changed.v1';
+
+/** Payload of the event `space.access-changed.v1`. */
+export interface SpaceAccessChangedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the change was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the space after the change. */
+  version: number;
+  spaceId: string;
+  /**
+   * Every grant after the change, in the order they were first given; 200 at most today. The
+   * owner of the space holds none.
+   */
+  grants: {
+    /** Account of the person given access. */
+    userId: string;
+    /**
+     * A role given by a grant: `edit` ("Peut modifier"), `comment` ("Peut commenter") or `view`
+     * ("Lecture seule") today, from the most to the least. The set may grow without a new event
+     * version: a consumer treats an unknown role as `view`.
+     */
+    role: string;
+  }[];
+  /** The people whose grant was given, changed or removed. */
+  changedUserIds: string[];
+}
+
+/** Validator of the payload of the event `space.access-changed.v1`. */
+export const spaceAccessChangedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  spaceId: zod.uuid(),
+  grants: zod.array(zod.object({
+    userId: zod.uuid(),
+    role: zod.string(),
+  })),
+  changedUserIds: zod.array(zod.uuid()).min(1),
+}) satisfies zod.ZodType<SpaceAccessChangedV1>;
+
+/** Name of the event `space.access-request-decided.v1`. A request for access to a space was approved or refused. */
+export const SPACE_ACCESS_REQUEST_DECIDED_V1 = 'space.access-request-decided.v1';
+
+/** Payload of the event `space.access-request-decided.v1`. */
+export interface SpaceAccessRequestDecidedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the answer was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the request after the answer, 2. */
+  version: number;
+  accessRequestId: string;
+  spaceId: string;
+  requesterUserId: string;
+  /** `approved` or `refused` today. */
+  decision: string;
+  /** The role an approval gave; `null` for a refusal. */
+  role: string | null;
+}
+
+/** Validator of the payload of the event `space.access-request-decided.v1`. */
+export const spaceAccessRequestDecidedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  accessRequestId: zod.uuid(),
+  spaceId: zod.uuid(),
+  requesterUserId: zod.uuid(),
+  decision: zod.string(),
+  role: zod.union([zod.string(), zod.null()]),
+}) satisfies zod.ZodType<SpaceAccessRequestDecidedV1>;
+
+/** Name of the event `space.access-requested.v1`. Someone asked for access to a space. */
+export const SPACE_ACCESS_REQUESTED_V1 = 'space.access-requested.v1';
+
+/** Payload of the event `space.access-requested.v1`. */
+export interface SpaceAccessRequestedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the request was stored. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the request, 1. */
+  version: number;
+  accessRequestId: string;
+  spaceId: string;
+  /** Name of the space ("Direction"). */
+  spaceName: string;
+  /** Account of the requester, also `actor.id`. */
+  requesterUserId: string;
+  /** Account of the owner of the space. */
+  spaceOwnerUserId: string;
+  /** "Message pour Léa (facultatif)"; `null` when there is none. */
+  message: string | null;
+}
+
+/** Validator of the payload of the event `space.access-requested.v1`. */
+export const spaceAccessRequestedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  accessRequestId: zod.uuid(),
+  spaceId: zod.uuid(),
+  spaceName: zod.string().min(1),
+  requesterUserId: zod.uuid(),
+  spaceOwnerUserId: zod.uuid(),
+  message: zod.string().nullable(),
+}) satisfies zod.ZodType<SpaceAccessRequestedV1>;
 
 /** Name of the event `space.created.v1`. A space was created. */
 export const SPACE_CREATED_V1 = 'space.created.v1';
@@ -298,6 +854,205 @@ export const spaceCreatedV1Schema = zod.object({
     }),
   }),
 }) satisfies zod.ZodType<SpaceCreatedV1>;
+
+/** Name of the event `space.deleted.v1`. A space was deleted, with its lists and their tasks. */
+export const SPACE_DELETED_V1 = 'space.deleted.v1';
+
+/** Payload of the event `space.deleted.v1`. */
+export interface SpaceDeletedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the deletion was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the space after the deletion. */
+  version: number;
+  spaceId: string;
+}
+
+/** Validator of the payload of the event `space.deleted.v1`. */
+export const spaceDeletedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  spaceId: zod.uuid(),
+}) satisfies zod.ZodType<SpaceDeletedV1>;
+
+/** Name of the event `space.restored.v1`. A deleted space came back with a task restored from the trash. */
+export const SPACE_RESTORED_V1 = 'space.restored.v1';
+
+/** Payload of the event `space.restored.v1`. */
+export interface SpaceRestoredV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the restoration was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the space after the restoration. */
+  version: number;
+  spaceId: string;
+  name: string;
+  prefix: string;
+  description: string | null;
+  /**
+   * Key of the icon (`rocket`, `paint`, `lightning`…, the keys of `LOOK_ICONS`); `null` for the
+   * default. The set may grow without a new event version: a consumer treats an unknown key as
+   * `null`.
+   */
+  icon: string | null;
+  /**
+   * Key of the color (`gris`, `violet`, `orange`…, the keys of `LOOK_COLORS`). The set may grow
+   * without a new event version: a consumer treats an unknown key as `gris`.
+   */
+  color: string;
+  /** `organization` or `private` today; a consumer treats an unknown value as `private`. */
+  visibility: string;
+  ownerUserId: string;
+  /** The ten statuses as the space shows them, by key. */
+  statuses: {
+    triage: {
+      /** The name the space gives the status; `null` for its default label. */
+      name: string | null;
+      /** Whether the space no longer uses the status. */
+      hidden: boolean;
+    };
+    backlog: {
+      /** The name the space gives the status; `null` for its default label. */
+      name: string | null;
+      /** Whether the space no longer uses the status. */
+      hidden: boolean;
+    };
+    todo: {
+      /** The name the space gives the status; `null` for its default label. */
+      name: string | null;
+      /** Whether the space no longer uses the status. */
+      hidden: boolean;
+    };
+    progress: {
+      /** The name the space gives the status; `null` for its default label. */
+      name: string | null;
+      /** Whether the space no longer uses the status. */
+      hidden: boolean;
+    };
+    review: {
+      /** The name the space gives the status; `null` for its default label. */
+      name: string | null;
+      /** Whether the space no longer uses the status. */
+      hidden: boolean;
+    };
+    testing: {
+      /** The name the space gives the status; `null` for its default label. */
+      name: string | null;
+      /** Whether the space no longer uses the status. */
+      hidden: boolean;
+    };
+    waiting: {
+      /** The name the space gives the status; `null` for its default label. */
+      name: string | null;
+      /** Whether the space no longer uses the status. */
+      hidden: boolean;
+    };
+    blocked: {
+      /** The name the space gives the status; `null` for its default label. */
+      name: string | null;
+      /** Whether the space no longer uses the status. */
+      hidden: boolean;
+    };
+    done: {
+      /** The name the space gives the status; `null` for its default label. */
+      name: string | null;
+      /** Whether the space no longer uses the status. */
+      hidden: boolean;
+    };
+    cancelled: {
+      /** The name the space gives the status; `null` for its default label. */
+      name: string | null;
+      /** Whether the space no longer uses the status. */
+      hidden: boolean;
+    };
+  };
+}
+
+/** Validator of the payload of the event `space.restored.v1`. */
+export const spaceRestoredV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(3),
+  spaceId: zod.uuid(),
+  name: zod.string().min(1),
+  prefix: zod.string().regex(new RegExp('^[A-Z]{2,5}$')),
+  description: zod.string().nullable(),
+  icon: zod.string().nullable(),
+  color: zod.string(),
+  visibility: zod.string(),
+  ownerUserId: zod.uuid(),
+  statuses: zod.object({
+    triage: zod.object({
+      name: zod.string().nullable(),
+      hidden: zod.boolean(),
+    }),
+    backlog: zod.object({
+      name: zod.string().nullable(),
+      hidden: zod.boolean(),
+    }),
+    todo: zod.object({
+      name: zod.string().nullable(),
+      hidden: zod.boolean(),
+    }),
+    progress: zod.object({
+      name: zod.string().nullable(),
+      hidden: zod.boolean(),
+    }),
+    review: zod.object({
+      name: zod.string().nullable(),
+      hidden: zod.boolean(),
+    }),
+    testing: zod.object({
+      name: zod.string().nullable(),
+      hidden: zod.boolean(),
+    }),
+    waiting: zod.object({
+      name: zod.string().nullable(),
+      hidden: zod.boolean(),
+    }),
+    blocked: zod.object({
+      name: zod.string().nullable(),
+      hidden: zod.boolean(),
+    }),
+    done: zod.object({
+      name: zod.string().nullable(),
+      hidden: zod.boolean(),
+    }),
+    cancelled: zod.object({
+      name: zod.string().nullable(),
+      hidden: zod.boolean(),
+    }),
+  }),
+}) satisfies zod.ZodType<SpaceRestoredV1>;
 
 /** Name of the event `space.updated.v1`. A space changed. */
 export const SPACE_UPDATED_V1 = 'space.updated.v1';
@@ -466,6 +1221,189 @@ export const spaceUpdatedV1Schema = zod.object({
   changed: zod.array(zod.string()).min(1),
 }) satisfies zod.ZodType<SpaceUpdatedV1>;
 
+/** Name of the event `task.access-request-decided.v1`. A request for access to a task was approved or refused. */
+export const TASK_ACCESS_REQUEST_DECIDED_V1 = 'task.access-request-decided.v1';
+
+/** Payload of the event `task.access-request-decided.v1`. */
+export interface TaskAccessRequestDecidedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the answer was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the request after the answer, 2. */
+  version: number;
+  accessRequestId: string;
+  spaceId: string;
+  listId: string;
+  /** Key of the task asked for. */
+  key: string;
+  requesterUserId: string;
+  /** `approved` or `refused` today. */
+  decision: string;
+  /** The role an approval gave on the list; `null` for a refusal. */
+  role: string | null;
+}
+
+/** Validator of the payload of the event `task.access-request-decided.v1`. */
+export const taskAccessRequestDecidedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  accessRequestId: zod.uuid(),
+  spaceId: zod.uuid(),
+  listId: zod.uuid(),
+  key: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  requesterUserId: zod.uuid(),
+  decision: zod.string(),
+  role: zod.union([zod.string(), zod.null()]),
+}) satisfies zod.ZodType<TaskAccessRequestDecidedV1>;
+
+/** Name of the event `task.access-requested.v1`. Someone asked for access to a task. */
+export const TASK_ACCESS_REQUESTED_V1 = 'task.access-requested.v1';
+
+/** Payload of the event `task.access-requested.v1`. */
+export interface TaskAccessRequestedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the request was stored. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the request, 1. */
+  version: number;
+  accessRequestId: string;
+  spaceId: string;
+  listId: string;
+  /** Key of the task asked for. */
+  key: string;
+  /** Name of the space of the task. */
+  spaceName: string;
+  /** Name of the list of the task. */
+  listName: string;
+  /** Name of the task ("Budget 2027"). */
+  name: string;
+  /** Account of the requester, also `actor.id`. */
+  requesterUserId: string;
+  /** Account of the owner of the space of the task. */
+  spaceOwnerUserId: string;
+  /** The message of the requester; `null` when there is none. */
+  message: string | null;
+}
+
+/** Validator of the payload of the event `task.access-requested.v1`. */
+export const taskAccessRequestedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  accessRequestId: zod.uuid(),
+  spaceId: zod.uuid(),
+  listId: zod.uuid(),
+  key: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceName: zod.string().min(1),
+  listName: zod.string().min(1),
+  name: zod.string().min(1),
+  requesterUserId: zod.uuid(),
+  spaceOwnerUserId: zod.uuid(),
+  message: zod.string().nullable(),
+}) satisfies zod.ZodType<TaskAccessRequestedV1>;
+
+/** Name of the event `task.archived.v1`. A task was archived, alone or with the subtree it belongs to. */
+export const TASK_ARCHIVED_V1 = 'task.archived.v1';
+
+/** Payload of the event `task.archived.v1`. */
+export interface TaskArchivedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the archive was committed, the `archivedAt` of the task. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the task after the archive. */
+  version: number;
+  key: string;
+  /** Key of the task the archive was made from, `key` for the root itself. */
+  rootKey: string;
+  spaceId: string;
+  listId: string;
+  parentKey: string | null;
+  name: string;
+  /**
+   * Key of a status, `STATUS_KEYS` of `@cadenway/contracts`; the ten keys never change. Its
+   * category is `STATUS_CATEGORY_BY_KEY`.
+   */
+  status: 'triage' | 'backlog' | 'todo' | 'progress' | 'review' | 'testing' | 'waiting' | 'blocked' | 'done' | 'cancelled';
+  /**
+   * Why the task was cancelled, `CANCEL_REASONS` of `@cadenway/contracts`; `null` unless its
+   * status is `cancelled`. Another value would take new event versions.
+   */
+  cancelReason: 'duplicate' | 'wontdo' | 'scope' | 'obsolete' | null;
+  /** Priority, `PRIORITY_KEYS` of `@cadenway/contracts`; another value would take new event versions. */
+  priority: 'urgente' | 'haute' | 'moyenne' | 'basse';
+  assigneeIds: string[];
+  dueDate: string | null;
+  startDate: string | null;
+  estimateMinutes: number | null;
+  labels: string[];
+  completedAt: string | null;
+}
+
+/** Validator of the payload of the event `task.archived.v1`. */
+export const taskArchivedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  key: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  rootKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceId: zod.uuid(),
+  listId: zod.uuid(),
+  parentKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')).nullable(),
+  name: zod.string().min(1),
+  status: zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']),
+  cancelReason: zod.literal(['duplicate', 'wontdo', 'scope', 'obsolete', null]),
+  priority: zod.enum(['urgente', 'haute', 'moyenne', 'basse']),
+  assigneeIds: zod.array(zod.uuid()),
+  dueDate: zod.iso.date().nullable(),
+  startDate: zod.iso.date().nullable(),
+  estimateMinutes: zod.int().min(1).nullable(),
+  labels: zod.array(zod.string().min(1)),
+  completedAt: zod.iso.datetime().nullable(),
+}) satisfies zod.ZodType<TaskArchivedV1>;
+
 /** Name of the event `task.assigned.v1`. A person was assigned a task. */
 export const TASK_ASSIGNED_V1 = 'task.assigned.v1';
 
@@ -614,6 +1552,129 @@ export const taskCreatedV1Schema = zod.object({
   completedAt: zod.iso.datetime().nullable(),
 }) satisfies zod.ZodType<TaskCreatedV1>;
 
+/** Name of the event `task.purged.v1`. A task of the trash was erased for good. */
+export const TASK_PURGED_V1 = 'task.purged.v1';
+
+/** Payload of the event `task.purged.v1`. */
+export interface TaskPurgedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the erasure was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the task with its erasure, one more than its `task.trashed.v1`. */
+  version: number;
+  key: string;
+  /** Id of the trash entry. */
+  entryId: string;
+  /** Key of the root of the entry, `key` for the root itself. */
+  rootKey: string;
+  spaceId: string;
+  listId: string;
+  parentKey: string | null;
+}
+
+/** Validator of the payload of the event `task.purged.v1`. */
+export const taskPurgedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(3),
+  key: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  entryId: zod.uuid(),
+  rootKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceId: zod.uuid(),
+  listId: zod.uuid(),
+  parentKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')).nullable(),
+}) satisfies zod.ZodType<TaskPurgedV1>;
+
+/** Name of the event `task.restored.v1`. A task came back from the trash with its entry. */
+export const TASK_RESTORED_V1 = 'task.restored.v1';
+
+/** Payload of the event `task.restored.v1`. */
+export interface TaskRestoredV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the restoration was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the task after the restoration. */
+  version: number;
+  key: string;
+  /** Id of the trash entry, which no longer exists. */
+  entryId: string;
+  /** Key of the root of the entry, `key` for the root itself. */
+  rootKey: string;
+  spaceId: string;
+  listId: string;
+  parentKey: string | null;
+  name: string;
+  /**
+   * Key of a status, `STATUS_KEYS` of `@cadenway/contracts`; the ten keys never change. Its
+   * category is `STATUS_CATEGORY_BY_KEY`.
+   */
+  status: 'triage' | 'backlog' | 'todo' | 'progress' | 'review' | 'testing' | 'waiting' | 'blocked' | 'done' | 'cancelled';
+  /**
+   * Why the task was cancelled, `CANCEL_REASONS` of `@cadenway/contracts`; `null` unless its
+   * status is `cancelled`. Another value would take new event versions.
+   */
+  cancelReason: 'duplicate' | 'wontdo' | 'scope' | 'obsolete' | null;
+  /** Priority, `PRIORITY_KEYS` of `@cadenway/contracts`; another value would take new event versions. */
+  priority: 'urgente' | 'haute' | 'moyenne' | 'basse';
+  assigneeIds: string[];
+  dueDate: string | null;
+  startDate: string | null;
+  estimateMinutes: number | null;
+  labels: string[];
+  completedAt: string | null;
+}
+
+/** Validator of the payload of the event `task.restored.v1`. */
+export const taskRestoredV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(3),
+  key: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  entryId: zod.uuid(),
+  rootKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceId: zod.uuid(),
+  listId: zod.uuid(),
+  parentKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')).nullable(),
+  name: zod.string().min(1),
+  status: zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']),
+  cancelReason: zod.literal(['duplicate', 'wontdo', 'scope', 'obsolete', null]),
+  priority: zod.enum(['urgente', 'haute', 'moyenne', 'basse']),
+  assigneeIds: zod.array(zod.uuid()),
+  dueDate: zod.iso.date().nullable(),
+  startDate: zod.iso.date().nullable(),
+  estimateMinutes: zod.int().min(1).nullable(),
+  labels: zod.array(zod.string().min(1)),
+  completedAt: zod.iso.datetime().nullable(),
+}) satisfies zod.ZodType<TaskRestoredV1>;
+
 /** Name of the event `task.status-changed.v1`. The status of a task changed. */
 export const TASK_STATUS_CHANGED_V1 = 'task.status-changed.v1';
 
@@ -693,6 +1754,158 @@ export const taskStatusChangedV1Schema = zod.object({
   completedAt: zod.iso.datetime().nullable(),
 }) satisfies zod.ZodType<TaskStatusChangedV1>;
 
+/** Name of the event `task.trashed.v1`. A task went to the trash, with the entry it belongs to. */
+export const TASK_TRASHED_V1 = 'task.trashed.v1';
+
+/** Payload of the event `task.trashed.v1`. */
+export interface TaskTrashedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the move was committed, the `trashedAt` of the entry. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the task after the move. */
+  version: number;
+  key: string;
+  /** Id of the trash entry. */
+  entryId: string;
+  /** Key of the root of the entry, `key` for the root itself. */
+  rootKey: string;
+  /** When the entry is erased for good, 30 days after the deletion today. */
+  purgeAt: string;
+  spaceId: string;
+  listId: string;
+  parentKey: string | null;
+  name: string;
+  /**
+   * Key of a status, `STATUS_KEYS` of `@cadenway/contracts`; the ten keys never change. Its
+   * category is `STATUS_CATEGORY_BY_KEY`.
+   */
+  status: 'triage' | 'backlog' | 'todo' | 'progress' | 'review' | 'testing' | 'waiting' | 'blocked' | 'done' | 'cancelled';
+  /**
+   * Why the task was cancelled, `CANCEL_REASONS` of `@cadenway/contracts`; `null` unless its
+   * status is `cancelled`. Another value would take new event versions.
+   */
+  cancelReason: 'duplicate' | 'wontdo' | 'scope' | 'obsolete' | null;
+  /** Priority, `PRIORITY_KEYS` of `@cadenway/contracts`; another value would take new event versions. */
+  priority: 'urgente' | 'haute' | 'moyenne' | 'basse';
+  assigneeIds: string[];
+  dueDate: string | null;
+  startDate: string | null;
+  estimateMinutes: number | null;
+  labels: string[];
+  completedAt: string | null;
+}
+
+/** Validator of the payload of the event `task.trashed.v1`. */
+export const taskTrashedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  key: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  entryId: zod.uuid(),
+  rootKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  purgeAt: zod.iso.datetime(),
+  spaceId: zod.uuid(),
+  listId: zod.uuid(),
+  parentKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')).nullable(),
+  name: zod.string().min(1),
+  status: zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']),
+  cancelReason: zod.literal(['duplicate', 'wontdo', 'scope', 'obsolete', null]),
+  priority: zod.enum(['urgente', 'haute', 'moyenne', 'basse']),
+  assigneeIds: zod.array(zod.uuid()),
+  dueDate: zod.iso.date().nullable(),
+  startDate: zod.iso.date().nullable(),
+  estimateMinutes: zod.int().min(1).nullable(),
+  labels: zod.array(zod.string().min(1)),
+  completedAt: zod.iso.datetime().nullable(),
+}) satisfies zod.ZodType<TaskTrashedV1>;
+
+/** Name of the event `task.unarchived.v1`. An archived task was restored with its archive. */
+export const TASK_UNARCHIVED_V1 = 'task.unarchived.v1';
+
+/** Payload of the event `task.unarchived.v1`. */
+export interface TaskUnarchivedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the restoration was committed. */
+  occurredAt: string;
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the task after the restoration. */
+  version: number;
+  key: string;
+  /** Key of the root of the archive, `key` for the root itself. */
+  rootKey: string;
+  spaceId: string;
+  listId: string;
+  parentKey: string | null;
+  name: string;
+  /**
+   * Key of a status, `STATUS_KEYS` of `@cadenway/contracts`; the ten keys never change. Its
+   * category is `STATUS_CATEGORY_BY_KEY`.
+   */
+  status: 'triage' | 'backlog' | 'todo' | 'progress' | 'review' | 'testing' | 'waiting' | 'blocked' | 'done' | 'cancelled';
+  /**
+   * Why the task was cancelled, `CANCEL_REASONS` of `@cadenway/contracts`; `null` unless its
+   * status is `cancelled`. Another value would take new event versions.
+   */
+  cancelReason: 'duplicate' | 'wontdo' | 'scope' | 'obsolete' | null;
+  /** Priority, `PRIORITY_KEYS` of `@cadenway/contracts`; another value would take new event versions. */
+  priority: 'urgente' | 'haute' | 'moyenne' | 'basse';
+  assigneeIds: string[];
+  dueDate: string | null;
+  startDate: string | null;
+  estimateMinutes: number | null;
+  labels: string[];
+  completedAt: string | null;
+}
+
+/** Validator of the payload of the event `task.unarchived.v1`. */
+export const taskUnarchivedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(3),
+  key: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  rootKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceId: zod.uuid(),
+  listId: zod.uuid(),
+  parentKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')).nullable(),
+  name: zod.string().min(1),
+  status: zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']),
+  cancelReason: zod.literal(['duplicate', 'wontdo', 'scope', 'obsolete', null]),
+  priority: zod.enum(['urgente', 'haute', 'moyenne', 'basse']),
+  assigneeIds: zod.array(zod.uuid()),
+  dueDate: zod.iso.date().nullable(),
+  startDate: zod.iso.date().nullable(),
+  estimateMinutes: zod.int().min(1).nullable(),
+  labels: zod.array(zod.string().min(1)),
+  completedAt: zod.iso.datetime().nullable(),
+}) satisfies zod.ZodType<TaskUnarchivedV1>;
+
 /** Name of the event `task.updated.v1`. A task changed. */
 export const TASK_UPDATED_V1 = 'task.updated.v1';
 
@@ -767,7 +1980,7 @@ export const taskUpdatedV1Schema = zod.object({
 }) satisfies zod.ZodType<TaskUpdatedV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [LIST_CREATED_V1, LIST_UPDATED_V1, SPACE_CREATED_V1, SPACE_UPDATED_V1, TASK_ASSIGNED_V1, TASK_CREATED_V1, TASK_STATUS_CHANGED_V1, TASK_UPDATED_V1] as const;
+export const EVENT_NAMES = [LIST_ACCESS_CHANGED_V1, LIST_ACCESS_REQUEST_DECIDED_V1, LIST_ACCESS_REQUESTED_V1, LIST_ARCHIVED_V1, LIST_CREATED_V1, LIST_DELETED_V1, LIST_RESTORED_V1, LIST_UNARCHIVED_V1, LIST_UPDATED_V1, SPACE_ACCESS_CHANGED_V1, SPACE_ACCESS_REQUEST_DECIDED_V1, SPACE_ACCESS_REQUESTED_V1, SPACE_CREATED_V1, SPACE_DELETED_V1, SPACE_RESTORED_V1, SPACE_UPDATED_V1, TASK_ACCESS_REQUEST_DECIDED_V1, TASK_ACCESS_REQUESTED_V1, TASK_ARCHIVED_V1, TASK_ASSIGNED_V1, TASK_CREATED_V1, TASK_PURGED_V1, TASK_RESTORED_V1, TASK_STATUS_CHANGED_V1, TASK_TRASHED_V1, TASK_UNARCHIVED_V1, TASK_UPDATED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -784,24 +1997,62 @@ export type RestrictedEventName = (typeof RESTRICTED_EVENT_NAMES)[number];
 
 /** Payload type of each event of this document, by event name. */
 export interface EventPayloads {
+  'list.access-changed.v1': ListAccessChangedV1;
+  'list.access-request-decided.v1': ListAccessRequestDecidedV1;
+  'list.access-requested.v1': ListAccessRequestedV1;
+  'list.archived.v1': ListArchivedV1;
   'list.created.v1': ListCreatedV1;
+  'list.deleted.v1': ListDeletedV1;
+  'list.restored.v1': ListRestoredV1;
+  'list.unarchived.v1': ListUnarchivedV1;
   'list.updated.v1': ListUpdatedV1;
+  'space.access-changed.v1': SpaceAccessChangedV1;
+  'space.access-request-decided.v1': SpaceAccessRequestDecidedV1;
+  'space.access-requested.v1': SpaceAccessRequestedV1;
   'space.created.v1': SpaceCreatedV1;
+  'space.deleted.v1': SpaceDeletedV1;
+  'space.restored.v1': SpaceRestoredV1;
   'space.updated.v1': SpaceUpdatedV1;
+  'task.access-request-decided.v1': TaskAccessRequestDecidedV1;
+  'task.access-requested.v1': TaskAccessRequestedV1;
+  'task.archived.v1': TaskArchivedV1;
   'task.assigned.v1': TaskAssignedV1;
   'task.created.v1': TaskCreatedV1;
+  'task.purged.v1': TaskPurgedV1;
+  'task.restored.v1': TaskRestoredV1;
   'task.status-changed.v1': TaskStatusChangedV1;
+  'task.trashed.v1': TaskTrashedV1;
+  'task.unarchived.v1': TaskUnarchivedV1;
   'task.updated.v1': TaskUpdatedV1;
 }
 
 /** Payload validator of each event of this document, by event name. */
 export const eventSchemas = {
+  'list.access-changed.v1': listAccessChangedV1Schema,
+  'list.access-request-decided.v1': listAccessRequestDecidedV1Schema,
+  'list.access-requested.v1': listAccessRequestedV1Schema,
+  'list.archived.v1': listArchivedV1Schema,
   'list.created.v1': listCreatedV1Schema,
+  'list.deleted.v1': listDeletedV1Schema,
+  'list.restored.v1': listRestoredV1Schema,
+  'list.unarchived.v1': listUnarchivedV1Schema,
   'list.updated.v1': listUpdatedV1Schema,
+  'space.access-changed.v1': spaceAccessChangedV1Schema,
+  'space.access-request-decided.v1': spaceAccessRequestDecidedV1Schema,
+  'space.access-requested.v1': spaceAccessRequestedV1Schema,
   'space.created.v1': spaceCreatedV1Schema,
+  'space.deleted.v1': spaceDeletedV1Schema,
+  'space.restored.v1': spaceRestoredV1Schema,
   'space.updated.v1': spaceUpdatedV1Schema,
+  'task.access-request-decided.v1': taskAccessRequestDecidedV1Schema,
+  'task.access-requested.v1': taskAccessRequestedV1Schema,
+  'task.archived.v1': taskArchivedV1Schema,
   'task.assigned.v1': taskAssignedV1Schema,
   'task.created.v1': taskCreatedV1Schema,
+  'task.purged.v1': taskPurgedV1Schema,
+  'task.restored.v1': taskRestoredV1Schema,
   'task.status-changed.v1': taskStatusChangedV1Schema,
+  'task.trashed.v1': taskTrashedV1Schema,
+  'task.unarchived.v1': taskUnarchivedV1Schema,
   'task.updated.v1': taskUpdatedV1Schema,
 } as const satisfies { readonly [Name in EventName]: zod.ZodType<EventPayloads[Name]> };

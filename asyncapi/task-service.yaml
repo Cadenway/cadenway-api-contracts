@@ -1,4 +1,5 @@
-# Events of task-service: spaces, lists and sprints, and tasks (creation, change, status, assignment).
+# Events of task-service: spaces, lists and sprints, and tasks (creation, change, status, assignment),
+# their access (grants, access requests), their archives, the trash and the deletions.
 asyncapi: 3.0.0
 info:
   title: task-service events
@@ -28,11 +29,40 @@ info:
     copy reads `task.created.v1` and `task.updated.v1` and ignores a `version` of the aggregate it
     has already applied; one that reacts to a fact deduplicates it on `id` only, since two facts of
     one change share its `version`. Moving a task moves its subtasks: each emits its own
-    `task.updated.v1`.
+    `task.updated.v1`. Turning the switch "Accès de l’organisation" of a list emits
+    `list.access-changed.v1` with the version of the list, beside `list.updated.v1` and with the
+    same `version` when the same patch changes its name, appearance or sprint: like a fact, it is
+    not another version. A consumer that keeps both the content of a list and who reaches it keeps
+    one watermark of `version` for each, the access applied from `list.access-changed.v1` alone,
+    and so for a space; the events of one aggregate on different subjects arrive in no
+    guaranteed order.
+
+    **Access.** `space.access-changed.v1` and `list.access-changed.v1` carry every grant of the
+    space or the list after the change, 200 at most, and the version of the space or the list, so
+    that a consumer keeps a copy of who reaches what (search, realtime): a person sees a list when
+    the rule of the organization (a space `organization` and a list whose switch is on), the
+    owner of the space, a grant of the space or a grant of the list gives them a role on it, as
+    "Access" of `openapi/public/spaces.yaml` says. A request for access emits
+    `space.access-requested.v1`, `list.access-requested.v1` or `task.access-requested.v1`, its
+    answer the `…access-request-decided.v1` of the same target, with the version of the request,
+    `1` then `2`.
+
+    **Archives, trash and deletions.** Each task of a subtree emits its own event, the root
+    first, with its own version: `task.archived.v1` and `task.unarchived.v1`; `task.trashed.v1`,
+    `task.restored.v1` and `task.purged.v1`, which carry the trash entry and its root. A consumer
+    that keeps a copy of the tasks reads them with `task.created.v1` and `task.updated.v1`: an
+    archived, trashed or purged task leaves what it shows, an unarchived or restored one comes
+    back. `list.archived.v1` and `list.unarchived.v1` hide and show a list, whose tasks stay as
+    they are. `list.deleted.v1` and `space.deleted.v1` remove a list, or a space with all its
+    lists, and their tasks at once; the `task.trashed.v1` of those tasks follow within minutes,
+    as a job moves them. A restoration from the trash emits `space.restored.v1` and
+    `list.restored.v1` first when the space or the list comes back with it. None of these is
+    recorded in the activity log of the tasks.
 
     **Visibility.** A private space, its lists and its tasks emit events like any other: a consumer
     that shows them to people filters by the visibility it reads in `space.created.v1` and
-    `space.updated.v1`, and by the owner of the space.
+    `space.updated.v1`, by the owner of the space, and by the switch and the grants of the access
+    events.
 
     **No restricted event.** None carries a secret; they travel on `evt.space.>`, `evt.list.>` and
     `evt.task.>`, the subjects the NATS user `task` publishes.
@@ -51,13 +81,15 @@ info:
       description: Tasks.
   x-consumers:
     - repository: cadenway-search-service
-      uses: Planned, space.created.v1, space.updated.v1, list.created.v1, list.updated.v1, task.created.v1 and task.updated.v1, for the search index.
+      uses: Planned, the creations, changes, access changes, archives, deletions, restorations and purges of spaces, lists and tasks, for the search index and who may find what.
     - repository: cadenway-notification-service
-      uses: Planned, task.assigned.v1 and task.status-changed.v1, for the inbox and the emails.
+      uses: Planned, task.assigned.v1 and task.status-changed.v1, for the inbox and the emails; the access requests and their answers, for the notice to the owner of the space and the answer to the requester.
     - repository: cadenway-realtime-gateway
-      uses: Planned, every event, to push the changes to the open lists and tasks.
+      uses: Planned, every event but the access requests and their answers, to push the changes to the open lists and tasks and to close the rooms a person no longer sees.
     - repository: cadenway-automation-service
       uses: Planned, task.created.v1, task.status-changed.v1 and task.assigned.v1, as the triggers of the rules.
+    - repository: cadenway-storage-service
+      uses: Planned, task.purged.v1, to erase the attachments of the tasks erased for good.
 servers:
   nats:
     host: nats:4222
@@ -130,6 +162,159 @@ channels:
     messages:
       taskAssignedV1:
         $ref: '#/components/messages/taskAssignedV1'
+  spaceAccessChangedV1:
+    address: evt.space.access-changed.v1
+    description: |
+      The grants of a space changed. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      spaceAccessChangedV1:
+        $ref: '#/components/messages/spaceAccessChangedV1'
+  listAccessChangedV1:
+    address: evt.list.access-changed.v1
+    description: |
+      The grants or the switch "Accès de l’organisation" of a list changed. Emitted by
+      task-service. Consumers: none yet; planned, cadenway-search-service and
+      cadenway-realtime-gateway.
+    messages:
+      listAccessChangedV1:
+        $ref: '#/components/messages/listAccessChangedV1'
+  spaceAccessRequestedV1:
+    address: evt.space.access-requested.v1
+    description: |
+      Someone asked for access to a space. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-notification-service.
+    messages:
+      spaceAccessRequestedV1:
+        $ref: '#/components/messages/spaceAccessRequestedV1'
+  listAccessRequestedV1:
+    address: evt.list.access-requested.v1
+    description: |
+      Someone asked for access to a list. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-notification-service.
+    messages:
+      listAccessRequestedV1:
+        $ref: '#/components/messages/listAccessRequestedV1'
+  taskAccessRequestedV1:
+    address: evt.task.access-requested.v1
+    description: |
+      Someone asked for access to a task. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-notification-service.
+    messages:
+      taskAccessRequestedV1:
+        $ref: '#/components/messages/taskAccessRequestedV1'
+  spaceAccessRequestDecidedV1:
+    address: evt.space.access-request-decided.v1
+    description: |
+      A request for access to a space was approved or refused. Emitted by task-service.
+      Consumers: none yet; planned, cadenway-notification-service.
+    messages:
+      spaceAccessRequestDecidedV1:
+        $ref: '#/components/messages/spaceAccessRequestDecidedV1'
+  listAccessRequestDecidedV1:
+    address: evt.list.access-request-decided.v1
+    description: |
+      A request for access to a list was approved or refused. Emitted by task-service.
+      Consumers: none yet; planned, cadenway-notification-service.
+    messages:
+      listAccessRequestDecidedV1:
+        $ref: '#/components/messages/listAccessRequestDecidedV1'
+  taskAccessRequestDecidedV1:
+    address: evt.task.access-request-decided.v1
+    description: |
+      A request for access to a task was approved or refused. Emitted by task-service.
+      Consumers: none yet; planned, cadenway-notification-service.
+    messages:
+      taskAccessRequestDecidedV1:
+        $ref: '#/components/messages/taskAccessRequestDecidedV1'
+  spaceDeletedV1:
+    address: evt.space.deleted.v1
+    description: |
+      A space was deleted, with its lists and their tasks. Emitted by task-service. Consumers:
+      none yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      spaceDeletedV1:
+        $ref: '#/components/messages/spaceDeletedV1'
+  spaceRestoredV1:
+    address: evt.space.restored.v1
+    description: |
+      A deleted space came back with a task restored from the trash. Emitted by task-service.
+      Consumers: none yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      spaceRestoredV1:
+        $ref: '#/components/messages/spaceRestoredV1'
+  listArchivedV1:
+    address: evt.list.archived.v1
+    description: |
+      A list or a sprint was archived. Emitted by task-service. Consumers: none yet; planned,
+      cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      listArchivedV1:
+        $ref: '#/components/messages/listArchivedV1'
+  listUnarchivedV1:
+    address: evt.list.unarchived.v1
+    description: |
+      An archived list or sprint was restored. Emitted by task-service. Consumers: none yet;
+      planned, cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      listUnarchivedV1:
+        $ref: '#/components/messages/listUnarchivedV1'
+  listDeletedV1:
+    address: evt.list.deleted.v1
+    description: |
+      A list or a sprint was deleted, with its tasks. Emitted by task-service. Consumers: none
+      yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      listDeletedV1:
+        $ref: '#/components/messages/listDeletedV1'
+  listRestoredV1:
+    address: evt.list.restored.v1
+    description: |
+      A deleted list came back with a task restored from the trash. Emitted by task-service.
+      Consumers: none yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      listRestoredV1:
+        $ref: '#/components/messages/listRestoredV1'
+  taskArchivedV1:
+    address: evt.task.archived.v1
+    description: |
+      A task was archived, alone or with the subtree it belongs to. Emitted by task-service.
+      Consumers: none yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      taskArchivedV1:
+        $ref: '#/components/messages/taskArchivedV1'
+  taskUnarchivedV1:
+    address: evt.task.unarchived.v1
+    description: |
+      An archived task was restored with its archive. Emitted by task-service. Consumers: none
+      yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      taskUnarchivedV1:
+        $ref: '#/components/messages/taskUnarchivedV1'
+  taskTrashedV1:
+    address: evt.task.trashed.v1
+    description: |
+      A task went to the trash, with the entry it belongs to. Emitted by task-service. Consumers:
+      none yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      taskTrashedV1:
+        $ref: '#/components/messages/taskTrashedV1'
+  taskRestoredV1:
+    address: evt.task.restored.v1
+    description: |
+      A task came back from the trash with its entry. Emitted by task-service. Consumers: none
+      yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      taskRestoredV1:
+        $ref: '#/components/messages/taskRestoredV1'
+  taskPurgedV1:
+    address: evt.task.purged.v1
+    description: |
+      A task of the trash was erased for good. Emitted by task-service. Consumers: none yet;
+      planned, cadenway-search-service, cadenway-realtime-gateway and cadenway-storage-service.
+    messages:
+      taskPurgedV1:
+        $ref: '#/components/messages/taskPurgedV1'
 operations:
   publishSpaceCreatedV1:
     action: send
@@ -195,6 +380,158 @@ operations:
       $ref: '#/channels/taskAssignedV1'
     messages:
       - $ref: '#/channels/taskAssignedV1/messages/taskAssignedV1'
+  publishSpaceAccessChangedV1:
+    action: send
+    summary: task-service publishes a change of the grants of a space.
+    description: Sent from the outbox of task-service once the change is committed.
+    channel:
+      $ref: '#/channels/spaceAccessChangedV1'
+    messages:
+      - $ref: '#/channels/spaceAccessChangedV1/messages/spaceAccessChangedV1'
+  publishListAccessChangedV1:
+    action: send
+    summary: task-service publishes a change of the grants or the switch of a list.
+    description: Sent from the outbox of task-service once the change is committed.
+    channel:
+      $ref: '#/channels/listAccessChangedV1'
+    messages:
+      - $ref: '#/channels/listAccessChangedV1/messages/listAccessChangedV1'
+  publishSpaceAccessRequestedV1:
+    action: send
+    summary: task-service publishes a request for access to a space.
+    description: Sent from the outbox of task-service once the request is committed.
+    channel:
+      $ref: '#/channels/spaceAccessRequestedV1'
+    messages:
+      - $ref: '#/channels/spaceAccessRequestedV1/messages/spaceAccessRequestedV1'
+  publishListAccessRequestedV1:
+    action: send
+    summary: task-service publishes a request for access to a list.
+    description: Sent from the outbox of task-service once the request is committed.
+    channel:
+      $ref: '#/channels/listAccessRequestedV1'
+    messages:
+      - $ref: '#/channels/listAccessRequestedV1/messages/listAccessRequestedV1'
+  publishTaskAccessRequestedV1:
+    action: send
+    summary: task-service publishes a request for access to a task.
+    description: Sent from the outbox of task-service once the request is committed.
+    channel:
+      $ref: '#/channels/taskAccessRequestedV1'
+    messages:
+      - $ref: '#/channels/taskAccessRequestedV1/messages/taskAccessRequestedV1'
+  publishSpaceAccessRequestDecidedV1:
+    action: send
+    summary: task-service publishes the answer to a request for access to a space.
+    description: Sent from the outbox of task-service once the answer is committed.
+    channel:
+      $ref: '#/channels/spaceAccessRequestDecidedV1'
+    messages:
+      - $ref: '#/channels/spaceAccessRequestDecidedV1/messages/spaceAccessRequestDecidedV1'
+  publishListAccessRequestDecidedV1:
+    action: send
+    summary: task-service publishes the answer to a request for access to a list.
+    description: Sent from the outbox of task-service once the answer is committed.
+    channel:
+      $ref: '#/channels/listAccessRequestDecidedV1'
+    messages:
+      - $ref: '#/channels/listAccessRequestDecidedV1/messages/listAccessRequestDecidedV1'
+  publishTaskAccessRequestDecidedV1:
+    action: send
+    summary: task-service publishes the answer to a request for access to a task.
+    description: Sent from the outbox of task-service once the answer is committed.
+    channel:
+      $ref: '#/channels/taskAccessRequestDecidedV1'
+    messages:
+      - $ref: '#/channels/taskAccessRequestDecidedV1/messages/taskAccessRequestDecidedV1'
+  publishSpaceDeletedV1:
+    action: send
+    summary: task-service publishes the deletion of a space.
+    description: Sent from the outbox of task-service once the deletion is committed.
+    channel:
+      $ref: '#/channels/spaceDeletedV1'
+    messages:
+      - $ref: '#/channels/spaceDeletedV1/messages/spaceDeletedV1'
+  publishSpaceRestoredV1:
+    action: send
+    summary: task-service publishes the restoration of a deleted space.
+    description: Sent from the outbox of task-service once the restoration is committed.
+    channel:
+      $ref: '#/channels/spaceRestoredV1'
+    messages:
+      - $ref: '#/channels/spaceRestoredV1/messages/spaceRestoredV1'
+  publishListArchivedV1:
+    action: send
+    summary: task-service publishes the archive of a list.
+    description: Sent from the outbox of task-service once the archive is committed.
+    channel:
+      $ref: '#/channels/listArchivedV1'
+    messages:
+      - $ref: '#/channels/listArchivedV1/messages/listArchivedV1'
+  publishListUnarchivedV1:
+    action: send
+    summary: task-service publishes the restoration of an archived list.
+    description: Sent from the outbox of task-service once the restoration is committed.
+    channel:
+      $ref: '#/channels/listUnarchivedV1'
+    messages:
+      - $ref: '#/channels/listUnarchivedV1/messages/listUnarchivedV1'
+  publishListDeletedV1:
+    action: send
+    summary: task-service publishes the deletion of a list.
+    description: Sent from the outbox of task-service once the deletion is committed.
+    channel:
+      $ref: '#/channels/listDeletedV1'
+    messages:
+      - $ref: '#/channels/listDeletedV1/messages/listDeletedV1'
+  publishListRestoredV1:
+    action: send
+    summary: task-service publishes the restoration of a deleted list.
+    description: Sent from the outbox of task-service once the restoration is committed.
+    channel:
+      $ref: '#/channels/listRestoredV1'
+    messages:
+      - $ref: '#/channels/listRestoredV1/messages/listRestoredV1'
+  publishTaskArchivedV1:
+    action: send
+    summary: task-service publishes the archive of a task.
+    description: Sent from the outbox of task-service once the archive is committed.
+    channel:
+      $ref: '#/channels/taskArchivedV1'
+    messages:
+      - $ref: '#/channels/taskArchivedV1/messages/taskArchivedV1'
+  publishTaskUnarchivedV1:
+    action: send
+    summary: task-service publishes the restoration of an archived task.
+    description: Sent from the outbox of task-service once the restoration is committed.
+    channel:
+      $ref: '#/channels/taskUnarchivedV1'
+    messages:
+      - $ref: '#/channels/taskUnarchivedV1/messages/taskUnarchivedV1'
+  publishTaskTrashedV1:
+    action: send
+    summary: task-service publishes the move of a task to the trash.
+    description: Sent from the outbox of task-service once the move is committed.
+    channel:
+      $ref: '#/channels/taskTrashedV1'
+    messages:
+      - $ref: '#/channels/taskTrashedV1/messages/taskTrashedV1'
+  publishTaskRestoredV1:
+    action: send
+    summary: task-service publishes the restoration of a task from the trash.
+    description: Sent from the outbox of task-service once the restoration is committed.
+    channel:
+      $ref: '#/channels/taskRestoredV1'
+    messages:
+      - $ref: '#/channels/taskRestoredV1/messages/taskRestoredV1'
+  publishTaskPurgedV1:
+    action: send
+    summary: task-service publishes the erasure of a task of the trash.
+    description: Sent from the outbox of task-service once the erasure is committed.
+    channel:
+      $ref: '#/channels/taskPurgedV1'
+    messages:
+      - $ref: '#/channels/taskPurgedV1/messages/taskPurgedV1'
 components:
   schemas:
     EventHeaders:
@@ -285,6 +622,28 @@ components:
       description: Names of the members that changed; later versions may name others, which a consumer ignores.
       items:
         type: string
+    Role:
+      type: string
+      description: |
+        A role given by a grant: `edit` ("Peut modifier"), `comment` ("Peut commenter") or `view`
+        ("Lecture seule") today, from the most to the least. The set may grow without a new event
+        version: a consumer treats an unknown role as `view`.
+      examples: [edit]
+    Grants:
+      type: array
+      description: |
+        Every grant after the change, in the order they were first given; 200 at most today. The
+        owner of the space holds none.
+      items:
+        type: object
+        required: [userId, role]
+        properties:
+          userId:
+            type: string
+            format: uuid
+            description: Account of the person given access.
+          role:
+            $ref: '#/components/schemas/Role'
   messages:
     spaceCreatedV1:
       name: space.created.v1
@@ -509,7 +868,9 @@ components:
       summary: A list or a sprint was created.
       description: |
         Emitted once per list, in the transaction that creates it, the first list of a new space
-        included. `sprint` is `null` for a list that is not a sprint.
+        included. `sprint` is `null` for a list that is not a sprint. `organizationAccess`, the
+        switch "Accès de l’organisation", is on unless the creation turned it off; an event that
+        lacks it, from before the switch existed, reads as on. A new list has no grant.
 
         Personal data: none beyond the ids.
       headers:
@@ -564,6 +925,9 @@ components:
             $ref: '#/components/schemas/Color'
           sprint:
             $ref: '#/components/schemas/Sprint'
+          organizationAccess:
+            type: boolean
+            description: The switch "Accès de l’organisation" of the new list; absent, it reads as `true`.
       examples:
         - name: sprint14
           summary: Sprint 14 of "Produit"
@@ -1194,3 +1558,1798 @@ components:
             estimateMinutes: null
             labels: [Auth, Back]
             completedAt: null
+    spaceAccessChangedV1:
+      name: space.access-changed.v1
+      title: Space access changed
+      summary: The grants of a space changed.
+      description: |
+        Emitted when a grant of a space is given, changed or removed, by a person who manages the
+        space, by the approval of a request, or when a member leaves the organization (`actor`
+        `{ type: 'system', id: 'task-service' }`). Carries every grant of the space after the
+        change, `changedUserIds` the people whose grant changed, and the version of the space. A
+        grant of the space gives its role on every list of it, whatever their switch.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, spaceId, grants, changedUserIds]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the space after the change.
+          spaceId:
+            type: string
+            format: uuid
+          grants:
+            $ref: '#/components/schemas/Grants'
+          changedUserIds:
+            type: array
+            minItems: 1
+            description: The people whose grant was given, changed or removed.
+            items:
+              type: string
+              format: uuid
+      examples:
+        - name: hugo
+          summary: Camille Martin shares the space "Design" with Hugo Dubois
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d10
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 8
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02
+            grants:
+              - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                role: edit
+            changedUserIds: [019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32]
+    listAccessChangedV1:
+      name: list.access-changed.v1
+      title: List access changed
+      summary: The grants or the switch "Accès de l’organisation" of a list changed.
+      description: |
+        Emitted when a grant of a list is given, changed or removed, by a person who has `edit` on
+        it, by the approval of a request, or when a member leaves the organization (`actor`
+        `{ type: 'system', id: 'task-service' }`), and when its switch "Accès de l’organisation"
+        is turned. Carries every grant of the list and the switch after the change, `changed`
+        (`grants`, `organizationAccess` today), `changedUserIds` the people whose grant changed
+        (empty when only the switch did), and the version of the list.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            listId,
+            spaceId,
+            organizationAccess,
+            grants,
+            changed,
+            changedUserIds,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the list after the change.
+          listId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          organizationAccess:
+            type: boolean
+            description: |
+              The switch "Accès de l’organisation": on, every owner, admin and member of the
+              organization has `edit` on the list when its space is `organization`.
+          grants:
+            $ref: '#/components/schemas/Grants'
+          changed:
+            $ref: '#/components/schemas/Changed'
+          changedUserIds:
+            type: array
+            description: The people whose grant was given, changed or removed; empty when only the switch changed.
+            items:
+              type: string
+              format: uuid
+      examples:
+        - name: nadia
+          summary: Camille Martin lets the guest Nadia Benali comment on Sprint 14
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d11
+            occurredAt: '2026-11-08T10:45:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 6
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            organizationAccess: true
+            grants:
+              - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                role: edit
+              - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                role: edit
+              - userId: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+                role: comment
+              - userId: 019a6f00-1b2c-7d3e-8f4a-5b6c7d8e9f40
+                role: comment
+            changed: [grants]
+            changedUserIds: [019a6f00-1b2c-7d3e-8f4a-5b6c7d8e9f40]
+    spaceAccessRequestedV1:
+      name: space.access-requested.v1
+      title: Space access requested
+      summary: Someone asked for access to a space.
+      description: |
+        Emitted when a request for access to a space is stored ("Demander l’accès"): only for a
+        space of the organization on which the requester has no role, once per requester while it
+        is pending. `actor` is the requester; `spaceOwnerUserId` is whom to tell ("Demande envoyée
+        à Léa Petit"), and the people who manage the space may answer it. `version` is that of the
+        request, `1`. The names of the target let the notice name it
+        without calling back.
+
+        Personal data: the message, written by the requester; the names are content of the
+        organization.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            accessRequestId,
+            spaceId,
+            spaceName,
+            requesterUserId,
+            spaceOwnerUserId,
+            message,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the request was stored.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the request, 1.
+          accessRequestId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          spaceName:
+            type: string
+            minLength: 1
+            description: 'Name of the space ("Direction").'
+          requesterUserId:
+            type: string
+            format: uuid
+            description: Account of the requester, also `actor.id`.
+          spaceOwnerUserId:
+            type: string
+            format: uuid
+            description: Account of the owner of the space.
+          message:
+            type: [string, 'null']
+            description: '"Message pour Léa (facultatif)"; `null` when there is none.'
+      examples:
+        - name: direction
+          summary: Camille Martin asks Léa Petit for the private space "Direction"
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d12
+            occurredAt: '2026-11-08T11:02:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 1
+            accessRequestId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09
+            spaceName: Direction
+            requesterUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            spaceOwnerUserId: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+            message: Je dois chiffrer la part outillage du budget 2027.
+    listAccessRequestedV1:
+      name: list.access-requested.v1
+      title: List access requested
+      summary: Someone asked for access to a list.
+      description: |
+        Emitted when a request for access to a list is stored: only for a list of the organization
+        the requester does not see, once per requester while it is pending. `actor` is the
+        requester; `spaceOwnerUserId` is whom to tell, and the people who have `edit` on the list
+        may answer it. `version` is that of the request, `1`. The names of the target let the notice name it
+        without calling back.
+
+        Personal data: the message, written by the requester; the names are content of the
+        organization.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            accessRequestId,
+            spaceId,
+            spaceName,
+            listName,
+            listId,
+            requesterUserId,
+            spaceOwnerUserId,
+            message,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the request was stored.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the request, 1.
+          accessRequestId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          spaceName:
+            type: string
+            minLength: 1
+            description: 'Name of the space of the list.'
+          listName:
+            type: string
+            minLength: 1
+            description: 'Name of the list ("Budget").'
+          requesterUserId:
+            type: string
+            format: uuid
+            description: Account of the requester, also `actor.id`.
+          spaceOwnerUserId:
+            type: string
+            format: uuid
+            description: Account of the owner of the space of the list.
+          message:
+            type: [string, 'null']
+            description: The message of the requester; `null` when there is none.
+      examples:
+        - name: budget
+          summary: Hugo Dubois asks for the list "Budget" of "Direction"
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d13
+            occurredAt: '2026-11-08T09:10:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+            version: 1
+            accessRequestId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f03
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f30
+            spaceName: Direction
+            listName: Budget
+            requesterUserId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+            spaceOwnerUserId: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+            message: null
+    taskAccessRequestedV1:
+      name: task.access-requested.v1
+      title: Task access requested
+      summary: Someone asked for access to a task.
+      description: |
+        Emitted when a request for access to a task is stored: only for a task of the organization,
+        live or archived, the requester does not see, once per requester while it is pending. An
+        approval gives a grant of its list. `actor` is the requester; `spaceOwnerUserId` is whom to
+        tell, and the people who have `edit` on the list may answer it. `version` is that of the
+        request, `1`. The names of the target let the notice name it
+        without calling back.
+
+        Personal data: the message, written by the requester; the names are content of the
+        organization.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            accessRequestId,
+            spaceId,
+            spaceName,
+            listName,
+            name,
+            listId,
+            key,
+            requesterUserId,
+            spaceOwnerUserId,
+            message,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the request was stored.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the request, 1.
+          accessRequestId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the task asked for.
+          spaceName:
+            type: string
+            minLength: 1
+            description: 'Name of the space of the task.'
+          listName:
+            type: string
+            minLength: 1
+            description: 'Name of the list of the task.'
+          name:
+            type: string
+            minLength: 1
+            description: 'Name of the task ("Budget 2027").'
+          requesterUserId:
+            type: string
+            format: uuid
+            description: Account of the requester, also `actor.id`.
+          spaceOwnerUserId:
+            type: string
+            format: uuid
+            description: Account of the owner of the space of the task.
+          message:
+            type: [string, 'null']
+            description: The message of the requester; `null` when there is none.
+      examples:
+        - name: dir12
+          summary: Hugo Dubois asks for DIR-12 "Budget 2027" from a mention
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d14
+            occurredAt: '2026-11-08T09:12:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+            version: 1
+            accessRequestId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f30
+            key: DIR-12
+            spaceName: Direction
+            listName: Budget
+            name: Budget 2027
+            requesterUserId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+            spaceOwnerUserId: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+            message: null
+    spaceAccessRequestDecidedV1:
+      name: space.access-request-decided.v1
+      title: Space access request decided
+      summary: A request for access to a space was approved or refused.
+      description: |
+        Emitted when a person who manages the space approves or refuses a request for access to
+        it. `decision` is `approved` or `refused` today (a consumer ignores another); `role` is the
+        role an approval gave, `null` for a refusal, and an approval also emits the
+        `space.access-changed.v1` of the grant. `actor` is who answered, `requesterUserId` whom to
+        tell. `version` is that of the request, `2`.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            accessRequestId,
+            spaceId,
+            requesterUserId,
+            decision,
+            role,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the answer was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the request after the answer, 2.
+          accessRequestId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          requesterUserId:
+            type: string
+            format: uuid
+          decision:
+            type: string
+            description: '`approved` or `refused` today.'
+            examples: [approved]
+          role:
+            description: The role an approval gave; `null` for a refusal.
+            oneOf:
+              - $ref: '#/components/schemas/Role'
+              - type: 'null'
+      examples:
+        - name: approved
+          summary: Léa Petit lets Camille Martin read "Direction"
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d15
+            occurredAt: '2026-11-08T14:30:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+            version: 2
+            accessRequestId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09
+            requesterUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            decision: approved
+            role: view
+    listAccessRequestDecidedV1:
+      name: list.access-request-decided.v1
+      title: List access request decided
+      summary: A request for access to a list was approved or refused.
+      description: |
+        Emitted when a person who has `edit` on the list approves or refuses a request for access
+        to it. `decision` is `approved` or `refused` today (a consumer ignores another); `role` is
+        the role an approval gave, `null` for a refusal, and an approval also emits the
+        `list.access-changed.v1` of the grant. `actor` is who answered, `requesterUserId` whom to
+        tell. `version` is that of the request, `2`.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            accessRequestId,
+            spaceId,
+            listId,
+            requesterUserId,
+            decision,
+            role,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the answer was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the request after the answer, 2.
+          accessRequestId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          requesterUserId:
+            type: string
+            format: uuid
+          decision:
+            type: string
+            description: '`approved` or `refused` today.'
+          role:
+            description: The role an approval gave; `null` for a refusal.
+            oneOf:
+              - $ref: '#/components/schemas/Role'
+              - type: 'null'
+      examples:
+        - name: refused
+          summary: Léa Petit refuses the list "Budget" to Hugo Dubois
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d16
+            occurredAt: '2026-11-08T14:31:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+            version: 2
+            accessRequestId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f03
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f30
+            requesterUserId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+            decision: refused
+            role: null
+    taskAccessRequestDecidedV1:
+      name: task.access-request-decided.v1
+      title: Task access request decided
+      summary: A request for access to a task was approved or refused.
+      description: |
+        Emitted when a person who has `edit` on the list of the task approves or refuses a request
+        for access to it. `decision` is `approved` or `refused` today (a consumer ignores
+        another); `role` is the role an approval gave on the list of the task, `null` for a
+        refusal, and an approval also emits the `list.access-changed.v1` of the grant. `actor` is
+        who answered, `requesterUserId` whom to tell. `version` is that of the request, `2`.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            accessRequestId,
+            spaceId,
+            listId,
+            key,
+            requesterUserId,
+            decision,
+            role,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the answer was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the request after the answer, 2.
+          accessRequestId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the task asked for.
+          requesterUserId:
+            type: string
+            format: uuid
+          decision:
+            type: string
+            description: '`approved` or `refused` today.'
+          role:
+            description: The role an approval gave on the list; `null` for a refusal.
+            oneOf:
+              - $ref: '#/components/schemas/Role'
+              - type: 'null'
+      examples:
+        - name: refused
+          summary: Léa Petit refuses DIR-12 to Hugo Dubois
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d17
+            occurredAt: '2026-11-08T14:32:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+            version: 2
+            accessRequestId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f30
+            key: DIR-12
+            requesterUserId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+            decision: refused
+            role: null
+    spaceDeletedV1:
+      name: space.deleted.v1
+      title: Space deleted
+      summary: A space was deleted, with its lists and their tasks.
+      description: |
+        Emitted once per space, when a person who manages it deletes it ("Supprimer l’espace"):
+        the space, all its lists, archived ones included, and their tasks are gone at once, and a
+        consumer drops them by `spaceId`, without a `list.deleted.v1` per list. The
+        `task.trashed.v1` of its tasks follow within minutes, as a job moves them to the trash. Its
+        prefixes stay reserved; a task restored from the trash brings the space back
+        (`space.restored.v1`).
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, spaceId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the deletion was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the space after the deletion.
+          spaceId:
+            type: string
+            format: uuid
+      examples:
+        - name: marketing
+          summary: Camille Martin deletes the space "Marketing"
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d18
+            occurredAt: '2026-11-08T16:00:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 6
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e03
+    spaceRestoredV1:
+      name: space.restored.v1
+      title: Space restored
+      summary: A deleted space came back with a task restored from the trash.
+      description: |
+        Emitted when the restoration of a trash entry brings back the deleted space of its list,
+        at the end of the sidebar, with its settings and its grants, before the `list.restored.v1`
+        of that list; its other lists stay deleted. Carries the whole space, as `space.updated.v1`
+        does.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            spaceId,
+            name,
+            prefix,
+            description,
+            icon,
+            color,
+            visibility,
+            ownerUserId,
+            statuses,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the restoration was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 3
+            description: Version of the space after the restoration.
+          spaceId:
+            type: string
+            format: uuid
+          name:
+            type: string
+            minLength: 1
+          prefix:
+            type: string
+            pattern: '^[A-Z]{2,5}$'
+          description:
+            type: [string, 'null']
+          icon:
+            $ref: '#/components/schemas/Icon'
+          color:
+            $ref: '#/components/schemas/Color'
+          visibility:
+            type: string
+            description: '`organization` or `private` today; a consumer treats an unknown value as `private`.'
+          ownerUserId:
+            type: string
+            format: uuid
+          statuses:
+            $ref: '#/components/schemas/SpaceStatuses'
+      examples:
+        - name: marketing
+          summary: The space "Marketing" comes back with CAD-510
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d19
+            occurredAt: '2026-11-09T09:00:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 7
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e03
+            name: Marketing
+            prefix: MKT
+            description: null
+            icon: megaphone
+            color: jaune
+            visibility: organization
+            ownerUserId: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+            statuses:
+              triage: { name: null, hidden: false }
+              backlog: { name: null, hidden: false }
+              todo: { name: null, hidden: false }
+              progress: { name: null, hidden: false }
+              review: { name: null, hidden: false }
+              testing: { name: null, hidden: false }
+              waiting: { name: null, hidden: false }
+              blocked: { name: null, hidden: false }
+              done: { name: null, hidden: false }
+              cancelled: { name: null, hidden: false }
+    listArchivedV1:
+      name: list.archived.v1
+      title: List archived
+      summary: A list or a sprint was archived.
+      description: |
+        Emitted when a list is archived ("Archiver la liste"): it leaves the sidebar, the lists of
+        its space and the overview, and reads by its id; its tasks stay as they are and emit
+        nothing. Carries the whole list.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            listId,
+            spaceId,
+            name,
+            icon,
+            color,
+            sprint,
+            organizationAccess,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the archive was committed, the `archivedAt` of the list.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the list after the archive.
+          listId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          name:
+            type: string
+            minLength: 1
+          icon:
+            $ref: '#/components/schemas/Icon'
+          color:
+            $ref: '#/components/schemas/Color'
+          sprint:
+            $ref: '#/components/schemas/Sprint'
+          organizationAccess:
+            type: boolean
+            description: The switch "Accès de l’organisation".
+      examples:
+        - name: sprint13
+          summary: Camille Martin archives Sprint 13
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d20
+            occurredAt: '2026-11-03T09:00:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 4
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f10
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            name: Sprint 13
+            icon: lightning
+            color: violet
+            sprint:
+              startDate: '2026-10-20'
+              endDate: '2026-11-02'
+              goal: Livrer les invitations par lien.
+            organizationAccess: true
+    listUnarchivedV1:
+      name: list.unarchived.v1
+      title: List unarchived
+      summary: An archived list or sprint was restored.
+      description: |
+        Emitted when an archived list is restored, at the end of its space ("Restaurer la liste"),
+        or with an archived task restored into it. Carries the whole list.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            listId,
+            spaceId,
+            name,
+            icon,
+            color,
+            sprint,
+            organizationAccess,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the restoration was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 3
+            description: Version of the list after the restoration.
+          listId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          name:
+            type: string
+            minLength: 1
+          icon:
+            $ref: '#/components/schemas/Icon'
+          color:
+            $ref: '#/components/schemas/Color'
+          sprint:
+            $ref: '#/components/schemas/Sprint'
+          organizationAccess:
+            type: boolean
+            description: The switch "Accès de l’organisation".
+      examples:
+        - name: sprint13
+          summary: Sprint 13 is back in "Produit"
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d21
+            occurredAt: '2026-11-08T17:00:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 5
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f10
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            name: Sprint 13
+            icon: lightning
+            color: violet
+            sprint:
+              startDate: '2026-10-20'
+              endDate: '2026-11-02'
+              goal: Livrer les invitations par lien.
+            organizationAccess: true
+    listDeletedV1:
+      name: list.deleted.v1
+      title: List deleted
+      summary: A list or a sprint was deleted, with its tasks.
+      description: |
+        Emitted once per list deleted by itself ("Supprimer la liste"): the list and its tasks are
+        gone at once, and the `task.trashed.v1` of its tasks follow within minutes, as a job moves
+        them to the trash. A deleted space emits `space.deleted.v1` instead, for all its lists. A
+        task restored from the trash brings the list back (`list.restored.v1`).
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, listId, spaceId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the deletion was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the list after the deletion.
+          listId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+      examples:
+        - name: bugs
+          summary: Camille Martin deletes the list "Bugs"
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d22
+            occurredAt: '2026-11-08T16:10:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 3
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f13
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+    listRestoredV1:
+      name: list.restored.v1
+      title: List restored
+      summary: A deleted list came back with a task restored from the trash.
+      description: |
+        Emitted when the restoration of a trash entry brings back its deleted list, at the end of
+        its space, with its settings, its switch and its grants, after the `space.restored.v1` of
+        its space when the space was deleted too; its other tasks stay in the trash. Carries the
+        whole list. A list deleted with its space emitted no `list.deleted.v1` and kept its
+        version, so the restoration may be its second version.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            listId,
+            spaceId,
+            name,
+            icon,
+            color,
+            sprint,
+            organizationAccess,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the restoration was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the list after the restoration.
+          listId:
+            type: string
+            format: uuid
+          spaceId:
+            type: string
+            format: uuid
+          name:
+            type: string
+            minLength: 1
+          icon:
+            $ref: '#/components/schemas/Icon'
+          color:
+            $ref: '#/components/schemas/Color'
+          sprint:
+            $ref: '#/components/schemas/Sprint'
+          organizationAccess:
+            type: boolean
+            description: The switch "Accès de l’organisation".
+      examples:
+        - name: bugs
+          summary: The list "Bugs" comes back with CAD-475
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d23
+            occurredAt: '2026-11-09T09:05:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 4
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f13
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            name: Bugs
+            icon: bug
+            color: rouge
+            sprint: null
+            organizationAccess: true
+    taskArchivedV1:
+      name: task.archived.v1
+      title: Task archived
+      summary: A task was archived, alone or with the subtree it belongs to.
+      description: |
+        Emitted once per task an archive takes, the root first, then its subtasks at every level
+        (`rootKey` names the root): the task leaves every collection and count and reads by its
+        key. Carries the task as it is, as `task.updated.v1` does.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            rootKey,
+            spaceId,
+            listId,
+            parentKey,
+            name,
+            status,
+            cancelReason,
+            priority,
+            assigneeIds,
+            dueDate,
+            startDate,
+            estimateMinutes,
+            labels,
+            completedAt,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the archive was committed, the `archivedAt` of the task.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the task after the archive.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          rootKey:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the task the archive was made from, `key` for the root itself.
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          parentKey:
+            type: [string, 'null']
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          name:
+            type: string
+            minLength: 1
+          status:
+            $ref: '#/components/schemas/StatusKey'
+          cancelReason:
+            $ref: '#/components/schemas/CancelReason'
+          priority:
+            $ref: '#/components/schemas/PriorityKey'
+          assigneeIds:
+            type: array
+            items:
+              type: string
+              format: uuid
+          dueDate:
+            type: [string, 'null']
+            format: date
+          startDate:
+            type: [string, 'null']
+            format: date
+          estimateMinutes:
+            type: [integer, 'null']
+            minimum: 1
+          labels:
+            type: array
+            items:
+              type: string
+              minLength: 1
+          completedAt:
+            type: [string, 'null']
+            format: date-time
+      examples:
+        - name: cad430
+          summary: Hugo Dubois archives CAD-430
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d24
+            occurredAt: '2026-11-05T11:30:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+            version: 7
+            key: CAD-430
+            rootKey: CAD-430
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            parentKey: null
+            name: Ancienne page des tarifs
+            status: done
+            cancelReason: null
+            priority: basse
+            assigneeIds: [019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32]
+            dueDate: null
+            startDate: null
+            estimateMinutes: 120
+            labels: [Front]
+            completedAt: '2026-11-04T17:10:00Z'
+    taskUnarchivedV1:
+      name: task.unarchived.v1
+      title: Task unarchived
+      summary: An archived task was restored with its archive.
+      description: |
+        Emitted once per task a restoration from the archives brings back, the root first, after
+        the `list.unarchived.v1` of its list when the list was archived too. Carries the task
+        after the restoration: `parentKey` is `null` for a root detached from a parent that is no
+        longer live or can no longer take it.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            rootKey,
+            spaceId,
+            listId,
+            parentKey,
+            name,
+            status,
+            cancelReason,
+            priority,
+            assigneeIds,
+            dueDate,
+            startDate,
+            estimateMinutes,
+            labels,
+            completedAt,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the restoration was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 3
+            description: Version of the task after the restoration.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          rootKey:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the root of the archive, `key` for the root itself.
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          parentKey:
+            type: [string, 'null']
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          name:
+            type: string
+            minLength: 1
+          status:
+            $ref: '#/components/schemas/StatusKey'
+          cancelReason:
+            $ref: '#/components/schemas/CancelReason'
+          priority:
+            $ref: '#/components/schemas/PriorityKey'
+          assigneeIds:
+            type: array
+            items:
+              type: string
+              format: uuid
+          dueDate:
+            type: [string, 'null']
+            format: date
+          startDate:
+            type: [string, 'null']
+            format: date
+          estimateMinutes:
+            type: [integer, 'null']
+            minimum: 1
+          labels:
+            type: array
+            items:
+              type: string
+              minLength: 1
+          completedAt:
+            type: [string, 'null']
+            format: date-time
+      examples:
+        - name: cad430
+          summary: CAD-430 is back in Sprint 14
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d25
+            occurredAt: '2026-11-08T17:05:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+            version: 8
+            key: CAD-430
+            rootKey: CAD-430
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            parentKey: null
+            name: Ancienne page des tarifs
+            status: done
+            cancelReason: null
+            priority: basse
+            assigneeIds: [019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32]
+            dueDate: null
+            startDate: null
+            estimateMinutes: 120
+            labels: [Front]
+            completedAt: '2026-11-04T17:10:00Z'
+    taskTrashedV1:
+      name: task.trashed.v1
+      title: Task trashed
+      summary: A task went to the trash, with the entry it belongs to.
+      description: |
+        Emitted once per task of a trash entry, the root first, then its subtasks at every level:
+        when a person deletes it ("Supprimer la tâche"), or when the job of a deleted list or space
+        moves it, with the actor of that deletion. The task leaves every collection and count;
+        `entryId` names its entry, `rootKey` its root, `purgeAt` when it is erased unless
+        restored. Carries the task as it was, as `task.updated.v1` does; an archived task that goes
+        with its list leaves the archives.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            entryId,
+            rootKey,
+            purgeAt,
+            spaceId,
+            listId,
+            parentKey,
+            name,
+            status,
+            cancelReason,
+            priority,
+            assigneeIds,
+            dueDate,
+            startDate,
+            estimateMinutes,
+            labels,
+            completedAt,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the move was committed, the `trashedAt` of the entry.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the task after the move.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          entryId:
+            type: string
+            format: uuid
+            description: Id of the trash entry.
+          rootKey:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the root of the entry, `key` for the root itself.
+          purgeAt:
+            type: string
+            format: date-time
+            description: When the entry is erased for good, 30 days after the deletion today.
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          parentKey:
+            type: [string, 'null']
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          name:
+            type: string
+            minLength: 1
+          status:
+            $ref: '#/components/schemas/StatusKey'
+          cancelReason:
+            $ref: '#/components/schemas/CancelReason'
+          priority:
+            $ref: '#/components/schemas/PriorityKey'
+          assigneeIds:
+            type: array
+            items:
+              type: string
+              format: uuid
+          dueDate:
+            type: [string, 'null']
+            format: date
+          startDate:
+            type: [string, 'null']
+            format: date
+          estimateMinutes:
+            type: [integer, 'null']
+            minimum: 1
+          labels:
+            type: array
+            items:
+              type: string
+              minLength: 1
+          completedAt:
+            type: [string, 'null']
+            format: date-time
+      examples:
+        - name: cad452
+          summary: Camille Martin deletes CAD-452
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d26
+            occurredAt: '2026-11-06T16:20:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 8
+            key: CAD-452
+            entryId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01
+            rootKey: CAD-452
+            purgeAt: '2026-12-06T16:20:00Z'
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            parentKey: null
+            name: Ancien écran de connexion
+            status: cancelled
+            cancelReason: duplicate
+            priority: basse
+            assigneeIds: [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+            dueDate: null
+            startDate: null
+            estimateMinutes: null
+            labels: [Front]
+            completedAt: null
+    taskRestoredV1:
+      name: task.restored.v1
+      title: Task restored
+      summary: A task came back from the trash with its entry.
+      description: |
+        Emitted once per task of a trash entry that comes back, the root first, after the
+        `space.restored.v1` and `list.restored.v1` of what came back with it. Carries the task
+        after the restoration: `parentKey` is `null` for a root detached from a parent that is no
+        longer live or can no longer take it.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            entryId,
+            rootKey,
+            spaceId,
+            listId,
+            parentKey,
+            name,
+            status,
+            cancelReason,
+            priority,
+            assigneeIds,
+            dueDate,
+            startDate,
+            estimateMinutes,
+            labels,
+            completedAt,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the restoration was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 3
+            description: Version of the task after the restoration.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          entryId:
+            type: string
+            format: uuid
+            description: Id of the trash entry, which no longer exists.
+          rootKey:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the root of the entry, `key` for the root itself.
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          parentKey:
+            type: [string, 'null']
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          name:
+            type: string
+            minLength: 1
+          status:
+            $ref: '#/components/schemas/StatusKey'
+          cancelReason:
+            $ref: '#/components/schemas/CancelReason'
+          priority:
+            $ref: '#/components/schemas/PriorityKey'
+          assigneeIds:
+            type: array
+            items:
+              type: string
+              format: uuid
+          dueDate:
+            type: [string, 'null']
+            format: date
+          startDate:
+            type: [string, 'null']
+            format: date
+          estimateMinutes:
+            type: [integer, 'null']
+            minimum: 1
+          labels:
+            type: array
+            items:
+              type: string
+              minLength: 1
+          completedAt:
+            type: [string, 'null']
+            format: date-time
+      examples:
+        - name: cad452
+          summary: CAD-452 is back in Sprint 14
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d27
+            occurredAt: '2026-11-08T15:10:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 9
+            key: CAD-452
+            entryId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01
+            rootKey: CAD-452
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            parentKey: null
+            name: Ancien écran de connexion
+            status: cancelled
+            cancelReason: duplicate
+            priority: basse
+            assigneeIds: [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+            dueDate: null
+            startDate: null
+            estimateMinutes: null
+            labels: [Front]
+            completedAt: null
+    taskPurgedV1:
+      name: task.purged.v1
+      title: Task purged
+      summary: A task of the trash was erased for good.
+      description: |
+        Emitted once per task erased for good, with its entry: 30 days after the deletion by the
+        daily purge (`actor` `{ type: 'system', id: 'task-service' }`), by "Supprimer
+        définitivement", or by the purge that follows "Vider la corbeille", with the actor who
+        asked. The task, its checklist and its activity are gone; its attachments are for
+        cadenway-storage-service to erase. Its key is never given again.
+
+        Personal data: none beyond the ids.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            entryId,
+            rootKey,
+            spaceId,
+            listId,
+            parentKey,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the erasure was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 3
+            description: Version of the task with its erasure, one more than its `task.trashed.v1`.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          entryId:
+            type: string
+            format: uuid
+            description: Id of the trash entry.
+          rootKey:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the root of the entry, `key` for the root itself.
+          spaceId:
+            type: string
+            format: uuid
+          listId:
+            type: string
+            format: uuid
+          parentKey:
+            type: [string, 'null']
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+      examples:
+        - name: cad447
+          summary: CAD-447 is erased 30 days after Hugo Dubois deleted it
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d28
+            occurredAt: '2026-11-26T03:00:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: task-service
+            version: 6
+            key: CAD-447
+            entryId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e02
+            rootKey: CAD-447
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f11
+            parentKey: null

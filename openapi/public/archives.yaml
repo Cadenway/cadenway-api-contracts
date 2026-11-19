@@ -1,0 +1,860 @@
+# Public routes of the archives: archive and restore a list or a task (with its subtasks), and read
+# the archived lists and tasks of the page "Archives". Served by cadenway-api-gateway, which calls
+# openapi/internal/task-service.yaml for each of them.
+openapi: 3.1.0
+info:
+  title: Cadenway archives
+  version: 1.0.0
+  description: |
+    The archives of the current organization ("Archives": "Rien n’est effacé : tout se restaure en
+    un clic."): lists and tasks put aside, without a time limit, unlike the trash. The API gateway
+    serves these routes and answers them through task-service. This file holds the page
+    "Archives" and the actions that fill and empty it, for lists and tasks alike; lists are in
+    `openapi/public/lists.yaml`, tasks in `openapi/public/tasks.yaml`.
+
+    **Lists.** An archived list leaves the sidebar, the lists of its space, the overview and the
+    lists and sprints of "Accueil" ("Sprint 13 n’apparaît plus dans la barre latérale."), and
+    reads by its id with `archivedAt` and `archivedBy`. Its tasks are not archived: they read and
+    change by their key, stay in "Mes tâches" and the priorities and counters of "Accueil", and
+    the list still takes new tasks. Restoring a list puts it back at the end of its space.
+
+    **Tasks.** Archiving a task archives its subtree, its subtasks at every level, whatever their
+    status; a subtask archived before keeps its own archive. An archived task is left out of every
+    collection and count, "Mes tâches" and "Accueil" included, reads by its key, and refuses every
+    change with `409 task.archived`. Restoring any task of an archive restores the whole archive,
+    from its root, to its list, which is restored too when it is archived. A parent that is no
+    longer live, or can no longer take it (25 subtasks, 3 levels), detaches the restored root,
+    which becomes a top-level task.
+
+    **Who.** Archiving and restoring a list or a task needs `edit` on the list
+    (`403 access.role-insufficient`). The archives list what the caller sees. An archive or a
+    restoration adds one to the version of each list or task it changes, and is not recorded in
+    the activity log. A list or a space that is deleted takes its archived lists and tasks with it,
+    to the trash (`openapi/public/trash.yaml`).
+
+    **Current organization, members, versions, credentials, cross-site requests, rate limit and
+    errors.** As in `openapi/public/spaces.yaml`: the current organization of the session or of the
+    personal API token, task-service's own copy of the members, `ETag` and `If-Match`, the scopes
+    `tasks:read` and `tasks:write`, 600 requests per minute, French titles for the codes the web
+    application shows.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves every route, through openapi/internal/task-service.yaml, and checks the scopes of every operation.
+    - repository: cadenway-webapp
+      uses: Calls every route through @cadenway/api-client ("Archiver la liste", "Archiver" in the task detail, page "Archives" with its tabs "Listes" and "Tâches", "Restaurer", the count of the sidebar).
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging. The local stack of cadenway-ops serves the same routes on `api.<DOMAIN>`.
+tags:
+  - name: archives
+    description: Archived lists and tasks.
+paths:
+  /v1/lists/{listId}/archive:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    post:
+      operationId: archiveList
+      summary: Archive a list or a sprint
+      description: |
+        Archives a list ("Archiver la liste", "Liste archivée", "Sprint archivé", "… n’apparaît plus
+        dans la barre latérale."). Its tasks stay as they are. A list archived already answers
+        `200` with the same version. `If-Match` is optional (`412 request.version-mismatch`).
+
+        An action: answers `200` with the list, `archivedAt` set. Emits `list.archived.v1`. Scope
+        `tasks:write` for a personal API token.
+      tags: [archives]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/ListIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The list, archived.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ListETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+              examples:
+                sprint13:
+                  $ref: '#/components/examples/Sprint13'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/unarchive:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    post:
+      operationId: unarchiveList
+      summary: Restore an archived list
+      description: |
+        Restores an archived list at the end of its space ("Restaurer la liste Sprint 13", "Sprint
+        restauré", "Sprint 13 est de retour dans Produit."). A list that is not archived answers
+        `200` with the same version. `If-Match` is optional (`412 request.version-mismatch`).
+
+        An action: answers `200` with the list, `archivedAt` back to `null`. Emits
+        `list.unarchived.v1`. Scope `tasks:write` for a personal API token.
+      tags: [archives]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/ListIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The list, back in its space.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ListETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+              example:
+                id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f10
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                name: Sprint 13
+                icon: lightning
+                color: violet
+                sprint:
+                  startDate: '2026-10-20'
+                  endDate: '2026-11-02'
+                  goal: Livrer les invitations par lien.
+                createdAt: '2026-10-16T10:00:00Z'
+                version: 5
+                organizationAccess: true
+                archivedAt: null
+                archivedBy: null
+                callerRole: edit
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/archive:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: archiveTask
+      summary: Archive a task with its subtasks
+      description: |
+        Archives a task and its subtasks at every level, whatever their status ("Archiver",
+        "CAD-430 archivée", "Retrouvez-la dans les Archives, en bas de la barre latérale."). The
+        subtasks archived before keep their own archive. A task archived already answers `200`
+        with the same version; a task in the trash answers `404 task.trashed`. `If-Match` is
+        optional (`412 request.version-mismatch`), with the version of the task.
+
+        An action: answers `200` with the task, `archivedAt` set. Emits `task.archived.v1` for
+        each task archived, the root first. Scope `tasks:write` for a personal API token.
+      tags: [archives]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/TaskIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The task, archived.
+          headers:
+            ETag:
+              $ref: '#/components/headers/TaskETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              examples:
+                cad430:
+                  $ref: '#/components/examples/Cad430'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/unarchive:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: unarchiveTask
+      summary: Restore an archived task with its subtasks
+      description: |
+        Restores the archive a task belongs to, from its root: the root and the subtasks archived
+        with it go back to their list ("Restaurer CAD-430", "CAD-430 restaurée", "De retour dans sa
+        liste."), which is restored too, at the end of its space, when it is archived. A parent
+        that is no longer live, or can no longer take it, detaches the root. A task that is not
+        archived answers `200` with the same version. `If-Match` is optional
+        (`412 request.version-mismatch`), with the version of the task of the path.
+
+        An action: answers `200` with the root, `archivedAt` back to `null`. Emits
+        `list.unarchived.v1` for a list restored with it, then `task.unarchived.v1` for each task
+        restored, the root first. Scope `tasks:write` for a personal API token.
+      tags: [archives]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/TaskIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The root of the archive, back in its list.
+          headers:
+            ETag:
+              $ref: '#/components/headers/TaskETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                key: CAD-430
+                name: Ancienne page des tarifs
+                description: Remplacée par la nouvelle page des quotas.
+                status: done
+                cancelReason: null
+                cancelNote: null
+                priority: basse
+                assignees:
+                  - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                dueDate: null
+                startDate: null
+                estimateMinutes: 120
+                labels: [Front]
+                parentKey: null
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                subtaskCounts: { total: 0, closed: 0 }
+                checklist: []
+                checklistCounts: { total: 0, done: 0 }
+                completedAt: '2026-11-04T17:10:00Z'
+                createdAt: '2026-10-21T09:00:00Z'
+                createdBy:
+                  type: user
+                  id: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                updatedAt: '2026-11-08T17:05:00Z'
+                version: 8
+                archivedAt: null
+                archivedBy: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/archives/lists:
+    get:
+      operationId: listArchivedLists
+      summary: List the archived lists
+      description: |
+        Lists the archived lists and sprints the caller sees ("Archives", tab "Listes"), the most
+        recently archived first, with the count of their top-level tasks ("Produit · 14 tâches ·
+        archivée le 3 nov. par Camille Martin"); `total` counts them, on every page, for the tab
+        and the count of the sidebar ("2 listes et 1 tâche archivée.").
+
+        Scope `tasks:read` for a personal API token.
+      tags: [archives]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of archived lists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchivedListPage'
+              example:
+                items:
+                  - list:
+                      id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f10
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      name: Sprint 13
+                      icon: lightning
+                      color: violet
+                      sprint:
+                        startDate: '2026-10-20'
+                        endDate: '2026-11-02'
+                        goal: Livrer les invitations par lien.
+                      createdAt: '2026-10-16T10:00:00Z'
+                      version: 4
+                      organizationAccess: true
+                      archivedAt: '2026-11-03T09:00:00Z'
+                      archivedBy:
+                        type: user
+                        id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                      callerRole: edit
+                    taskCount: 14
+                nextCursor: null
+                total: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/archives/tasks:
+    get:
+      operationId: listArchivedTasks
+      summary: List the archived tasks
+      description: |
+        Lists the roots of the archived subtrees the caller sees ("Archives", tab "Tâches"), the
+        most recently archived first, with their list ("Sprint 14 · archivée le 5 nov. par Hugo
+        Dubois", "Liste archivée" when the list is archived too); `total` counts them, on every
+        page.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [archives]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of archived tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchivedTaskPage'
+              example:
+                items:
+                  - task:
+                      key: CAD-430
+                      name: Ancienne page des tarifs
+                      status: done
+                      cancelReason: null
+                      priority: basse
+                      assignees:
+                        - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                      dueDate: null
+                      startDate: null
+                      estimateMinutes: 120
+                      labels: [Front]
+                      parentKey: null
+                      listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      subtaskCounts: { total: 0, closed: 0 }
+                      checklistCounts: { total: 0, done: 0 }
+                      completedAt: '2026-11-04T17:10:00Z'
+                      createdAt: '2026-10-21T09:00:00Z'
+                      version: 7
+                    list:
+                      id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      name: Sprint 14
+                      state: active
+                    subtaskCount: 0
+                    archivedAt: '2026-11-05T11:30:00Z'
+                    archivedBy:
+                      type: user
+                      id: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                nextCursor: null
+                total: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: |
+        Opaque session token of `openapi/public/auth.yaml`, set by the gateway on sign-in and checked
+        with identity-service on every request. A session holds every scope.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: |
+        Personal API token (`cw_pat_…`) of `openapi/public/api-tokens.yaml`, sent as
+        `Authorization: Bearer`. It acts with the rights of its user in the organization it was
+        created in, within the scopes each operation lists.
+  parameters:
+    ListId:
+      name: listId
+      in: path
+      required: true
+      description: Id of the list or the sprint.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f10]
+    TaskKey:
+      name: taskKey
+      in: path
+      required: true
+      description: Key of the task.
+      schema:
+        $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+    ListIfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: '`"<version>"` of the list the change was made from, as the `ETag` gave it.'
+      schema:
+        type: string
+        examples: ['"3"']
+    TaskIfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: '`"<version>"` of the task the change was made from, as the `ETag` gave it.'
+      schema:
+        type: string
+        examples: ['"6"']
+  headers:
+    ListETag:
+      description: Version of the list, `"<version>"`.
+      schema:
+        type: string
+    TaskETag:
+      description: Version of the task, `"<version>"`.
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110).
+      schema:
+        type: integer
+        minimum: 1
+  examples:
+    Sprint13:
+      summary: Sprint 13 of "Produit", archived
+      value:
+        id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f10
+        spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+        name: Sprint 13
+        icon: lightning
+        color: violet
+        sprint:
+          startDate: '2026-10-20'
+          endDate: '2026-11-02'
+          goal: Livrer les invitations par lien.
+        createdAt: '2026-10-16T10:00:00Z'
+        version: 4
+        organizationAccess: true
+        archivedAt: '2026-11-03T09:00:00Z'
+        archivedBy:
+          type: user
+          id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+        callerRole: edit
+    Cad430:
+      summary: CAD-430, archived
+      value:
+        key: CAD-430
+        name: Ancienne page des tarifs
+        description: Remplacée par la nouvelle page des quotas.
+        status: done
+        cancelReason: null
+        cancelNote: null
+        priority: basse
+        assignees:
+          - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+        dueDate: null
+        startDate: null
+        estimateMinutes: 120
+        labels: [Front]
+        parentKey: null
+        listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+        spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+        subtaskCounts: { total: 0, closed: 0 }
+        checklist: []
+        checklistCounts: { total: 0, done: 0 }
+        completedAt: '2026-11-04T17:10:00Z'
+        createdAt: '2026-10-21T09:00:00Z'
+        createdBy:
+          type: user
+          id: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+        updatedAt: '2026-11-05T11:30:00Z'
+        version: 7
+        archivedAt: '2026-11-05T11:30:00Z'
+        archivedBy:
+          type: user
+          id: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+    CrossSiteRefused:
+      summary: Request from another site
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.csrf-rejected
+    ScopeMissingRead:
+      summary: Personal API token without `tasks:read`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:read]
+    ScopeMissingWrite:
+      summary: Personal API token without `tasks:write`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:write]
+    OrganizationNotSelected:
+      summary: No current organization
+      value:
+        type: about:blank
+        title: Choisissez une organisation pour continuer.
+        status: 403
+        code: organization.not-selected
+    OrganizationMfaRequired:
+      summary: Two-step verification required by the organization
+      value:
+        type: about:blank
+        title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
+        status: 403
+        code: organization.mfa-required
+        details:
+          organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+    RoleInsufficient:
+      summary: A person with "Lecture seule" archives the list
+      value:
+        type: about:blank
+        title: Il faut le droit « Peut modifier » pour cette action.
+        status: 403
+        code: access.role-insufficient
+        details:
+          role: view
+          requiredRole: edit
+    TaskTrashed:
+      summary: CAD-452 in the trash, for someone who could change Sprint 14
+      value:
+        type: about:blank
+        title: Cette tâche a été supprimée
+        status: 404
+        code: task.trashed
+        details:
+          key: CAD-452
+          name: Ancien écran de connexion
+          entryId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01
+          rootKey: CAD-452
+          trashedAt: '2026-11-06T16:20:00Z'
+          trashedBy:
+            type: user
+            id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+          purgeAt: '2026-12-06T16:20:00Z'
+    RateLimited:
+      summary: Gateway limit reached
+      value:
+        type: about:blank
+        title: 'Trop de requêtes : réessayez dans un instant.'
+        status: 429
+        code: rate-limit.exceeded
+  responses:
+    BadRequest:
+      description: |
+        The request does not match the schema: `request.invalid`, with one `details.issues` entry
+        per failed member (`path` is the dotted path of the member, empty for the body itself).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: body
+                  path: ''
+                  code: unrecognized_keys
+                  message: Unrecognized key
+    Unauthenticated:
+      description: |
+        - `auth.session-required`: the request carries neither a session cookie nor a bearer token;
+        - `auth.session-expired`: the cookie names a session that ended;
+        - `auth.api-token-invalid`: the bearer token is unknown, revoked or expired, or its user
+          no longer belongs to its organization.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sessionRequired:
+              summary: No credential
+              value:
+                type: about:blank
+                title: Connectez-vous pour continuer.
+                status: 401
+                code: auth.session-required
+            sessionExpired:
+              summary: Session ended
+              value:
+                type: about:blank
+                title: Session expirée
+                status: 401
+                code: auth.session-expired
+            apiTokenInvalid:
+              summary: Personal API token no longer valid
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    TasksReadForbidden:
+      description: |
+        - `auth.scope-missing`: the personal API token lacks `tasks:read`; `details.requiredScopes`
+          lists what the route needs;
+        - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the organization requires
+          two-step verification for the role of the caller, who has none; `details.organizationId`
+          names it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingRead'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+    TasksWriteForbidden:
+      description: |
+        - `access.role-insufficient`: the caller sees the list, or the list of the task, without
+          `edit` on it; `details.role` is their role there, `details.requiredRole` is `edit`;
+        - `auth.scope-missing`: the personal API token lacks `tasks:write`;
+        - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
+        - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    OrganizationNotFound:
+      description: |
+        `organization.not-found`: the caller no longer belongs to the current organization, or,
+        for a few seconds after they joined it, task-service does not know them yet.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    ListNotFound:
+      description: |
+        - `list.not-found`: no list with this id that the caller sees, a deleted one included;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Liste introuvable.
+            status: 404
+            code: list.not-found
+    TaskNotFound:
+      description: |
+        - `task.not-found`, `task.trashed`: see `TaskNotFound` in `openapi/public/tasks.yaml`;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskNotFound:
+              summary: No task the caller sees
+              value:
+                type: about:blank
+                title: Tâche introuvable.
+                status: 404
+                code: task.not-found
+            taskTrashed:
+              $ref: '#/components/examples/TaskTrashed'
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 4
+    RateLimited:
+      description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    Unavailable:
+      description: |
+        task-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+        `upstream.deadline-exceeded`, with `details.service`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+            details:
+              service: task-service
+  schemas:
+    TaskList:
+      $ref: '../../components/task.yaml#/components/schemas/TaskList'
+    Task:
+      $ref: '../../components/task.yaml#/components/schemas/Task'
+    ArchivedList:
+      $ref: '../../components/task.yaml#/components/schemas/ArchivedList'
+    ArchivedTask:
+      $ref: '../../components/task.yaml#/components/schemas/ArchivedTask'
+    EmptyRequest:
+      type: object
+      additionalProperties: false
+      description: 'Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.'
+    ArchivedListPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          description: The archived lists, the most recently archived first.
+          items:
+            $ref: '#/components/schemas/ArchivedList'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Archived lists the caller sees, on every page ("2 listes").
+    ArchivedTaskPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          description: The roots of the archived subtrees, the most recently archived first.
+          items:
+            $ref: '#/components/schemas/ArchivedTask'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Archived roots the caller sees, on every page ("1 tâche archivée").

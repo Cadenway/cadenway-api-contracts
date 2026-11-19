@@ -1,0 +1,730 @@
+# Public routes of the trash: delete a task with its subtasks, read the entries of the page
+# "Corbeille", restore an entry, erase one for good, and empty the trash. Served by
+# cadenway-api-gateway, which calls openapi/internal/task-service.yaml for each of them.
+openapi: 3.1.0
+info:
+  title: Cadenway trash
+  version: 1.0.0
+  description: |
+    The trash of the current organization ("Corbeille": "Les tâches supprimées arrivent ici. Vous
+    pouvez les restaurer pendant 30 jours."). The API gateway serves these routes and answers them
+    through task-service. This file holds the trash entry, a resource of its own, and every route
+    that fills or empties the trash; tasks are in `openapi/public/tasks.yaml`, and the deletion of
+    a list or a space, which sends their tasks here, in `openapi/public/lists.yaml` and
+    `openapi/public/spaces.yaml`.
+
+    **Entries.** The unit of the trash is a subtree: deleting a task moves it and its subtasks at
+    every level to the trash as one entry, which comes back or is erased as a whole; deleting a
+    subtask makes an entry of its own subtree. Deleting a list or a space makes one entry per
+    top-level task, within minutes of the deletion. A task in the trash is left out of every
+    collection and count; its key answers `404 task.trashed`, with the entry in `details`, to a
+    caller who could change its list, and `404 task.not-found` to anyone else. Keys are never
+    given again.
+
+    **Restoring.** An entry comes back to its list: a parent that is no longer live, or can no
+    longer take it (25 subtasks, 3 levels), detaches its root ("détachée de son parent
+    supprimé"); a deleted list comes back with it, at the end of its space, and a deleted space at
+    the end of the sidebar, without their other lists and tasks.
+
+    **Erasing.** An entry is erased for good 30 days after its deletion, by a daily job in bounded
+    batches, or before by "Supprimer définitivement" and "Vider la corbeille": the tasks, their
+    subtasks, checklists and activity, and their attachments through
+    cadenway-storage-service ("sous-tâches et pièces jointes comprises"). A deleted list or space
+    is erased with the last of its entries. Nothing comes back from it.
+
+    **Who.** The trash shows the entries of the lists the caller could change, with `edit` (for a
+    deleted list, the role they would have on it); deleting, restoring and erasing need the same.
+    The trash is not recorded in the activity log: it emits `task.trashed.v1`,
+    `task.restored.v1` and `task.purged.v1`, one per task.
+
+    **Current organization, members, versions, credentials, cross-site requests, rate limit and
+    errors.** As in `openapi/public/spaces.yaml`: the current organization of the session or of the
+    personal API token, task-service's own copy of the members, `ETag` and `If-Match`, the scopes
+    `tasks:read` and `tasks:write`, 600 requests per minute, French titles for the codes the web
+    application shows.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves every route, through openapi/internal/task-service.yaml, and checks the scopes of every operation.
+    - repository: cadenway-webapp
+      uses: Calls every route through @cadenway/api-client ("Supprimer la tâche" and its "Annuler", page "Corbeille", "Restaurer", "Supprimer définitivement", "Vider la corbeille", page "Tâche supprimée", the count of the sidebar).
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging. The local stack of cadenway-ops serves the same routes on `api.<DOMAIN>`.
+tags:
+  - name: trash
+    description: The trash and its entries.
+paths:
+  /v1/tasks/{taskKey}/trash:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: trashTask
+      summary: Delete a task with its subtasks
+      description: |
+        Moves a task and its subtasks at every level to the trash as one entry ("Supprimer
+        CAD-482 ?", "« Refondre l’écran de connexion SSO », ses 3 sous-tâches, sa checklist et ses 3
+        commentaires iront à la corbeille pendant 30 jours.", "CAD-482 supprimée", "Avec 3
+        sous-tâches. Conservées 30 jours dans la corbeille."). The answer is the entry, so that
+        "Annuler" restores it at once. It needs `edit` on the list
+        (`403 access.role-insufficient`); an archived task answers `409 task.archived`, a task in
+        the trash already `404 task.trashed`. `If-Match` is optional
+        (`412 request.version-mismatch`), with the version of the task.
+
+        An action: answers `200`. Not recorded in the activity log. Emits `task.trashed.v1` for
+        each task of the entry, the root first. Scope `tasks:write` for a personal API token.
+      tags: [trash]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The entry the task and its subtasks make in the trash.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrashEntry'
+              example:
+                id: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e03
+                task:
+                  key: CAD-482
+                  name: Refondre l’écran de connexion SSO
+                  status: progress
+                parentKey: null
+                subtaskCount: 3
+                list:
+                  id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  name: Sprint 14
+                  state: active
+                trashedAt: '2026-11-08T15:00:00Z'
+                trashedBy:
+                  type: user
+                  id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                purgeAt: '2026-12-08T15:00:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/trash/entries:
+    get:
+      operationId: listTrash
+      summary: List the trash
+      description: |
+        Lists the entries of the trash the caller may restore ("Corbeille"), the most recently
+        deleted first: the root of each with its parent, its list ("Liste supprimée" when the list
+        was deleted), who deleted it and when, and when it is erased ("Effacée définitivement dans
+        28 jours"). `total` counts them, on every page ("2 éléments · effacés définitivement après
+        30 jours", the count of the sidebar).
+
+        Scope `tasks:read` for a personal API token.
+      tags: [trash]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of trash entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrashEntryPage'
+              example:
+                items:
+                  - id: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01
+                    task:
+                      key: CAD-452
+                      name: Ancien écran de connexion
+                      status: cancelled
+                    parentKey: null
+                    subtaskCount: 0
+                    list:
+                      id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      name: Sprint 14
+                      state: active
+                    trashedAt: '2026-11-06T16:20:00Z'
+                    trashedBy:
+                      type: user
+                      id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    purgeAt: '2026-12-06T16:20:00Z'
+                  - id: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e02
+                    task:
+                      key: CAD-447
+                      name: Export PDF des tableaux de bord (prototype)
+                      status: todo
+                    parentKey: null
+                    subtaskCount: 0
+                    list:
+                      id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f11
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      name: Backlog
+                      state: active
+                    trashedAt: '2026-10-27T10:05:00Z'
+                    trashedBy:
+                      type: user
+                      id: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                    purgeAt: '2026-11-26T10:05:00Z'
+                nextCursor: null
+                total: 2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/trash/entries/{entryId}:
+    parameters:
+      - $ref: '#/components/parameters/EntryId'
+    delete:
+      operationId: purgeTrashEntry
+      summary: Erase a trash entry for good
+      description: |
+        Erases an entry at once, its root and every subtask of it ("Supprimer définitivement
+        CAD-452 ?", "« Ancien écran de connexion » sera effacée. Cette action est irréversible.",
+        "CAD-452 effacée", "Supprimée définitivement."). An entry the caller may not restore, or
+        that is gone, answers `404 trash-entry.not-found`.
+
+        Emits `task.purged.v1` for each task of the entry. Scope `tasks:write` for a personal API
+        token.
+      tags: [trash]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      responses:
+        '204':
+          description: The entry is erased.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TrashEntryNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/trash/entries/{entryId}/restore:
+    parameters:
+      - $ref: '#/components/parameters/EntryId'
+    post:
+      operationId: restoreTrashEntry
+      summary: Restore a trash entry
+      description: |
+        Brings an entry back to its list, its root and every subtask of it ("Restaurer CAD-452",
+        "CAD-452 restaurée", "Avec 2 sous-tâches, de retour dans Sprint 14.", "Restaurer la tâche"
+        of the page "Tâche supprimée"). A parent that is no longer live, or can no longer take it,
+        detaches the root (`detached`, ", détachée de son parent supprimé"); a deleted list comes
+        back with it, at the end of its space (`listRestored`), and a deleted space at the end of
+        the sidebar (`spaceRestored`). An entry the caller may not restore, or that is gone,
+        restored or erased already, answers `404 trash-entry.not-found` ("Déjà restaurée").
+
+        An action: answers `200` with what came back. Emits `space.restored.v1` and
+        `list.restored.v1` for what came back with it, then `task.restored.v1` for each task of
+        the entry, the root first. Scope `tasks:write` for a personal API token.
+      tags: [trash]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The root of the entry, back in its list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrashRestored'
+              example:
+                task:
+                  key: CAD-452
+                  name: Ancien écran de connexion
+                  description: Remplacé par CAD-482.
+                  status: cancelled
+                  cancelReason: duplicate
+                  cancelNote: null
+                  priority: basse
+                  assignees:
+                    - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                  dueDate: null
+                  startDate: null
+                  estimateMinutes: null
+                  labels: [Front]
+                  parentKey: null
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  subtaskCounts: { total: 0, closed: 0 }
+                  checklist: []
+                  checklistCounts: { total: 0, done: 0 }
+                  completedAt: null
+                  createdAt: '2026-10-28T09:00:00Z'
+                  createdBy:
+                    type: user
+                    id: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                  updatedAt: '2026-11-08T15:10:00Z'
+                  version: 9
+                  archivedAt: null
+                  archivedBy: null
+                list:
+                  id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  name: Sprint 14
+                  icon: lightning
+                  color: violet
+                  sprint:
+                    startDate: '2026-11-03'
+                    endDate: '2026-11-17'
+                    goal: Livrer la connexion SSO et la page des quotas d’organisation.
+                  createdAt: '2026-10-30T16:00:00Z'
+                  version: 2
+                  organizationAccess: true
+                  archivedAt: null
+                  archivedBy: null
+                  callerRole: edit
+                subtaskCount: 0
+                detached: false
+                listRestored: false
+                spaceRestored: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TrashEntryNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/trash/empty:
+    post:
+      operationId: emptyTrash
+      summary: Empty the trash
+      description: |
+        Takes every entry the caller may restore out of the trash ("Vider la corbeille ?", "N
+        éléments seront effacés définitivement, sous-tâches et pièces jointes comprises. Cette
+        action est irréversible.", "Corbeille vidée"); the web application asks first for the word
+        "corbeille". The entries leave the trash at once and no longer restore; a job erases them
+        in bounded batches within minutes. The entries the caller may not restore stay.
+
+        An action: answers `202` with the count of the entries taken out ("12 éléments effacés
+        définitivement."). Emits `task.purged.v1` for each task as the job erases it. Scope
+        `tasks:write` for a personal API token.
+      tags: [trash]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '202':
+          description: The entries are out of the trash and on their way to be erased.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrashEmptied'
+              example:
+                entryCount: 2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: |
+        Opaque session token of `openapi/public/auth.yaml`, set by the gateway on sign-in and checked
+        with identity-service on every request. A session holds every scope.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: |
+        Personal API token (`cw_pat_…`) of `openapi/public/api-tokens.yaml`, sent as
+        `Authorization: Bearer`. It acts with the rights of its user in the organization it was
+        created in, within the scopes each operation lists.
+  parameters:
+    TaskKey:
+      name: taskKey
+      in: path
+      required: true
+      description: Key of the task.
+      schema:
+        $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+    EntryId:
+      name: entryId
+      in: path
+      required: true
+      description: Id of the trash entry, as the trash or `details.entryId` of `404 task.trashed` gives it.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01]
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: '`"<version>"` of the task the deletion was made from, as the `ETag` gave it.'
+      schema:
+        type: string
+        examples: ['"12"']
+  headers:
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110).
+      schema:
+        type: integer
+        minimum: 1
+  examples:
+    CrossSiteRefused:
+      summary: Request from another site
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.csrf-rejected
+    ScopeMissingRead:
+      summary: Personal API token without `tasks:read`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:read]
+    ScopeMissingWrite:
+      summary: Personal API token without `tasks:write`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:write]
+    OrganizationNotSelected:
+      summary: No current organization
+      value:
+        type: about:blank
+        title: Choisissez une organisation pour continuer.
+        status: 403
+        code: organization.not-selected
+    OrganizationMfaRequired:
+      summary: Two-step verification required by the organization
+      value:
+        type: about:blank
+        title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
+        status: 403
+        code: organization.mfa-required
+        details:
+          organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+    RoleInsufficient:
+      summary: A person with "Lecture seule" deletes a task
+      value:
+        type: about:blank
+        title: Il faut le droit « Peut modifier » pour cette action.
+        status: 403
+        code: access.role-insufficient
+        details:
+          role: view
+          requiredRole: edit
+    TaskTrashed:
+      summary: CAD-452 in the trash already, for someone who could change Sprint 14
+      value:
+        type: about:blank
+        title: Cette tâche a été supprimée
+        status: 404
+        code: task.trashed
+        details:
+          key: CAD-452
+          name: Ancien écran de connexion
+          entryId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01
+          rootKey: CAD-452
+          trashedAt: '2026-11-06T16:20:00Z'
+          trashedBy:
+            type: user
+            id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+          purgeAt: '2026-12-06T16:20:00Z'
+    RateLimited:
+      summary: Gateway limit reached
+      value:
+        type: about:blank
+        title: 'Trop de requêtes : réessayez dans un instant.'
+        status: 429
+        code: rate-limit.exceeded
+  responses:
+    BadRequest:
+      description: |
+        The request does not match the schema: `request.invalid`, with one `details.issues` entry
+        per failed member (`path` is the dotted path of the member, empty for the body itself).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: path
+                  path: entryId
+                  code: invalid_format
+                  message: Invalid UUID
+    Unauthenticated:
+      description: |
+        - `auth.session-required`: the request carries neither a session cookie nor a bearer token;
+        - `auth.session-expired`: the cookie names a session that ended;
+        - `auth.api-token-invalid`: the bearer token is unknown, revoked or expired, or its user
+          no longer belongs to its organization.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sessionRequired:
+              summary: No credential
+              value:
+                type: about:blank
+                title: Connectez-vous pour continuer.
+                status: 401
+                code: auth.session-required
+            sessionExpired:
+              summary: Session ended
+              value:
+                type: about:blank
+                title: Session expirée
+                status: 401
+                code: auth.session-expired
+            apiTokenInvalid:
+              summary: Personal API token no longer valid
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    TasksReadForbidden:
+      description: |
+        - `auth.scope-missing`: the personal API token lacks `tasks:read`; `details.requiredScopes`
+          lists what the route needs;
+        - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the organization requires
+          two-step verification for the role of the caller, who has none; `details.organizationId`
+          names it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingRead'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+    TasksWriteForbidden:
+      description: |
+        - `access.role-insufficient`: the caller sees the task without `edit` on its list;
+          `details.role` is their role there, `details.requiredRole` is `edit`;
+        - `auth.scope-missing`: the personal API token lacks `tasks:write`;
+        - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
+        - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    OrganizationNotFound:
+      description: |
+        `organization.not-found`: the caller no longer belongs to the current organization, or,
+        for a few seconds after they joined it, task-service does not know them yet.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    TaskNotFound:
+      description: |
+        - `task.not-found`, `task.trashed`: see `TaskNotFound` in `openapi/public/tasks.yaml`;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskNotFound:
+              summary: No task the caller sees
+              value:
+                type: about:blank
+                title: Tâche introuvable.
+                status: 404
+                code: task.not-found
+            taskTrashed:
+              $ref: '#/components/examples/TaskTrashed'
+    TrashEntryNotFound:
+      description: |
+        - `trash-entry.not-found`: no entry with this id that the caller may restore: unknown, of
+          a list they could not change, restored or erased already;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Cet élément n’est plus dans la corbeille.
+            status: 404
+            code: trash-entry.not-found
+    TaskArchived:
+      description: '`task.archived`: the task is archived; it is deleted once restored. `details.key` names it.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Cette tâche est archivée : restaurez-la depuis les Archives pour la modifier.'
+            status: 409
+            code: task.archived
+            details:
+              key: CAD-430
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version of the task; `details.version` is.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 13
+    RateLimited:
+      description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    Unavailable:
+      description: |
+        task-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+        `upstream.deadline-exceeded`, with `details.service`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+            details:
+              service: task-service
+  schemas:
+    TrashEntry:
+      $ref: '../../components/task.yaml#/components/schemas/TrashEntry'
+    TrashRestored:
+      $ref: '../../components/task.yaml#/components/schemas/TrashRestored'
+    TrashEmptied:
+      $ref: '../../components/task.yaml#/components/schemas/TrashEmptied'
+    EmptyRequest:
+      type: object
+      additionalProperties: false
+      description: 'Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.'
+    TrashEntryPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          description: The entries, the most recently deleted first.
+          items:
+            $ref: '#/components/schemas/TrashEntry'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Entries the caller may restore, on every page ("2 éléments").

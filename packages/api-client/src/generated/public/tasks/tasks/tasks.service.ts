@@ -173,6 +173,8 @@ export class TasksService {
  * - `assigneeIds` are current members of the organization, guests excepted
  *   (`422 task.assignee-invalid`, with `details.userIds`).
  * - `startDate` needs a `dueDate` and is on or before it (`422 task.start-date-invalid`).
+ * - It needs `edit` on the list (`403 access.role-insufficient`). An archived list takes the
+ *   task, which stays out of the sidebar with it.
  *
  * Records a creation in the activity log of each task created. Emits `task.created.v1` for
  * each task created, and `task.assigned.v1` for each of their assignees. Scope `tasks:write`
@@ -217,8 +219,11 @@ export class TasksService {
     );
   }
 /**
- * Returns a task the caller sees, with its description and its checklist. Scope `tasks:read`
- * for a personal API token.
+ * Returns a task the caller sees, with its description and its checklist; an archived task
+ * too, with `archivedAt` and `archivedBy`. A task in the trash answers `404 task.trashed`,
+ * with who deleted it and when, to a caller who could change its list (page "Tâche
+ * supprimée": "Restaurer la tâche", "Ouvrir la corbeille"), and `404 task.not-found` to
+ * anyone else. Scope `tasks:read` for a personal API token.
  * @summary Read a task
  */
  getTask<TData = Task>(taskKey: string, options?: HttpClientBodyOptions): Observable<TData>;
@@ -282,6 +287,9 @@ export class TasksService {
  * - `If-Match` is optional (`412 request.version-mismatch`), but required to change
  *   `description`, a long text: without it, `400 request.invalid` with an issue on the
  *   header.
+ * - It needs `edit` on the list of the task, and on the list it moves to
+ *   (`403 access.role-insufficient`). An archived task answers `409 task.archived`, and so
+ *   does an archived parent, `details.key` naming the archived task.
  *
  * Records the changes of status, priority and due date in the activity log. Emits
  * `task.updated.v1` when something changed, with `changed`, and also
@@ -330,7 +338,9 @@ export class TasksService {
 /**
  * Returns what the task detail shows ("Détails", "Propriétés"): the task, its space with its
  * statuses, its list, its parent ("Sous-tâche de CAD-482 · Refondre l’écran de connexion
- * SSO") and its direct subtasks ("Sous-tâches 3"). The gateway composes it; `partial` names
+ * SSO") and its direct subtasks ("Sous-tâches 3"), those archived or in the trash left out
+ * but for an archived task, whose detail shows the subtasks archived with it, and `list`
+ * carries the role of the caller (`callerRole`). The gateway composes it; `partial` names
  * the parts it could not read, so that the web application shows the rest. In this version
  * task-service is its only source: `partial` is always empty, and the detail fails as a whole
  * when task-service cannot answer ("Impossible de charger la tâche"). Later versions add
@@ -373,7 +383,8 @@ export class TasksService {
 /**
  * Lists the direct subtasks of a task the caller sees, in the order of their creation ("Afficher
  * les 3 sous-tâches de CAD-482"); 25 at most, so one page of the default size holds them all.
- * Scope `tasks:read` for a personal API token.
+ * The archived subtasks and those in the trash are left out, but for an archived task, which
+ * lists the subtasks archived with it. Scope `tasks:read` for a personal API token.
  * @summary List the subtasks of a task
  */
  listSubtasks<TData = TaskSummaryPage>(taskKey: string,
@@ -418,8 +429,9 @@ export class TasksService {
  * of the list of the parent, in the list of the parent; without `assigneeIds`, it takes the
  * first assignee of the parent. A parent at the third level answers
  * `422 task.subtask-depth-exceeded`, a parent with 25 subtasks
- * `422 task.subtask-limit-reached`; the other rules are those of
- * `POST /v1/lists/{listId}/tasks`.
+ * `422 task.subtask-limit-reached`, an archived parent `409 task.archived`; the other rules
+ * are those of `POST /v1/lists/{listId}/tasks`. The archived subtasks and those in the trash
+ * do not count among the 25.
  *
  * Records its creation in the activity log. Emits `task.created.v1` and one
  * `task.assigned.v1` per assignee. Scope `tasks:write` for a personal API token.
@@ -748,10 +760,11 @@ export class TasksService {
     );
   }
 /**
- * Lists the labels of the tasks the caller sees, for the picker ("Étiquettes"), in alphabetical
- * order without regard to case or accents. Two spellings of one label that differ only by
- * case are listed once, in the spelling that comes first in that order. `search` keeps the
- * labels that contain the text, without regard to case or accents.
+ * Lists the labels of the tasks the caller sees, archived tasks and the trash left out, for
+ * the picker ("Étiquettes"), in alphabetical order without regard to case or accents. Two
+ * spellings of one label that differ only by case are listed once, in the spelling that
+ * comes first in that order. `search` keeps the labels that contain the text, without regard
+ * to case or accents.
  *
  * Scope `tasks:read` for a personal API token.
  * @summary List the labels

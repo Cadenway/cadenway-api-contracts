@@ -1,6 +1,7 @@
-# Public routes of lists and sprints: create, list, read and change the lists of a space (name,
-# appearance, sprint dates and goal), read the counts of a list, and read its activity log. Served
-# by cadenway-api-gateway, which calls openapi/internal/task-service.yaml for each of them.
+# Public routes of lists and sprints: create, list, read, change and delete the lists of a space
+# (name, appearance, sprint dates and goal, the switch "Accès de l’organisation"), read the counts
+# of a list, and read its activity log. Served by cadenway-api-gateway, which calls
+# openapi/internal/task-service.yaml for each of them.
 openapi: 3.1.0
 info:
   title: Cadenway lists and sprints
@@ -11,10 +12,22 @@ info:
     through task-service. Spaces are in `openapi/public/spaces.yaml`, tasks in
     `openapi/public/tasks.yaml`.
 
-    **Who sees a list.** A list is seen by whoever sees its space (see "Who sees a space" in
-    `openapi/public/spaces.yaml`); a list the caller does not see answers `404 list.not-found`, as an
-    unknown one does. Any member who sees the space creates and changes its lists: there is no role
-    rule beyond the one of the space, and a guest sees nothing in this version.
+    **Who sees a list.** A list is seen by whoever has a role on it (see "Access" in
+    `openapi/public/spaces.yaml`): the rule of the organization while its switch "Accès de
+    l’organisation" is on (`organizationAccess`), the owner of the space, the grants of the space
+    and of the list (`openapi/public/access.yaml`). A list the caller does not see answers
+    `404 list.not-found`, as an unknown or deleted one does. Who has `edit` on a space creates
+    lists in it; who has `edit` on a list changes it, turns its switch, shares it, archives it
+    and deletes it; anyone else who sees it gets `403 access.role-insufficient`.
+
+    **Archives.** An archived list (`archivedAt`) leaves the sidebar, the lists of its space, the
+    overview and the lists and sprints of "Accueil", and reads by its id, its tasks with it; its
+    tasks still read and change by their key, and stay in "Mes tâches" and the priorities and
+    counters of "Accueil". The archive routes are in `openapi/public/archives.yaml`.
+
+    **Deletion.** A deleted list disappears at once for everyone with its tasks, which a job then
+    moves to the trash (`openapi/public/trash.yaml`), one entry per top-level task. Restoring one
+    of them brings the list back, at the end of its space, without its other tasks.
 
     **Sprints.** A sprint is a list with a first day, a last day on or after it ("La fin doit suivre
     le début."), and an optional goal. Its state follows from its dates, with no start or
@@ -30,8 +43,9 @@ info:
 
     **Activity.** The activity log of a list holds the entries of its tasks recorded while they
     were in it: creations, status, priority and due date changes, and assignments. An entry whose
-    task the caller no longer sees, moved to a private space for example, is left out. The detail
-    of the log is in `openapi/public/tasks.yaml`.
+    task the caller no longer sees, moved to a private space for example, or whose task is
+    archived or in the trash, is left out. Sharing, archives, the trash and deletions are not
+    recorded. The detail of the log is in `openapi/public/tasks.yaml`.
 
     **Current organization, members, versions, creations, credentials, cross-site requests, rate
     limit and errors.** As in `openapi/public/spaces.yaml`: the current organization of the session
@@ -39,9 +53,8 @@ info:
     optional `Idempotency-Key` on a creation, the scopes `tasks:read` and `tasks:write`, 600
     requests per minute, French titles for the codes the web application shows.
 
-    **Later versions** add, without changing what is here: archiving, restoring, duplicating and
-    deleting a list, sharing it ("Partager"), favorites, saved views, the CSV export and the sprint
-    report.
+    **Later versions** add, without changing what is here: duplicating a list, favorites, saved
+    views, the CSV export and the sprint report.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -52,7 +65,7 @@ info:
     - repository: cadenway-api-gateway
       uses: Serves every route, through openapi/internal/task-service.yaml, and checks the scopes of every operation.
     - repository: cadenway-webapp
-      uses: Calls every route through @cadenway/api-client (dialogs "Créer une liste", "Créer un sprint", "Modifier la liste" and "Modifier le sprint", list header, view "Activité").
+      uses: Calls every route through @cadenway/api-client (dialogs "Créer une liste", "Créer un sprint", "Modifier la liste" and "Modifier le sprint", list header, view "Activité", the switch of "Partager", "Supprimer la liste").
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -69,12 +82,14 @@ paths:
       operationId: createList
       summary: Create a list or a sprint
       description: |
-        Creates a list in a space the caller sees, after its other lists ("Créer la liste", "Liste
-        créée"); with `sprint`, a sprint ("Créer le sprint", "Sprint créé"). An end before the
-        start answers `422 list.sprint-dates-invalid` ("La fin doit suivre le début."). The web
-        application proposes the name, the dates and the appearance of a new sprint ("Sprint 15",
-        the day after the end of the last sprint, 14 days, the lightning and "Améthyste"); the API
-        takes what it is sent.
+        Creates a list in a space the caller has `edit` on, after its other lists ("Créer la
+        liste", "Liste créée"); with `sprint`, a sprint ("Créer le sprint", "Sprint créé"). An end
+        before the start answers `422 list.sprint-dates-invalid` ("La fin doit suivre le début.").
+        The web application proposes the name, the dates and the appearance of a new sprint
+        ("Sprint 15", the day after the end of the last sprint, 14 days, the lightning and
+        "Améthyste"); the API takes what it is sent. `organizationAccess` is on unless the body
+        turns it off. A caller who sees the space without `edit` on it, through the grants of some
+        of its lists for example, gets `403 access.role-insufficient`.
 
         Emits `list.created.v1`. Scope `tasks:write` for a personal API token.
       tags: [lists]
@@ -130,6 +145,10 @@ paths:
                   goal: Ouvrir la facturation par siège.
                 createdAt: '2026-11-08T11:20:00Z'
                 version: 1
+                organizationAccess: true
+                archivedAt: null
+                archivedBy: null
+                callerRole: edit
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -150,8 +169,10 @@ paths:
       operationId: listLists
       summary: List the lists of a space
       description: |
-        Lists the lists and the sprints of a space the caller sees, in the order of their creation,
-        the order of the sidebar. Their counts are read with
+        Lists the lists and the sprints of a space that the caller sees, in the order of the
+        sidebar: the order of their creation, a list restored from the archives or the trash at
+        the end. The archived lists are left out (`GET /v1/archives/lists`,
+        `openapi/public/archives.yaml`). Their counts are read with
         `GET /v1/spaces/{spaceId}/overview` (`openapi/public/spaces.yaml`).
 
         Scope `tasks:read` for a personal API token.
@@ -218,7 +239,9 @@ paths:
       operationId: getList
       summary: Read a list
       description: |
-        Returns a list or a sprint the caller sees. Scope `tasks:read` for a personal API token.
+        Returns a list or a sprint the caller sees, an archived one included (`archivedAt`), with
+        the role of the caller on it (`callerRole`). A deleted list answers `404 list.not-found`.
+        Scope `tasks:read` for a personal API token.
       tags: [lists]
       security:
         - sessionCookie: []
@@ -260,11 +283,17 @@ paths:
           end before the start answers `422 list.sprint-dates-invalid` ("La fin doit suivre le
           début."). `sprint: null` makes a sprint a list again, without dates or goal; its tasks
           stay in it.
+        - `organizationAccess` turns the switch "Accès de l’organisation" of the dialog
+          "Partager" ("Tous les membres de Atelier Nord peuvent voir cette liste"). Off, in a space
+          `organization`, the members of the organization who hold no grant stop seeing the list
+          and its tasks at once; in a private space it changes nothing.
         - `If-Match` is optional (`412 request.version-mismatch`).
 
-        A list never moves to another space in this version. Emits `list.updated.v1` when something
-        changed; a patch that changes nothing answers `200` with the same version and emits
-        nothing. Scope `tasks:write` for a personal API token.
+        It needs `edit` on the list (`403 access.role-insufficient`); an archived list changes
+        too. A list never moves to another space in this version. Emits `list.updated.v1` when
+        its name, appearance or sprint changed, and `list.access-changed.v1` when its switch did,
+        with the same version; a patch that changes nothing answers `200` with the same version
+        and emits nothing. Scope `tasks:write` for a personal API token.
       tags: [lists]
       security:
         - sessionCookie: []
@@ -288,6 +317,10 @@ paths:
                 summary: Make a sprint a list again
                 value:
                   sprint: null
+              organizationAccess:
+                summary: Turn off "Tous les membres de Atelier Nord peuvent voir cette liste"
+                value:
+                  organizationAccess: false
       responses:
         '200':
           description: The list after the change.
@@ -313,6 +346,48 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/SprintDatesInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteList
+      summary: Delete a list or a sprint
+      description: |
+        Deletes a list ("Supprimer la liste", "Liste « Bugs » supprimée"), archived or not, which
+        needs `edit` on it (`403 access.role-insufficient`). The web application asks first for
+        the name of the list ("Pour confirmer, saisissez Bugs") and offers to archive it instead
+        ("Pour la garder de côté, archivez-la plutôt.").
+
+        The list and its tasks disappear at once for everyone: they answer `404` and leave every
+        collection and count. A job then moves the tasks to the trash in bounded batches, one entry
+        per top-level task with its subtasks (`openapi/public/trash.yaml`), within minutes ("N
+        tâches dans la corbeille, restaurables pendant 30 jours."); archived tasks go too and leave
+        the archives. Restoring one of them brings the list back, at the end of its space, without
+        its other tasks. The pending access requests of the list and its tasks are dropped.
+        `If-Match` is optional (`412 request.version-mismatch`).
+
+        Not recorded in the activity log. Emits `list.deleted.v1`, then `task.trashed.v1` for each
+        task the job moves. Scope `tasks:write` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The list is deleted; its tasks are on their way to the trash.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -385,8 +460,8 @@ paths:
         `kind` keeps the given kinds (the chips "Statuts", "Assignations", "Créations",
         "Priorités", "Échéances"), `actorId` the given actors ("Tout le monde" when absent);
         `total` counts what matches ("18 événements"). An entry shows the task with its name and
-        status as they are now; the entries of a task the caller no longer sees are left out of
-        `items` and `total`.
+        status as they are now; the entries of a task the caller no longer sees, or that is
+        archived or in the trash, are left out of `items` and `total`.
 
         Scope `tasks:read` for a personal API token.
       tags: [lists]
@@ -553,6 +628,20 @@ components:
           goal: Livrer la connexion SSO et la page des quotas d’organisation.
         createdAt: '2026-10-30T16:00:00Z'
         version: 2
+        organizationAccess: true
+        archivedAt: null
+        archivedBy: null
+        callerRole: edit
+    RoleInsufficient:
+      summary: A person with "Lecture seule" changes the list
+      value:
+        type: about:blank
+        title: Il faut le droit « Peut modifier » pour cette action.
+        status: 403
+        code: access.role-insufficient
+        details:
+          role: view
+          requiredRole: edit
     CrossSiteRefused:
       summary: Request from another site
       value:
@@ -688,6 +777,9 @@ components:
               $ref: '#/components/examples/OrganizationMfaRequired'
     TasksWriteForbidden:
       description: |
+        - `access.role-insufficient`: the caller sees the list, or the space for a creation,
+          without `edit` on it; `details.role` is their role there (`null` for a space they see
+          only through some of its lists), `details.requiredRole` is `edit`;
         - `auth.scope-missing`: the personal API token lacks `tasks:write`;
         - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
         - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
@@ -696,6 +788,8 @@ components:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           examples:
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
             scopeMissing:
               $ref: '#/components/examples/ScopeMissingWrite'
             organizationNotSelected:
@@ -720,7 +814,7 @@ components:
             code: space.not-found
     ListNotFound:
       description: |
-        - `list.not-found`: no list with this id that the caller sees;
+        - `list.not-found`: no list with this id that the caller sees, a deleted one included;
         - `organization.not-found`: see `SpaceNotFound`.
       content:
         application/problem+json:

@@ -16,4 +16,9 @@ export interface ListPatch {
   icon?: LookIcon | null;
   color?: LookColor;
   sprint?: SprintInput | null;
+  /**
+     * Turns the switch "Accès de l’organisation" on or off ("Tous les membres de Atelier
+     * Nord peuvent voir cette liste").
+     */
+  organizationAccess?: boolean;
 }

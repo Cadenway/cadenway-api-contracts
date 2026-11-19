@@ -6,9 +6,9 @@
  * with the same shape (`Problem`, `Email`, `Role`, the error responses that alias `Problem`) is
  * exported once, from the first document below that generates it; `NextCursor`, which every
  * document receives from components/http.yaml, from the first one that paginates; the schemas of
- * components/task.yaml, which each of the spaces, lists and tasks documents generates whole, from
- * the first of them. A generated enumeration is a constant and a type of the same name, exported
- * together.
+ * components/task.yaml, which each of the spaces, lists, tasks, access, archives and trash
+ * documents generates whole, from the first of them. A generated enumeration is a constant and a
+ * type of the same name, exported together.
  */
 
 // openapi/public/auth.yaml
@@ -290,17 +290,27 @@ export type { TokenWriteForbiddenResponse } from './generated/public/api-tokens/
 export {
   SpacesService,
   type CreateSpaceClientResult,
+  type DeleteSpaceClientResult,
   type GetSpaceClientResult,
   type GetSpaceOverviewClientResult,
   type ListSpacesClientResult,
   type UpdateSpaceClientResult,
 } from './generated/public/spaces/spaces/spaces.service';
+export type { AccessRequest } from './generated/public/spaces/model/accessRequest';
+export type { AccessRequestApproval } from './generated/public/spaces/model/accessRequestApproval';
+export type { AccessRequestCreation } from './generated/public/spaces/model/accessRequestCreation';
+export type { AccessRequestStateValue } from './generated/public/spaces/model/accessRequestStateValue';
+export type { AccessRequestTargetValue } from './generated/public/spaces/model/accessRequestTargetValue';
+export { AccessRole } from './generated/public/spaces/model/accessRole';
+export type { AccessRoleValue } from './generated/public/spaces/model/accessRoleValue';
 export type { ActivityEntry } from './generated/public/spaces/model/activityEntry';
 export type { ActivityEntryAssignee } from './generated/public/spaces/model/activityEntryAssignee';
 export type { ActivityEntryDueDate } from './generated/public/spaces/model/activityEntryDueDate';
 export type { ActivityEntryPriority } from './generated/public/spaces/model/activityEntryPriority';
 export type { ActivityEntryStatus } from './generated/public/spaces/model/activityEntryStatus';
 export type { Actor } from './generated/public/spaces/model/actor';
+export type { ArchivedList } from './generated/public/spaces/model/archivedList';
+export type { ArchivedTask } from './generated/public/spaces/model/archivedTask';
 export { CancelReason } from './generated/public/spaces/model/cancelReason';
 export type { CancelReasonInput } from './generated/public/spaces/model/cancelReasonInput';
 export type { ChecklistCounts } from './generated/public/spaces/model/checklistCounts';
@@ -309,6 +319,8 @@ export type { ChecklistItemCreation } from './generated/public/spaces/model/chec
 export type { ChecklistItemPatch } from './generated/public/spaces/model/checklistItemPatch';
 export type { EstimateMinutes } from './generated/public/spaces/model/estimateMinutes';
 export type { GetSpaceOverviewParams } from './generated/public/spaces/model/getSpaceOverviewParams';
+export type { Grant } from './generated/public/spaces/model/grant';
+export type { GrantChange } from './generated/public/spaces/model/grantChange';
 export type { IdempotencyKeyParameter } from './generated/public/spaces/model/idempotencyKeyParameter';
 export type { IdempotencyKeyReusedResponse } from './generated/public/spaces/model/idempotencyKeyReusedResponse';
 export type { LabelChange } from './generated/public/spaces/model/labelChange';
@@ -318,7 +330,9 @@ export { ListCreationColor } from './generated/public/spaces/model/listCreationC
 export { ListCreationIcon } from './generated/public/spaces/model/listCreationIcon';
 export type { ListName } from './generated/public/spaces/model/listName';
 export type { ListPatch } from './generated/public/spaces/model/listPatch';
+export type { ListRef } from './generated/public/spaces/model/listRef';
 export type { ListSpacesParams } from './generated/public/spaces/model/listSpacesParams';
+export type { ListStateValue } from './generated/public/spaces/model/listStateValue';
 export type { ListSummary } from './generated/public/spaces/model/listSummary';
 export { LookColor } from './generated/public/spaces/model/lookColor';
 export type { LookColorValue } from './generated/public/spaces/model/lookColorValue';
@@ -335,6 +349,7 @@ export type { SpaceCreationForbiddenResponse } from './generated/public/spaces/m
 export { SpaceCreationIcon } from './generated/public/spaces/model/spaceCreationIcon';
 export { SpaceCreationVisibility } from './generated/public/spaces/model/spaceCreationVisibility';
 export type { SpaceDescription } from './generated/public/spaces/model/spaceDescription';
+export type { SpaceManageForbiddenResponse } from './generated/public/spaces/model/spaceManageForbiddenResponse';
 export type { SpaceName } from './generated/public/spaces/model/spaceName';
 export type { SpaceNotFoundResponse } from './generated/public/spaces/model/spaceNotFoundResponse';
 export type { SpaceOverview } from './generated/public/spaces/model/spaceOverview';
@@ -370,6 +385,9 @@ export type { TaskRef } from './generated/public/spaces/model/taskRef';
 export type { TasksReadForbiddenResponse } from './generated/public/spaces/model/tasksReadForbiddenResponse';
 export type { TaskSummary } from './generated/public/spaces/model/taskSummary';
 export type { TodayParameter } from './generated/public/spaces/model/todayParameter';
+export type { TrashEmptied } from './generated/public/spaces/model/trashEmptied';
+export type { TrashEntry } from './generated/public/spaces/model/trashEntry';
+export type { TrashRestored } from './generated/public/spaces/model/trashRestored';
 export type { UserRef } from './generated/public/spaces/model/userRef';
 export { Visibility } from './generated/public/spaces/model/visibility';
 export type { VisibilityValue } from './generated/public/spaces/model/visibilityValue';
@@ -378,6 +396,7 @@ export type { VisibilityValue } from './generated/public/spaces/model/visibility
 export {
   ListsService,
   type CreateListClientResult,
+  type DeleteListClientResult,
   type GetListClientResult,
   type GetListCountsClientResult,
   type ListListActivityClientResult,
@@ -431,6 +450,7 @@ export {
 } from './generated/public/tasks/my-tasks/my-tasks.service';
 export type { AssigneeFilterParameter } from './generated/public/tasks/model/assigneeFilterParameter';
 export type { AssigneeRefusedResponse } from './generated/public/tasks/model/assigneeRefusedResponse';
+export type { ChecklistItemConflictResponse } from './generated/public/tasks/model/checklistItemConflictResponse';
 export type { ChecklistItemNotFoundResponse } from './generated/public/tasks/model/checklistItemNotFoundResponse';
 export type { ChecklistItemRefusedResponse } from './generated/public/tasks/model/checklistItemRefusedResponse';
 export type { CountTaskGroupsParams } from './generated/public/tasks/model/countTaskGroupsParams';
@@ -456,7 +476,9 @@ export { MyTaskStateParameter } from './generated/public/tasks/model/myTaskState
 export type { PriorityFilterParameter } from './generated/public/tasks/model/priorityFilterParameter';
 export type { SearchParameter } from './generated/public/tasks/model/searchParameter';
 export type { StatusFilterParameter } from './generated/public/tasks/model/statusFilterParameter';
+export type { SubtaskCreationConflictResponse } from './generated/public/tasks/model/subtaskCreationConflictResponse';
 export type { SubtaskCreationRefusedResponse } from './generated/public/tasks/model/subtaskCreationRefusedResponse';
+export type { TaskArchivedResponse } from './generated/public/tasks/model/taskArchivedResponse';
 export type { TaskChangeRefusedResponse } from './generated/public/tasks/model/taskChangeRefusedResponse';
 export type { TaskCreationRefusedResponse } from './generated/public/tasks/model/taskCreationRefusedResponse';
 export type { TaskDetail } from './generated/public/tasks/model/taskDetail';
@@ -465,3 +487,64 @@ export type { TaskGroupPage } from './generated/public/tasks/model/taskGroupPage
 export type { TaskNotFoundResponse } from './generated/public/tasks/model/taskNotFoundResponse';
 export { TaskSortParameter } from './generated/public/tasks/model/taskSortParameter';
 export type { TaskSummaryPage } from './generated/public/tasks/model/taskSummaryPage';
+
+// openapi/public/access.yaml
+export {
+  AccessService,
+  type ListListGrantsClientResult,
+  type ListSpaceGrantsClientResult,
+  type RemoveListGrantClientResult,
+  type RemoveSpaceGrantClientResult,
+  type SetListGrantClientResult,
+  type SetSpaceGrantClientResult,
+} from './generated/public/access/access/access.service';
+export {
+  AccessRequestsService,
+  type ApproveAccessRequestClientResult,
+  type CreateAccessRequestClientResult,
+  type ListAccessRequestsClientResult,
+  type RefuseAccessRequestClientResult,
+} from './generated/public/access/access-requests/access-requests.service';
+export type { AccessRequestDecidedResponse } from './generated/public/access/model/accessRequestDecidedResponse';
+export type { AccessRequestNotFoundResponse } from './generated/public/access/model/accessRequestNotFoundResponse';
+export type { AccessRequestPage } from './generated/public/access/model/accessRequestPage';
+export type { AccessRequestRateLimitedResponse } from './generated/public/access/model/accessRequestRateLimitedResponse';
+export type { GrantPage } from './generated/public/access/model/grantPage';
+export type { GrantRefusedResponse } from './generated/public/access/model/grantRefusedResponse';
+export type { ListAccessRequestsParams } from './generated/public/access/model/listAccessRequestsParams';
+export type { ListIdFilterParameter } from './generated/public/access/model/listIdFilterParameter';
+export type { ListListGrantsParams } from './generated/public/access/model/listListGrantsParams';
+export type { ListSpaceGrantsParams } from './generated/public/access/model/listSpaceGrantsParams';
+export type { ListWriteForbiddenResponse } from './generated/public/access/model/listWriteForbiddenResponse';
+export type { OwnerUnchangeableResponse } from './generated/public/access/model/ownerUnchangeableResponse';
+export type { SpaceIdFilterParameter } from './generated/public/access/model/spaceIdFilterParameter';
+
+// openapi/public/archives.yaml
+export {
+  ArchivesService,
+  type ArchiveListClientResult,
+  type ArchiveTaskClientResult,
+  type ListArchivedListsClientResult,
+  type ListArchivedTasksClientResult,
+  type UnarchiveListClientResult,
+  type UnarchiveTaskClientResult,
+} from './generated/public/archives/archives/archives.service';
+export type { ArchivedListPage } from './generated/public/archives/model/archivedListPage';
+export type { ArchivedTaskPage } from './generated/public/archives/model/archivedTaskPage';
+export type { ListArchivedListsParams } from './generated/public/archives/model/listArchivedListsParams';
+export type { ListArchivedTasksParams } from './generated/public/archives/model/listArchivedTasksParams';
+export type { ListIfMatchParameter } from './generated/public/archives/model/listIfMatchParameter';
+export type { TaskIfMatchParameter } from './generated/public/archives/model/taskIfMatchParameter';
+
+// openapi/public/trash.yaml
+export {
+  TrashService,
+  type EmptyTrashClientResult,
+  type ListTrashClientResult,
+  type PurgeTrashEntryClientResult,
+  type RestoreTrashEntryClientResult,
+  type TrashTaskClientResult,
+} from './generated/public/trash/trash/trash.service';
+export type { ListTrashParams } from './generated/public/trash/model/listTrashParams';
+export type { TrashEntryNotFoundResponse } from './generated/public/trash/model/trashEntryNotFoundResponse';
+export type { TrashEntryPage } from './generated/public/trash/model/trashEntryPage';

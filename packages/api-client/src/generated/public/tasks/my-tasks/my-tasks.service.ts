@@ -158,7 +158,8 @@ export class MyTasksService {
  * of the keys `done` and `cancelled` ("Terminées", "Terminées et annulées"). They come by due
  * date, the tasks without a due date last, then in the order of their creation; the web
  * application groups the open ones by due date ("En retard", "Aujourd’hui", "Sept prochains
- * jours", "Plus tard", "Sans échéance"). `counts` counts both tabs, on every page.
+ * jours", "Plus tard", "Sans échéance"). `counts` counts both tabs, on every page. Archived
+ * tasks and the trash are left out; the tasks of an archived list stay.
  *
  * Scope `tasks:read` for a personal API token.
  * @summary List the tasks of the caller
@@ -210,9 +211,11 @@ export class MyTasksService {
  * - `lists` ("Listes"): the first 6 lists, in the order of the sidebar (spaces then lists in
  *   the order of their creation), with the counts of their tasks ("14 ouvertes").
  *
- * `today` is the date of the caller, in their time zone. A guest gets zeros and empty lists in
- * this version. The mentions and the activity of the inbox come from another route in a later
- * version. Scope `tasks:read` for a personal API token.
+ * Archived tasks and the trash are left out of `stats` and `priorities`, the tasks of an
+ * archived list stay; archived lists are left out of `sprints` and `lists`. `today` is the
+ * date of the caller, in their time zone. A guest, never assigned, gets zeros, no priorities,
+ * and the lists shared with them. The mentions and the activity of the inbox come from
+ * another route in a later version. Scope `tasks:read` for a personal API token.
  * @summary Read the task part of "Accueil"
  */
  getHome<TData = Home>(params: GetHomeParams, options?: HttpClientBodyOptions): Observable<TData>;

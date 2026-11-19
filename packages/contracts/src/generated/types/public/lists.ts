@@ -34,6 +34,25 @@ export interface Sprint {
 }
 
 /**
+ * Who made a change: a person (`user`, `id` is the account), an automation rule
+ * (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
+ * example `task-service` when a removed member leaves the assignees). Later versions add
+ * actor types (the public intake form of the mockup, "Formulaire public") and members (the
+ * Git provider): a client shows an unknown type as is.
+ */
+export interface Actor {
+  type: string;
+  /** @minLength 1 */
+  id: string;
+}
+
+/**
+ * A role of `AccessRole`, as a resource carries it. Later versions may add roles
+ * (`x-extensible-enum`): a client treats an unknown one as `view`.
+ */
+export type AccessRoleValue = string;
+
+/**
  * A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of
  * their creation.
  */
@@ -48,10 +67,29 @@ export interface TaskList {
   sprint: Sprint | null;
   createdAt: string;
   /**
-     * Version of the list, also sent as `ETag`.
+     * Version of the list, also sent as `ETag`; a change of its grants, an archive and a
+     * restoration add one too.
      * @minimum 1
      */
   version: number;
+  /**
+     * The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir
+     * cette liste"), on by default. In a space of the whole organization, on, every owner,
+     * admin and member of the organization has `edit` on the list; off, only the owner of
+     * the space and the people the space or the list is shared with see it. In a private
+     * space it changes nothing. Absent, it reads as `true`.
+     */
+  organizationAccess?: boolean;
+  /**
+     * When the list was archived ("archivée le 3 nov."); `null` for a list that is not.
+     * An archived list is left out of the lists of its space, of the overview and of
+     * "Accueil", and reads by its id. Absent, it reads as `null`.
+     * @nullable
+     */
+  archivedAt?: string | null;
+  /** Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`. */
+  archivedBy?: Actor | null;
+  callerRole?: AccessRoleValue;
 }
 
 /**
@@ -146,6 +184,11 @@ export interface ListCreation {
      * `null` for a list.
      */
   sprint?: SprintInput | null;
+  /**
+     * The switch "Accès de l’organisation" of the new list; absent, it is on (`true`), as
+     * for every list created before the switch existed.
+     */
+  organizationAccess?: boolean;
 }
 
 /**
@@ -214,6 +257,11 @@ export interface ListPatch {
   icon?: LookIcon | null;
   color?: LookColor;
   sprint?: SprintInput | null;
+  /**
+     * Turns the switch "Accès de l’organisation" on or off ("Tous les membres de Atelier
+     * Nord peuvent voir cette liste").
+     */
+  organizationAccess?: boolean;
 }
 
 /**
@@ -330,19 +378,6 @@ export type ActivityEntryAssignee = {
   userId: string;
   added: boolean;
 };
-
-/**
- * Who made a change: a person (`user`, `id` is the account), an automation rule
- * (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
- * example `task-service` when a removed member leaves the assignees). Later versions add
- * actor types (the public intake form of the mockup, "Formulaire public") and members (the
- * Git provider): a client shows an unknown type as is.
- */
-export interface Actor {
-  type: string;
-  /** @minLength 1 */
-  id: string;
-}
 
 /**
  * Key of a task, the only way a task is named outside task-service: the prefix of the space
@@ -486,7 +521,8 @@ export type SpacePrefix = string;
 
 /**
  * Who sees a space ("Confidentialité"): `organization` ("Tout Atelier Nord": every member of
- * the organization but the guests) or `private` ("Privé": its owner only in this version).
+ * the organization but the guests) or `private` ("Privé": its owner and the people it is
+ * shared with).
  */
 export type Visibility = typeof Visibility[keyof typeof Visibility];
 
@@ -494,6 +530,21 @@ export type Visibility = typeof Visibility[keyof typeof Visibility];
 export const Visibility = {
   organization: 'organization',
   private: 'private',
+} as const;
+
+/**
+ * A role given by a grant ("Droit d’accès"): `edit` ("Peut modifier"), `comment` ("Peut
+ * commenter", which reads like `view` until comments exist) or `view` ("Lecture seule"),
+ * from the most to the least. The owner of a space ("Propriétaire") holds no grant: they
+ * always have `edit` on it and on its lists.
+ */
+export type AccessRole = typeof AccessRole[keyof typeof AccessRole];
+
+
+export const AccessRole = {
+  edit: 'edit',
+  comment: 'comment',
+  view: 'view',
 } as const;
 
 /**
@@ -571,10 +622,26 @@ export interface Space {
   nextKey: TaskKey;
   createdAt: string;
   /**
-     * Version of the space, also sent as `ETag`.
+     * Version of the space, also sent as `ETag`; a change of its grants adds one too.
      * @minimum 1
      */
   version: number;
+  /**
+     * The role of the caller on the space itself (see "Access" in
+     * `openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner
+     * of the space and a grant of the space. `null` when the caller sees the space only
+     * through the grants of some of its lists, as a guest does: they see those lists only,
+     * and create no list in the space. Absent, it reads as `edit`, the rule before grants
+     * existed.
+     */
+  callerRole?: AccessRoleValue | null;
+  /**
+     * Whether the caller manages the space: changes its visibility, shares it and deletes it;
+     * its settings and statuses need `edit` only. `true` for the owner of the space, and for
+     * the owner and the admins of the organization when the space is `organization`. Absent,
+     * the web application offers the actions and handles their `403`.
+     */
+  callerCanManage?: boolean;
 }
 
 /**
@@ -901,10 +968,20 @@ export interface Task {
   updatedAt: string;
   /**
      * Version of the task, also sent as `ETag`; every change adds one, a change of its
-     * assignees, labels or checklist included.
+     * assignees, labels or checklist, an archive and a restoration included.
      * @minimum 1
      */
   version: number;
+  /**
+     * When the task was archived, with the subtree it heads or belongs to ("archivée le 5
+     * nov."); `null` for a task that is not. An archived task is left out of every
+     * collection and count, reads by its key and refuses changes (`409 task.archived`) until
+     * it is restored. Absent, it reads as `null`.
+     * @nullable
+     */
+  archivedAt?: string | null;
+  /** Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`. */
+  archivedBy?: Actor | null;
 }
 
 /**
@@ -1133,6 +1210,212 @@ export interface ChecklistItemPatch {
 }
 
 /**
+ * The access of one person to a space or a list ("Personnes ayant accès"), given by someone
+ * who manages it. A space or a list holds 200 grants at most. The owner of the space holds
+ * none: they always have `edit` ("Propriétaire").
+ */
+export interface Grant {
+  /** Account of the person, a current member or guest of the organization. */
+  userId: string;
+  role: AccessRoleValue;
+  /** When the person was given this role. */
+  grantedAt: string;
+  grantedBy: Actor;
+}
+
+/**
+ * The role to give ("Droit d’accès"); it replaces the role the person had there.
+ */
+export interface GrantChange {
+  role: AccessRole;
+}
+
+/**
+ * `active` for a list of the sidebar, `archived` for a list of the archives ("Liste
+ * archivée"), `deleted` for a deleted list ("Liste supprimée"), which comes back when one of
+ * its tasks is restored. Later versions may add states (`x-extensible-enum`).
+ */
+export type ListStateValue = string;
+
+/**
+ * The list of an archived or trashed task, with its name and state as they are now.
+ */
+export interface ListRef {
+  id: string;
+  spaceId: string;
+  /** "Nom", 80 characters at most. */
+  name: string;
+  state: ListStateValue;
+}
+
+/**
+ * A list of the archives ("Archives", tab "Listes").
+ */
+export interface ArchivedList {
+  list: TaskList;
+  /**
+     * Its top-level tasks, subtasks left out ("14 tâches").
+     * @minimum 0
+     */
+  taskCount: number;
+}
+
+/**
+ * A task of the archives ("Archives", tab "Tâches"): the root of a subtree archived together,
+ * which comes back together.
+ */
+export interface ArchivedTask {
+  task: TaskSummary;
+  list: ListRef;
+  /**
+     * The subtasks archived with it, at every level.
+     * @minimum 0
+     */
+  subtaskCount: number;
+  /** "archivée le 5 nov." */
+  archivedAt: string;
+  archivedBy: Actor;
+}
+
+/**
+ * One element of the trash ("Corbeille"): a task and its subtasks at every level, deleted
+ * together, which come back or are erased together. Deleting a subtask makes an entry of its
+ * own subtree; deleting a list or a space makes one entry per top-level task.
+ */
+export interface TrashEntry {
+  id: string;
+  task: TaskRef;
+  /**
+     * The parent the root had when it was deleted ("Sous-tâche de CAD-482"); `null` for a
+     * top-level task.
+     */
+  parentKey: TaskKey | null;
+  /**
+     * The subtasks deleted with it, at every level ("Avec 3 sous-tâches").
+     * @minimum 0
+     */
+  subtaskCount: number;
+  list: ListRef;
+  /** "Supprimée il y a 2 jours" */
+  trashedAt: string;
+  trashedBy: Actor;
+  /**
+     * When the entry is erased for good, 30 days after `trashedAt` ("Effacée définitivement
+     * dans 28 jours").
+     */
+  purgeAt: string;
+}
+
+/**
+ * What a restoration brought back ("CAD-452 restaurée", "Avec 2 sous-tâches, de retour dans
+ * Sprint 14.").
+ */
+export interface TrashRestored {
+  task: Task;
+  list: TaskList;
+  /**
+     * The subtasks that came back with it, at every level.
+     * @minimum 0
+     */
+  subtaskCount: number;
+  /**
+     * Whether the root left its parent, which is no longer live or can no longer take it
+     * (", détachée de son parent supprimé"); it is then a top-level task.
+     */
+  detached: boolean;
+  /** Whether its list, deleted, came back with it, at the end of its space. */
+  listRestored: boolean;
+  /** Whether the space of that list, deleted, came back too, at the end of the sidebar. */
+  spaceRestored: boolean;
+}
+
+/**
+ * What "Vider la corbeille" took out ("Corbeille vidée", "12 éléments effacés définitivement.").
+ */
+export interface TrashEmptied {
+  /**
+     * Entries that left the trash, to be erased for good.
+     * @minimum 0
+     */
+  entryCount: number;
+}
+
+/**
+ * A request for access ("Demander l’accès"): exactly one of `spaceId`, `listId` and
+ * `taskKey`, as the link the caller followed names the target; none or several answer
+ * `400 request.invalid`.
+ */
+export interface AccessRequestCreation {
+  /** A space to have a role on. */
+  spaceId?: string;
+  /** A list to see. */
+  listId?: string;
+  taskKey?: TaskKey;
+  /**
+     * "Message pour Léa (facultatif)", trimmed; `null` or an empty text for none.
+     * @maxLength 500
+     * @nullable
+     */
+  message?: string | null;
+}
+
+/**
+ * What a request asks for: `space`, `list` or `task`. Later versions may add targets
+ * (`x-extensible-enum`).
+ */
+export type AccessRequestTargetValue = string;
+
+/**
+ * `pending` until someone who manages the target answers, then `approved` or `refused`. Later
+ * versions may add states (`x-extensible-enum`).
+ */
+export type AccessRequestStateValue = string;
+
+/**
+ * A request for access, as the people who manage its target read it. The requester never
+ * reads it: they learn the answer from the inbox (cadenway-notification-service). It has no
+ * `version` of its own to send back: it changes once, from `pending`, and a second answer
+ * gets `409 access-request.already-decided`; its events carry `1`, then `2`.
+ */
+export interface AccessRequest {
+  id: string;
+  target: AccessRequestTargetValue;
+  /** The space of the target. */
+  spaceId: string;
+  /**
+     * The list of a list or task target; `null` for a space.
+     * @nullable
+     */
+  listId: string | null;
+  /** The task of a task target, with its name and status as they are now; `null` otherwise. */
+  task: TaskRef | null;
+  requester: UserRef;
+  /**
+     * The message of the requester, 500 characters at most; `null` when there is none.
+     * @nullable
+     */
+  message: string | null;
+  state: AccessRequestStateValue;
+  /** The role an approval gave; `null` while pending or when refused. */
+  role: AccessRoleValue | null;
+  createdAt: string;
+  /**
+     * When it was approved or refused; `null` while pending.
+     * @nullable
+     */
+  decidedAt: string | null;
+  /** Who approved or refused it; `null` while pending. */
+  decidedBy: Actor | null;
+}
+
+/**
+ * The role an approval gives the requester ("Droit d’accès").
+ */
+export interface AccessRequestApproval {
+  role: AccessRole;
+}
+
+/**
  * The request does not match the schema: `request.invalid`, with one `details.issues` entry
  * per failed member (`path` is the dotted path of the member, empty for the body itself).
  */
@@ -1157,6 +1440,9 @@ export type UnauthenticatedResponse = Problem;
 export type TasksReadForbiddenResponse = Problem;
 
 /**
+ * - `access.role-insufficient`: the caller sees the list, or the space for a creation,
+ *   without `edit` on it; `details.role` is their role there (`null` for a space they see
+ *   only through some of its lists), `details.requiredRole` is `edit`;
  * - `auth.scope-missing`: the personal API token lacks `tasks:write`;
  * - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
  * - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
@@ -1171,7 +1457,7 @@ export type TasksWriteForbiddenResponse = Problem;
 export type SpaceNotFoundResponse = Problem;
 
 /**
- * - `list.not-found`: no list with this id that the caller sees;
+ * - `list.not-found`: no list with this id that the caller sees, a deleted one included;
  * - `organization.not-found`: see `SpaceNotFound`.
  */
 export type ListNotFoundResponse = Problem;

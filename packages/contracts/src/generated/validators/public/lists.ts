@@ -5,12 +5,14 @@
 import * as zod from 'zod';
 
 /**
- * Creates a list in a space the caller sees, after its other lists ("Créer la liste", "Liste
- * créée"); with `sprint`, a sprint ("Créer le sprint", "Sprint créé"). An end before the
- * start answers `422 list.sprint-dates-invalid` ("La fin doit suivre le début."). The web
- * application proposes the name, the dates and the appearance of a new sprint ("Sprint 15",
- * the day after the end of the last sprint, 14 days, the lightning and "Améthyste"); the API
- * takes what it is sent.
+ * Creates a list in a space the caller has `edit` on, after its other lists ("Créer la
+ * liste", "Liste créée"); with `sprint`, a sprint ("Créer le sprint", "Sprint créé"). An end
+ * before the start answers `422 list.sprint-dates-invalid` ("La fin doit suivre le début.").
+ * The web application proposes the name, the dates and the appearance of a new sprint
+ * ("Sprint 15", the day after the end of the last sprint, 14 days, the lightning and
+ * "Améthyste"); the API takes what it is sent. `organizationAccess` is on unless the body
+ * turns it off. A caller who sees the space without `edit` on it, through the grants of some
+ * of its lists for example, gets `403 access.role-insufficient`.
  *
  * Emits `list.created.v1`. Scope `tasks:write` for a personal API token.
  * @summary Create a list or a sprint
@@ -43,8 +45,10 @@ export const CreateListBody = zod.object({
   "startDate": zod.iso.date().describe('"Début".'),
   "endDate": zod.iso.date().describe('"Fin", on or after `startDate` ("La fin doit suivre le début.").'),
   "goal": zod.string().max(createListBodySprintOneGoalMax).nullish().describe('"Objectif du sprint", trimmed; `null` or an empty text for none.')
-}).describe('The dates and the goal of a sprint, the two dates always together; a `goal` left out is\nunchanged by a patch and `null` at a creation.\n'),zod.null()]).optional().describe('The dates and the goal to create a sprint ("Sprint"), both dates required; absent or\n`null` for a list.\n')
+}).describe('The dates and the goal of a sprint, the two dates always together; a `goal` left out is\nunchanged by a patch and `null` at a creation.\n'),zod.null()]).optional().describe('The dates and the goal to create a sprint ("Sprint"), both dates required; absent or\n`null` for a list.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" of the new list; absent, it is on (`true`), as\nfor every list created before the switch existed.\n')
 }).describe('A new list or sprint. The members with a default declare their values themselves, the\nvalues of `LookIcon` and `LookColor`.\n')
+
 
 
 
@@ -61,13 +65,22 @@ export const CreateListResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n')
 
 
 /**
- * Lists the lists and the sprints of a space the caller sees, in the order of their creation,
- * the order of the sidebar. Their counts are read with
+ * Lists the lists and the sprints of a space that the caller sees, in the order of the
+ * sidebar: the order of their creation, a list restored from the archives or the trash at
+ * the end. The archived lists are left out (`GET /v1/archives/lists`,
+ * `openapi/public/archives.yaml`). Their counts are read with
  * `GET /v1/spaces/{spaceId}/overview` (`openapi/public/spaces.yaml`).
  *
  * Scope `tasks:read` for a personal API token.
@@ -90,6 +103,7 @@ export const ListListsQueryParams = zod.object({
 
 
 
+
 export const ListListsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.uuid(),
@@ -103,19 +117,29 @@ export const ListListsResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n')),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
 })
 
 
 /**
- * Returns a list or a sprint the caller sees. Scope `tasks:read` for a personal API token.
+ * Returns a list or a sprint the caller sees, an archived one included (`archivedAt`), with
+ * the role of the caller on it (`callerRole`). A deleted list answers `404 list.not-found`.
+ * Scope `tasks:read` for a personal API token.
  * @summary Read a list
  */
 export const GetListParams = zod.object({
   "listId": zod.uuid().describe('Id of the list or the sprint.')
 })
+
 
 
 
@@ -132,7 +156,14 @@ export const GetListResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n')
 
 
@@ -145,11 +176,17 @@ export const GetListResponse = zod.object({
  *   end before the start answers `422 list.sprint-dates-invalid` ("La fin doit suivre le
  *   début."). `sprint: null` makes a sprint a list again, without dates or goal; its tasks
  *   stay in it.
+ * - `organizationAccess` turns the switch "Accès de l’organisation" of the dialog
+ *   "Partager" ("Tous les membres de Atelier Nord peuvent voir cette liste"). Off, in a space
+ *   `organization`, the members of the organization who hold no grant stop seeing the list
+ *   and its tasks at once; in a private space it changes nothing.
  * - `If-Match` is optional (`412 request.version-mismatch`).
  *
- * A list never moves to another space in this version. Emits `list.updated.v1` when something
- * changed; a patch that changes nothing answers `200` with the same version and emits
- * nothing. Scope `tasks:write` for a personal API token.
+ * It needs `edit` on the list (`403 access.role-insufficient`); an archived list changes
+ * too. A list never moves to another space in this version. Emits `list.updated.v1` when
+ * its name, appearance or sprint changed, and `list.access-changed.v1` when its switch did,
+ * with the same version; a patch that changes nothing answers `200` with the same version
+ * and emits nothing. Scope `tasks:write` for a personal API token.
  * @summary Change a list or a sprint
  */
 export const UpdateListParams = zod.object({
@@ -174,8 +211,10 @@ export const UpdateListBody = zod.object({
   "startDate": zod.iso.date().describe('"Début".'),
   "endDate": zod.iso.date().describe('"Fin", on or after `startDate` ("La fin doit suivre le début.").'),
   "goal": zod.string().max(updateListBodySprintOneGoalMax).nullish().describe('"Objectif du sprint", trimmed; `null` or an empty text for none.')
-}).describe('The dates and the goal of a sprint, the two dates always together; a `goal` left out is\nunchanged by a patch and `null` at a creation.\n'),zod.null()]).optional()
+}).describe('The dates and the goal of a sprint, the two dates always together; a `goal` left out is\nunchanged by a patch and `null` at a creation.\n'),zod.null()]).optional(),
+  "organizationAccess": zod.boolean().optional().describe('Turns the switch "Accès de l’organisation" on or off ("Tous les membres de Atelier\nNord peuvent voir cette liste").\n')
 }).describe('JSON Merge Patch of a list; an empty object changes nothing. `sprint: null` makes a sprint\na list again, and drops its dates and goal.\n')
+
 
 
 
@@ -192,8 +231,44 @@ export const UpdateListResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n')
+
+
+/**
+ * Deletes a list ("Supprimer la liste", "Liste « Bugs » supprimée"), archived or not, which
+ * needs `edit` on it (`403 access.role-insufficient`). The web application asks first for
+ * the name of the list ("Pour confirmer, saisissez Bugs") and offers to archive it instead
+ * ("Pour la garder de côté, archivez-la plutôt.").
+ *
+ * The list and its tasks disappear at once for everyone: they answer `404` and leave every
+ * collection and count. A job then moves the tasks to the trash in bounded batches, one entry
+ * per top-level task with its subtasks (`openapi/public/trash.yaml`), within minutes ("N
+ * tâches dans la corbeille, restaurables pendant 30 jours."); archived tasks go too and leave
+ * the archives. Restoring one of them brings the list back, at the end of its space, without
+ * its other tasks. The pending access requests of the list and its tasks are dropped.
+ * `If-Match` is optional (`412 request.version-mismatch`).
+ *
+ * Not recorded in the activity log. Emits `list.deleted.v1`, then `task.trashed.v1` for each
+ * task the job moves. Scope `tasks:write` for a personal API token.
+ * @summary Delete a list or a sprint
+ */
+export const DeleteListParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const DeleteListHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const DeleteListResponse = zod.void()
 
 
 /**
@@ -211,6 +286,7 @@ export const GetListCountsParams = zod.object({
 export const GetListCountsQueryParams = zod.object({
   "today": zod.iso.date().describe('The date of the caller, in their time zone, which task-service does not know: the late\ntasks, the tasks due that day and the current sprints are counted against it.\n')
 })
+
 
 
 export const getListCountsResponseCountsTotalMin = 0;
@@ -238,7 +314,14 @@ export const GetListCountsResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "counts": zod.object({
   "total": zod.int().min(getListCountsResponseCountsTotalMin).describe('Every top-level task of the list ("32 tâches").'),
@@ -256,8 +339,8 @@ export const GetListCountsResponse = zod.object({
  * `kind` keeps the given kinds (the chips "Statuts", "Assignations", "Créations",
  * "Priorités", "Échéances"), `actorId` the given actors ("Tout le monde" when absent);
  * `total` counts what matches ("18 événements"). An entry shows the task with its name and
- * status as they are now; the entries of a task the caller no longer sees are left out of
- * `items` and `total`.
+ * status as they are now; the entries of a task the caller no longer sees, or that is
+ * archived or in the trash, are left out of `items` and `total`.
  *
  * Scope `tasks:read` for a personal API token.
  * @summary Read the activity log of a list

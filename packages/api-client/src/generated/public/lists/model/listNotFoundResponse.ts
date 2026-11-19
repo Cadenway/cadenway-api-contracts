@@ -5,7 +5,7 @@
 import type { Problem } from './problem';
 
 /**
- * - `list.not-found`: no list with this id that the caller sees;
+ * - `list.not-found`: no list with this id that the caller sees, a deleted one included;
  * - `organization.not-found`: see `SpaceNotFound`.
  */
 export type ListNotFoundResponse = Problem;

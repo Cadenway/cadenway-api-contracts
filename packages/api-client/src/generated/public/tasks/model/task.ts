@@ -73,8 +73,18 @@ export interface Task {
   updatedAt: string;
   /**
      * Version of the task, also sent as `ETag`; every change adds one, a change of its
-     * assignees, labels or checklist included.
+     * assignees, labels or checklist, an archive and a restoration included.
      * @minimum 1
      */
   version: number;
+  /**
+     * When the task was archived, with the subtree it heads or belongs to ("archivée le 5
+     * nov."); `null` for a task that is not. An archived task is left out of every
+     * collection and count, reads by its key and refuses changes (`409 task.archived`) until
+     * it is restored. Absent, it reads as `null`.
+     * @nullable
+     */
+  archivedAt?: string | null;
+  /** Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`. */
+  archivedBy?: Actor | null;
 }

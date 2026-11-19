@@ -153,8 +153,9 @@ export class TaskQueriesService {
   private readonly http = inject(HttpClient);
 /**
  * Lists the tasks of a list the caller sees, filtered and sorted (views "Liste", "Tableau",
- * "Gantt"). Values of one filter add up, filters narrow each other ("Statut est l’un de …").
- * `total` counts the tasks that match the filters, on every page ("12 sur 98 tâches").
+ * "Gantt"); an archived list lists its tasks too. Values of one filter add up, filters narrow
+ * each other ("Statut est l’un de …"). `total` counts the tasks that match the filters, on
+ * every page ("12 sur 98 tâches"). Archived tasks and the tasks in the trash are left out.
  *
  * - `level`: `roots` (the default) keeps the top-level tasks, whose subtasks the web
  *   application reads under each of them with `GET /v1/tasks/{taskKey}/subtasks`

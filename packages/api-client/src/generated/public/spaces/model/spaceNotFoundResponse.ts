@@ -5,7 +5,7 @@
 import type { Problem } from './problem';
 
 /**
- * - `space.not-found`: no space with this id that the caller sees;
+ * - `space.not-found`: no space with this id that the caller sees, a deleted one included;
  * - `organization.not-found`: see `OrganizationNotFound`.
  */
 export type SpaceNotFoundResponse = Problem;

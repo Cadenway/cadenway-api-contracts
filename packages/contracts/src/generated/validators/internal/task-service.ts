@@ -43,6 +43,7 @@ export const createSpaceInternalResponseSpaceNextKeyRegExp = new RegExp('^[A-Z]{
 
 
 
+
 export const CreateSpaceInternalResponse = zod.object({
   "space": zod.object({
   "id": zod.uuid(),
@@ -109,7 +110,9 @@ export const CreateSpaceInternalResponse = zod.object({
 }).describe('The ten statuses as the space shows them, by key.'),
   "nextKey": zod.string().regex(createSpaceInternalResponseSpaceNextKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`; a change of its grants adds one too.\n'),
+  "callerRole": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).optional().describe('The role of the caller on the space itself (see "Access" in\n`openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner\nof the space and a grant of the space. `null` when the caller sees the space only\nthrough the grants of some of its lists, as a guest does: they see those lists only,\nand create no list in the space. Absent, it reads as `edit`, the rule before grants\nexisted.\n'),
+  "callerCanManage": zod.boolean().optional().describe('Whether the caller manages the space: changes its visibility, shares it and deletes it;\nits settings and statuses need `edit` only. `true` for the owner of the space, and for\nthe owner and the admins of the organization when the space is `organization`. Absent,\nthe web application offers the actions and handles their `403`.\n')
 }).describe('A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task\nkeys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the\nnext task created in the space would take now ("Les tâches seront numérotées CAD-1,\nCAD-2…"), a preview that reserves nothing: another creation may take it first.\n'),
   "firstList": zod.object({
   "id": zod.uuid(),
@@ -123,14 +126,22 @@ export const CreateSpaceInternalResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n')
 })
 
 
 /**
- * Lists the spaces the actor sees, in the order of their creation. Internal token: actor
- * `user`, organization required.
+ * Lists the spaces the actor sees, as `GET /v1/spaces` says: in the order of the sidebar, a
+ * space restored from the trash at the end, and for a guest the spaces of the lists shared
+ * with them. Internal token: actor `user`, organization required.
  * @summary List the spaces
  */
 export const listSpacesInternalQueryLimitDefault = 50;
@@ -214,7 +225,9 @@ export const ListSpacesInternalResponse = zod.object({
 }).describe('The ten statuses as the space shows them, by key.'),
   "nextKey": zod.string().regex(listSpacesInternalResponseItemsItemNextKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`; a change of its grants adds one too.\n'),
+  "callerRole": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).optional().describe('The role of the caller on the space itself (see "Access" in\n`openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner\nof the space and a grant of the space. `null` when the caller sees the space only\nthrough the grants of some of its lists, as a guest does: they see those lists only,\nand create no list in the space. Absent, it reads as `edit`, the rule before grants\nexisted.\n'),
+  "callerCanManage": zod.boolean().optional().describe('Whether the caller manages the space: changes its visibility, shares it and deletes it;\nits settings and statuses need `edit` only. `true` for the owner of the space, and for\nthe owner and the admins of the organization when the space is `organization`. Absent,\nthe web application offers the actions and handles their `403`.\n')
 }).describe('A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task\nkeys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the\nnext task created in the space would take now ("Les tâches seront numérotées CAD-1,\nCAD-2…"), a preview that reserves nothing: another creation may take it first.\n')),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
 })
@@ -299,13 +312,17 @@ export const GetSpaceInternalResponse = zod.object({
 }).describe('The ten statuses as the space shows them, by key.'),
   "nextKey": zod.string().regex(getSpaceInternalResponseNextKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`; a change of its grants adds one too.\n'),
+  "callerRole": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).optional().describe('The role of the caller on the space itself (see "Access" in\n`openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner\nof the space and a grant of the space. `null` when the caller sees the space only\nthrough the grants of some of its lists, as a guest does: they see those lists only,\nand create no list in the space. Absent, it reads as `edit`, the rule before grants\nexisted.\n'),
+  "callerCanManage": zod.boolean().optional().describe('Whether the caller manages the space: changes its visibility, shares it and deletes it;\nits settings and statuses need `edit` only. `true` for the owner of the space, and for\nthe owner and the admins of the organization when the space is `organization`. Absent,\nthe web application offers the actions and handles their `403`.\n')
 }).describe('A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task\nkeys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the\nnext task created in the space would take now ("Les tâches seront numérotées CAD-1,\nCAD-2…"), a preview that reserves nothing: another creation may take it first.\n')
 
 
 /**
- * Applies a JSON Merge Patch to a space the actor sees, as `PATCH /v1/spaces/{spaceId}` says:
- * `403 space.visibility-forbidden`, `409 space.prefix-taken`, `412 request.version-mismatch`,
+ * Applies a JSON Merge Patch to a space the actor has `edit` on, as
+ * `PATCH /v1/spaces/{spaceId}` says: `403 access.role-insufficient` without it,
+ * `403 space.visibility-forbidden` for a change of the visibility by an actor who does not
+ * manage the space, `409 space.prefix-taken`, `412 request.version-mismatch`,
  * `422 space.status-required`. Emits `space.updated.v1` when something changed. Internal
  * token: actor `user`, organization required.
  * @summary Change a space
@@ -351,7 +368,7 @@ export const UpdateSpaceInternalBody = zod.object({
   "description": zod.string().max(updateSpaceInternalBodyDescriptionMax).nullish().describe('"Description" ("Facultatif"), trimmed; `null` or an empty text for none.'),
   "icon": zod.union([zod.literal('rocket'),zod.literal('paint'),zod.literal('megaphone'),zod.literal('gear'),zod.literal('code'),zod.literal('bug'),zod.literal('lightning'),zod.literal('target'),zod.literal('flag'),zod.literal('briefcase'),zod.literal('chart'),zod.literal('users'),zod.literal('book'),zod.literal('cube'),zod.literal('headset'),zod.literal('globe'),zod.literal('star'),zod.literal(null)]).nullish().describe('Icon of a space or a list ("Icône"): `rocket` ("Fusée"), `paint` ("Pinceau"), `megaphone`\n("Mégaphone"), `gear` ("Engrenage"), `code` ("Code"), `bug` ("Bogue"), `lightning`\n("Éclair"), `target` ("Cible"), `flag` ("Drapeau"), `briefcase` ("Mallette"), `chart`\n("Courbe"), `users` ("Équipe"), `book` ("Livre"), `cube` ("Cube"), `headset` ("Casque"),\n`globe` ("Globe") or `star` ("Étoile"), the keys of `LOOK_ICONS` of the mockup; `null` for\nnone ("Initiale" for a space, "Par défaut" for a list).\n'),
   "color": zod.enum(['gris', 'violet', 'indigo', 'azur', 'lagon', 'vert', 'olive', 'jaune', 'orange', 'rouge', 'rose', 'fuchsia', 'ardoise']).optional().describe('Color of a space or a list ("Couleur"): `gris` ("Gris", the default), `violet` ("Améthyste"),\n`indigo` ("Indigo"), `azur` ("Azur"), `lagon` ("Lagon"), `vert` ("Jade"), `olive` ("Olive"),\n`jaune` ("Balise"), `orange` ("Cornaline"), `rouge` ("Grenat"), `rose` ("Rose"), `fuchsia`\n("Fuchsia") or `ardoise` ("Ardoise"). The keys of `LOOK_COLORS` of the mockup.\n'),
-  "visibility": zod.enum(['organization', 'private']).optional().describe('Who sees a space ("Confidentialité"): `organization` ("Tout Atelier Nord": every member of\nthe organization but the guests) or `private` ("Privé": its owner only in this version).\n'),
+  "visibility": zod.enum(['organization', 'private']).optional().describe('Who sees a space ("Confidentialité"): `organization` ("Tout Atelier Nord": every member of\nthe organization but the guests) or `private` ("Privé": its owner and the people it is\nshared with).\n'),
   "statuses": zod.object({
   "triage": zod.object({
   "name": zod.string().min(1).max(updateSpaceInternalBodyStatusesTriageNameMax).nullish().describe('New name, trimmed; a name made only of spaces is refused with `400 request.invalid`;\n`null` puts back the default label.\n'),
@@ -466,8 +483,30 @@ export const UpdateSpaceInternalResponse = zod.object({
 }).describe('The ten statuses as the space shows them, by key.'),
   "nextKey": zod.string().regex(updateSpaceInternalResponseNextKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`; a change of its grants adds one too.\n'),
+  "callerRole": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).optional().describe('The role of the caller on the space itself (see "Access" in\n`openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner\nof the space and a grant of the space. `null` when the caller sees the space only\nthrough the grants of some of its lists, as a guest does: they see those lists only,\nand create no list in the space. Absent, it reads as `edit`, the rule before grants\nexisted.\n'),
+  "callerCanManage": zod.boolean().optional().describe('Whether the caller manages the space: changes its visibility, shares it and deletes it;\nits settings and statuses need `edit` only. `true` for the owner of the space, and for\nthe owner and the admins of the organization when the space is `organization`. Absent,\nthe web application offers the actions and handles their `403`.\n')
 }).describe('A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task\nkeys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the\nnext task created in the space would take now ("Les tâches seront numérotées CAD-1,\nCAD-2…"), a preview that reserves nothing: another creation may take it first.\n')
+
+
+/**
+ * Deletes a space the actor manages, as `DELETE /v1/spaces/{spaceId}` says
+ * (`403 space.manage-forbidden`, `412 request.version-mismatch`): the space and its lists
+ * become tombstones that every route answers `404`, its pending access requests are dropped,
+ * and the deletion job moves its tasks to the trash. Emits `space.deleted.v1`, then
+ * `task.trashed.v1` for each task the job moves. Internal token: actor `user`, organization
+ * required.
+ * @summary Delete a space
+ */
+export const DeleteSpaceInternalParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space.')
+})
+
+export const DeleteSpaceInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const DeleteSpaceInternalResponse = zod.void()
 
 
 /**
@@ -494,6 +533,7 @@ export const GetSpaceOverviewInternalQueryParams = zod.object({
 export const getSpaceOverviewInternalResponseListCountMin = 0;
 
 export const getSpaceOverviewInternalResponseTaskCountMin = 0;
+
 
 
 export const getSpaceOverviewInternalResponseItemsItemCountsTotalMin = 0;
@@ -525,7 +565,14 @@ export const GetSpaceOverviewInternalResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "counts": zod.object({
   "total": zod.int().min(getSpaceOverviewInternalResponseItemsItemCountsTotalMin).describe('Every top-level task of the list ("32 tâches").'),
@@ -540,9 +587,10 @@ export const GetSpaceOverviewInternalResponse = zod.object({
 
 
 /**
- * Creates a list in a space the actor sees, as `POST /v1/spaces/{spaceId}/lists` says:
- * `422 list.sprint-dates-invalid` for an end before the start. Emits `list.created.v1`.
- * Internal token: actor `user`, organization required.
+ * Creates a list in a space the actor has `edit` on, as `POST /v1/spaces/{spaceId}/lists`
+ * says: `403 access.role-insufficient` without it, `422 list.sprint-dates-invalid` for an end
+ * before the start, `organizationAccess` on unless the body turns it off. Emits
+ * `list.created.v1`. Internal token: actor `user`, organization required.
  * @summary Create a list or a sprint
  */
 export const CreateListInternalParams = zod.object({
@@ -573,8 +621,10 @@ export const CreateListInternalBody = zod.object({
   "startDate": zod.iso.date().describe('"Début".'),
   "endDate": zod.iso.date().describe('"Fin", on or after `startDate` ("La fin doit suivre le début.").'),
   "goal": zod.string().max(createListInternalBodySprintOneGoalMax).nullish().describe('"Objectif du sprint", trimmed; `null` or an empty text for none.')
-}).describe('The dates and the goal of a sprint, the two dates always together; a `goal` left out is\nunchanged by a patch and `null` at a creation.\n'),zod.null()]).optional().describe('The dates and the goal to create a sprint ("Sprint"), both dates required; absent or\n`null` for a list.\n')
+}).describe('The dates and the goal of a sprint, the two dates always together; a `goal` left out is\nunchanged by a patch and `null` at a creation.\n'),zod.null()]).optional().describe('The dates and the goal to create a sprint ("Sprint"), both dates required; absent or\n`null` for a list.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" of the new list; absent, it is on (`true`), as\nfor every list created before the switch existed.\n')
 }).describe('A new list or sprint. The members with a default declare their values themselves, the\nvalues of `LookIcon` and `LookColor`.\n')
+
 
 
 
@@ -591,13 +641,20 @@ export const CreateListInternalResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n')
 
 
 /**
- * Lists the lists of a space the actor sees, in the order of their creation. Internal token:
- * actor `user`, organization required.
+ * Lists the lists of a space that the actor sees, in the order of the sidebar, archived
+ * lists left out. Internal token: actor `user`, organization required.
  * @summary List the lists of a space
  */
 export const ListListsInternalParams = zod.object({
@@ -617,6 +674,7 @@ export const ListListsInternalQueryParams = zod.object({
 
 
 
+
 export const ListListsInternalResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.uuid(),
@@ -630,20 +688,29 @@ export const ListListsInternalResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n')),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
 })
 
 
 /**
- * Returns a list the actor sees; any other answers `404 list.not-found`. Internal token: actor
- * `user`, organization required.
+ * Returns a list the actor sees, an archived one included, with `callerRole`; any other, a
+ * deleted one included, answers `404 list.not-found`. Internal token: actor `user`,
+ * organization required.
  * @summary Read a list
  */
 export const GetListInternalParams = zod.object({
   "listId": zod.uuid().describe('Id of the list.')
 })
+
 
 
 
@@ -660,14 +727,23 @@ export const GetListInternalResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n')
 
 
 /**
- * Applies a JSON Merge Patch to a list the actor sees, as `PATCH /v1/lists/{listId}` says:
- * `412 request.version-mismatch`, `422 list.sprint-dates-invalid`. Emits `list.updated.v1`
- * when something changed. Internal token: actor `user`, organization required.
+ * Applies a JSON Merge Patch to a list the actor has `edit` on, as `PATCH /v1/lists/{listId}`
+ * says: `403 access.role-insufficient`, `412 request.version-mismatch`,
+ * `422 list.sprint-dates-invalid`. Emits `list.updated.v1` when its name, appearance or
+ * sprint changed, `list.access-changed.v1` when `organizationAccess` did. Internal token:
+ * actor `user`, organization required.
  * @summary Change a list or a sprint
  */
 export const UpdateListInternalParams = zod.object({
@@ -692,8 +768,10 @@ export const UpdateListInternalBody = zod.object({
   "startDate": zod.iso.date().describe('"Début".'),
   "endDate": zod.iso.date().describe('"Fin", on or after `startDate` ("La fin doit suivre le début.").'),
   "goal": zod.string().max(updateListInternalBodySprintOneGoalMax).nullish().describe('"Objectif du sprint", trimmed; `null` or an empty text for none.')
-}).describe('The dates and the goal of a sprint, the two dates always together; a `goal` left out is\nunchanged by a patch and `null` at a creation.\n'),zod.null()]).optional()
+}).describe('The dates and the goal of a sprint, the two dates always together; a `goal` left out is\nunchanged by a patch and `null` at a creation.\n'),zod.null()]).optional(),
+  "organizationAccess": zod.boolean().optional().describe('Turns the switch "Accès de l’organisation" on or off ("Tous les membres de Atelier\nNord peuvent voir cette liste").\n')
 }).describe('JSON Merge Patch of a list; an empty object changes nothing. `sprint: null` makes a sprint\na list again, and drops its dates and goal.\n')
+
 
 
 
@@ -710,8 +788,35 @@ export const UpdateListInternalResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n')
+
+
+/**
+ * Deletes a list the actor has `edit` on, archived or not, as `DELETE /v1/lists/{listId}`
+ * says (`403 access.role-insufficient`, `412 request.version-mismatch`): the list becomes a
+ * tombstone that every route answers `404`, its pending access requests and those of its
+ * tasks are dropped, and the deletion job moves its tasks to the trash. Emits
+ * `list.deleted.v1`, then `task.trashed.v1` for each task the job moves. Internal token:
+ * actor `user`, organization required.
+ * @summary Delete a list or a sprint
+ */
+export const DeleteListInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const DeleteListInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const DeleteListInternalResponse = zod.void()
 
 
 /**
@@ -726,6 +831,7 @@ export const GetListCountsInternalParams = zod.object({
 export const GetListCountsInternalQueryParams = zod.object({
   "today": zod.iso.date().describe('The date of the caller, in their time zone, which task-service does not know: the late\ntasks, the tasks due that day and the current sprints are counted against it.\n')
 })
+
 
 
 export const getListCountsInternalResponseCountsTotalMin = 0;
@@ -753,7 +859,14 @@ export const GetListCountsInternalResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "counts": zod.object({
   "total": zod.int().min(getListCountsInternalResponseCountsTotalMin).describe('Every top-level task of the list ("32 tâches").'),
@@ -916,6 +1029,7 @@ export const createTaskInternalResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const CreateTaskInternalResponse = zod.object({
   "key": zod.string().regex(createTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -954,7 +1068,12 @@ export const CreateTaskInternalResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -1113,8 +1232,10 @@ export const CountTaskGroupsInternalResponse = zod.object({
 
 
 /**
- * Returns a task the actor sees; any other key answers `404 task.not-found`. Internal token:
- * actor `user`, organization required.
+ * Returns a task the actor sees, an archived one included; any other key answers
+ * `404 task.not-found`, and a task in the trash `404 task.trashed` with its `details` when
+ * the actor could change its list. Every route of a key answers a task in the trash so.
+ * Internal token: actor `user`, organization required.
  * @summary Read a task
  */
 export const getTaskInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1134,6 +1255,7 @@ export const getTaskInternalResponseSubtaskCountsClosedMin = 0;
 export const getTaskInternalResponseChecklistCountsTotalMin = 0;
 
 export const getTaskInternalResponseChecklistCountsDoneMin = 0;
+
 
 
 
@@ -1177,7 +1299,12 @@ export const GetTaskInternalResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -1186,11 +1313,13 @@ export const GetTaskInternalResponse = zod.object({
  * the status and its cancel reason, checked against the statuses of the space the task is in
  * after the patch, the due date that moves the start and keeps the duration, the move of the
  * task and its subtasks, the parent, `If-Match` required with `description`
- * (`400 request.invalid` with an issue on the header). Records the changes of status,
- * priority and due date, the changes of the priority and the due date of a task by the same
- * actor within 60 seconds merged into one entry. Emits `task.updated.v1` and
- * `task.status-changed.v1` as the public route says. Internal token: actor `user`,
- * organization required.
+ * (`400 request.invalid` with an issue on the header), `edit` on the list of the task and on
+ * the list it moves to (`403 access.role-insufficient`), `409 task.archived` for an archived
+ * task or parent. Records the changes of status, priority and due date, the changes of the
+ * priority and the due date of a task by the same actor within 60 seconds merged into one
+ * entry. Emits `task.updated.v1` and `task.status-changed.v1` as the public route says. The
+ * assignee, label, subtask and checklist routes below refuse an archived task the same way.
+ * Internal token: actor `user`, organization required.
  * @summary Change a task
  */
 export const updateTaskInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1244,6 +1373,7 @@ export const updateTaskInternalResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const UpdateTaskInternalResponse = zod.object({
   "key": zod.string().regex(updateTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -1282,7 +1412,12 @@ export const UpdateTaskInternalResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -1326,6 +1461,7 @@ export const assignTaskInternalResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const AssignTaskInternalResponse = zod.object({
   "key": zod.string().regex(assignTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -1364,7 +1500,12 @@ export const AssignTaskInternalResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -1431,6 +1572,7 @@ export const addTaskLabelInternalResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const AddTaskLabelInternalResponse = zod.object({
   "key": zod.string().regex(addTaskLabelInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -1469,7 +1611,12 @@ export const AddTaskLabelInternalResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -1513,6 +1660,7 @@ export const removeTaskLabelInternalResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const RemoveTaskLabelInternalResponse = zod.object({
   "key": zod.string().regex(removeTaskLabelInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -1551,14 +1699,22 @@ export const RemoveTaskLabelInternalResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
 /**
- * Returns task-service's part of the task detail: the task, its space, its list, its parent
- * and its direct subtasks, read in one transaction. The gateway adds `partial` and, in later
- * versions, the parts of other services. Internal token: actor `user`, organization required.
+ * Returns task-service's part of the task detail: the task, its space, its list with
+ * `callerRole`, its parent and its direct subtasks, read in one transaction, as
+ * `GET /v1/tasks/{taskKey}/detail` says: the subtasks archived or in the trash left out, but
+ * for an archived task, whose detail shows the subtasks archived with it. The gateway adds
+ * `partial` and, in later versions, the parts of other services. Internal token: actor
+ * `user`, organization required.
  * @summary Read the detail of a task
  */
 export const getTaskDetailInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1581,8 +1737,10 @@ export const getTaskDetailInternalResponseTaskChecklistCountsDoneMin = 0;
 
 
 
+
 export const getTaskDetailInternalResponseSpacePrefixRegExp = new RegExp('^[A-Z]{2,5}$');
 export const getTaskDetailInternalResponseSpaceNextKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
 
 
 export const getTaskDetailInternalResponseParentOneKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1639,7 +1797,12 @@ export const GetTaskDetailInternalResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.'),
   "space": zod.object({
   "id": zod.uuid(),
@@ -1706,7 +1869,9 @@ export const GetTaskDetailInternalResponse = zod.object({
 }).describe('The ten statuses as the space shows them, by key.'),
   "nextKey": zod.string().regex(getTaskDetailInternalResponseSpaceNextKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`; a change of its grants adds one too.\n'),
+  "callerRole": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).optional().describe('The role of the caller on the space itself (see "Access" in\n`openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner\nof the space and a grant of the space. `null` when the caller sees the space only\nthrough the grants of some of its lists, as a guest does: they see those lists only,\nand create no list in the space. Absent, it reads as `edit`, the rule before grants\nexisted.\n'),
+  "callerCanManage": zod.boolean().optional().describe('Whether the caller manages the space: changes its visibility, shares it and deletes it;\nits settings and statuses need `edit` only. `true` for the owner of the space, and for\nthe owner and the admins of the organization when the space is `organization`. Absent,\nthe web application offers the actions and handles their `403`.\n')
 }).describe('A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task\nkeys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the\nnext task created in the space would take now ("Les tâches seront numérotées CAD-1,\nCAD-2…"), a preview that reserves nothing: another creation may take it first.\n'),
   "list": zod.object({
   "id": zod.uuid(),
@@ -1720,7 +1885,14 @@ export const GetTaskDetailInternalResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "parent": zod.union([zod.object({
   "key": zod.string().regex(getTaskDetailInternalResponseParentOneKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
@@ -1759,8 +1931,9 @@ export const GetTaskDetailInternalResponse = zod.object({
 
 
 /**
- * Lists the direct subtasks of a task the actor sees, in the order of their creation.
- * Internal token: actor `user`, organization required.
+ * Lists the direct subtasks of a task the actor sees, in the order of their creation, those
+ * archived or in the trash left out, but for an archived task, which lists the subtasks
+ * archived with it. Internal token: actor `user`, organization required.
  * @summary List the subtasks of a task
  */
 export const listSubtasksInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1832,9 +2005,12 @@ export const ListSubtasksInternalResponse = zod.object({
 
 /**
  * Creates a subtask of a task the actor sees, in its list, as
- * `POST /v1/tasks/{taskKey}/subtasks` says: `422 task.subtask-depth-exceeded`,
- * `422 task.subtask-limit-reached` and the refusals of a creation. Emits `task.created.v1` and
- * `task.assigned.v1` per assignee. Internal token: actor `user`, organization required.
+ * `POST /v1/tasks/{taskKey}/subtasks` says: `edit` on the list
+ * (`403 access.role-insufficient`), `409 task.archived` for an archived parent,
+ * `422 task.subtask-depth-exceeded`, `422 task.subtask-limit-reached`, the archived subtasks
+ * and those in the trash not counted among the 25, and the refusals of a creation. Emits
+ * `task.created.v1` and `task.assigned.v1` per assignee. Internal token: actor `user`,
+ * organization required.
  * @summary Create a subtask
  */
 export const createSubtaskInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1900,6 +2076,7 @@ export const createSubtaskInternalResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const CreateSubtaskInternalResponse = zod.object({
   "key": zod.string().regex(createSubtaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -1938,7 +2115,12 @@ export const CreateSubtaskInternalResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -1986,6 +2168,7 @@ export const addChecklistItemInternalResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const AddChecklistItemInternalResponse = zod.object({
   "key": zod.string().regex(addChecklistItemInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -2024,7 +2207,12 @@ export const AddChecklistItemInternalResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -2061,6 +2249,7 @@ export const updateChecklistItemInternalResponseSubtaskCountsClosedMin = 0;
 export const updateChecklistItemInternalResponseChecklistCountsTotalMin = 0;
 
 export const updateChecklistItemInternalResponseChecklistCountsDoneMin = 0;
+
 
 
 
@@ -2104,7 +2293,12 @@ export const UpdateChecklistItemInternalResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -2314,6 +2508,7 @@ export const getHomeInternalResponsePrioritiesItemChecklistCountsDoneMin = 0;
 
 
 
+
 export const getHomeInternalResponseSprintsItemCountsTotalMin = 0;
 
 export const getHomeInternalResponseSprintsItemCountsOpenMin = 0;
@@ -2323,6 +2518,7 @@ export const getHomeInternalResponseSprintsItemCountsDoneMin = 0;
 export const getHomeInternalResponseSprintsItemCountsCancelledMin = 0;
 
 export const getHomeInternalResponseSprintsItemCountsLateMin = 0;
+
 
 
 export const getHomeInternalResponseListsItemCountsTotalMin = 0;
@@ -2385,7 +2581,14 @@ export const GetHomeInternalResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "counts": zod.object({
   "total": zod.int().min(getHomeInternalResponseSprintsItemCountsTotalMin).describe('Every top-level task of the list ("32 tâches").'),
@@ -2408,7 +2611,14 @@ export const GetHomeInternalResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "counts": zod.object({
   "total": zod.int().min(getHomeInternalResponseListsItemCountsTotalMin).describe('Every top-level task of the list ("32 tâches").'),
@@ -2419,3 +2629,1067 @@ export const GetHomeInternalResponse = zod.object({
 }).describe('Counts of the top-level tasks of a list, subtasks left out, as the sidebar, the list cards\nand the sprint progress count them. The progress of a list ("12 / 32 terminées", "38 %")\nis `done` out of `total` minus `cancelled`.\n')
 }).describe('A list with the counts of its tasks.'))
 })
+
+
+/**
+ * Lists the grants of a space the actor sees, in the order they were first given, as
+ * `GET /v1/spaces/{spaceId}/grants` says. Internal token: actor `user`, organization
+ * required.
+ * @summary List the grants of a space
+ */
+export const ListSpaceGrantsInternalParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space.')
+})
+
+export const listSpaceGrantsInternalQueryLimitDefault = 50;
+export const listSpaceGrantsInternalQueryLimitMax = 100;
+
+
+
+export const ListSpaceGrantsInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listSpaceGrantsInternalQueryLimitMax).default(listSpaceGrantsInternalQueryLimitDefault).describe('Page size.')
+})
+
+
+export const listSpaceGrantsInternalResponseTotalMin = 0;
+
+
+
+export const ListSpaceGrantsInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "userId": zod.uuid().describe('Account of the person, a current member or guest of the organization.'),
+  "role": zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),
+  "grantedAt": zod.iso.datetime({"offset":true}).describe('When the person was given this role.'),
+  "grantedBy": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n')
+}).describe('The access of one person to a space or a list ("Personnes ayant accès"), given by someone\nwho manages it. A space or a list holds 200 grants at most. The owner of the space holds\nnone: they always have `edit` ("Propriétaire").\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(listSpaceGrantsInternalResponseTotalMin)
+})
+
+
+/**
+ * Gives a person a role on a space the actor manages, or changes it, as
+ * `PUT /v1/spaces/{spaceId}/grants/{userId}` says: `403 space.manage-forbidden`,
+ * `412 request.version-mismatch`, `422 access.grantee-invalid`,
+ * `422 access.guest-space-forbidden`, `422 access.owner-unchangeable`,
+ * `422 access.grant-limit-reached`; the same role again answers `200` with the same version.
+ * Emits `space.access-changed.v1` when it changed. Internal token: actor `user`, organization
+ * required.
+ * @summary Give or change a role on a space
+ */
+export const SetSpaceGrantInternalParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space.'),
+  "userId": zod.uuid().describe('Account of the person given access, not the actor.')
+})
+
+export const SetSpaceGrantInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const SetSpaceGrantInternalBody = zod.object({
+  "role": zod.enum(['edit', 'comment', 'view']).describe('A role given by a grant ("Droit d’accès"): `edit` ("Peut modifier"), `comment` ("Peut\ncommenter", which reads like `view` until comments exist) or `view` ("Lecture seule"),\nfrom the most to the least. The owner of a space ("Propriétaire") holds no grant: they\nalways have `edit` on it and on its lists.\n')
+}).describe('The role to give ("Droit d’accès"); it replaces the role the person had there.')
+
+
+
+
+export const SetSpaceGrantInternalResponse = zod.object({
+  "userId": zod.uuid().describe('Account of the person, a current member or guest of the organization.'),
+  "role": zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),
+  "grantedAt": zod.iso.datetime({"offset":true}).describe('When the person was given this role.'),
+  "grantedBy": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n')
+}).describe('The access of one person to a space or a list ("Personnes ayant accès"), given by someone\nwho manages it. A space or a list holds 200 grants at most. The owner of the space holds\nnone: they always have `edit` ("Propriétaire").\n')
+
+
+/**
+ * Removes the grant of a person on a space the actor manages, as
+ * `DELETE /v1/spaces/{spaceId}/grants/{userId}` says; without one, `204` with the same
+ * version; the owner of the space, `422 access.owner-unchangeable`. `ETag` gives the version
+ * after the change. Emits `space.access-changed.v1` when there was a grant. Internal token:
+ * actor `user`, organization required.
+ * @summary Remove a role on a space
+ */
+export const RemoveSpaceGrantInternalParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space.'),
+  "userId": zod.uuid().describe('Account of the person given access, not the actor.')
+})
+
+export const RemoveSpaceGrantInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const RemoveSpaceGrantInternalResponse = zod.void()
+
+
+/**
+ * Lists the grants of a list the actor sees, in the order they were first given, as
+ * `GET /v1/lists/{listId}/grants` says. Internal token: actor `user`, organization required.
+ * @summary List the grants of a list
+ */
+export const ListListGrantsInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const listListGrantsInternalQueryLimitDefault = 50;
+export const listListGrantsInternalQueryLimitMax = 100;
+
+
+
+export const ListListGrantsInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listListGrantsInternalQueryLimitMax).default(listListGrantsInternalQueryLimitDefault).describe('Page size.')
+})
+
+
+export const listListGrantsInternalResponseTotalMin = 0;
+
+
+
+export const ListListGrantsInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "userId": zod.uuid().describe('Account of the person, a current member or guest of the organization.'),
+  "role": zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),
+  "grantedAt": zod.iso.datetime({"offset":true}).describe('When the person was given this role.'),
+  "grantedBy": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n')
+}).describe('The access of one person to a space or a list ("Personnes ayant accès"), given by someone\nwho manages it. A space or a list holds 200 grants at most. The owner of the space holds\nnone: they always have `edit` ("Propriétaire").\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(listListGrantsInternalResponseTotalMin)
+})
+
+
+/**
+ * Gives a person a role on a list the actor has `edit` on, or changes it, as
+ * `PUT /v1/lists/{listId}/grants/{userId}` says: `403 access.role-insufficient`,
+ * `412 request.version-mismatch`, `422 access.grantee-invalid`,
+ * `422 access.owner-unchangeable`, `422 access.grant-limit-reached`; the same role again
+ * answers `200` with the same version. Emits `list.access-changed.v1` when it changed.
+ * Internal token: actor `user`, organization required.
+ * @summary Give or change a role on a list
+ */
+export const SetListGrantInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.'),
+  "userId": zod.uuid().describe('Account of the person given access, not the actor.')
+})
+
+export const SetListGrantInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const SetListGrantInternalBody = zod.object({
+  "role": zod.enum(['edit', 'comment', 'view']).describe('A role given by a grant ("Droit d’accès"): `edit` ("Peut modifier"), `comment` ("Peut\ncommenter", which reads like `view` until comments exist) or `view` ("Lecture seule"),\nfrom the most to the least. The owner of a space ("Propriétaire") holds no grant: they\nalways have `edit` on it and on its lists.\n')
+}).describe('The role to give ("Droit d’accès"); it replaces the role the person had there.')
+
+
+
+
+export const SetListGrantInternalResponse = zod.object({
+  "userId": zod.uuid().describe('Account of the person, a current member or guest of the organization.'),
+  "role": zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),
+  "grantedAt": zod.iso.datetime({"offset":true}).describe('When the person was given this role.'),
+  "grantedBy": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n')
+}).describe('The access of one person to a space or a list ("Personnes ayant accès"), given by someone\nwho manages it. A space or a list holds 200 grants at most. The owner of the space holds\nnone: they always have `edit` ("Propriétaire").\n')
+
+
+/**
+ * Removes the grant of a person on a list the actor has `edit` on, as
+ * `DELETE /v1/lists/{listId}/grants/{userId}` says; without one, `204` with the same version;
+ * the owner of the space, `422 access.owner-unchangeable`. `ETag` gives the version after the
+ * change. Emits `list.access-changed.v1` when there was a grant. Internal token: actor
+ * `user`, organization required.
+ * @summary Remove a role on a list
+ */
+export const RemoveListGrantInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.'),
+  "userId": zod.uuid().describe('Account of the person given access, not the actor.')
+})
+
+export const RemoveListGrantInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const RemoveListGrantInternalResponse = zod.void()
+
+
+/**
+ * Records a request of the actor for access, as `POST /v1/access-requests` says: always
+ * `202` with no body, a request stored only for a target of the organization, live or
+ * archived, on which the actor has no role, once per requester and target while pending, a
+ * space not for a guest; `400 request.invalid` for none or several targets;
+ * `429 access-request.limit-reached` with `Retry-After` beyond 10 requests within the hour.
+ * Emits `space.access-requested.v1`, `list.access-requested.v1` or
+ * `task.access-requested.v1` when stored. Internal token: actor `user`, organization
+ * required.
+ * @summary Ask for access
+ */
+export const createAccessRequestInternalBodyTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const createAccessRequestInternalBodyMessageMax = 500;
+
+
+
+export const CreateAccessRequestInternalBody = zod.object({
+  "spaceId": zod.uuid().optional().describe('A space to have a role on.'),
+  "listId": zod.uuid().optional().describe('A list to see.'),
+  "taskKey": zod.string().regex(createAccessRequestInternalBodyTaskKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "message": zod.string().max(createAccessRequestInternalBodyMessageMax).nullish().describe('"Message pour Léa (facultatif)", trimmed; `null` or an empty text for none.')
+}).describe('A request for access ("Demander l’accès"): exactly one of `spaceId`, `listId` and\n`taskKey`, as the link the caller followed names the target; none or several answer\n`400 request.invalid`.\n')
+
+export const CreateAccessRequestInternalResponse = zod.void()
+
+
+/**
+ * Lists the pending requests the actor may answer, the most recent first, as
+ * `GET /v1/access-requests` says. Internal token: actor `user`, organization required.
+ * @summary List the pending access requests
+ */
+export const listAccessRequestsInternalQueryLimitDefault = 50;
+export const listAccessRequestsInternalQueryLimitMax = 100;
+
+
+
+export const ListAccessRequestsInternalQueryParams = zod.object({
+  "spaceId": zod.uuid().optional().describe('Keep the requests of this space, its lists and their tasks.'),
+  "listId": zod.uuid().optional().describe('Keep the requests of this list and its tasks.'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listAccessRequestsInternalQueryLimitMax).default(listAccessRequestsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listAccessRequestsInternalResponseItemsItemTaskOneKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const listAccessRequestsInternalResponseTotalMin = 0;
+
+
+
+export const ListAccessRequestsInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "target": zod.string().describe('What a request asks for: `space`, `list` or `task`. Later versions may add targets\n(`x-extensible-enum`).\n'),
+  "spaceId": zod.uuid().describe('The space of the target.'),
+  "listId": zod.uuid().nullable().describe('The list of a list or task target; `null` for a space.'),
+  "task": zod.union([zod.object({
+  "key": zod.string().regex(listAccessRequestsInternalResponseItemsItemTaskOneKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
+}).describe('A task named by another resource, with its name and status as they are now.'),zod.null()]).describe('The task of a task target, with its name and status as they are now; `null` otherwise.'),
+  "requester": zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n'),
+  "message": zod.string().nullable().describe('The message of the requester, 500 characters at most; `null` when there is none.'),
+  "state": zod.string().describe('`pending` until someone who manages the target answers, then `approved` or `refused`. Later\nversions may add states (`x-extensible-enum`).\n'),
+  "role": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).describe('The role an approval gave; `null` while pending or when refused.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "decidedAt": zod.iso.datetime({"offset":true}).nullable().describe('When it was approved or refused; `null` while pending.'),
+  "decidedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).describe('Who approved or refused it; `null` while pending.')
+}).describe('A request for access, as the people who manage its target read it. The requester never\nreads it: they learn the answer from the inbox (cadenway-notification-service). It has no\n`version` of its own to send back: it changes once, from `pending`, and a second answer\ngets `409 access-request.already-decided`; its events carry `1`, then `2`.\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(listAccessRequestsInternalResponseTotalMin)
+})
+
+
+/**
+ * Approves a pending request the actor may answer with a role, as
+ * `POST /v1/access-requests/{accessRequestId}/approval` says: the grant of the space or of
+ * the list, `404 access-request.not-found`, `409 access-request.already-decided`, and the
+ * refusals of a grant. Emits the `…access-request-decided.v1` of the target and the
+ * `space.access-changed.v1` or `list.access-changed.v1` of the grant. Internal token: actor
+ * `user`, organization required.
+ * @summary Approve an access request
+ */
+export const ApproveAccessRequestInternalParams = zod.object({
+  "accessRequestId": zod.uuid().describe('Id of the access request.')
+})
+
+export const ApproveAccessRequestInternalBody = zod.object({
+  "role": zod.enum(['edit', 'comment', 'view']).describe('A role given by a grant ("Droit d’accès"): `edit` ("Peut modifier"), `comment` ("Peut\ncommenter", which reads like `view` until comments exist) or `view` ("Lecture seule"),\nfrom the most to the least. The owner of a space ("Propriétaire") holds no grant: they\nalways have `edit` on it and on its lists.\n')
+}).describe('The role an approval gives the requester ("Droit d’accès").')
+
+export const approveAccessRequestInternalResponseTaskOneKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+
+export const ApproveAccessRequestInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "target": zod.string().describe('What a request asks for: `space`, `list` or `task`. Later versions may add targets\n(`x-extensible-enum`).\n'),
+  "spaceId": zod.uuid().describe('The space of the target.'),
+  "listId": zod.uuid().nullable().describe('The list of a list or task target; `null` for a space.'),
+  "task": zod.union([zod.object({
+  "key": zod.string().regex(approveAccessRequestInternalResponseTaskOneKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
+}).describe('A task named by another resource, with its name and status as they are now.'),zod.null()]).describe('The task of a task target, with its name and status as they are now; `null` otherwise.'),
+  "requester": zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n'),
+  "message": zod.string().nullable().describe('The message of the requester, 500 characters at most; `null` when there is none.'),
+  "state": zod.string().describe('`pending` until someone who manages the target answers, then `approved` or `refused`. Later\nversions may add states (`x-extensible-enum`).\n'),
+  "role": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).describe('The role an approval gave; `null` while pending or when refused.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "decidedAt": zod.iso.datetime({"offset":true}).nullable().describe('When it was approved or refused; `null` while pending.'),
+  "decidedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).describe('Who approved or refused it; `null` while pending.')
+}).describe('A request for access, as the people who manage its target read it. The requester never\nreads it: they learn the answer from the inbox (cadenway-notification-service). It has no\n`version` of its own to send back: it changes once, from `pending`, and a second answer\ngets `409 access-request.already-decided`; its events carry `1`, then `2`.\n')
+
+
+/**
+ * Refuses a pending request the actor may answer, as
+ * `POST /v1/access-requests/{accessRequestId}/refusal` says: `404 access-request.not-found`,
+ * `409 access-request.already-decided`. Emits the `…access-request-decided.v1` of the target.
+ * Internal token: actor `user`, organization required.
+ * @summary Refuse an access request
+ */
+export const RefuseAccessRequestInternalParams = zod.object({
+  "accessRequestId": zod.uuid().describe('Id of the access request.')
+})
+
+export const RefuseAccessRequestInternalBody = zod.object({
+
+}).describe('Empty object `{}`, the body the public route carried.')
+
+export const refuseAccessRequestInternalResponseTaskOneKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+
+export const RefuseAccessRequestInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "target": zod.string().describe('What a request asks for: `space`, `list` or `task`. Later versions may add targets\n(`x-extensible-enum`).\n'),
+  "spaceId": zod.uuid().describe('The space of the target.'),
+  "listId": zod.uuid().nullable().describe('The list of a list or task target; `null` for a space.'),
+  "task": zod.union([zod.object({
+  "key": zod.string().regex(refuseAccessRequestInternalResponseTaskOneKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
+}).describe('A task named by another resource, with its name and status as they are now.'),zod.null()]).describe('The task of a task target, with its name and status as they are now; `null` otherwise.'),
+  "requester": zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n'),
+  "message": zod.string().nullable().describe('The message of the requester, 500 characters at most; `null` when there is none.'),
+  "state": zod.string().describe('`pending` until someone who manages the target answers, then `approved` or `refused`. Later\nversions may add states (`x-extensible-enum`).\n'),
+  "role": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).describe('The role an approval gave; `null` while pending or when refused.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "decidedAt": zod.iso.datetime({"offset":true}).nullable().describe('When it was approved or refused; `null` while pending.'),
+  "decidedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).describe('Who approved or refused it; `null` while pending.')
+}).describe('A request for access, as the people who manage its target read it. The requester never\nreads it: they learn the answer from the inbox (cadenway-notification-service). It has no\n`version` of its own to send back: it changes once, from `pending`, and a second answer\ngets `409 access-request.already-decided`; its events carry `1`, then `2`.\n')
+
+
+/**
+ * Archives a list the actor has `edit` on, as `POST /v1/lists/{listId}/archive` says; an
+ * archived one answers `200` with the same version. Emits `list.archived.v1`. Internal token:
+ * actor `user`, organization required.
+ * @summary Archive a list or a sprint
+ */
+export const ArchiveListInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const ArchiveListInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const ArchiveListInternalBody = zod.object({
+
+}).describe('Empty object `{}`, the body the public route carried.')
+
+
+
+
+
+export const ArchiveListInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('"Nom", 80 characters at most.'),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "color": zod.string().describe('A color of `LookColor`, as a resource carries it. Later versions add colors\n(`x-extensible-enum`): a client shows an unknown one as `gris`.\n'),
+  "sprint": zod.union([zod.object({
+  "startDate": zod.iso.date().describe('"Début", the first day of the sprint.'),
+  "endDate": zod.iso.date().describe('"Fin", the last day of the sprint, on or after `startDate`.'),
+  "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
+}).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
+}).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n')
+
+
+/**
+ * Restores an archived list the actor has `edit` on at the end of its space, as
+ * `POST /v1/lists/{listId}/unarchive` says; a list that is not archived answers `200` with
+ * the same version. Emits `list.unarchived.v1`. Internal token: actor `user`, organization
+ * required.
+ * @summary Restore an archived list
+ */
+export const UnarchiveListInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const UnarchiveListInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const UnarchiveListInternalBody = zod.object({
+
+}).describe('Empty object `{}`, the body the public route carried.')
+
+
+
+
+
+export const UnarchiveListInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('"Nom", 80 characters at most.'),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "color": zod.string().describe('A color of `LookColor`, as a resource carries it. Later versions add colors\n(`x-extensible-enum`): a client shows an unknown one as `gris`.\n'),
+  "sprint": zod.union([zod.object({
+  "startDate": zod.iso.date().describe('"Début", the first day of the sprint.'),
+  "endDate": zod.iso.date().describe('"Fin", the last day of the sprint, on or after `startDate`.'),
+  "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
+}).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
+}).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n')
+
+
+/**
+ * Archives a task and its subtasks at every level, as `POST /v1/tasks/{taskKey}/archive`
+ * says: `edit` on its list (`403 access.role-insufficient`), an archived one answers `200`
+ * with the same version, the subtasks archived before keep their own archive. Emits
+ * `task.archived.v1` for each task archived, the root first. Internal token: actor `user`,
+ * organization required.
+ * @summary Archive a task with its subtasks
+ */
+export const archiveTaskInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const ArchiveTaskInternalParams = zod.object({
+  "taskKey": zod.string().regex(archiveTaskInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const ArchiveTaskInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const ArchiveTaskInternalBody = zod.object({
+
+}).describe('Empty object `{}`, the body the public route carried.')
+
+export const archiveTaskInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const archiveTaskInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const archiveTaskInternalResponseSubtaskCountsTotalMin = 0;
+
+export const archiveTaskInternalResponseSubtaskCountsClosedMin = 0;
+
+export const archiveTaskInternalResponseChecklistCountsTotalMin = 0;
+
+export const archiveTaskInternalResponseChecklistCountsDoneMin = 0;
+
+
+
+
+
+
+export const ArchiveTaskInternalResponse = zod.object({
+  "key": zod.string().regex(archiveTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled; `null` unless its status is `cancelled`.'),
+  "cancelNote": zod.string().nullable().describe('"Précision" of the cancellation, 500 characters at most; `null` when there is none or\nthe task is not cancelled.\n'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned.'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance"; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work; `null` when there is none, always `null` without a due date.'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(archiveTaskInternalResponseParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask; `null` for a top-level task.'),
+  "listId": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(archiveTaskInternalResponseSubtaskCountsTotalMin),
+  "closed": zod.int().min(archiveTaskInternalResponseSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklist": zod.array(zod.object({
+  "id": zod.uuid(),
+  "text": zod.string().describe('"Élément de checklist", 300 characters at most.'),
+  "done": zod.boolean().describe('Ticked ("Terminer") or not ("Rouvrir").')
+}).describe('One item of a checklist ("Une checklist sert aux petites étapes sans statut ni assigné.").')).describe('"Checklist", 100 items at most, in the order they were added.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(archiveTaskInternalResponseChecklistCountsTotalMin),
+  "done": zod.int().min(archiveTaskInternalResponseChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "createdBy": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
+}).describe('A task, with its description and its checklist.')
+
+
+/**
+ * Restores the archive a task belongs to, from its root, as
+ * `POST /v1/tasks/{taskKey}/unarchive` says: its list restored with it when archived, the
+ * root detached from a parent that is no longer live or can no longer take it, a task that is
+ * not archived `200` with the same version. Emits `list.unarchived.v1` for a list restored
+ * with it, then `task.unarchived.v1` for each task, the root first. Internal token: actor
+ * `user`, organization required.
+ * @summary Restore an archived task with its subtasks
+ */
+export const unarchiveTaskInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const UnarchiveTaskInternalParams = zod.object({
+  "taskKey": zod.string().regex(unarchiveTaskInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const UnarchiveTaskInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const UnarchiveTaskInternalBody = zod.object({
+
+}).describe('Empty object `{}`, the body the public route carried.')
+
+export const unarchiveTaskInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const unarchiveTaskInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const unarchiveTaskInternalResponseSubtaskCountsTotalMin = 0;
+
+export const unarchiveTaskInternalResponseSubtaskCountsClosedMin = 0;
+
+export const unarchiveTaskInternalResponseChecklistCountsTotalMin = 0;
+
+export const unarchiveTaskInternalResponseChecklistCountsDoneMin = 0;
+
+
+
+
+
+
+export const UnarchiveTaskInternalResponse = zod.object({
+  "key": zod.string().regex(unarchiveTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled; `null` unless its status is `cancelled`.'),
+  "cancelNote": zod.string().nullable().describe('"Précision" of the cancellation, 500 characters at most; `null` when there is none or\nthe task is not cancelled.\n'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned.'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance"; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work; `null` when there is none, always `null` without a due date.'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(unarchiveTaskInternalResponseParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask; `null` for a top-level task.'),
+  "listId": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(unarchiveTaskInternalResponseSubtaskCountsTotalMin),
+  "closed": zod.int().min(unarchiveTaskInternalResponseSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklist": zod.array(zod.object({
+  "id": zod.uuid(),
+  "text": zod.string().describe('"Élément de checklist", 300 characters at most.'),
+  "done": zod.boolean().describe('Ticked ("Terminer") or not ("Rouvrir").')
+}).describe('One item of a checklist ("Une checklist sert aux petites étapes sans statut ni assigné.").')).describe('"Checklist", 100 items at most, in the order they were added.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(unarchiveTaskInternalResponseChecklistCountsTotalMin),
+  "done": zod.int().min(unarchiveTaskInternalResponseChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "createdBy": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
+}).describe('A task, with its description and its checklist.')
+
+
+/**
+ * Lists the archived lists the actor sees, the most recently archived first, as
+ * `GET /v1/archives/lists` says. Internal token: actor `user`, organization required.
+ * @summary List the archived lists
+ */
+export const listArchivedListsInternalQueryLimitDefault = 50;
+export const listArchivedListsInternalQueryLimitMax = 100;
+
+
+
+export const ListArchivedListsInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listArchivedListsInternalQueryLimitMax).default(listArchivedListsInternalQueryLimitDefault).describe('Page size.')
+})
+
+
+
+export const listArchivedListsInternalResponseItemsItemTaskCountMin = 0;
+
+export const listArchivedListsInternalResponseTotalMin = 0;
+
+
+
+export const ListArchivedListsInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "list": zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('"Nom", 80 characters at most.'),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "color": zod.string().describe('A color of `LookColor`, as a resource carries it. Later versions add colors\n(`x-extensible-enum`): a client shows an unknown one as `gris`.\n'),
+  "sprint": zod.union([zod.object({
+  "startDate": zod.iso.date().describe('"Début", the first day of the sprint.'),
+  "endDate": zod.iso.date().describe('"Fin", the last day of the sprint, on or after `startDate`.'),
+  "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
+}).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
+}).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
+  "taskCount": zod.int().min(listArchivedListsInternalResponseItemsItemTaskCountMin).describe('Its top-level tasks, subtasks left out ("14 tâches").')
+}).describe('A list of the archives ("Archives", tab "Listes").')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(listArchivedListsInternalResponseTotalMin)
+})
+
+
+/**
+ * Lists the roots of the archived subtrees the actor sees, the most recently archived first,
+ * as `GET /v1/archives/tasks` says. Internal token: actor `user`, organization required.
+ * @summary List the archived tasks
+ */
+export const listArchivedTasksInternalQueryLimitDefault = 50;
+export const listArchivedTasksInternalQueryLimitMax = 100;
+
+
+
+export const ListArchivedTasksInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listArchivedTasksInternalQueryLimitMax).default(listArchivedTasksInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listArchivedTasksInternalResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const listArchivedTasksInternalResponseItemsItemTaskParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listArchivedTasksInternalResponseItemsItemTaskSubtaskCountsTotalMin = 0;
+
+export const listArchivedTasksInternalResponseItemsItemTaskSubtaskCountsClosedMin = 0;
+
+export const listArchivedTasksInternalResponseItemsItemTaskChecklistCountsTotalMin = 0;
+
+export const listArchivedTasksInternalResponseItemsItemTaskChecklistCountsDoneMin = 0;
+
+
+export const listArchivedTasksInternalResponseItemsItemSubtaskCountMin = 0;
+
+
+export const listArchivedTasksInternalResponseTotalMin = 0;
+
+
+
+export const ListArchivedTasksInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "task": zod.object({
+  "key": zod.string().regex(listArchivedTasksInternalResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(listArchivedTasksInternalResponseItemsItemTaskParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(listArchivedTasksInternalResponseItemsItemTaskSubtaskCountsTotalMin),
+  "closed": zod.int().min(listArchivedTasksInternalResponseItemsItemTaskSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(listArchivedTasksInternalResponseItemsItemTaskChecklistCountsTotalMin),
+  "done": zod.int().min(listArchivedTasksInternalResponseItemsItemTaskChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n'),
+  "list": zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('"Nom", 80 characters at most.'),
+  "state": zod.string().describe('`active` for a list of the sidebar, `archived` for a list of the archives ("Liste\narchivée"), `deleted` for a deleted list ("Liste supprimée"), which comes back when one of\nits tasks is restored. Later versions may add states (`x-extensible-enum`).\n')
+}).describe('The list of an archived or trashed task, with its name and state as they are now.'),
+  "subtaskCount": zod.int().min(listArchivedTasksInternalResponseItemsItemSubtaskCountMin).describe('The subtasks archived with it, at every level.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).describe('"archivée le 5 nov."'),
+  "archivedBy": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n')
+}).describe('A task of the archives ("Archives", tab "Tâches"): the root of a subtree archived together,\nwhich comes back together.\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(listArchivedTasksInternalResponseTotalMin)
+})
+
+
+/**
+ * Moves a task and its subtasks at every level to the trash as one entry, as
+ * `POST /v1/tasks/{taskKey}/trash` says: `edit` on its list (`403 access.role-insufficient`),
+ * `409 task.archived`, `404 task.trashed` for a task in the trash already. Emits
+ * `task.trashed.v1` for each task of the entry, the root first. Internal token: actor `user`,
+ * organization required.
+ * @summary Delete a task with its subtasks
+ */
+export const trashTaskInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const TrashTaskInternalParams = zod.object({
+  "taskKey": zod.string().regex(trashTaskInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const TrashTaskInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const TrashTaskInternalBody = zod.object({
+
+}).describe('Empty object `{}`, the body the public route carried.')
+
+export const trashTaskInternalResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const trashTaskInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const trashTaskInternalResponseSubtaskCountMin = 0;
+
+
+
+
+export const TrashTaskInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "task": zod.object({
+  "key": zod.string().regex(trashTaskInternalResponseTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
+}).describe('A task named by another resource, with its name and status as they are now.'),
+  "parentKey": zod.union([zod.string().regex(trashTaskInternalResponseParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent the root had when it was deleted ("Sous-tâche de CAD-482"); `null` for a\ntop-level task.\n'),
+  "subtaskCount": zod.int().min(trashTaskInternalResponseSubtaskCountMin).describe('The subtasks deleted with it, at every level ("Avec 3 sous-tâches").'),
+  "list": zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('"Nom", 80 characters at most.'),
+  "state": zod.string().describe('`active` for a list of the sidebar, `archived` for a list of the archives ("Liste\narchivée"), `deleted` for a deleted list ("Liste supprimée"), which comes back when one of\nits tasks is restored. Later versions may add states (`x-extensible-enum`).\n')
+}).describe('The list of an archived or trashed task, with its name and state as they are now.'),
+  "trashedAt": zod.iso.datetime({"offset":true}).describe('"Supprimée il y a 2 jours"'),
+  "trashedBy": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "purgeAt": zod.iso.datetime({"offset":true}).describe('When the entry is erased for good, 30 days after `trashedAt` ("Effacée définitivement\ndans 28 jours").\n')
+}).describe('One element of the trash ("Corbeille"): a task and its subtasks at every level, deleted\ntogether, which come back or are erased together. Deleting a subtask makes an entry of its\nown subtree; deleting a list or a space makes one entry per top-level task.\n')
+
+
+/**
+ * Lists the trash entries the actor may restore, the most recently deleted first, as
+ * `GET /v1/trash/entries` says. Internal token: actor `user`, organization required.
+ * @summary List the trash
+ */
+export const listTrashInternalQueryLimitDefault = 50;
+export const listTrashInternalQueryLimitMax = 100;
+
+
+
+export const ListTrashInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listTrashInternalQueryLimitMax).default(listTrashInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listTrashInternalResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listTrashInternalResponseItemsItemParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listTrashInternalResponseItemsItemSubtaskCountMin = 0;
+
+
+export const listTrashInternalResponseTotalMin = 0;
+
+
+
+export const ListTrashInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "task": zod.object({
+  "key": zod.string().regex(listTrashInternalResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
+}).describe('A task named by another resource, with its name and status as they are now.'),
+  "parentKey": zod.union([zod.string().regex(listTrashInternalResponseItemsItemParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent the root had when it was deleted ("Sous-tâche de CAD-482"); `null` for a\ntop-level task.\n'),
+  "subtaskCount": zod.int().min(listTrashInternalResponseItemsItemSubtaskCountMin).describe('The subtasks deleted with it, at every level ("Avec 3 sous-tâches").'),
+  "list": zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('"Nom", 80 characters at most.'),
+  "state": zod.string().describe('`active` for a list of the sidebar, `archived` for a list of the archives ("Liste\narchivée"), `deleted` for a deleted list ("Liste supprimée"), which comes back when one of\nits tasks is restored. Later versions may add states (`x-extensible-enum`).\n')
+}).describe('The list of an archived or trashed task, with its name and state as they are now.'),
+  "trashedAt": zod.iso.datetime({"offset":true}).describe('"Supprimée il y a 2 jours"'),
+  "trashedBy": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "purgeAt": zod.iso.datetime({"offset":true}).describe('When the entry is erased for good, 30 days after `trashedAt` ("Effacée définitivement\ndans 28 jours").\n')
+}).describe('One element of the trash ("Corbeille"): a task and its subtasks at every level, deleted\ntogether, which come back or are erased together. Deleting a subtask makes an entry of its\nown subtree; deleting a list or a space makes one entry per top-level task.\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(listTrashInternalResponseTotalMin)
+})
+
+
+/**
+ * Erases an entry the actor may restore at once, as `DELETE /v1/trash/entries/{entryId}`
+ * says; any other answers `404 trash-entry.not-found`. Emits `task.purged.v1` for each task
+ * of the entry. Internal token: actor `user`, organization required.
+ * @summary Erase a trash entry for good
+ */
+export const PurgeTrashEntryInternalParams = zod.object({
+  "entryId": zod.uuid().describe('Id of the trash entry.')
+})
+
+export const PurgeTrashEntryInternalResponse = zod.void()
+
+
+/**
+ * Brings an entry the actor may restore back to its list, as
+ * `POST /v1/trash/entries/{entryId}/restore` says: the root detached from a parent that is no
+ * longer live or can no longer take it, a deleted list and space brought back with it; any
+ * other entry answers `404 trash-entry.not-found`. Emits `space.restored.v1` and
+ * `list.restored.v1` for what came back with it, then `task.restored.v1` for each task, the
+ * root first. Internal token: actor `user`, organization required.
+ * @summary Restore a trash entry
+ */
+export const RestoreTrashEntryInternalParams = zod.object({
+  "entryId": zod.uuid().describe('Id of the trash entry.')
+})
+
+export const RestoreTrashEntryInternalBody = zod.object({
+
+}).describe('Empty object `{}`, the body the public route carried.')
+
+export const restoreTrashEntryInternalResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const restoreTrashEntryInternalResponseTaskParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const restoreTrashEntryInternalResponseTaskSubtaskCountsTotalMin = 0;
+
+export const restoreTrashEntryInternalResponseTaskSubtaskCountsClosedMin = 0;
+
+export const restoreTrashEntryInternalResponseTaskChecklistCountsTotalMin = 0;
+
+export const restoreTrashEntryInternalResponseTaskChecklistCountsDoneMin = 0;
+
+
+
+
+
+
+export const restoreTrashEntryInternalResponseSubtaskCountMin = 0;
+
+
+
+export const RestoreTrashEntryInternalResponse = zod.object({
+  "task": zod.object({
+  "key": zod.string().regex(restoreTrashEntryInternalResponseTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled; `null` unless its status is `cancelled`.'),
+  "cancelNote": zod.string().nullable().describe('"Précision" of the cancellation, 500 characters at most; `null` when there is none or\nthe task is not cancelled.\n'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned.'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance"; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work; `null` when there is none, always `null` without a due date.'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(restoreTrashEntryInternalResponseTaskParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask; `null` for a top-level task.'),
+  "listId": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(restoreTrashEntryInternalResponseTaskSubtaskCountsTotalMin),
+  "closed": zod.int().min(restoreTrashEntryInternalResponseTaskSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklist": zod.array(zod.object({
+  "id": zod.uuid(),
+  "text": zod.string().describe('"Élément de checklist", 300 characters at most.'),
+  "done": zod.boolean().describe('Ticked ("Terminer") or not ("Rouvrir").')
+}).describe('One item of a checklist ("Une checklist sert aux petites étapes sans statut ni assigné.").')).describe('"Checklist", 100 items at most, in the order they were added.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(restoreTrashEntryInternalResponseTaskChecklistCountsTotalMin),
+  "done": zod.int().min(restoreTrashEntryInternalResponseTaskChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "createdBy": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
+}).describe('A task, with its description and its checklist.'),
+  "list": zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('"Nom", 80 characters at most.'),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "color": zod.string().describe('A color of `LookColor`, as a resource carries it. Later versions add colors\n(`x-extensible-enum`): a client shows an unknown one as `gris`.\n'),
+  "sprint": zod.union([zod.object({
+  "startDate": zod.iso.date().describe('"Début", the first day of the sprint.'),
+  "endDate": zod.iso.date().describe('"Fin", the last day of the sprint, on or after `startDate`.'),
+  "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
+}).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
+}).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
+  "subtaskCount": zod.int().min(restoreTrashEntryInternalResponseSubtaskCountMin).describe('The subtasks that came back with it, at every level.'),
+  "detached": zod.boolean().describe('Whether the root left its parent, which is no longer live or can no longer take it\n(", détachée de son parent supprimé"); it is then a top-level task.\n'),
+  "listRestored": zod.boolean().describe('Whether its list, deleted, came back with it, at the end of its space.'),
+  "spaceRestored": zod.boolean().describe('Whether the space of that list, deleted, came back too, at the end of the sidebar.')
+}).describe('What a restoration brought back ("CAD-452 restaurée", "Avec 2 sous-tâches, de retour dans\nSprint 14.").\n')
+
+
+/**
+ * Takes every entry the actor may restore out of the trash at once and hands them to the
+ * purge job, as `POST /v1/trash/empty` says: `202` with their count. Emits `task.purged.v1`
+ * for each task as the job erases it. Internal token: actor `user`, organization required.
+ * @summary Empty the trash
+ */
+export const EmptyTrashInternalBody = zod.object({
+
+}).describe('Empty object `{}`, the body the public route carried.')
+
+export const emptyTrashInternalResponseEntryCountMin = 0;
+
+
+
+export const EmptyTrashInternalResponse = zod.object({
+  "entryCount": zod.int().min(emptyTrashInternalResponseEntryCountMin).describe('Entries that left the trash, to be erased for good.')
+}).describe('What "Vider la corbeille" took out ("Corbeille vidée", "12 éléments effacés définitivement.").')
+
+
+/**
+ * Answers whether the actor, the person of a socket of the realtime gateway, sees a list and
+ * with which role, before the socket joins the room of the list. A list they do not see, a
+ * deleted one included, answers `404 list.not-found`, as everywhere; an archived list they
+ * see answers its role. One indexed read of the grants of the actor on the list and its
+ * space, with the space and the copy of the members; nothing is written and nothing is
+ * emitted.
+ *
+ * Internal token: issuer `realtime-gateway` only (`403 auth.issuer-not-allowed` for any
+ * other), actor `user`, organization required.
+ * @summary Check the access of a person to a list
+ */
+export const CheckListAccessInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const checkListAccessInternalResponseTaskKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const CheckListAccessInternalResponse = zod.object({
+  "role": zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),
+  "spaceId": zod.uuid(),
+  "listId": zod.uuid().describe('The list checked, or the list of the task checked.'),
+  "taskKey": zod.union([zod.string().regex(checkListAccessInternalResponseTaskKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The task checked; `null` for a list.')
+}).describe('What the realtime gateway needs to let a socket join the room of a list or a task: the role\nof the actor and where the list or the task is.\n')
+
+
+/**
+ * Answers whether the actor, the person of a socket of the realtime gateway, sees a task and
+ * with which role, the role of its list, before the socket joins the room of the task. A
+ * task they do not see, a task in the trash included, answers `404 task.not-found`, never
+ * `task.trashed`; an archived task they see answers its role. One indexed read, as for a
+ * list; nothing is written and nothing is emitted.
+ *
+ * Internal token: issuer `realtime-gateway` only (`403 auth.issuer-not-allowed` for any
+ * other), actor `user`, organization required.
+ * @summary Check the access of a person to a task
+ */
+export const checkTaskAccessInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const CheckTaskAccessInternalParams = zod.object({
+  "taskKey": zod.string().regex(checkTaskAccessInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const checkTaskAccessInternalResponseTaskKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const CheckTaskAccessInternalResponse = zod.object({
+  "role": zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),
+  "spaceId": zod.uuid(),
+  "listId": zod.uuid().describe('The list checked, or the list of the task checked.'),
+  "taskKey": zod.union([zod.string().regex(checkTaskAccessInternalResponseTaskKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The task checked; `null` for a list.')
+}).describe('What the realtime gateway needs to let a socket join the room of a list or a task: the role\nof the actor and where the list or the task is.\n')

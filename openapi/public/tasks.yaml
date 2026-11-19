@@ -17,10 +17,26 @@ info:
     in `openapi/public/spaces.yaml`). The key never changes, also when the task moves to another
     space.
 
-    **Who sees a task.** A task is seen by whoever sees its space; a task the caller does not see
-    answers `404 task.not-found`, as an unknown key does, and is left out of every collection and
-    every count. Any member who sees the space creates and changes its tasks; a guest sees nothing in
-    this version.
+    **Who sees a task.** A task is seen by whoever sees its list (see "Access" in
+    `openapi/public/spaces.yaml`); a task the caller does not see answers `404 task.not-found`, as
+    an unknown key does, and is left out of every collection and every count. Who has `edit` on
+    the list creates and changes its tasks; anyone else who sees it reads them and gets
+    `403 access.role-insufficient` for a change. A guest sees the tasks of the lists shared with
+    them.
+
+    **Archives.** Archiving a task archives its subtree, its subtasks at every level, whatever
+    their status (`openapi/public/archives.yaml`). An archived task (`archivedAt`) is left out of
+    every collection and count, "Mes tâches" and "Accueil" included, reads by its key with its
+    detail and the tasks archived with it, and refuses every change with `409 task.archived`
+    until it is restored. The tasks of an archived list are not archived: they read and change as
+    before.
+
+    **Trash.** Deleting a task moves it and its subtasks to the trash as one entry
+    (`openapi/public/trash.yaml`). A task in the trash is left out of every collection and count;
+    every route of its key answers `404 task.trashed`, with in `details` who deleted it, when, and
+    when it is erased, to a caller who could change its list ("Cette tâche a été supprimée"), and
+    `404 task.not-found` to anyone else. The tasks of a deleted list or space answer
+    `404 task.not-found` until they reach the trash.
 
     **Statuses.** Any status may be chosen, from any other: the next status the web application
     proposes ("Passer à « En revue »") is a shortcut, not a rule, and every change request is
@@ -51,7 +67,7 @@ info:
     priority, due date and assignees, with who made them. Changes of the due date or the priority
     of a task by the same actor within 60 seconds merge into one entry, which disappears when the
     value is back to where it was. The name, the description, the labels, the estimate, the list,
-    the parent and the checklist are not recorded.
+    the parent and the checklist are not recorded, nor are archives, the trash and sharing.
 
     **Counts and dates.** Counters read the key `done` for "Terminées" and the progress of a
     sprint, and the categories `open` and `active` for the open work; a task is late when it is
@@ -72,9 +88,9 @@ info:
     application shows.
 
     **Later versions** add, without changing what is here: comments and mentions, watchers,
-    dependencies, milestones, recurrence, the trash and the archives, deletion, duplication,
-    templates, bulk changes, time tracking, custom fields, attachments and development links; the
-    detail gains their parts, named in `partial` when they cannot be read.
+    dependencies, milestones, recurrence, duplication, templates, bulk changes, time tracking,
+    custom fields, attachments and development links; the detail gains their parts, named in
+    `partial` when they cannot be read.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -120,6 +136,8 @@ paths:
         - `assigneeIds` are current members of the organization, guests excepted
           (`422 task.assignee-invalid`, with `details.userIds`).
         - `startDate` needs a `dueDate` and is on or before it (`422 task.start-date-invalid`).
+        - It needs `edit` on the list (`403 access.role-insufficient`). An archived list takes the
+          task, which stays out of the sidebar with it.
 
         Records a creation in the activity log of each task created. Emits `task.created.v1` for
         each task created, and `task.assigned.v1` for each of their assignees. Scope `tasks:write`
@@ -207,8 +225,9 @@ paths:
       summary: List the tasks of a list
       description: |
         Lists the tasks of a list the caller sees, filtered and sorted (views "Liste", "Tableau",
-        "Gantt"). Values of one filter add up, filters narrow each other ("Statut est l’un de …").
-        `total` counts the tasks that match the filters, on every page ("12 sur 98 tâches").
+        "Gantt"); an archived list lists its tasks too. Values of one filter add up, filters narrow
+        each other ("Statut est l’un de …"). `total` counts the tasks that match the filters, on
+        every page ("12 sur 98 tâches"). Archived tasks and the tasks in the trash are left out.
 
         - `level`: `roots` (the default) keeps the top-level tasks, whose subtasks the web
           application reads under each of them with `GET /v1/tasks/{taskKey}/subtasks`
@@ -361,8 +380,11 @@ paths:
       operationId: getTask
       summary: Read a task
       description: |
-        Returns a task the caller sees, with its description and its checklist. Scope `tasks:read`
-        for a personal API token.
+        Returns a task the caller sees, with its description and its checklist; an archived task
+        too, with `archivedAt` and `archivedBy`. A task in the trash answers `404 task.trashed`,
+        with who deleted it and when, to a caller who could change its list (page "Tâche
+        supprimée": "Restaurer la tâche", "Ouvrir la corbeille"), and `404 task.not-found` to
+        anyone else. Scope `tasks:read` for a personal API token.
       tags: [tasks]
       security:
         - sessionCookie: []
@@ -426,6 +448,9 @@ paths:
         - `If-Match` is optional (`412 request.version-mismatch`), but required to change
           `description`, a long text: without it, `400 request.invalid` with an issue on the
           header.
+        - It needs `edit` on the list of the task, and on the list it moves to
+          (`403 access.role-insufficient`). An archived task answers `409 task.archived`, and so
+          does an archived parent, `details.key` naming the archived task.
 
         Records the changes of status, priority and due date in the activity log. Emits
         `task.updated.v1` when something changed, with `changed`, and also
@@ -484,6 +509,8 @@ paths:
           $ref: '#/components/responses/TasksWriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '422':
@@ -501,7 +528,9 @@ paths:
       description: |
         Returns what the task detail shows ("Détails", "Propriétés"): the task, its space with its
         statuses, its list, its parent ("Sous-tâche de CAD-482 · Refondre l’écran de connexion
-        SSO") and its direct subtasks ("Sous-tâches 3"). The gateway composes it; `partial` names
+        SSO") and its direct subtasks ("Sous-tâches 3"), those archived or in the trash left out
+        but for an archived task, whose detail shows the subtasks archived with it, and `list`
+        carries the role of the caller (`callerRole`). The gateway composes it; `partial` names
         the parts it could not read, so that the web application shows the rest. In this version
         task-service is its only source: `partial` is always empty, and the detail fails as a whole
         when task-service cannot answer ("Impossible de charger la tâche"). Later versions add
@@ -652,7 +681,8 @@ paths:
       description: |
         Lists the direct subtasks of a task the caller sees, in the order of their creation ("Afficher
         les 3 sous-tâches de CAD-482"); 25 at most, so one page of the default size holds them all.
-        Scope `tasks:read` for a personal API token.
+        The archived subtasks and those in the trash are left out, but for an archived task, which
+        lists the subtasks archived with it. Scope `tasks:read` for a personal API token.
       tags: [tasks]
       security:
         - sessionCookie: []
@@ -749,8 +779,9 @@ paths:
         of the list of the parent, in the list of the parent; without `assigneeIds`, it takes the
         first assignee of the parent. A parent at the third level answers
         `422 task.subtask-depth-exceeded`, a parent with 25 subtasks
-        `422 task.subtask-limit-reached`; the other rules are those of
-        `POST /v1/lists/{listId}/tasks`.
+        `422 task.subtask-limit-reached`, an archived parent `409 task.archived`; the other rules
+        are those of `POST /v1/lists/{listId}/tasks`. The archived subtasks and those in the trash
+        do not count among the 25.
 
         Records its creation in the activity log. Emits `task.created.v1` and one
         `task.assigned.v1` per assignee. Scope `tasks:write` for a personal API token.
@@ -816,7 +847,7 @@ paths:
         '404':
           $ref: '#/components/responses/TaskNotFound'
         '409':
-          $ref: '#/components/responses/RequestInProgress'
+          $ref: '#/components/responses/SubtaskCreationConflict'
         '422':
           $ref: '#/components/responses/SubtaskCreationRefused'
         '429':
@@ -872,7 +903,7 @@ paths:
         '404':
           $ref: '#/components/responses/TaskNotFound'
         '409':
-          $ref: '#/components/responses/RequestInProgress'
+          $ref: '#/components/responses/ChecklistItemConflict'
         '422':
           $ref: '#/components/responses/ChecklistItemRefused'
         '429':
@@ -927,6 +958,8 @@ paths:
           $ref: '#/components/responses/TasksWriteForbidden'
         '404':
           $ref: '#/components/responses/ChecklistItemNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '429':
@@ -984,6 +1017,8 @@ paths:
           $ref: '#/components/responses/TasksWriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '422':
@@ -1023,6 +1058,8 @@ paths:
           $ref: '#/components/responses/TasksWriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '429':
@@ -1079,6 +1116,8 @@ paths:
           $ref: '#/components/responses/TasksWriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '422':
@@ -1136,6 +1175,8 @@ paths:
           $ref: '#/components/responses/TasksWriteForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '429':
@@ -1230,10 +1271,11 @@ paths:
       operationId: listLabels
       summary: List the labels
       description: |
-        Lists the labels of the tasks the caller sees, for the picker ("Étiquettes"), in alphabetical
-        order without regard to case or accents. Two spellings of one label that differ only by
-        case are listed once, in the spelling that comes first in that order. `search` keeps the
-        labels that contain the text, without regard to case or accents.
+        Lists the labels of the tasks the caller sees, archived tasks and the trash left out, for
+        the picker ("Étiquettes"), in alphabetical order without regard to case or accents. Two
+        spellings of one label that differ only by case are listed once, in the spelling that
+        comes first in that order. `search` keeps the labels that contain the text, without regard
+        to case or accents.
 
         Scope `tasks:read` for a personal API token.
       tags: [tasks]
@@ -1287,7 +1329,8 @@ paths:
         of the keys `done` and `cancelled` ("Terminées", "Terminées et annulées"). They come by due
         date, the tasks without a due date last, then in the order of their creation; the web
         application groups the open ones by due date ("En retard", "Aujourd’hui", "Sept prochains
-        jours", "Plus tard", "Sans échéance"). `counts` counts both tabs, on every page.
+        jours", "Plus tard", "Sans échéance"). `counts` counts both tabs, on every page. Archived
+        tasks and the trash are left out; the tasks of an archived list stay.
 
         Scope `tasks:read` for a personal API token.
       tags: [my-tasks]
@@ -1362,9 +1405,11 @@ paths:
         - `lists` ("Listes"): the first 6 lists, in the order of the sidebar (spaces then lists in
           the order of their creation), with the counts of their tasks ("14 ouvertes").
 
-        `today` is the date of the caller, in their time zone. A guest gets zeros and empty lists in
-        this version. The mentions and the activity of the inbox come from another route in a later
-        version. Scope `tasks:read` for a personal API token.
+        Archived tasks and the trash are left out of `stats` and `priorities`, the tasks of an
+        archived list stay; archived lists are left out of `sprints` and `lists`. `today` is the
+        date of the caller, in their time zone. A guest, never assigned, gets zeros, no priorities,
+        and the lists shared with them. The mentions and the activity of the inbox come from
+        another route in a later version. Scope `tasks:read` for a personal API token.
       tags: [my-tasks]
       security:
         - sessionCookie: []
@@ -1611,6 +1656,27 @@ components:
           id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
         updatedAt: '2026-11-07T15:20:00Z'
         version: 12
+        archivedAt: null
+        archivedBy: null
+    RoleInsufficient:
+      summary: A person with "Peut commenter" changes a task
+      value:
+        type: about:blank
+        title: Il faut le droit « Peut modifier » pour cette action.
+        status: 403
+        code: access.role-insufficient
+        details:
+          role: comment
+          requiredRole: edit
+    TaskArchived:
+      summary: A change of an archived task
+      value:
+        type: about:blank
+        title: 'Cette tâche est archivée : restaurez-la depuis les Archives pour la modifier.'
+        status: 409
+        code: task.archived
+        details:
+          key: CAD-430
     CrossSiteRefused:
       summary: Request from another site
       value:
@@ -1810,6 +1876,9 @@ components:
               $ref: '#/components/examples/OrganizationMfaRequired'
     TasksWriteForbidden:
       description: |
+        - `access.role-insufficient`: the caller sees the list of the task, or the list a move
+          goes to, without `edit` on it; `details.role` is their role there, `details.requiredRole`
+          is `edit`;
         - `auth.scope-missing`: the personal API token lacks `tasks:write`;
         - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
         - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
@@ -1818,6 +1887,8 @@ components:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           examples:
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
             scopeMissing:
               $ref: '#/components/examples/ScopeMissingWrite'
             organizationNotSelected:
@@ -1854,21 +1925,48 @@ components:
             code: list.not-found
     TaskNotFound:
       description: |
-        - `task.not-found`: no task with this key that the caller sees;
+        - `task.not-found`: no task with this key that the caller sees, or a task in the trash
+          that the caller could not change;
+        - `task.trashed`: the task is in the trash and the caller could change its list ("Tâche
+          supprimée"). `details.key` and `details.name` name the task, `details.entryId` is the
+          trash entry it belongs to (`POST /v1/trash/entries/{entryId}/restore`),
+          `details.rootKey` the root of that entry, `details.trashedAt` and `details.trashedBy`
+          (an `Actor`) say when and by whom it was deleted, `details.purgeAt` when it is erased
+          ("Elle reste 30 jours dans la corbeille avant d’être effacée.");
         - `organization.not-found`: see `OrganizationNotFound`.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: Tâche introuvable.
-            status: 404
-            code: task.not-found
+          examples:
+            taskNotFound:
+              summary: No task the caller sees
+              value:
+                type: about:blank
+                title: Tâche introuvable.
+                status: 404
+                code: task.not-found
+            taskTrashed:
+              summary: CAD-452 in the trash, read by someone who could change Sprint 14
+              value:
+                type: about:blank
+                title: Cette tâche a été supprimée
+                status: 404
+                code: task.trashed
+                details:
+                  key: CAD-452
+                  name: Ancien écran de connexion
+                  entryId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01
+                  rootKey: CAD-452
+                  trashedAt: '2026-11-06T16:20:00Z'
+                  trashedBy:
+                    type: user
+                    id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  purgeAt: '2026-12-06T16:20:00Z'
     ChecklistItemNotFound:
       description: |
         - `checklist-item.not-found`: the task has no item with this id;
-        - `task.not-found`, `organization.not-found`: see `TaskNotFound`.
+        - `task.not-found`, `task.trashed`, `organization.not-found`: see `TaskNotFound`.
       content:
         application/problem+json:
           schema:
@@ -1889,6 +1987,54 @@ components:
             title: Conflict
             status: 409
             code: idempotency.request-in-progress
+    TaskArchived:
+      description: |
+        `task.archived`: the task is archived, or the parent the patch names is; `details.key`
+        names the archived task. It changes again once restored
+        (`POST /v1/tasks/{taskKey}/unarchive`, `openapi/public/archives.yaml`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskArchived:
+              $ref: '#/components/examples/TaskArchived'
+    SubtaskCreationConflict:
+      description: |
+        - `task.archived`: the parent is archived; `details.key` names it;
+        - `idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskArchived:
+              $ref: '#/components/examples/TaskArchived'
+            requestInProgress:
+              summary: The first request with this key still runs
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: idempotency.request-in-progress
+    ChecklistItemConflict:
+      description: |
+        - `task.archived`: the task is archived; `details.key` names it;
+        - `idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskArchived:
+              $ref: '#/components/examples/TaskArchived'
+            requestInProgress:
+              summary: The first request with this key still runs
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: idempotency.request-in-progress
     TaskCreationRefused:
       description: |
         - `task.status-hidden`: the space of the list no longer uses the status; `details.status`

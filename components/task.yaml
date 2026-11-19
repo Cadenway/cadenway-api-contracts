@@ -1,5 +1,6 @@
 # Components shared by the task contracts: openapi/public/spaces.yaml, openapi/public/lists.yaml,
-# openapi/public/tasks.yaml and openapi/internal/task-service.yaml. A spec references them with a
+# openapi/public/tasks.yaml, openapi/public/access.yaml, openapi/public/archives.yaml,
+# openapi/public/trash.yaml and openapi/internal/task-service.yaml. A spec references them with a
 # relative `$ref` (`../../components/task.yaml#/components/...`); nothing here is a route.
 openapi: 3.1.0
 info:
@@ -7,15 +8,22 @@ info:
   version: 1.0.0
   description: |
     The shared enumerations of `@cadenway/contracts` (status keys and categories, priorities,
-    cancel reasons), the resources of spaces, lists, sprints and tasks, and the query parameters of
-    the task queries, which the public routes of the gateway and the internal routes of
-    task-service carry with the same shape.
+    cancel reasons), the resources of spaces, lists, sprints and tasks, their access grants,
+    access requests, archives and trash entries, and the query parameters of the task queries,
+    which the public routes of the gateway and the internal routes of task-service carry with the
+    same shape.
 
     **Limits.** The limits of the product (lengths of names and texts, counts of assignees,
-    labels, subtasks and checklist items, the estimate) bound the requests. The responses state
-    them in their descriptions only, so that a later version may raise one without refusing what an
-    older validator reads. The formats of the identifiers, a task key and a prefix, are not limits:
-    the responses check them.
+    labels, subtasks, checklist items and grants, the estimate) bound the requests. The responses
+    state them in their descriptions only, so that a later version may raise one without refusing
+    what an older validator reads. The formats of the identifiers, a task key and a prefix, are not
+    limits: the responses check them.
+
+    **Members added later.** A member added to a resource after its first version (the role of
+    the caller, the switch "Accès de l’organisation", the archive of a list or a task) is optional
+    in the response schemas, so that an answer of a task-service that does not send it yet still
+    passes the validator of a gateway that already knows it; each says what its absence stands
+    for. Every answer of a task-service of this version carries them.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -308,8 +316,23 @@ components:
       type: string
       description: |
         Who sees a space ("Confidentialité"): `organization` ("Tout Atelier Nord": every member of
-        the organization but the guests) or `private` ("Privé": its owner only in this version).
+        the organization but the guests) or `private` ("Privé": its owner and the people it is
+        shared with).
       enum: [organization, private]
+    AccessRole:
+      type: string
+      description: |
+        A role given by a grant ("Droit d’accès"): `edit` ("Peut modifier"), `comment` ("Peut
+        commenter", which reads like `view` until comments exist) or `view` ("Lecture seule"),
+        from the most to the least. The owner of a space ("Propriétaire") holds no grant: they
+        always have `edit` on it and on its lists.
+      enum: [edit, comment, view]
+    AccessRoleValue:
+      type: string
+      description: |
+        A role of `AccessRole`, as a resource carries it. Later versions may add roles
+        (`x-extensible-enum`): a client treats an unknown one as `view`.
+      x-extensible-enum: [edit, comment, view]
     LookColorValue:
       type: string
       description: |
@@ -492,7 +515,26 @@ components:
         version:
           type: integer
           minimum: 1
-          description: Version of the space, also sent as `ETag`.
+          description: |
+            Version of the space, also sent as `ETag`; a change of its grants adds one too.
+        callerRole:
+          description: |
+            The role of the caller on the space itself (see "Access" in
+            `openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner
+            of the space and a grant of the space. `null` when the caller sees the space only
+            through the grants of some of its lists, as a guest does: they see those lists only,
+            and create no list in the space. Absent, it reads as `edit`, the rule before grants
+            existed.
+          oneOf:
+            - $ref: '#/components/schemas/AccessRoleValue'
+            - type: 'null'
+        callerCanManage:
+          type: boolean
+          description: |
+            Whether the caller manages the space: changes its visibility, shares it and deletes it;
+            its settings and statuses need `edit` only. `true` for the owner of the space, and for
+            the owner and the admins of the organization when the space is `organization`. Absent,
+            the web application offers the actions and handles their `403`.
     SpaceName:
       type: string
       minLength: 1
@@ -682,7 +724,35 @@ components:
         version:
           type: integer
           minimum: 1
-          description: Version of the list, also sent as `ETag`.
+          description: |
+            Version of the list, also sent as `ETag`; a change of its grants, an archive and a
+            restoration add one too.
+        organizationAccess:
+          type: boolean
+          description: |
+            The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir
+            cette liste"), on by default. In a space of the whole organization, on, every owner,
+            admin and member of the organization has `edit` on the list; off, only the owner of
+            the space and the people the space or the list is shared with see it. In a private
+            space it changes nothing. Absent, it reads as `true`.
+        archivedAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the list was archived ("archivée le 3 nov."); `null` for a list that is not.
+            An archived list is left out of the lists of its space, of the overview and of
+            "Accueil", and reads by its id. Absent, it reads as `null`.
+        archivedBy:
+          description: Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.
+          oneOf:
+            - $ref: '#/components/schemas/Actor'
+            - type: 'null'
+        callerRole:
+          $ref: '#/components/schemas/AccessRoleValue'
+          description: |
+            The role of the caller on the list (see "Access" in `openapi/public/spaces.yaml`):
+            reads need any role, changes to the list and its tasks need `edit`. Absent, it reads
+            as `edit`, the rule before grants existed.
     TaskCounts:
       type: object
       required: [total, open, done, cancelled, late]
@@ -810,6 +880,11 @@ components:
           oneOf:
             - $ref: '#/components/schemas/SprintInput'
             - type: 'null'
+        organizationAccess:
+          type: boolean
+          description: |
+            The switch "Accès de l’organisation" of the new list; absent, it is on (`true`), as
+            for every list created before the switch existed.
     ListPatch:
       type: object
       description: |
@@ -826,6 +901,11 @@ components:
           oneOf:
             - $ref: '#/components/schemas/SprintInput'
             - type: 'null'
+        organizationAccess:
+          type: boolean
+          description: |
+            Turns the switch "Accès de l’organisation" on or off ("Tous les membres de Atelier
+            Nord peuvent voir cette liste").
     TaskName:
       type: string
       minLength: 1
@@ -1115,7 +1195,20 @@ components:
           minimum: 1
           description: |
             Version of the task, also sent as `ETag`; every change adds one, a change of its
-            assignees, labels or checklist included.
+            assignees, labels or checklist, an archive and a restoration included.
+        archivedAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the task was archived, with the subtree it heads or belongs to ("archivée le 5
+            nov."); `null` for a task that is not. An archived task is left out of every
+            collection and count, reads by its key and refuses changes (`409 task.archived`) until
+            it is restored. Absent, it reads as `null`.
+        archivedBy:
+          description: Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.
+          oneOf:
+            - $ref: '#/components/schemas/Actor'
+            - type: 'null'
     SubtaskName:
       type: object
       required: [name]
@@ -1393,3 +1486,273 @@ components:
               format: uuid
             added:
               type: boolean
+    Grant:
+      type: object
+      required: [userId, role, grantedAt, grantedBy]
+      description: |
+        The access of one person to a space or a list ("Personnes ayant accès"), given by someone
+        who manages it. A space or a list holds 200 grants at most. The owner of the space holds
+        none: they always have `edit` ("Propriétaire").
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: Account of the person, a current member or guest of the organization.
+          examples: [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+        role:
+          $ref: '#/components/schemas/AccessRoleValue'
+        grantedAt:
+          type: string
+          format: date-time
+          description: When the person was given this role.
+        grantedBy:
+          $ref: '#/components/schemas/Actor'
+    GrantChange:
+      type: object
+      required: [role]
+      description: The role to give ("Droit d’accès"); it replaces the role the person had there.
+      properties:
+        role:
+          $ref: '#/components/schemas/AccessRole'
+    ListStateValue:
+      type: string
+      description: |
+        `active` for a list of the sidebar, `archived` for a list of the archives ("Liste
+        archivée"), `deleted` for a deleted list ("Liste supprimée"), which comes back when one of
+        its tasks is restored. Later versions may add states (`x-extensible-enum`).
+      x-extensible-enum: [active, archived, deleted]
+    ListRef:
+      type: object
+      required: [id, spaceId, name, state]
+      description: The list of an archived or trashed task, with its name and state as they are now.
+      properties:
+        id:
+          type: string
+          format: uuid
+        spaceId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: '"Nom", 80 characters at most.'
+          examples: [Sprint 14]
+        state:
+          $ref: '#/components/schemas/ListStateValue'
+    ArchivedList:
+      type: object
+      required: [list, taskCount]
+      description: A list of the archives ("Archives", tab "Listes").
+      properties:
+        list:
+          $ref: '#/components/schemas/TaskList'
+          description: The list, with `archivedAt` and `archivedBy`.
+        taskCount:
+          type: integer
+          minimum: 0
+          description: Its top-level tasks, subtasks left out ("14 tâches").
+    ArchivedTask:
+      type: object
+      required: [task, list, subtaskCount, archivedAt, archivedBy]
+      description: |
+        A task of the archives ("Archives", tab "Tâches"): the root of a subtree archived together,
+        which comes back together.
+      properties:
+        task:
+          $ref: '#/components/schemas/TaskSummary'
+        list:
+          $ref: '#/components/schemas/ListRef'
+          description: Its list, `archived` when the list is archived too ("Liste archivée").
+        subtaskCount:
+          type: integer
+          minimum: 0
+          description: The subtasks archived with it, at every level.
+        archivedAt:
+          type: string
+          format: date-time
+          description: '"archivée le 5 nov."'
+        archivedBy:
+          $ref: '#/components/schemas/Actor'
+    TrashEntry:
+      type: object
+      required: [id, task, parentKey, subtaskCount, list, trashedAt, trashedBy, purgeAt]
+      description: |
+        One element of the trash ("Corbeille"): a task and its subtasks at every level, deleted
+        together, which come back or are erased together. Deleting a subtask makes an entry of its
+        own subtree; deleting a list or a space makes one entry per top-level task.
+      properties:
+        id:
+          type: string
+          format: uuid
+        task:
+          $ref: '#/components/schemas/TaskRef'
+          description: The task at the root of the entry, with its name and status.
+        parentKey:
+          description: |
+            The parent the root had when it was deleted ("Sous-tâche de CAD-482"); `null` for a
+            top-level task.
+          oneOf:
+            - $ref: '#/components/schemas/TaskKey'
+            - type: 'null'
+        subtaskCount:
+          type: integer
+          minimum: 0
+          description: The subtasks deleted with it, at every level ("Avec 3 sous-tâches").
+        list:
+          $ref: '#/components/schemas/ListRef'
+          description: The list the entry comes back to; `deleted` reads "Liste supprimée".
+        trashedAt:
+          type: string
+          format: date-time
+          description: '"Supprimée il y a 2 jours"'
+        trashedBy:
+          $ref: '#/components/schemas/Actor'
+        purgeAt:
+          type: string
+          format: date-time
+          description: |
+            When the entry is erased for good, 30 days after `trashedAt` ("Effacée définitivement
+            dans 28 jours").
+    TrashRestored:
+      type: object
+      required: [task, list, subtaskCount, detached, listRestored, spaceRestored]
+      description: |
+        What a restoration brought back ("CAD-452 restaurée", "Avec 2 sous-tâches, de retour dans
+        Sprint 14.").
+      properties:
+        task:
+          $ref: '#/components/schemas/Task'
+          description: The root of the entry, back in its list.
+        list:
+          $ref: '#/components/schemas/TaskList'
+          description: The list it is back in.
+        subtaskCount:
+          type: integer
+          minimum: 0
+          description: The subtasks that came back with it, at every level.
+        detached:
+          type: boolean
+          description: |
+            Whether the root left its parent, which is no longer live or can no longer take it
+            (", détachée de son parent supprimé"); it is then a top-level task.
+        listRestored:
+          type: boolean
+          description: Whether its list, deleted, came back with it, at the end of its space.
+        spaceRestored:
+          type: boolean
+          description: Whether the space of that list, deleted, came back too, at the end of the sidebar.
+    TrashEmptied:
+      type: object
+      required: [entryCount]
+      description: What "Vider la corbeille" took out ("Corbeille vidée", "12 éléments effacés définitivement.").
+      properties:
+        entryCount:
+          type: integer
+          minimum: 0
+          description: Entries that left the trash, to be erased for good.
+    AccessRequestCreation:
+      type: object
+      description: |
+        A request for access ("Demander l’accès"): exactly one of `spaceId`, `listId` and
+        `taskKey`, as the link the caller followed names the target; none or several answer
+        `400 request.invalid`.
+      properties:
+        spaceId:
+          type: string
+          format: uuid
+          description: A space to have a role on.
+        listId:
+          type: string
+          format: uuid
+          description: A list to see.
+        taskKey:
+          $ref: '#/components/schemas/TaskKey'
+          description: A task to see, through its list.
+        message:
+          type: [string, 'null']
+          maxLength: 500
+          description: '"Message pour Léa (facultatif)", trimmed; `null` or an empty text for none.'
+          examples: [Je dois chiffrer la part outillage du budget 2027.]
+    AccessRequestTargetValue:
+      type: string
+      description: |
+        What a request asks for: `space`, `list` or `task`. Later versions may add targets
+        (`x-extensible-enum`).
+      x-extensible-enum: [space, list, task]
+    AccessRequestStateValue:
+      type: string
+      description: |
+        `pending` until someone who manages the target answers, then `approved` or `refused`. Later
+        versions may add states (`x-extensible-enum`).
+      x-extensible-enum: [pending, approved, refused]
+    AccessRequest:
+      type: object
+      required:
+        [
+          id,
+          target,
+          spaceId,
+          listId,
+          task,
+          requester,
+          message,
+          state,
+          role,
+          createdAt,
+          decidedAt,
+          decidedBy,
+        ]
+      description: |
+        A request for access, as the people who manage its target read it. The requester never
+        reads it: they learn the answer from the inbox (cadenway-notification-service). It has no
+        `version` of its own to send back: it changes once, from `pending`, and a second answer
+        gets `409 access-request.already-decided`; its events carry `1`, then `2`.
+      properties:
+        id:
+          type: string
+          format: uuid
+        target:
+          $ref: '#/components/schemas/AccessRequestTargetValue'
+        spaceId:
+          type: string
+          format: uuid
+          description: The space of the target.
+        listId:
+          type: [string, 'null']
+          format: uuid
+          description: The list of a list or task target; `null` for a space.
+        task:
+          description: The task of a task target, with its name and status as they are now; `null` otherwise.
+          oneOf:
+            - $ref: '#/components/schemas/TaskRef'
+            - type: 'null'
+        requester:
+          $ref: '#/components/schemas/UserRef'
+        message:
+          type: [string, 'null']
+          description: The message of the requester, 500 characters at most; `null` when there is none.
+        state:
+          $ref: '#/components/schemas/AccessRequestStateValue'
+        role:
+          description: The role an approval gave; `null` while pending or when refused.
+          oneOf:
+            - $ref: '#/components/schemas/AccessRoleValue'
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: [string, 'null']
+          format: date-time
+          description: When it was approved or refused; `null` while pending.
+        decidedBy:
+          description: Who approved or refused it; `null` while pending.
+          oneOf:
+            - $ref: '#/components/schemas/Actor'
+            - type: 'null'
+    AccessRequestApproval:
+      type: object
+      required: [role]
+      description: The role an approval gives the requester ("Droit d’accès").
+      properties:
+        role:
+          $ref: '#/components/schemas/AccessRole'
