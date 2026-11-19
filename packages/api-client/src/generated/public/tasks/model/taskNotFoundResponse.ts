@@ -5,7 +5,14 @@
 import type { Problem } from './problem';
 
 /**
- * - `task.not-found`: no task with this key that the caller sees;
+ * - `task.not-found`: no task with this key that the caller sees, or a task in the trash
+ *   that the caller could not change;
+ * - `task.trashed`: the task is in the trash and the caller could change its list ("Tâche
+ *   supprimée"). `details.key` and `details.name` name the task, `details.entryId` is the
+ *   trash entry it belongs to (`POST /v1/trash/entries/{entryId}/restore`),
+ *   `details.rootKey` the root of that entry, `details.trashedAt` and `details.trashedBy`
+ *   (an `Actor`) say when and by whom it was deleted, `details.purgeAt` when it is erased
+ *   ("Elle reste 30 jours dans la corbeille avant d’être effacée.");
  * - `organization.not-found`: see `OrganizationNotFound`.
  */
 export type TaskNotFoundResponse = Problem;

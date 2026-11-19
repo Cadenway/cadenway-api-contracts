@@ -5,6 +5,9 @@
 import type { Problem } from './problem';
 
 /**
+ * - `access.role-insufficient`: the caller sees the list of the task, or the list a move
+ *   goes to, without `edit` on it; `details.role` is their role there, `details.requiredRole`
+ *   is `edit`;
  * - `auth.scope-missing`: the personal API token lacks `tasks:write`;
  * - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
  * - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.

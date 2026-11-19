@@ -1,0 +1,1183 @@
+# Public routes of access: the grants of spaces and lists ("Partager", "Personnes ayant accès"),
+# and the access requests of the people who do not see a space, a list or a task ("Demander
+# l’accès"), read, approved or refused by those who manage it. Served by cadenway-api-gateway,
+# which calls openapi/internal/task-service.yaml for each of them.
+openapi: 3.1.0
+info:
+  title: Cadenway access
+  version: 1.0.0
+  description: |
+    Who sees and changes the spaces, lists and tasks of the current organization beyond the rule
+    of the organization: the grants, and the requests for one. The API gateway serves these routes
+    and answers them through task-service. The access rules, roles included, are "Access" in
+    `openapi/public/spaces.yaml`; the switch "Accès de l’organisation" of a list is a member of the
+    list (`PATCH /v1/lists/{listId}`, `openapi/public/lists.yaml`). This file is its own domain,
+    shared by spaces, lists and tasks, with its own resources, the grant and the access request.
+
+    **Grants.** A grant gives one person a role on a space or a list: `edit` ("Peut modifier"),
+    `comment` ("Peut commenter") or `view` ("Lecture seule"). Each is added or changed with `PUT`
+    and removed with `DELETE`, one person at a time, so that two people who share at once never
+    overwrite each other.
+
+    - The person is a current member or guest of the organization, from task-service's copy of the
+      members (`422 access.grantee-invalid`); someone from outside is first invited as a guest
+      (`POST /v1/invitations`, `openapi/public/members.yaml`), then given a grant once they joined.
+    - A guest receives grants of lists only ("Elle ne verra que cette liste"):
+      `422 access.guest-space-forbidden` for a space.
+    - The owner of the space holds no grant and always has `edit` ("Propriétaire"):
+      `422 access.owner-unchangeable`.
+    - A space or a list holds 200 grants at most (`422 access.grant-limit-reached`).
+    - The grants of a space are managed by the people who manage the space (`callerCanManage`:
+      `403 space.manage-forbidden`), those of a list by whoever has `edit` on it
+      (`403 access.role-insufficient`). Whoever sees the space or the list reads its grants.
+    - Every change adds one to the version of the space or the list (`ETag`, an optional
+      `If-Match`), and emits `space.access-changed.v1` or `list.access-changed.v1` with every grant
+      after the change.
+    - A person who leaves the organization loses their grants.
+
+    **Access requests.** The API answers `404` for anything the caller does not see, so that a
+    link never tells whether a private space exists. A person who reaches one asks for access
+    ("Demander l’accès") by the id of a space or a list, or the key of a task, with a message:
+
+    - The request always answers `202` with no body, whether the target exists or not.
+    - It is stored only when the target exists in the organization, live or archived, and the
+      caller has no role on it (on the space for a space, on its list for a list or a task); a
+      request of a guest for a space is not stored, since a guest holds grants of lists only.
+    - A person has one pending request per target: asking again changes nothing.
+    - A person asks 10 times per hour at most, whatever became of the requests
+      (`429 access-request.limit-reached`, with `details.nextAvailableAt` and `Retry-After`).
+    - The people who manage the target read the pending requests, approve one with a role, which
+      gives the requester that grant (the grant of its list for a task), or refuse it; a decided
+      request leaves the list. The pending requests of a target that is deleted, and those of a
+      person who leaves the organization, are dropped.
+    - The notice to the owner of the space and the answer to the requester belong to
+      cadenway-notification-service, from the events: `space.access-requested.v1`,
+      `list.access-requested.v1`, `task.access-requested.v1` and their `…access-request-decided.v1`.
+      The page "Accès refusé" names neither the space nor its owner in this version.
+
+    **Not recorded.** Sharing and access requests are not in the activity log of the tasks.
+
+    **Current organization, members, credentials, cross-site requests, rate limit and errors.** As
+    in `openapi/public/spaces.yaml`: the current organization of the session or of the personal API
+    token, task-service's own copy of the members, the scopes `tasks:read` and `tasks:write`, 600
+    requests per minute, French titles for the codes the web application shows. A grant changes
+    who reads the content of the organization; a later version may give it a scope of its own for
+    the personal API tokens, which in this version manage access with `tasks:write`.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves every route, through openapi/internal/task-service.yaml, and checks the scopes of every operation.
+    - repository: cadenway-webapp
+      uses: Calls every route through @cadenway/api-client (dialog "Partager", "Personnes ayant accès", "Retirer l’accès", page "Accès refusé" and "Demander l’accès", the pending requests of the people who manage).
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging. The local stack of cadenway-ops serves the same routes on `api.<DOMAIN>`.
+tags:
+  - name: access
+    description: The grants of spaces and lists.
+  - name: access-requests
+    description: The requests for access and their answers.
+paths:
+  /v1/spaces/{spaceId}/grants:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: listSpaceGrants
+      summary: List the grants of a space
+      description: |
+        Lists the people a space is shared with and their roles, in the order they were first
+        given access; `total` counts them, on every page (200 at most). The owner of the space,
+        who holds no grant, is `owner` of the space (`openapi/public/spaces.yaml`). Whoever sees
+        the space reads them, through some of its lists only included: a grant of the space opens
+        every list of it, so these people are among those who have access to each list
+        ("Personnes ayant accès").
+
+        Scope `tasks:read` for a personal API token.
+      tags: [access]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the grants of the space.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantPage'
+              example:
+                items:
+                  - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                    role: edit
+                    grantedAt: '2026-03-04T14:05:00Z'
+                    grantedBy:
+                      type: user
+                      id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                nextCursor: null
+                total: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/spaces/{spaceId}/grants/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+      - $ref: '#/components/parameters/GrantUserId'
+    put:
+      operationId: setSpaceGrant
+      summary: Give or change a role on a space
+      description: |
+        Gives a person a role on a space and on every list of it, or changes the role they have
+        there. The person is a current member of the organization (`422 access.grantee-invalid`),
+        not a guest (`422 access.guest-space-forbidden`), and not the owner of the space
+        (`422 access.owner-unchangeable`); a space holds 200 grants at most
+        (`422 access.grant-limit-reached`). Only the people who manage the space give one
+        (`403 space.manage-forbidden`). The same role again answers `200` with the same version.
+        `If-Match` is optional (`412 request.version-mismatch`), with the version of the space.
+
+        Emits `space.access-changed.v1` when the grant changed. Scope `tasks:write` for a personal
+        API token.
+      tags: [access]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantChange'
+            example:
+              role: edit
+      responses:
+        '200':
+          description: The grant.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Grant'
+              example:
+                userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                role: edit
+                grantedAt: '2026-11-08T10:40:00Z'
+                grantedBy:
+                  type: user
+                  id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SpaceManageForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/GrantRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: removeSpaceGrant
+      summary: Remove a role on a space
+      description: |
+        Removes the grant of a person on a space: they keep what the rule of the organization or a
+        grant of a list gives them. A person without a grant answers `204` with the same version;
+        the owner of the space answers `422 access.owner-unchangeable`. Only the people who manage
+        the space remove one (`403 space.manage-forbidden`). `If-Match` is optional
+        (`412 request.version-mismatch`); `ETag` gives the version after the change.
+
+        Emits `space.access-changed.v1` when there was a grant. Scope `tasks:write` for a personal
+        API token.
+      tags: [access]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The person holds no grant on the space.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SpaceManageForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/OwnerUnchangeable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/grants:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: listListGrants
+      summary: List the grants of a list
+      description: |
+        Lists the people a list is shared with and their roles ("Personnes ayant accès"), in the
+        order they were first given access; `total` counts them, on every page (200 at most). The
+        owner of the space ("Propriétaire") and the grants of the space are read from the space.
+        Any role on the list reads them.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [access]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the grants of the list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantPage'
+              examples:
+                sprint14:
+                  $ref: '#/components/examples/Sprint14Grants'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/grants/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+      - $ref: '#/components/parameters/GrantUserId'
+    put:
+      operationId: setListGrant
+      summary: Give or change a role on a list
+      description: |
+        Gives a person a role on a list ("Inviter", "Invitation envoyée", "… peut maintenant
+        modifier la liste."), or changes the role they have there ("Accès de Léa Petit"). The person
+        is a current member or guest of the organization (`422 access.grantee-invalid`) and not the
+        owner of the space (`422 access.owner-unchangeable`); a list holds 200 grants at most
+        (`422 access.grant-limit-reached`). It needs `edit` on the list
+        (`403 access.role-insufficient`). The same role again answers `200` with the same version.
+        `If-Match` is optional (`412 request.version-mismatch`), with the version of the list.
+
+        Emits `list.access-changed.v1` when the grant changed. Scope `tasks:write` for a personal
+        API token.
+      tags: [access]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantChange'
+            example:
+              role: comment
+      responses:
+        '200':
+          description: The grant.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Grant'
+              example:
+                userId: 019a6f00-1b2c-7d3e-8f4a-5b6c7d8e9f40
+                role: comment
+                grantedAt: '2026-11-08T10:45:00Z'
+                grantedBy:
+                  type: user
+                  id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ListWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/GrantRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: removeListGrant
+      summary: Remove a role on a list
+      description: |
+        Removes the grant of a person on a list ("Retirer l’accès de Léa Petit ?", "Léa Petit ne
+        verra plus cette liste ni ses tâches. Vous pourrez l’inviter à nouveau."): they keep what
+        the rule of the organization or a grant of the space gives them. A person without a grant
+        answers `204` with the same version; the owner of the space answers
+        `422 access.owner-unchangeable`. It needs `edit` on the list
+        (`403 access.role-insufficient`). `If-Match` is optional (`412 request.version-mismatch`);
+        `ETag` gives the version after the change.
+
+        Emits `list.access-changed.v1` when there was a grant. Scope `tasks:write` for a personal
+        API token.
+      tags: [access]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The person holds no grant on the list.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ListWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/OwnerUnchangeable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/access-requests:
+    post:
+      operationId: createAccessRequest
+      summary: Ask for access
+      description: |
+        Asks for access to a space, a list or a task the caller does not see ("Demander l’accès",
+        "Demande envoyée"), with an optional message ("Message pour Léa (facultatif)", 500
+        characters at most). The body names exactly one target: `spaceId`, `listId` or `taskKey`
+        (`400 request.invalid` for none or several).
+
+        Always answers `202` with no body: whether the target exists, is seen already or is asked
+        for already never shows. The request is stored only for a target of the organization,
+        live or archived, on which the caller has no role, once per requester and target while it
+        is pending; a guest's request for a space is not stored. A caller asks 10 times per hour at
+        most, stored or not (`429 access-request.limit-reached`, with `Retry-After`).
+
+        Emits `space.access-requested.v1`, `list.access-requested.v1` or
+        `task.access-requested.v1` when the request is stored. Scope `tasks:write` for a personal
+        API token.
+      tags: [access-requests]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessRequestCreation'
+            examples:
+              space:
+                summary: Ask for the private space "Direction"
+                value:
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09
+                  message: Je dois chiffrer la part outillage du budget 2027.
+              task:
+                summary: Ask for DIR-12 from a mention
+                value:
+                  taskKey: DIR-12
+                  message: null
+      responses:
+        '202':
+          description: The request is taken; nothing tells whether it was stored.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/AccessRequestRateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    get:
+      operationId: listAccessRequests
+      summary: List the pending access requests
+      description: |
+        Lists the pending requests the caller may answer, the most recent first: those of the
+        spaces they manage (`callerCanManage`), and those of the lists, and the tasks of the
+        lists, they have `edit` on. `spaceId` keeps the requests of a space and its lists and
+        tasks, `listId` those of a list and its tasks; `total` counts what matches, on every page.
+
+        Scope `tasks:read` for a personal API token.
+      tags: [access-requests]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/SpaceIdFilter'
+        - $ref: '#/components/parameters/ListIdFilter'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of pending requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRequestPage'
+              example:
+                items:
+                  - id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                    target: space
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09
+                    listId: null
+                    task: null
+                    requester:
+                      userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    message: Je dois chiffrer la part outillage du budget 2027.
+                    state: pending
+                    role: null
+                    createdAt: '2026-11-08T11:02:00Z'
+                    decidedAt: null
+                    decidedBy: null
+                nextCursor: null
+                total: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/access-requests/{accessRequestId}/approval:
+    parameters:
+      - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: approveAccessRequest
+      summary: Approve an access request
+      description: |
+        Approves a pending request the caller may answer, with a role: the requester receives that
+        grant on the space, or on the list (the list of the task for a task), as
+        `PUT /v1/spaces/{spaceId}/grants/{userId}` or `PUT /v1/lists/{listId}/grants/{userId}`
+        would give it, the same refusals included (`422 access.grantee-invalid`,
+        `422 access.guest-space-forbidden`, `422 access.grant-limit-reached`). A request someone
+        answered meanwhile answers `409 access-request.already-decided`; a request the caller may
+        not answer, or that no longer exists, `404 access-request.not-found`.
+
+        An action: answers `200` with the request, `approved`. Emits
+        `space.access-request-decided.v1`, `list.access-request-decided.v1` or
+        `task.access-request-decided.v1`, and the `space.access-changed.v1` or
+        `list.access-changed.v1` of the grant. Scope `tasks:write` for a personal API token.
+      tags: [access-requests]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessRequestApproval'
+            example:
+              role: view
+      responses:
+        '200':
+          description: The request, approved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRequest'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                target: space
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09
+                listId: null
+                task: null
+                requester:
+                  userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                message: Je dois chiffrer la part outillage du budget 2027.
+                state: approved
+                role: view
+                createdAt: '2026-11-08T11:02:00Z'
+                decidedAt: '2026-11-08T14:30:00Z'
+                decidedBy:
+                  type: user
+                  id: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/AccessRequestNotFound'
+        '409':
+          $ref: '#/components/responses/AccessRequestDecided'
+        '422':
+          $ref: '#/components/responses/GrantRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/access-requests/{accessRequestId}/refusal:
+    parameters:
+      - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: refuseAccessRequest
+      summary: Refuse an access request
+      description: |
+        Refuses a pending request the caller may answer; nothing else changes. A request someone
+        answered meanwhile answers `409 access-request.already-decided`; a request the caller may
+        not answer, or that no longer exists, `404 access-request.not-found`.
+
+        An action: answers `200` with the request, `refused`. Emits
+        `space.access-request-decided.v1`, `list.access-request-decided.v1` or
+        `task.access-request-decided.v1`. Scope `tasks:write` for a personal API token.
+      tags: [access-requests]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The request, refused.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRequest'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02
+                target: task
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f30
+                task:
+                  key: DIR-12
+                  name: Budget 2027
+                  status: progress
+                requester:
+                  userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                message: null
+                state: refused
+                role: null
+                createdAt: '2026-11-08T09:12:00Z'
+                decidedAt: '2026-11-08T14:32:00Z'
+                decidedBy:
+                  type: user
+                  id: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/AccessRequestNotFound'
+        '409':
+          $ref: '#/components/responses/AccessRequestDecided'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: |
+        Opaque session token of `openapi/public/auth.yaml`, set by the gateway on sign-in and checked
+        with identity-service on every request. A session holds every scope.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: |
+        Personal API token (`cw_pat_…`) of `openapi/public/api-tokens.yaml`, sent as
+        `Authorization: Bearer`. It acts with the rights of its user in the organization it was
+        created in, within the scopes each operation lists.
+  parameters:
+    SpaceId:
+      name: spaceId
+      in: path
+      required: true
+      description: Id of the space, as the list of spaces gives it.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01]
+    ListId:
+      name: listId
+      in: path
+      required: true
+      description: Id of the list or the sprint.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12]
+    GrantUserId:
+      name: userId
+      in: path
+      required: true
+      description: Account of the person given access, as the member list gives it (`userId`).
+      schema:
+        type: string
+        format: uuid
+        examples: [019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32]
+    AccessRequestId:
+      name: accessRequestId
+      in: path
+      required: true
+      description: Id of the access request, as the list of pending requests gives it.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01]
+    SpaceIdFilter:
+      name: spaceId
+      in: query
+      required: false
+      description: Keep the requests of this space, its lists and their tasks.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e09]
+    ListIdFilter:
+      name: listId
+      in: query
+      required: false
+      description: Keep the requests of this list and its tasks.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12]
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: '`"<version>"` of the space or the list the change was made from, as the `ETag` gave it.'
+      schema:
+        type: string
+        examples: ['"2"']
+  headers:
+    ETag:
+      description: Version of the space or the list, `"<version>"`.
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds to wait before the request can succeed (RFC 9110).
+      schema:
+        type: integer
+        minimum: 1
+  examples:
+    Sprint14Grants:
+      summary: Sprint 14 shared with Inès Robert, Hugo Dubois, Léa Petit and the guest Nadia Benali
+      value:
+        items:
+          - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+            role: edit
+            grantedAt: '2026-10-30T16:05:00Z'
+            grantedBy:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+          - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+            role: edit
+            grantedAt: '2026-10-30T16:05:00Z'
+            grantedBy:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+          - userId: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+            role: comment
+            grantedAt: '2026-10-31T09:20:00Z'
+            grantedBy:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+          - userId: 019a6f00-1b2c-7d3e-8f4a-5b6c7d8e9f40
+            role: comment
+            grantedAt: '2026-11-04T10:00:00Z'
+            grantedBy:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+        nextCursor: null
+        total: 4
+    CrossSiteRefused:
+      summary: Request from another site
+      value:
+        type: about:blank
+        title: Forbidden
+        status: 403
+        code: auth.csrf-rejected
+    ScopeMissingRead:
+      summary: Personal API token without `tasks:read`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:read]
+    ScopeMissingWrite:
+      summary: Personal API token without `tasks:write`
+      value:
+        type: about:blank
+        title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+        status: 403
+        code: auth.scope-missing
+        details:
+          requiredScopes: [tasks:write]
+    OrganizationNotSelected:
+      summary: No current organization
+      value:
+        type: about:blank
+        title: Choisissez une organisation pour continuer.
+        status: 403
+        code: organization.not-selected
+    OrganizationMfaRequired:
+      summary: Two-step verification required by the organization
+      value:
+        type: about:blank
+        title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
+        status: 403
+        code: organization.mfa-required
+        details:
+          organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+    RoleInsufficient:
+      summary: A person with "Lecture seule" shares the list
+      value:
+        type: about:blank
+        title: Il faut le droit « Peut modifier » pour cette action.
+        status: 403
+        code: access.role-insufficient
+        details:
+          role: view
+          requiredRole: edit
+    ManageForbidden:
+      summary: A member who does not manage the space shares it
+      value:
+        type: about:blank
+        title: Seuls le propriétaire de l’espace et les administrateurs le partagent et le suppriment.
+        status: 403
+        code: space.manage-forbidden
+    OwnerUnchangeable:
+      summary: The owner of the space
+      value:
+        type: about:blank
+        title: L’accès du propriétaire de l’espace ne se modifie pas.
+        status: 422
+        code: access.owner-unchangeable
+    RateLimited:
+      summary: Gateway limit reached
+      value:
+        type: about:blank
+        title: 'Trop de requêtes : réessayez dans un instant.'
+        status: 429
+        code: rate-limit.exceeded
+  responses:
+    BadRequest:
+      description: |
+        The request does not match the schema: `request.invalid`, with one `details.issues` entry
+        per failed member (`path` is the dotted path of the member, empty for the body itself). An
+        access request that names no target, or several, answers it with an issue on the body.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: body
+                  path: role
+                  code: invalid_value
+                  message: Invalid option
+    Unauthenticated:
+      description: |
+        - `auth.session-required`: the request carries neither a session cookie nor a bearer token;
+        - `auth.session-expired`: the cookie names a session that ended;
+        - `auth.api-token-invalid`: the bearer token is unknown, revoked or expired, or its user
+          no longer belongs to its organization.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            sessionRequired:
+              summary: No credential
+              value:
+                type: about:blank
+                title: Connectez-vous pour continuer.
+                status: 401
+                code: auth.session-required
+            sessionExpired:
+              summary: Session ended
+              value:
+                type: about:blank
+                title: Session expirée
+                status: 401
+                code: auth.session-expired
+            apiTokenInvalid:
+              summary: Personal API token no longer valid
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    TasksReadForbidden:
+      description: |
+        - `auth.scope-missing`: the personal API token lacks `tasks:read`; `details.requiredScopes`
+          lists what the route needs;
+        - `organization.not-selected`: the session has no current organization;
+        - `organization.mfa-required`: the authentication policy of the organization requires
+          two-step verification for the role of the caller, who has none; `details.organizationId`
+          names it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingRead'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+    TasksWriteForbidden:
+      description: |
+        - `auth.scope-missing`: the personal API token lacks `tasks:write`;
+        - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
+        - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    ListWriteForbidden:
+      description: |
+        - `access.role-insufficient`: the caller sees the list without `edit` on it;
+          `details.role` is their role there, `details.requiredRole` is `edit`;
+        - `auth.scope-missing`, `organization.not-selected`, `organization.mfa-required`,
+          `auth.csrf-rejected`: see `TasksWriteForbidden`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    SpaceManageForbidden:
+      description: |
+        - `space.manage-forbidden`: only the owner of the space, and for a space `organization` the
+          owner and the admins of the organization, manage its grants;
+        - `auth.scope-missing`, `organization.not-selected`, `organization.mfa-required`,
+          `auth.csrf-rejected`: see `TasksWriteForbidden`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            manageForbidden:
+              $ref: '#/components/examples/ManageForbidden'
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    OrganizationNotFound:
+      description: |
+        `organization.not-found`: the caller no longer belongs to the current organization, or,
+        for a few seconds after they joined it, task-service does not know them yet.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    SpaceNotFound:
+      description: |
+        - `space.not-found`: no space with this id that the caller sees, a deleted one included;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Espace introuvable.
+            status: 404
+            code: space.not-found
+    ListNotFound:
+      description: |
+        - `list.not-found`: no list with this id that the caller sees, a deleted one included;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Liste introuvable.
+            status: 404
+            code: list.not-found
+    AccessRequestNotFound:
+      description: |
+        - `access-request.not-found`: no pending or decided request with this id that the caller
+          may answer, or one whose target was deleted or whose requester left;
+        - `organization.not-found`: see `OrganizationNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Demande d’accès introuvable.
+            status: 404
+            code: access-request.not-found
+    AccessRequestDecided:
+      description: '`access-request.already-decided`: someone approved or refused the request first; `details.state` says how.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Cette demande d’accès a déjà reçu une réponse.
+            status: 409
+            code: access-request.already-decided
+            details:
+              state: approved
+    GrantRefused:
+      description: |
+        - `access.grantee-invalid`: the person is not a current member or guest of the
+          organization; `details.userId` names them;
+        - `access.guest-space-forbidden`: the person is a guest and the grant is of a space;
+        - `access.owner-unchangeable`: the person is the owner of the space;
+        - `access.grant-limit-reached`: the space or the list holds 200 grants.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            granteeInvalid:
+              summary: Someone who is not in the organization
+              value:
+                type: about:blank
+                title: 'Cette personne ne fait pas partie de l’organisation : invitez-la d’abord.'
+                status: 422
+                code: access.grantee-invalid
+                details:
+                  userId: 019a6f00-1b2c-7d3e-8f4a-5b6c7d8e9f41
+            guestSpaceForbidden:
+              summary: A guest given a space
+              value:
+                type: about:blank
+                title: Les invités n’ont accès qu’à des listes précises.
+                status: 422
+                code: access.guest-space-forbidden
+            ownerUnchangeable:
+              $ref: '#/components/examples/OwnerUnchangeable'
+            grantLimitReached:
+              summary: 200 grants already
+              value:
+                type: about:blank
+                title: 200 personnes au plus par espace ou par liste.
+                status: 422
+                code: access.grant-limit-reached
+    OwnerUnchangeable:
+      description: '`access.owner-unchangeable`: the person is the owner of the space, who always has `edit`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            ownerUnchangeable:
+              $ref: '#/components/examples/OwnerUnchangeable'
+    VersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 3
+    RateLimited:
+      description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    AccessRequestRateLimited:
+      description: |
+        - `access-request.limit-reached`: the caller asked for access 10 times within the last hour;
+          `details.nextAvailableAt` is when the oldest request counted leaves the hour, and
+          `Retry-After` the seconds until then;
+        - `rate-limit.exceeded`: see `RateLimited`.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            accessRequestLimitReached:
+              summary: Ten requests within the hour
+              value:
+                type: about:blank
+                title: 'Trop de demandes d’accès : réessayez plus tard.'
+                status: 429
+                code: access-request.limit-reached
+                details:
+                  nextAvailableAt: '2026-11-08T12:02:00Z'
+            rateLimited:
+              $ref: '#/components/examples/RateLimited'
+    Unavailable:
+      description: |
+        task-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+        `upstream.deadline-exceeded`, with `details.service`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+            details:
+              service: task-service
+  schemas:
+    Grant:
+      $ref: '../../components/task.yaml#/components/schemas/Grant'
+    GrantChange:
+      $ref: '../../components/task.yaml#/components/schemas/GrantChange'
+    AccessRequest:
+      $ref: '../../components/task.yaml#/components/schemas/AccessRequest'
+    AccessRequestCreation:
+      $ref: '../../components/task.yaml#/components/schemas/AccessRequestCreation'
+    AccessRequestApproval:
+      $ref: '../../components/task.yaml#/components/schemas/AccessRequestApproval'
+    EmptyRequest:
+      type: object
+      additionalProperties: false
+      description: 'Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.'
+    GrantPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Grants of the space or the list, on every page.
+    AccessRequestPage:
+      type: object
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          description: The pending requests, the most recent first.
+          items:
+            $ref: '#/components/schemas/AccessRequest'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Pending requests that match the filters, on every page.

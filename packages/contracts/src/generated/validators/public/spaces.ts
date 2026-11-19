@@ -51,6 +51,7 @@ export const createSpaceResponseSpaceNextKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-
 
 
 
+
 export const CreateSpaceResponse = zod.object({
   "space": zod.object({
   "id": zod.uuid(),
@@ -117,7 +118,9 @@ export const CreateSpaceResponse = zod.object({
 }).describe('The ten statuses as the space shows them, by key.'),
   "nextKey": zod.string().regex(createSpaceResponseSpaceNextKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`; a change of its grants adds one too.\n'),
+  "callerRole": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).optional().describe('The role of the caller on the space itself (see "Access" in\n`openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner\nof the space and a grant of the space. `null` when the caller sees the space only\nthrough the grants of some of its lists, as a guest does: they see those lists only,\nand create no list in the space. Absent, it reads as `edit`, the rule before grants\nexisted.\n'),
+  "callerCanManage": zod.boolean().optional().describe('Whether the caller manages the space: changes its visibility, shares it and deletes it;\nits settings and statuses need `edit` only. `true` for the owner of the space, and for\nthe owner and the admins of the organization when the space is `organization`. Absent,\nthe web application offers the actions and handles their `403`.\n')
 }).describe('A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task\nkeys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the\nnext task created in the space would take now ("Les tâches seront numérotées CAD-1,\nCAD-2…"), a preview that reserves nothing: another creation may take it first.\n'),
   "firstList": zod.object({
   "id": zod.uuid(),
@@ -131,15 +134,23 @@ export const CreateSpaceResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('The list "Première liste" created with the space, which the web application opens.')
 })
 
 
 /**
  * Lists the spaces the caller sees ("Espaces"), in the order of their creation, the order of
- * the sidebar. A guest gets an empty list in this version. The lists of each space and their
- * counts are read with `GET /v1/spaces/{spaceId}/overview`.
+ * the sidebar; a space restored from the trash comes at the end. A guest gets the spaces of
+ * the lists shared with them. The lists of each space and their counts are read with
+ * `GET /v1/spaces/{spaceId}/overview`.
  *
  * Scope `tasks:read` for a personal API token.
  * @summary List the spaces
@@ -225,7 +236,9 @@ export const ListSpacesResponse = zod.object({
 }).describe('The ten statuses as the space shows them, by key.'),
   "nextKey": zod.string().regex(listSpacesResponseItemsItemNextKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`; a change of its grants adds one too.\n'),
+  "callerRole": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).optional().describe('The role of the caller on the space itself (see "Access" in\n`openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner\nof the space and a grant of the space. `null` when the caller sees the space only\nthrough the grants of some of its lists, as a guest does: they see those lists only,\nand create no list in the space. Absent, it reads as `edit`, the rule before grants\nexisted.\n'),
+  "callerCanManage": zod.boolean().optional().describe('Whether the caller manages the space: changes its visibility, shares it and deletes it;\nits settings and statuses need `edit` only. `true` for the owner of the space, and for\nthe owner and the admins of the organization when the space is `organization`. Absent,\nthe web application offers the actions and handles their `403`.\n')
 }).describe('A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task\nkeys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the\nnext task created in the space would take now ("Les tâches seront numérotées CAD-1,\nCAD-2…"), a preview that reserves nothing: another creation may take it first.\n')),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
 })
@@ -313,13 +326,17 @@ export const GetSpaceResponse = zod.object({
 }).describe('The ten statuses as the space shows them, by key.'),
   "nextKey": zod.string().regex(getSpaceResponseNextKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`; a change of its grants adds one too.\n'),
+  "callerRole": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).optional().describe('The role of the caller on the space itself (see "Access" in\n`openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner\nof the space and a grant of the space. `null` when the caller sees the space only\nthrough the grants of some of its lists, as a guest does: they see those lists only,\nand create no list in the space. Absent, it reads as `edit`, the rule before grants\nexisted.\n'),
+  "callerCanManage": zod.boolean().optional().describe('Whether the caller manages the space: changes its visibility, shares it and deletes it;\nits settings and statuses need `edit` only. `true` for the owner of the space, and for\nthe owner and the admins of the organization when the space is `organization`. Absent,\nthe web application offers the actions and handles their `403`.\n')
 }).describe('A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task\nkeys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the\nnext task created in the space would take now ("Les tâches seront numérotées CAD-1,\nCAD-2…"), a preview that reserves nothing: another creation may take it first.\n')
 
 
 /**
  * Applies a JSON Merge Patch to a space ("Modifier l’espace", "Espace modifié"): a member
- * left out is unchanged, `null` clears `description` or `icon`.
+ * left out is unchanged, `null` clears `description` or `icon`. It needs `edit` on the space
+ * (`403 access.role-insufficient` for a caller who sees it without, a `view` grant or the
+ * grants of some of its lists only); `visibility` needs more, see below.
  *
  * - `prefix`: a prefix another space uses or used answers `409 space.prefix-taken`. The new
  *   tasks are numbered after the new prefix, from the next number never given under it; the
@@ -328,9 +345,11 @@ export const GetSpaceResponse = zod.object({
  *   label) or `hidden`; `null` for a key puts back its default, `null` for `statuses` puts
  *   back every default ("Rétablir par défaut"). Hiding `todo` or `done` answers
  *   `422 space.status-required`.
- * - `visibility`: only the owner of the space, or the owner or an admin of the organization,
- *   changes it (`403 space.visibility-forbidden`). An admin who makes the space private gets
- *   the answer, then no longer sees it.
+ * - `visibility`: only the people who manage the space (`callerCanManage`: its owner, and for
+ *   a space `organization` the owner and the admins of the organization) change it
+ *   (`403 space.visibility-forbidden`). An admin who makes the space private gets the answer,
+ *   then no longer sees it, unless it is shared with them. The grants and the switches of the
+ *   lists stay as they are.
  * - `If-Match` is optional (`412 request.version-mismatch`).
  *
  * Emits `space.updated.v1` when something changed; a patch that changes nothing answers `200`
@@ -378,7 +397,7 @@ export const UpdateSpaceBody = zod.object({
   "description": zod.string().max(updateSpaceBodyDescriptionMax).nullish().describe('"Description" ("Facultatif"), trimmed; `null` or an empty text for none.'),
   "icon": zod.union([zod.literal('rocket'),zod.literal('paint'),zod.literal('megaphone'),zod.literal('gear'),zod.literal('code'),zod.literal('bug'),zod.literal('lightning'),zod.literal('target'),zod.literal('flag'),zod.literal('briefcase'),zod.literal('chart'),zod.literal('users'),zod.literal('book'),zod.literal('cube'),zod.literal('headset'),zod.literal('globe'),zod.literal('star'),zod.literal(null)]).nullish().describe('Icon of a space or a list ("Icône"): `rocket` ("Fusée"), `paint` ("Pinceau"), `megaphone`\n("Mégaphone"), `gear` ("Engrenage"), `code` ("Code"), `bug` ("Bogue"), `lightning`\n("Éclair"), `target` ("Cible"), `flag` ("Drapeau"), `briefcase` ("Mallette"), `chart`\n("Courbe"), `users` ("Équipe"), `book` ("Livre"), `cube` ("Cube"), `headset` ("Casque"),\n`globe` ("Globe") or `star` ("Étoile"), the keys of `LOOK_ICONS` of the mockup; `null` for\nnone ("Initiale" for a space, "Par défaut" for a list).\n'),
   "color": zod.enum(['gris', 'violet', 'indigo', 'azur', 'lagon', 'vert', 'olive', 'jaune', 'orange', 'rouge', 'rose', 'fuchsia', 'ardoise']).optional().describe('Color of a space or a list ("Couleur"): `gris` ("Gris", the default), `violet` ("Améthyste"),\n`indigo` ("Indigo"), `azur` ("Azur"), `lagon` ("Lagon"), `vert` ("Jade"), `olive` ("Olive"),\n`jaune` ("Balise"), `orange` ("Cornaline"), `rouge` ("Grenat"), `rose` ("Rose"), `fuchsia`\n("Fuchsia") or `ardoise` ("Ardoise"). The keys of `LOOK_COLORS` of the mockup.\n'),
-  "visibility": zod.enum(['organization', 'private']).optional().describe('Who sees a space ("Confidentialité"): `organization` ("Tout Atelier Nord": every member of\nthe organization but the guests) or `private` ("Privé": its owner only in this version).\n'),
+  "visibility": zod.enum(['organization', 'private']).optional().describe('Who sees a space ("Confidentialité"): `organization` ("Tout Atelier Nord": every member of\nthe organization but the guests) or `private` ("Privé": its owner and the people it is\nshared with).\n'),
   "statuses": zod.object({
   "triage": zod.object({
   "name": zod.string().min(1).max(updateSpaceBodyStatusesTriageNameMax).nullish().describe('New name, trimmed; a name made only of spaces is refused with `400 request.invalid`;\n`null` puts back the default label.\n'),
@@ -493,17 +512,50 @@ export const UpdateSpaceResponse = zod.object({
 }).describe('The ten statuses as the space shows them, by key.'),
   "nextKey": zod.string().regex(updateSpaceResponseNextKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`; a change of its grants adds one too.\n'),
+  "callerRole": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).optional().describe('The role of the caller on the space itself (see "Access" in\n`openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner\nof the space and a grant of the space. `null` when the caller sees the space only\nthrough the grants of some of its lists, as a guest does: they see those lists only,\nand create no list in the space. Absent, it reads as `edit`, the rule before grants\nexisted.\n'),
+  "callerCanManage": zod.boolean().optional().describe('Whether the caller manages the space: changes its visibility, shares it and deletes it;\nits settings and statuses need `edit` only. `true` for the owner of the space, and for\nthe owner and the admins of the organization when the space is `organization`. Absent,\nthe web application offers the actions and handles their `403`.\n')
 }).describe('A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task\nkeys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the\nnext task created in the space would take now ("Les tâches seront numérotées CAD-1,\nCAD-2…"), a preview that reserves nothing: another creation may take it first.\n')
 
 
 /**
- * Returns the lists of a space with the counts of their tasks, in the order of their
- * creation: the space overview ("Vue d’ensemble": "4 listes · 108 tâches", and on each list
- * card "32 tâches", "12 / 32 terminées", "38 %", "14 ouvertes", "3 en retard") and the
- * sidebar (the count of each list, the total of the space). The counts are those of the
- * top-level tasks, subtasks left out; `listCount` and `taskCount` count the whole space, on
- * every page.
+ * Deletes a space ("Supprimer l’espace", "Espace « Marketing » supprimé"), which only the
+ * people who manage it do (`403 space.manage-forbidden`): its owner, and for a space
+ * `organization` the owner and the admins of the organization. The web application asks
+ * first for the name of the space ("Pour confirmer, saisissez Marketing").
+ *
+ * The space, its lists, archived ones included, and their tasks disappear at once for
+ * everyone: they answer `404` and leave every collection and count. A job then moves the tasks
+ * to the trash in bounded batches, one entry per top-level task with its subtasks
+ * (`openapi/public/trash.yaml`), within minutes; the trash shows them as they arrive, to the
+ * people who could change their list. Restoring one of them brings back its list and the
+ * space, at the end of the sidebar, without the other lists. The pending access requests of
+ * the space and its lists are dropped. The prefixes of the space stay reserved and its keys
+ * are never given again. `If-Match` is optional (`412 request.version-mismatch`).
+ *
+ * Not recorded in the activity log. Emits `space.deleted.v1`, then `task.trashed.v1` for each
+ * task the job moves. Scope `tasks:write` for a personal API token.
+ * @summary Delete a space
+ */
+export const DeleteSpaceParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space, as the list of spaces gives it.')
+})
+
+export const DeleteSpaceHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const DeleteSpaceResponse = zod.void()
+
+
+/**
+ * Returns the lists of a space with the counts of their tasks, in the order of the sidebar
+ * (their creation, a restored list at the end): the space overview ("Vue d’ensemble": "4
+ * listes · 108 tâches", and on each list card "32 tâches", "12 / 32 terminées", "38 %", "14
+ * ouvertes", "3 en retard") and the sidebar (the count of each list, the total of the space).
+ * The counts are those of the top-level tasks, subtasks left out; `listCount` and `taskCount`
+ * count the whole space, on every page. Only the lists the caller sees count, and neither the
+ * archived lists nor the archived tasks do.
  *
  * `today` is the date of the caller, in their time zone, which task-service does not know: a
  * task is late when it is not closed and its due date is before it.
@@ -529,6 +581,7 @@ export const GetSpaceOverviewQueryParams = zod.object({
 export const getSpaceOverviewResponseListCountMin = 0;
 
 export const getSpaceOverviewResponseTaskCountMin = 0;
+
 
 
 export const getSpaceOverviewResponseItemsItemCountsTotalMin = 0;
@@ -560,7 +613,14 @@ export const GetSpaceOverviewResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "counts": zod.object({
   "total": zod.int().min(getSpaceOverviewResponseItemsItemCountsTotalMin).describe('Every top-level task of the list ("32 tâches").'),

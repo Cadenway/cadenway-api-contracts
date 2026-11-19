@@ -7,6 +7,9 @@ import type { Problem } from './problem';
 /**
  * - `space.visibility-forbidden`: only the owner of the space, and the owner and the admins
  *   of the organization, change its visibility;
+ * - `access.role-insufficient`: the caller sees the space without `edit` on it;
+ *   `details.role` is their role there (`null` for a space they see only through some of its
+ *   lists), `details.requiredRole` is `edit`;
  * - `auth.scope-missing`: the personal API token lacks `tasks:write`;
  * - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
  * - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.

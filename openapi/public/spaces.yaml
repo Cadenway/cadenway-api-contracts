@@ -1,6 +1,7 @@
-# Public routes of spaces: create, list, read and change the spaces of the current organization (name,
-# prefix, appearance, visibility, renamed or hidden statuses), and read the overview of a space with
-# the counts of its lists. Served by cadenway-api-gateway, which calls
+# Public routes of spaces: create, list, read, change and delete the spaces of the current
+# organization (name, prefix, appearance, visibility, renamed or hidden statuses), and read the
+# overview of a space with the counts of its lists. The access rules of spaces and lists, which
+# every task spec refers to, are stated here. Served by cadenway-api-gateway, which calls
 # openapi/internal/task-service.yaml for each of them.
 openapi: 3.1.0
 info:
@@ -26,19 +27,48 @@ info:
     invitation, every route answers `404 organization.not-found`, and the web application retries
     for a few seconds.
 
-    **Who sees a space.** A space is `organization` ("Tout Atelier Nord": every member but the
-    guests sees it) or `private` ("Privé"). In this version a private space is seen by its owner
-    only, the member who created it, not even by the owner or the admins of the organization
-    ("Seules les personnes invitées le voient"); sharing it comes in a later version. A guest sees
-    no space in this version. A space the caller does not see answers `404 space.not-found`, as an
-    unknown one does, and is left out of every collection and every count: its lists and tasks
-    too.
+    **Access.** A person reaches a space and its lists in three ways, and has on each the highest
+    role these give: `edit` ("Peut modifier"), `comment` ("Peut commenter", which reads like
+    `view` until comments exist) or `view` ("Lecture seule").
+
+    - The rule of the organization: in a space `organization` ("Tout Atelier Nord"), every owner,
+      admin and member of the organization has `edit` on the space, and on each of its lists whose
+      switch "Accès de l’organisation" is on (`organizationAccess`, `openapi/public/lists.yaml`).
+      Never a guest, and never in a private space ("Privé").
+    - The owner of the space, the member who created it, has `edit` on it and on every list of it
+      ("Propriétaire"), whatever the switch.
+    - Grants (`openapi/public/access.yaml`): a grant of the space gives its role on the space and
+      on every list of it, whatever the switch; a grant of a list gives its role on that list only.
+      A guest holds grants of lists only ("Elle ne verra que cette liste"), and a space grant they
+      held as a member gives them nothing while they are a guest.
+
+    A person sees a space when they have a role on it (`callerRole`) or see one of its lists; one
+    who sees it only through some of its lists (`callerRole: null`) sees those lists and nothing
+    else of it. Reads need any role; changes of a list and its tasks need `edit`, and a person who
+    sees the resource without it gets `403 access.role-insufficient`, never a `404`. The owner and
+    the admins of the organization see neither a private space nor a list whose switch is off,
+    unless it is shared with them. A person who does not see a space, a list or a task asks for
+    access with `POST /v1/access-requests` ("Demander l’accès"), which answers the same whether
+    it exists or not.
+
+    **Who sees a space.** A space the caller does not see answers `404 space.not-found`, as an
+    unknown or deleted one does, and is left out of every collection and every count, as are the
+    lists and the tasks the caller does not see.
 
     **Who changes what.** Every member but the guests creates spaces; a guest gets
-    `403 organization.role-forbidden`. Any member who sees a space changes it, its lists and its
-    tasks, except its visibility: only the owner of the space, or the owner or an admin of the
-    organization, changes it (`403 space.visibility-forbidden`). When the owner of a private space
-    leaves the organization, the owner of the organization becomes its owner.
+    `403 organization.role-forbidden`. Who has `edit` on a space changes its settings and its
+    statuses and creates lists in it, as every member who saw a space did before grants existed.
+    Only the people who manage a space (`callerCanManage`), its owner and, for a space
+    `organization`, the owner and the admins of the organization, change its visibility
+    (`403 space.visibility-forbidden`), share it and delete it (`403 space.manage-forbidden`).
+    When the owner of a private space leaves the organization, the owner of the organization
+    becomes its owner; the grants of a person who leaves are removed.
+
+    **Deletion.** A deleted space disappears at once with its lists, archived ones included, and
+    its tasks ("Les membres perdent l’accès immédiatement."); within minutes its tasks reach the
+    trash, one entry per top-level task (`openapi/public/trash.yaml`). Restoring one of them brings
+    back its list and the space, at the end of the sidebar, without the other lists. The prefixes
+    of a deleted space stay reserved, and its keys are never given again.
 
     **Prefixes and keys.** A space has a prefix of 2 to 5 letters ("CAD"), and its tasks are
     numbered after it ("CAD-482"), one counter per prefix, never going back: a number is never given
@@ -85,9 +115,8 @@ info:
     **Errors.** As in `openapi/public/auth.yaml`: a stable `code`, a French `title` for the codes
     the web application shows to the person, the English reason phrase otherwise.
 
-    **Later versions** add, without changing what is here: sharing a space or a list with
-    members and guests, access requests and the page "Accès refusé", favorites, the deletion of a
-    space, templates and the creation from the onboarding assistant.
+    **Later versions** add, without changing what is here: favorites, templates and the creation
+    from the onboarding assistant.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -98,7 +127,7 @@ info:
     - repository: cadenway-api-gateway
       uses: Serves every route, through openapi/internal/task-service.yaml, and checks the scopes of every operation.
     - repository: cadenway-webapp
-      uses: Calls every route through @cadenway/api-client (sidebar "Espaces", dialogs "Créer un espace" and "Modifier l’espace", "Statuts de l’espace", space overview).
+      uses: Calls every route through @cadenway/api-client (sidebar "Espaces", dialogs "Créer un espace" and "Modifier l’espace", "Statuts de l’espace", space overview, "Supprimer l’espace").
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -181,6 +210,8 @@ paths:
                   nextKey: RH-1
                   createdAt: '2026-11-08T10:15:00Z'
                   version: 1
+                  callerRole: edit
+                  callerCanManage: true
                 firstList:
                   id: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f20
                   spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e05
@@ -190,6 +221,10 @@ paths:
                   sprint: null
                   createdAt: '2026-11-08T10:15:00Z'
                   version: 1
+                  organizationAccess: true
+                  archivedAt: null
+                  archivedBy: null
+                  callerRole: edit
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -211,8 +246,9 @@ paths:
       summary: List the spaces
       description: |
         Lists the spaces the caller sees ("Espaces"), in the order of their creation, the order of
-        the sidebar. A guest gets an empty list in this version. The lists of each space and their
-        counts are read with `GET /v1/spaces/{spaceId}/overview`.
+        the sidebar; a space restored from the trash comes at the end. A guest gets the spaces of
+        the lists shared with them. The lists of each space and their counts are read with
+        `GET /v1/spaces/{spaceId}/overview`.
 
         Scope `tasks:read` for a personal API token.
       tags: [spaces]
@@ -254,6 +290,8 @@ paths:
                     nextKey: CAD-732
                     createdAt: '2026-03-02T09:30:00Z'
                     version: 4
+                    callerRole: edit
+                    callerCanManage: true
                   - id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02
                     name: Design
                     prefix: DES
@@ -277,6 +315,8 @@ paths:
                     nextKey: DES-122
                     createdAt: '2026-03-04T14:00:00Z'
                     version: 7
+                    callerRole: edit
+                    callerCanManage: true
                 nextCursor: null
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -336,7 +376,9 @@ paths:
       summary: Change a space
       description: |
         Applies a JSON Merge Patch to a space ("Modifier l’espace", "Espace modifié"): a member
-        left out is unchanged, `null` clears `description` or `icon`.
+        left out is unchanged, `null` clears `description` or `icon`. It needs `edit` on the space
+        (`403 access.role-insufficient` for a caller who sees it without, a `view` grant or the
+        grants of some of its lists only); `visibility` needs more, see below.
 
         - `prefix`: a prefix another space uses or used answers `409 space.prefix-taken`. The new
           tasks are numbered after the new prefix, from the next number never given under it; the
@@ -345,9 +387,11 @@ paths:
           label) or `hidden`; `null` for a key puts back its default, `null` for `statuses` puts
           back every default ("Rétablir par défaut"). Hiding `todo` or `done` answers
           `422 space.status-required`.
-        - `visibility`: only the owner of the space, or the owner or an admin of the organization,
-          changes it (`403 space.visibility-forbidden`). An admin who makes the space private gets
-          the answer, then no longer sees it.
+        - `visibility`: only the people who manage the space (`callerCanManage`: its owner, and for
+          a space `organization` the owner and the admins of the organization) change it
+          (`403 space.visibility-forbidden`). An admin who makes the space private gets the answer,
+          then no longer sees it, unless it is shared with them. The grants and the switches of the
+          lists stay as they are.
         - `If-Match` is optional (`412 request.version-mismatch`).
 
         Emits `space.updated.v1` when something changed; a patch that changes nothing answers `200`
@@ -408,6 +452,49 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteSpace
+      summary: Delete a space
+      description: |
+        Deletes a space ("Supprimer l’espace", "Espace « Marketing » supprimé"), which only the
+        people who manage it do (`403 space.manage-forbidden`): its owner, and for a space
+        `organization` the owner and the admins of the organization. The web application asks
+        first for the name of the space ("Pour confirmer, saisissez Marketing").
+
+        The space, its lists, archived ones included, and their tasks disappear at once for
+        everyone: they answer `404` and leave every collection and count. A job then moves the tasks
+        to the trash in bounded batches, one entry per top-level task with its subtasks
+        (`openapi/public/trash.yaml`), within minutes; the trash shows them as they arrive, to the
+        people who could change their list. Restoring one of them brings back its list and the
+        space, at the end of the sidebar, without the other lists. The pending access requests of
+        the space and its lists are dropped. The prefixes of the space stay reserved and its keys
+        are never given again. `If-Match` is optional (`412 request.version-mismatch`).
+
+        Not recorded in the activity log. Emits `space.deleted.v1`, then `task.trashed.v1` for each
+        task the job moves. Scope `tasks:write` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The space is deleted; its tasks are on their way to the trash.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/SpaceManageForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /v1/spaces/{spaceId}/overview:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -415,12 +502,13 @@ paths:
       operationId: getSpaceOverview
       summary: Read the overview of a space
       description: |
-        Returns the lists of a space with the counts of their tasks, in the order of their
-        creation: the space overview ("Vue d’ensemble": "4 listes · 108 tâches", and on each list
-        card "32 tâches", "12 / 32 terminées", "38 %", "14 ouvertes", "3 en retard") and the
-        sidebar (the count of each list, the total of the space). The counts are those of the
-        top-level tasks, subtasks left out; `listCount` and `taskCount` count the whole space, on
-        every page.
+        Returns the lists of a space with the counts of their tasks, in the order of the sidebar
+        (their creation, a restored list at the end): the space overview ("Vue d’ensemble": "4
+        listes · 108 tâches", and on each list card "32 tâches", "12 / 32 terminées", "38 %", "14
+        ouvertes", "3 en retard") and the sidebar (the count of each list, the total of the space).
+        The counts are those of the top-level tasks, subtasks left out; `listCount` and `taskCount`
+        count the whole space, on every page. Only the lists the caller sees count, and neither the
+        archived lists nor the archived tasks do.
 
         `today` is the date of the caller, in their time zone, which task-service does not know: a
         task is late when it is not closed and its due date is before it.
@@ -581,6 +669,8 @@ components:
         nextKey: CAD-732
         createdAt: '2026-03-02T09:30:00Z'
         version: 4
+        callerRole: edit
+        callerCanManage: true
     CrossSiteRefused:
       summary: Request from another site
       value:
@@ -636,6 +726,23 @@ components:
         title: Seuls le propriétaire de l’espace et les administrateurs changent sa confidentialité.
         status: 403
         code: space.visibility-forbidden
+    ManageForbidden:
+      summary: A member who does not manage the space shares it or deletes it
+      value:
+        type: about:blank
+        title: Seuls le propriétaire de l’espace et les administrateurs le partagent et le suppriment.
+        status: 403
+        code: space.manage-forbidden
+    RoleInsufficient:
+      summary: A person with "Lecture seule" on a private space renames it
+      value:
+        type: about:blank
+        title: Il faut le droit « Peut modifier » pour cette action.
+        status: 403
+        code: access.role-insufficient
+        details:
+          role: view
+          requiredRole: edit
     PrefixTaken:
       summary: Prefix of another space
       value:
@@ -755,6 +862,9 @@ components:
       description: |
         - `space.visibility-forbidden`: only the owner of the space, and the owner and the admins
           of the organization, change its visibility;
+        - `access.role-insufficient`: the caller sees the space without `edit` on it;
+          `details.role` is their role there (`null` for a space they see only through some of its
+          lists), `details.requiredRole` is `edit`;
         - `auth.scope-missing`: the personal API token lacks `tasks:write`;
         - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
         - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
@@ -765,6 +875,30 @@ components:
           examples:
             visibilityForbidden:
               $ref: '#/components/examples/VisibilityForbidden'
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    SpaceManageForbidden:
+      description: |
+        - `space.manage-forbidden`: only the owner of the space, and for a space `organization` the
+          owner and the admins of the organization, delete it;
+        - `auth.scope-missing`: the personal API token lacks `tasks:write`;
+        - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
+        - `auth.csrf-rejected`: the `Origin` of the request is refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            manageForbidden:
+              $ref: '#/components/examples/ManageForbidden'
             scopeMissing:
               $ref: '#/components/examples/ScopeMissingWrite'
             organizationNotSelected:
@@ -788,7 +922,7 @@ components:
             code: organization.not-found
     SpaceNotFound:
       description: |
-        - `space.not-found`: no space with this id that the caller sees;
+        - `space.not-found`: no space with this id that the caller sees, a deleted one included;
         - `organization.not-found`: see `OrganizationNotFound`.
       content:
         application/problem+json:

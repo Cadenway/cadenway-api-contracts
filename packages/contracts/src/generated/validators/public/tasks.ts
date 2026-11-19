@@ -17,6 +17,8 @@ import * as zod from 'zod';
  * - `assigneeIds` are current members of the organization, guests excepted
  *   (`422 task.assignee-invalid`, with `details.userIds`).
  * - `startDate` needs a `dueDate` and is on or before it (`422 task.start-date-invalid`).
+ * - It needs `edit` on the list (`403 access.role-insufficient`). An archived list takes the
+ *   task, which stays out of the sidebar with it.
  *
  * Records a creation in the activity log of each task created. Emits `task.created.v1` for
  * each task created, and `task.assigned.v1` for each of their assignees. Scope `tasks:write`
@@ -92,6 +94,7 @@ export const createTaskResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const CreateTaskResponse = zod.object({
   "key": zod.string().regex(createTaskResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -130,14 +133,20 @@ export const CreateTaskResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
 /**
  * Lists the tasks of a list the caller sees, filtered and sorted (views "Liste", "Tableau",
- * "Gantt"). Values of one filter add up, filters narrow each other ("Statut est l’un de …").
- * `total` counts the tasks that match the filters, on every page ("12 sur 98 tâches").
+ * "Gantt"); an archived list lists its tasks too. Values of one filter add up, filters narrow
+ * each other ("Statut est l’un de …"). `total` counts the tasks that match the filters, on
+ * every page ("12 sur 98 tâches"). Archived tasks and the tasks in the trash are left out.
  *
  * - `level`: `roots` (the default) keeps the top-level tasks, whose subtasks the web
  *   application reads under each of them with `GET /v1/tasks/{taskKey}/subtasks`
@@ -321,8 +330,11 @@ export const CountTaskGroupsResponse = zod.object({
 
 
 /**
- * Returns a task the caller sees, with its description and its checklist. Scope `tasks:read`
- * for a personal API token.
+ * Returns a task the caller sees, with its description and its checklist; an archived task
+ * too, with `archivedAt` and `archivedBy`. A task in the trash answers `404 task.trashed`,
+ * with who deleted it and when, to a caller who could change its list (page "Tâche
+ * supprimée": "Restaurer la tâche", "Ouvrir la corbeille"), and `404 task.not-found` to
+ * anyone else. Scope `tasks:read` for a personal API token.
  * @summary Read a task
  */
 export const getTaskPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -342,6 +354,7 @@ export const getTaskResponseSubtaskCountsClosedMin = 0;
 export const getTaskResponseChecklistCountsTotalMin = 0;
 
 export const getTaskResponseChecklistCountsDoneMin = 0;
+
 
 
 
@@ -385,7 +398,12 @@ export const GetTaskResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -420,6 +438,9 @@ export const GetTaskResponse = zod.object({
  * - `If-Match` is optional (`412 request.version-mismatch`), but required to change
  *   `description`, a long text: without it, `400 request.invalid` with an issue on the
  *   header.
+ * - It needs `edit` on the list of the task, and on the list it moves to
+ *   (`403 access.role-insufficient`). An archived task answers `409 task.archived`, and so
+ *   does an archived parent, `details.key` naming the archived task.
  *
  * Records the changes of status, priority and due date in the activity log. Emits
  * `task.updated.v1` when something changed, with `changed`, and also
@@ -479,6 +500,7 @@ export const updateTaskResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const UpdateTaskResponse = zod.object({
   "key": zod.string().regex(updateTaskResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -517,14 +539,21 @@ export const UpdateTaskResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
 /**
  * Returns what the task detail shows ("Détails", "Propriétés"): the task, its space with its
  * statuses, its list, its parent ("Sous-tâche de CAD-482 · Refondre l’écran de connexion
- * SSO") and its direct subtasks ("Sous-tâches 3"). The gateway composes it; `partial` names
+ * SSO") and its direct subtasks ("Sous-tâches 3"), those archived or in the trash left out
+ * but for an archived task, whose detail shows the subtasks archived with it, and `list`
+ * carries the role of the caller (`callerRole`). The gateway composes it; `partial` names
  * the parts it could not read, so that the web application shows the rest. In this version
  * task-service is its only source: `partial` is always empty, and the detail fails as a whole
  * when task-service cannot answer ("Impossible de charger la tâche"). Later versions add
@@ -554,8 +583,10 @@ export const getTaskDetailResponseTaskChecklistCountsDoneMin = 0;
 
 
 
+
 export const getTaskDetailResponseSpacePrefixRegExp = new RegExp('^[A-Z]{2,5}$');
 export const getTaskDetailResponseSpaceNextKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
 
 
 export const getTaskDetailResponseParentOneKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -612,7 +643,12 @@ export const GetTaskDetailResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.'),
   "space": zod.object({
   "id": zod.uuid(),
@@ -679,7 +715,9 @@ export const GetTaskDetailResponse = zod.object({
 }).describe('The ten statuses as the space shows them, by key.'),
   "nextKey": zod.string().regex(getTaskDetailResponseSpaceNextKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the space, also sent as `ETag`; a change of its grants adds one too.\n'),
+  "callerRole": zod.union([zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),zod.null()]).optional().describe('The role of the caller on the space itself (see "Access" in\n`openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner\nof the space and a grant of the space. `null` when the caller sees the space only\nthrough the grants of some of its lists, as a guest does: they see those lists only,\nand create no list in the space. Absent, it reads as `edit`, the rule before grants\nexisted.\n'),
+  "callerCanManage": zod.boolean().optional().describe('Whether the caller manages the space: changes its visibility, shares it and deletes it;\nits settings and statuses need `edit` only. `true` for the owner of the space, and for\nthe owner and the admins of the organization when the space is `organization`. Absent,\nthe web application offers the actions and handles their `403`.\n')
 }).describe('A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task\nkeys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the\nnext task created in the space would take now ("Les tâches seront numérotées CAD-1,\nCAD-2…"), a preview that reserves nothing: another creation may take it first.\n'),
   "list": zod.object({
   "id": zod.uuid(),
@@ -693,7 +731,14 @@ export const GetTaskDetailResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "parent": zod.union([zod.object({
   "key": zod.string().regex(getTaskDetailResponseParentOneKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
@@ -735,7 +780,8 @@ export const GetTaskDetailResponse = zod.object({
 /**
  * Lists the direct subtasks of a task the caller sees, in the order of their creation ("Afficher
  * les 3 sous-tâches de CAD-482"); 25 at most, so one page of the default size holds them all.
- * Scope `tasks:read` for a personal API token.
+ * The archived subtasks and those in the trash are left out, but for an archived task, which
+ * lists the subtasks archived with it. Scope `tasks:read` for a personal API token.
  * @summary List the subtasks of a task
  */
 export const listSubtasksPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -811,8 +857,9 @@ export const ListSubtasksResponse = zod.object({
  * of the list of the parent, in the list of the parent; without `assigneeIds`, it takes the
  * first assignee of the parent. A parent at the third level answers
  * `422 task.subtask-depth-exceeded`, a parent with 25 subtasks
- * `422 task.subtask-limit-reached`; the other rules are those of
- * `POST /v1/lists/{listId}/tasks`.
+ * `422 task.subtask-limit-reached`, an archived parent `409 task.archived`; the other rules
+ * are those of `POST /v1/lists/{listId}/tasks`. The archived subtasks and those in the trash
+ * do not count among the 25.
  *
  * Records its creation in the activity log. Emits `task.created.v1` and one
  * `task.assigned.v1` per assignee. Scope `tasks:write` for a personal API token.
@@ -881,6 +928,7 @@ export const createSubtaskResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const CreateSubtaskResponse = zod.object({
   "key": zod.string().regex(createSubtaskResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -919,7 +967,12 @@ export const CreateSubtaskResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -968,6 +1021,7 @@ export const addChecklistItemResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const AddChecklistItemResponse = zod.object({
   "key": zod.string().regex(addChecklistItemResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -1006,7 +1060,12 @@ export const AddChecklistItemResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -1044,6 +1103,7 @@ export const updateChecklistItemResponseSubtaskCountsClosedMin = 0;
 export const updateChecklistItemResponseChecklistCountsTotalMin = 0;
 
 export const updateChecklistItemResponseChecklistCountsDoneMin = 0;
+
 
 
 
@@ -1087,7 +1147,12 @@ export const UpdateChecklistItemResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -1134,6 +1199,7 @@ export const assignTaskResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const AssignTaskResponse = zod.object({
   "key": zod.string().regex(assignTaskResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -1172,7 +1238,12 @@ export const AssignTaskResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -1246,6 +1317,7 @@ export const addTaskLabelResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const AddTaskLabelResponse = zod.object({
   "key": zod.string().regex(addTaskLabelResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -1284,7 +1356,12 @@ export const AddTaskLabelResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -1332,6 +1409,7 @@ export const removeTaskLabelResponseChecklistCountsDoneMin = 0;
 
 
 
+
 export const RemoveTaskLabelResponse = zod.object({
   "key": zod.string().regex(removeTaskLabelResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
@@ -1370,7 +1448,12 @@ export const RemoveTaskLabelResponse = zod.object({
   "id": zod.string().min(1)
 }).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
-  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist included.\n')
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.')
 
 
@@ -1447,10 +1530,11 @@ export const ListTaskActivityResponse = zod.object({
 
 
 /**
- * Lists the labels of the tasks the caller sees, for the picker ("Étiquettes"), in alphabetical
- * order without regard to case or accents. Two spellings of one label that differ only by
- * case are listed once, in the spelling that comes first in that order. `search` keeps the
- * labels that contain the text, without regard to case or accents.
+ * Lists the labels of the tasks the caller sees, archived tasks and the trash left out, for
+ * the picker ("Étiquettes"), in alphabetical order without regard to case or accents. Two
+ * spellings of one label that differ only by case are listed once, in the spelling that
+ * comes first in that order. `search` keeps the labels that contain the text, without regard
+ * to case or accents.
  *
  * Scope `tasks:read` for a personal API token.
  * @summary List the labels
@@ -1483,7 +1567,8 @@ export const ListLabelsResponse = zod.object({
  * of the keys `done` and `cancelled` ("Terminées", "Terminées et annulées"). They come by due
  * date, the tasks without a due date last, then in the order of their creation; the web
  * application groups the open ones by due date ("En retard", "Aujourd’hui", "Sept prochains
- * jours", "Plus tard", "Sans échéance"). `counts` counts both tabs, on every page.
+ * jours", "Plus tard", "Sans échéance"). `counts` counts both tabs, on every page. Archived
+ * tasks and the trash are left out; the tasks of an archived list stay.
  *
  * Scope `tasks:read` for a personal API token.
  * @summary List the tasks of the caller
@@ -1570,9 +1655,11 @@ export const ListMyTasksResponse = zod.object({
  * - `lists` ("Listes"): the first 6 lists, in the order of the sidebar (spaces then lists in
  *   the order of their creation), with the counts of their tasks ("14 ouvertes").
  *
- * `today` is the date of the caller, in their time zone. A guest gets zeros and empty lists in
- * this version. The mentions and the activity of the inbox come from another route in a later
- * version. Scope `tasks:read` for a personal API token.
+ * Archived tasks and the trash are left out of `stats` and `priorities`, the tasks of an
+ * archived list stay; archived lists are left out of `sprints` and `lists`. `today` is the
+ * date of the caller, in their time zone. A guest, never assigned, gets zeros, no priorities,
+ * and the lists shared with them. The mentions and the activity of the inbox come from
+ * another route in a later version. Scope `tasks:read` for a personal API token.
  * @summary Read the task part of "Accueil"
  */
 export const GetHomeQueryParams = zod.object({
@@ -1600,6 +1687,7 @@ export const getHomeResponsePrioritiesItemChecklistCountsDoneMin = 0;
 
 
 
+
 export const getHomeResponseSprintsItemCountsTotalMin = 0;
 
 export const getHomeResponseSprintsItemCountsOpenMin = 0;
@@ -1609,6 +1697,7 @@ export const getHomeResponseSprintsItemCountsDoneMin = 0;
 export const getHomeResponseSprintsItemCountsCancelledMin = 0;
 
 export const getHomeResponseSprintsItemCountsLateMin = 0;
+
 
 
 export const getHomeResponseListsItemCountsTotalMin = 0;
@@ -1671,7 +1760,14 @@ export const GetHomeResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "counts": zod.object({
   "total": zod.int().min(getHomeResponseSprintsItemCountsTotalMin).describe('Every top-level task of the list ("32 tâches").'),
@@ -1694,7 +1790,14 @@ export const GetHomeResponse = zod.object({
   "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
 }).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`.')
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "counts": zod.object({
   "total": zod.int().min(getHomeResponseListsItemCountsTotalMin).describe('Every top-level task of the list ("32 tâches").'),

@@ -25,4 +25,9 @@ export interface ListCreation {
      * `null` for a list.
      */
   sprint?: SprintInput | null;
+  /**
+     * The switch "Accès de l’organisation" of the new list; absent, it is on (`true`), as
+     * for every list created before the switch existed.
+     */
+  organizationAccess?: boolean;
 }
