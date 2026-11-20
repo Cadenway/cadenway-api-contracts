@@ -160,9 +160,10 @@ export const VerifySignUpInternalResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. The account owns it independently of any organization.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
-  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address, of\nthe two-step verification or of the scheduled deletion makes it the next one.\n')
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, avatar, password, address,\ntwo-step verification or scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n'),
   "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account; the gateway\npasses it on in the public answer. Absent or `false` otherwise.\n'),
   "trustedDevice": zod.object({
@@ -238,9 +239,10 @@ export const SignInWithPasswordInternalResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. The account owns it independently of any organization.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
-  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address, of\nthe two-step verification or of the scheduled deletion makes it the next one.\n')
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, avatar, password, address,\ntwo-step verification or scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n'),
   "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account; the gateway\npasses it on in the public answer. Absent or `false` otherwise.\n'),
   "trustedDevice": zod.object({
@@ -336,9 +338,10 @@ export const SignInWithCodeInternalResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. The account owns it independently of any organization.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
-  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address, of\nthe two-step verification or of the scheduled deletion makes it the next one.\n')
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, avatar, password, address,\ntwo-step verification or scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n'),
   "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account; the gateway\npasses it on in the public answer. Absent or `false` otherwise.\n'),
   "trustedDevice": zod.object({
@@ -453,9 +456,10 @@ export const AnswerSignInChallengeWithAuthenticatorAppInternalResponse = zod.obj
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. The account owns it independently of any organization.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
-  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address, of\nthe two-step verification or of the scheduled deletion makes it the next one.\n')
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, avatar, password, address,\ntwo-step verification or scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n'),
   "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account; the gateway\npasses it on in the public answer. Absent or `false` otherwise.\n'),
   "trustedDevice": zod.object({
@@ -519,9 +523,10 @@ export const AnswerSignInChallengeWithBackupCodeInternalResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. The account owns it independently of any organization.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
-  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address, of\nthe two-step verification or of the scheduled deletion makes it the next one.\n')
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, avatar, password, address,\ntwo-step verification or scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n'),
   "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account; the gateway\npasses it on in the public answer. Absent or `false` otherwise.\n'),
   "trustedDevice": zod.object({
@@ -649,9 +654,10 @@ export const AnswerSignInChallengeWithSecurityKeyInternalResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. The account owns it independently of any organization.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
-  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address, of\nthe two-step verification or of the scheduled deletion makes it the next one.\n')
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, avatar, password, address,\ntwo-step verification or scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n'),
   "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account; the gateway\npasses it on in the public answer. Absent or `false` otherwise.\n'),
   "trustedDevice": zod.object({
@@ -723,6 +729,142 @@ export const RevokeSessionResponse = zod.void()
 
 
 /**
+ * Allocates one pending reservation for the actor and the current avatar generation before the
+ * gateway obtains a signed Storage transfer. Stores the bound declaration and expiry. While
+ * authorization still holds, replaying an equivalent Idempotency-Key returns the original
+ * reservation and expiry. Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+ * claim is ignored for this account-scoped operation.
+ * @summary Reserve an account avatar upload
+ */
+export const ReserveAvatarUploadInternalParams = zod.object({
+  "userId": zod.uuid().describe('Account id.')
+})
+
+export const reserveAvatarUploadInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const ReserveAvatarUploadInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(reserveAvatarUploadInternalHeaderIdempotencyKeyMax).optional().describe('Key scoped to the verified actor and image owner.')
+})
+
+export const reserveAvatarUploadInternalBodySizeBytesMax = 5242880;
+
+
+
+export const ReserveAvatarUploadInternalBody = zod.strictObject({
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/webp']).describe('An avatar source is a square PNG, JPEG or WebP image at least 256 pixels on each side.'),
+  "sizeBytes": zod.int().min(1).max(reserveAvatarUploadInternalBodySizeBytesMax).describe('Image size in bytes, up to 5 MiB.')
+})
+
+export const reserveAvatarUploadInternalResponseUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const ReserveAvatarUploadInternalResponse = zod.object({
+  "uploadId": zod.uuid().regex(reserveAvatarUploadInternalResponseUploadIdRegExp).describe('Opaque reservation identifier, reused for the verified immutable asset.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('Exclusive owner reservation expiry. Replays preserve this instant.')
+})
+
+
+/**
+ * Checks that the caller owns the reservation and returns whether it is pending or already
+ * committed. An expired or superseded pending upload is refused. The gateway checks this before
+ * asking Storage to prepare the pending upload. A committed replay skips preparation and cannot
+ * reactivate a prior image. Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+ * claim is ignored for this account-scoped operation.
+ * @summary Read account avatar upload state
+ */
+export const getAvatarUploadStateInternalPathUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetAvatarUploadStateInternalParams = zod.object({
+  "userId": zod.uuid().describe('Account id.'),
+  "uploadId": zod.uuid().regex(getAvatarUploadStateInternalPathUploadIdRegExp).describe('Opaque id allocated by the owning service.')
+})
+
+export const getAvatarUploadStateInternalResponseUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetAvatarUploadStateInternalResponse = zod.object({
+  "uploadId": zod.uuid().regex(getAvatarUploadStateInternalResponseUploadIdRegExp).describe('Opaque reservation identifier, reused for the verified immutable asset.'),
+  "state": zod.enum(['pending', 'committed']).describe('Pending permits preparation within the lease. Committed identifies the same owner receipt on replay.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('Exclusive owner reservation expiry. Replays preserve this instant.')
+})
+
+
+/**
+ * The gateway calls this operation for a pending reservation only after Storage confirms
+ * preparation for the same id and actor. Identity locks the account and reservation, checks the
+ * scope, generation and expiry again, and changes the reference and appends
+ * `user.avatar-changed.v1` in the same transaction. A committed replay is a no-op and returns
+ * the current ETag. A stale optional If-Match on first publication is refused.
+ * Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+ * claim is ignored for this account-scoped operation.
+ * @summary Publish the prepared avatar
+ */
+export const SetAvatarInternalParams = zod.object({
+  "userId": zod.uuid().describe('Account id.')
+})
+
+export const setAvatarInternalHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
+
+
+export const SetAvatarInternalHeader = zod.object({
+  "If-Match": zod.string().regex(setAvatarInternalHeaderIfMatchRegExp).optional().describe('Strong ETag of the current account or organization.')
+})
+
+export const setAvatarInternalBodyUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const SetAvatarInternalBody = zod.strictObject({
+  "uploadId": zod.uuid().regex(setAvatarInternalBodyUploadIdRegExp).describe('Opaque reservation identifier, reused for the verified immutable asset.')
+})
+
+export const SetAvatarInternalResponse = zod.void()
+
+
+/**
+ * Clears the reference and invalidates older pending uploads under the same lock as publication.
+ * An actual reference change commits with `user.avatar-changed.v1`. An absent image leaves the
+ * account version unchanged and emits no avatar change. Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+ * claim is ignored for this account-scoped operation.
+ * @summary Clear the account avatar
+ */
+export const DeleteAvatarInternalParams = zod.object({
+  "userId": zod.uuid().describe('Account id.')
+})
+
+export const deleteAvatarInternalHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
+
+
+export const DeleteAvatarInternalHeader = zod.object({
+  "If-Match": zod.string().regex(deleteAvatarInternalHeaderIfMatchRegExp).optional().describe('Strong ETag of the current account or organization.')
+})
+
+export const DeleteAvatarInternalResponse = zod.void()
+
+
+/**
+ * Returns only the current opaque image id or null, never a profile or storage capability.
+ * For a self read, the verified actor matches userId, with any organization ignored. For a
+ * different userId an organization is mandatory, and the API gateway must have just confirmed
+ * both caller and target access through the current member lookup in the token organization.
+ * The requested userId is the one returned by that lookup. Issuer api-gateway and actor user only.
+ * @summary Read the active avatar reference
+ */
+export const GetAvatarReferenceInternalParams = zod.object({
+  "userId": zod.uuid().describe('Account id.')
+})
+
+export const getAvatarReferenceInternalResponseAssetIdOneRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetAvatarReferenceInternalResponse = zod.object({
+  "assetId": zod.union([zod.uuid().regex(getAvatarReferenceInternalResponseAssetIdOneRegExp).describe('Opaque reservation identifier, reused for the verified immutable asset.'),zod.null()]).describe('The current avatar, or null when the account has no avatar.')
+})
+
+
+/**
  * Returns an account. A user actor reads its own account only: another id, or an unknown one,
  * answers `404 user.not-found`. Internal token: actor `user`, no organization.
  * @summary Read a user
@@ -743,9 +885,10 @@ export const GetUserResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. The account owns it independently of any organization.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
-  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address, of\nthe two-step verification or of the scheduled deletion makes it the next one.\n')
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, avatar, password, address,\ntwo-step verification or scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
 
 
@@ -795,9 +938,10 @@ export const UpdateUserResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. The account owns it independently of any organization.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
-  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address, of\nthe two-step verification or of the scheduled deletion makes it the next one.\n')
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, avatar, password, address,\ntwo-step verification or scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
 
 
@@ -1119,9 +1263,10 @@ export const ChangePasswordInternalResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. The account owns it independently of any organization.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
-  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address, of\nthe two-step verification or of the scheduled deletion makes it the next one.\n')
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, avatar, password, address,\ntwo-step verification or scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
 
 
@@ -1210,9 +1355,10 @@ export const ConfirmEmailChangeInternalResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullish().describe('Name used for the mentions; `null` until the person chooses one.'),
   "jobTitle": zod.string().nullish().describe('Job title; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. The account owns it independently of any organization.'),
   "timeZone": zod.string().optional().describe('IANA time zone name; `Europe/Paris` until the person chooses another.'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by a change or by a reset.\nidentity-service always sends it from this version on; it is optional so that the\ngateway can move to this version first, and the gateway leaves it out of the public\nanswer until identity-service sends it.\n'),
-  "version": zod.int().min(1).describe('Version of the account. A change of the profile, of the password, of the address, of\nthe two-step verification or of the scheduled deletion makes it the next one.\n')
+  "version": zod.int().min(1).describe('Version of the account. A change of the profile, avatar, password, address,\ntwo-step verification or scheduled deletion makes it the next one.\n')
 }).describe('An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this\nversion on; they are optional here so that the API gateway can move to this version of the\ncontracts before identity-service does. Until then the gateway answers them as `null`,\n`null` and `Europe/Paris`, their values for an account that never set them.\n')
 
 

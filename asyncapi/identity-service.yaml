@@ -17,8 +17,9 @@ info:
     **Aggregates.** An event of the account (`user.*`) carries the version of the account, which
     the sign-up, the verification, a change of the profile, of the password, of the address or of
     the two-step verification, the scheduling and the cancellation of the deletion, and the
-    deletion each move to the next one. An
-    event of a session (`session.*`) carries the version of the session. A consumer that keeps
+    deletion each move to the next one. Avatar events track the image generation or the
+    terminal upload reservation version independently of the account profile. An event of a
+    session (`session.*`) carries the version of the session. A consumer that keeps
     several parts of the account, as the directory of organization-service keeps the name and the
     address, orders each part by the versions of the events that carry it.
 
@@ -59,7 +60,9 @@ info:
     - repository: cadenway-realtime-gateway
       uses: Planned, session.revoked.v1 and session.organization-changed.v1, to close revoked sockets and sockets bound to a previous organization context.
     - repository: cadenway-organization-service
-      uses: user.signed-up.v1, user.email-verified.v1, user.profile-updated.v1 and user.email-changed.v1, for its user directory (names and addresses of the members, invitations matched with the account that verified their address); user.two-step-verification-changed.v1, for the column "Deux étapes" of its member list; user.deleted.v1, to remove the memberships of a deleted account.
+      uses: user.signed-up.v1, user.email-verified.v1, user.profile-updated.v1 and user.email-changed.v1, for its user directory (names and addresses of the members, invitations matched with the account that verified their address); user.two-step-verification-changed.v1, for the column "Deux étapes" of its member list; user.deleted.v1, to remove the memberships of a deleted account. Planned, user.avatar-changed.v1 for the directory's avatar hint.
+    - repository: cadenway-storage-service
+      uses: Planned in P4, user.avatar-changed.v1 and user.avatar-upload-abandoned.v1 to reconcile private image assets, and user.deleted.v1 to discard all avatars and reservations for a deleted account.
 servers:
   nats:
     host: nats:4222
@@ -90,6 +93,22 @@ channels:
     messages:
       userProfileUpdatedV1:
         $ref: '#/components/messages/userProfileUpdatedV1'
+  userAvatarChangedV1:
+    address: evt.user.avatar-changed.v1
+    description: |
+      An avatar reference was set, replaced or removed. Emitted by identity-service. Planned consumers:
+      cadenway-storage-service and cadenway-organization-service.
+    messages:
+      userAvatarChangedV1:
+        $ref: '#/components/messages/userAvatarChangedV1'
+  userAvatarUploadAbandonedV1:
+    address: evt.user.avatar-upload-abandoned.v1
+    description: |
+      An unused avatar reservation was ended. Emitted by identity-service. Planned consumer:
+      cadenway-storage-service.
+    messages:
+      userAvatarUploadAbandonedV1:
+        $ref: '#/components/messages/userAvatarUploadAbandonedV1'
   userPasswordChangedV1:
     address: evt.user.password-changed.v1
     description: |
@@ -135,8 +154,8 @@ channels:
     address: evt.user.deleted.v1
     description: |
       An account was deleted, at the end of its scheduled deletion. Emitted by identity-service.
-      Consumer: cadenway-organization-service; planned, cadenway-notification-service and the other
-      services that keep data of a user.
+      Consumer: cadenway-organization-service; planned, cadenway-notification-service,
+      cadenway-storage-service and other services that keep data of a user.
     messages:
       userDeletedV1:
         $ref: '#/components/messages/userDeletedV1'
@@ -206,6 +225,22 @@ operations:
       $ref: '#/channels/userProfileUpdatedV1'
     messages:
       - $ref: '#/channels/userProfileUpdatedV1/messages/userProfileUpdatedV1'
+  publishUserAvatarChangedV1:
+    action: send
+    summary: identity-service publishes a committed avatar reference change.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/userAvatarChangedV1'
+    messages:
+      - $ref: '#/channels/userAvatarChangedV1/messages/userAvatarChangedV1'
+  publishUserAvatarUploadAbandonedV1:
+    action: send
+    summary: identity-service publishes the terminal decision on an unused avatar reservation.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/userAvatarUploadAbandonedV1'
+    messages:
+      - $ref: '#/channels/userAvatarUploadAbandonedV1/messages/userAvatarUploadAbandonedV1'
   publishUserPasswordChangedV1:
     action: send
     summary: identity-service publishes a change of password.
@@ -567,6 +602,139 @@ components:
               ignores.
             items:
               type: string
+    userAvatarChangedV1:
+      name: user.avatar-changed.v1
+      title: Avatar changed
+      summary: The avatar reference was set, replaced or removed.
+      description: |
+        Emitted after Identity commits a new avatar, a replacement or a removal. The actor is
+        the account owner. An unchanged reference emits no event. The active `assetId` and the
+        retired `oldAssetId` describe the transition. A successful adoption keeps the upload ID
+        as the asset ID. References convey no permission to read the asset.
+
+        Storage deduplicates by event ID and applies the active reference by image generation.
+        It also retires each explicitly replaced asset by ID, including from an older event
+        delivered out of order. Organization may project the active reference as a directory
+        hint with its own avatar watermark. Directory reads still require current access.
+        A `user.deleted.v1` tombstone prevents any later delivery from reviving the avatar.
+
+        Personal data is limited to the opaque identifiers. No image bytes, object key or URL.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required: [id, occurredAt, organizationId, actor, version, userId, assetId, oldAssetId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC instant of the recorded reference change.
+          organizationId:
+            type: 'null'
+            description: An avatar belongs to the account outside any organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+            description: Monotonic avatar generation after this change, separate from the profile version.
+          userId:
+            type: string
+            format: uuid
+            description: Account that owns the avatar and the reservation.
+          assetId:
+            type: [string, 'null']
+            format: uuid
+            description: Current immutable asset ID. Null after removal.
+          oldAssetId:
+            type: [string, 'null']
+            format: uuid
+            description: Retired immutable asset ID. Null on first activation.
+      examples:
+        - name: replaced
+          payload:
+            id: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a11
+            occurredAt: '2026-11-20T09:05:00Z'
+            organizationId: null
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 2
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            assetId: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a14
+            oldAssetId: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a15
+        - name: removed
+          payload:
+            id: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a12
+            occurredAt: '2026-11-20T09:10:00Z'
+            organizationId: null
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 3
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            assetId: null
+            oldAssetId: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a14
+    userAvatarUploadAbandonedV1:
+      name: user.avatar-upload-abandoned.v1
+      title: Avatar upload abandoned
+      summary: The owner ended an unused avatar reservation.
+      description: |
+        Identity emits this fact in the same system transaction as its terminal decision that the
+        reservation can never be adopted. The system actor is identity-service. The reservation
+        is locked against concurrent adoption before the decision. It can expire or be superseded,
+        including while Storage is still preparing its bytes.
+
+        Storage retains a prepared candidate until an authoritative owner decision. On this fact
+        it records the terminal reservation by account and upload ID, even if no Storage record
+        exists yet. It then reclaims the associated bytes and prevents delayed preparation from
+        reviving the upload. Repeated deliveries have the same effect as one delivery.
+
+        Personal data is limited to the opaque identifiers. No image bytes, object key or URL.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required: [id, occurredAt, organizationId, actor, version, userId, uploadId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC instant of the recorded abandonment.
+          organizationId:
+            type: 'null'
+            description: An avatar belongs to the account outside any organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            const: 1
+            description: The terminal version of this reservation.
+          userId:
+            type: string
+            format: uuid
+            description: Account that owns the avatar and the reservation.
+          uploadId:
+            type: string
+            format: uuid
+            description: Owner-allocated ID of the permanently abandoned reservation.
+      examples:
+        - name: abandoned
+          payload:
+            id: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a13
+            occurredAt: '2026-11-20T10:00:00Z'
+            organizationId: null
+            actor: { type: system, id: identity-service }
+            version: 1
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            uploadId: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a16
     sessionRevokedV1:
       name: session.revoked.v1
       title: Session revoked
@@ -1375,6 +1543,8 @@ components:
           `member.removed.v1` (actor `system`), and keeps the account in its directory as a former
           member without name or address, so that its tasks and documents show « Ancien membre ».
         - notification-service, once it keeps a projection of the users, forgets the account.
+        - storage-service permanently records the deleted account for avatar cleanup. It discards
+          the active avatar and its reservations and ignores later attempts to reactivate them.
 
         Personal data: none beyond the ids.
       headers:

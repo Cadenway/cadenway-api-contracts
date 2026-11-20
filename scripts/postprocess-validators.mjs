@@ -9,6 +9,7 @@ const customFieldIdPattern = customFieldSchemas.CustomFieldId.pattern;
 const customFieldPatch = customFieldSchemas.TaskCustomFieldValuesPatch;
 const attachmentSchemas = dereference('components/attachments.yaml', process.cwd()).components
   .schemas;
+const mediaSchemas = dereference('components/profile-media.yaml', process.cwd()).components.schemas;
 
 const signedUploadOperations = {
   'public/attachments': ['StartTaskAttachmentUpload'],
@@ -91,10 +92,13 @@ for (const root of ROOTS) {
         const strictEmpty = operation['x-cadenway-strict-empty'] === true;
         if (!strictEmpty && operation['x-cadenway-strict-body'] !== true) continue;
         const schema = operation.requestBody?.content?.['application/json']?.schema;
+        const alternatives = schema?.oneOf ?? [schema];
         if (
-          schema?.type !== 'object' ||
-          schema.additionalProperties !== false ||
-          (strictEmpty && Object.keys(schema.properties ?? {}).length !== 0)
+          alternatives.length === 0 ||
+          alternatives.some(
+            (item) => item?.type !== 'object' || item.additionalProperties !== false,
+          ) ||
+          (strictEmpty && (schema.oneOf || Object.keys(schema.properties ?? {}).length !== 0))
         )
           throw new Error(`${source}: strict body marker requires a matching closed object`);
         const name = `${operation.operationId[0].toUpperCase()}${operation.operationId.slice(1)}Body`;
@@ -106,6 +110,19 @@ for (const root of ROOTS) {
           continue;
         }
         const declaration = `export const ${name} = `;
+        if (schema.oneOf) {
+          const start = generated.indexOf(declaration);
+          const next = generated.indexOf('\nexport const ', start + declaration.length);
+          const end = next < 0 ? generated.length : next;
+          const body = generated.slice(start, end);
+          if (start < 0 || body.match(/zod\.object\(\{/g)?.length !== alternatives.length)
+            throw new Error(`${source}: missing flat union body validator ${name}`);
+          generated =
+            generated.slice(0, start) +
+            body.replaceAll('zod.object({', 'zod.strictObject({') +
+            generated.slice(end);
+          continue;
+        }
         const object = declaration + 'zod.object({';
         if (!generated.includes(object))
           throw new Error(`${source}: missing body validator ${name}`);
@@ -537,6 +554,34 @@ for (const root of ROOTS) {
     }
     if (
       root.name === 'contracts' &&
+      ['public/profile-media', 'internal/storage-service'].includes(spec)
+    ) {
+      const transfers =
+        spec === 'public/profile-media'
+          ? ['StartAvatarUploadResponse', 'StartOrganizationLogoUploadResponse']
+          : ['SignProfileMediaTransferInternalResponse'];
+      const limit = mediaSchemas.ProfileMediaUpload.properties.fields.minProperties;
+
+      for (const transfer of transfers) {
+        const declaration = `export const ${transfer} = `;
+        const start = generated.indexOf(declaration);
+        const next = generated.indexOf('\nexport const ', start + declaration.length);
+        const end = next < 0 ? generated.length : next;
+        const response = generated.slice(start, end);
+        const fields = '"fields": zod.record(zod.string(), zod.string())';
+        if (start < 0 || !response.includes(fields))
+          throw new Error(`${source}: missing signed multipart fields for ${transfer}`);
+        generated =
+          generated.slice(0, start) +
+          response.replace(
+            fields,
+            `${fields}.refine((value) => Object.keys(value).length >= ${limit}, { message: 'At least ${limit} signed form field' })`,
+          ) +
+          generated.slice(end);
+      }
+    }
+    if (
+      root.name === 'contracts' &&
       [
         'public/attachments',
         'public/intake',
@@ -544,6 +589,7 @@ for (const root of ROOTS) {
         'public/inbox',
         'public/reminders',
         'internal/notification-service',
+        'public/profile-media',
         'public/realtime',
       ].includes(spec)
     ) {

@@ -3,10 +3,12 @@ info:
   title: storage-service internal routes
   version: 1.0.0
   description: |
-    Attachment resources owned by storage-service. The API gateway is the only HTTP caller.
-    Every request uses a verified `api-gateway` token with an organization. Task attachment
-    and quota operations require the `user` actor. Applicant upload operations require the
-    `system` actor and the organization resolved by task-service.
+    Attachment and profile image resources owned by storage-service. The API gateway is the
+    only HTTP caller. Every request uses a verified `api-gateway` token. Task attachment, quota
+    and logo operations require a `user` actor and an organization. Applicant upload operations
+    require a `system` actor and the organization resolved by task-service. The account owns
+    its avatar independently of any organization. Avatar operations require a `user` actor.
+    Directory avatar reads require the organization in which the gateway verified member access.
     Before relaying each task attachment request, the gateway requires a successful decision
     from `checkTaskAttachmentAccessInternal`. Task-service reads current placement, visibility,
     role and archive state in one snapshot. The gateway uses `read` for list, metadata and
@@ -32,7 +34,7 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Authorizes task and applicant upload access through task-service and relays attachment operations using the generated internal client.
+      uses: Authorizes task and applicant upload access through task-service and relays attachment and profile image operations using the generated internal client. Profile images require current owner or directory access.
 servers:
   - url: http://storage-service:3015
     description: Internal service endpoint.
@@ -43,6 +45,8 @@ tags:
     description: Signed upload and download, attachment metadata and cleanup.
   - name: intake-attachments
     description: Unbound applicant uploads awaiting an authoritative task claim or release.
+  - name: profile-media
+    description: Signed transfers, verified raster preparation and authorized image reads.
 paths:
   /internal/v1/intake-publications/{publicationId}/attachments:
     parameters:
@@ -405,6 +409,226 @@ paths:
           $ref: '#/components/responses/AttachmentNotFound'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /internal/v1/profile-media-uploads/{uploadId}/transfer:
+    parameters:
+      - name: uploadId
+        in: path
+        required: true
+        description: Opaque id allocated by the owning service.
+        schema:
+          $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaId'
+    post:
+      operationId: signProfileMediaTransferInternal
+      summary: Sign a reserved profile image transfer
+      description: |
+        The gateway calls only after the owning service allocated this id for the verified actor,
+        scope, declaration and expiry. The signed multipart POST is restricted to one staging key,
+        an exact media type and a size range up to 5,242,880 bytes. The capability expires at the
+        owner's original expiry, at most five minutes after reservation. An authorized repeat for
+        the same reservation and declaration returns the original signed response, never a renewed
+        capability. If there is no signed response and the reserved expiry has passed, the
+        operation refuses to sign it. Do not log the destination or form fields. The issuer is api-gateway with actor
+        user. An avatar uses the account id with no organization scope, while a logo uses the
+        organization in the token and the id of the verified uploader.
+      tags: [profile-media]
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/profile-media.yaml#/components/schemas/SignProfileMediaTransfer'
+            example:
+              kind: avatar
+              expiresAt: '2026-11-08T08:10:00Z'
+              contentType: image/webp
+              sizeBytes: 43024
+      responses:
+        '200':
+          description: The short-lived signed upload capability.
+          headers:
+            Cache-Control:
+              required: true
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaUpload'
+              example:
+                uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                method: POST
+                url: https://files.example.com/fixtures/profile-avatar
+                fields: { Content-Type: image/webp }
+                expiresAt: '2026-11-08T08:10:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ProfileMediaNotFound'
+        '409':
+          $ref: '#/components/responses/ProfileMediaReservationConflict'
+        '422':
+          $ref: '#/components/responses/ProfileMediaReservationRefused'
+        '503':
+          $ref: '#/components/responses/ProfileMediaUnavailable'
+  /internal/v1/profile-media-uploads/{uploadId}/preparation:
+    parameters:
+      - name: uploadId
+        in: path
+        required: true
+        description: Opaque id allocated by the owning service.
+        schema:
+          $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaId'
+    post:
+      operationId: prepareProfileMediaInternal
+      summary: Verify and prepare a profile image
+      description: |
+        The gateway calls only for a pending reservation verified by its owner. The actor and
+        scope must match the transfer. Storage verifies the reserved declaration and uploaded
+        bytes of one pinned generation. It decodes one static square image with a declared
+        allowed encoding, at most 4,096 pixels per side and at most 16,777,216 pixels, then
+        encodes a metadata-free PNG at most 512 pixels per side without upscaling. Avatar input
+        is PNG, JPEG or WebP at least 256 pixels per side. Logo input is PNG or SVG. SVG input
+        must be self-contained and static with no external resource access. The decode and
+        rasterization run within byte, pixel, memory and time limits.
+
+        The immutable derivative uses the upload id as asset id. Repeated preparation returns
+        the same accepted preparation. Storage retains this candidate until an authoritative
+        owner decision. An abandoned reservation fences late preparation and cleanup of the
+        staging object accounts for the original signed expiry. This action alone never changes
+        the published reference. Issuer api-gateway only, verified actor user.
+      tags: [profile-media]
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/profile-media.yaml#/components/schemas/PrepareProfileMedia'
+            example: { kind: avatar }
+      responses:
+        '200':
+          description: Metadata of the verified immutable derivative.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaPreparation'
+              example:
+                {
+                  uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01,
+                  contentType: image/png,
+                  width: 512,
+                  height: 512,
+                  sizeBytes: 41632,
+                }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ProfileMediaNotFound'
+        '409':
+          $ref: '#/components/responses/ProfileMediaUploadStateConflict'
+        '422':
+          $ref: '#/components/responses/ProfileMediaUploadRefused'
+        '503':
+          $ref: '#/components/responses/ProfileMediaUnavailable'
+  /internal/v1/avatars/{assetId}:
+    parameters:
+      - name: assetId
+        in: path
+        required: true
+        description: Opaque id of the immutable PNG derivative.
+        schema:
+          $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaId'
+    get:
+      operationId: getAvatarImageInternal
+      summary: Read an authorized PNG avatar derivative
+      description: |
+        The gateway calls only after the current avatar reference and authorization were
+        resolved. ownerUserId is the verified actor's own account or the user id returned by
+        the live organization member lookup. Storage requires the exact avatar asset and that
+        account id. Any organization in the token is not part of avatar ownership. A different
+        ownerUserId requires the token organization used by the gateway for the directory check.
+        Issuer api-gateway and actor user only. The owner-referenced candidate is readable while
+        the durable adoption fact is in transit. Retired or rejected objects are unavailable.
+      tags: [profile-media]
+      parameters:
+        - name: ownerUserId
+          in: query
+          required: true
+          description: Account id for the authorized reference.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+      responses:
+        '200':
+          description: Immutable, verified PNG bytes with a maximum size of 5,242,880 bytes.
+          headers:
+            Cache-Control:
+              required: true
+              schema: { type: string, const: 'private, no-store' }
+            X-Content-Type-Options:
+              required: true
+              schema: { type: string, const: nosniff }
+          content:
+            image/png: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ProfileMediaNotFound'
+        '503':
+          $ref: '#/components/responses/ProfileMediaUnavailable'
+  /internal/v1/organization/logo-assets/{assetId}:
+    parameters:
+      - name: assetId
+        in: path
+        required: true
+        description: Opaque id of the immutable PNG derivative.
+        schema:
+          $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaId'
+    get:
+      operationId: getOrganizationLogoImageInternal
+      summary: Read an authorized PNG logo derivative
+      description: |
+        The gateway calls only after checking current membership and resolving the current
+        logo reference in the same organization-service read. Storage requires the exact logo
+        asset in the verified organization. Issuer api-gateway, actor user and organization
+        required. The owner-referenced candidate is readable while the durable adoption fact
+        is in transit. Retired or rejected objects are unavailable.
+      tags: [profile-media]
+      responses:
+        '200':
+          description: Immutable, verified PNG bytes with a maximum size of 5,242,880 bytes.
+          headers:
+            Cache-Control:
+              required: true
+              schema: { type: string, const: 'private, no-store' }
+            X-Content-Type-Options:
+              required: true
+              schema: { type: string, const: nosniff }
+          content:
+            image/png: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ProfileMediaNotFound'
+        '503':
+          $ref: '#/components/responses/ProfileMediaUnavailable'
   /internal/v1/attachments/largest:
     get:
       operationId: listLargestAttachmentsInternal
@@ -451,7 +675,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Signed internal token with issuer api-gateway, audience storage-service and a verified organization. Use actor user for task and quota operations, or actor system for applicant upload operations.
+      description: Signed internal token with issuer api-gateway and audience storage-service. Task, quota and profile image operations require actor user. Applicant upload operations require actor system. The operation defines the required organization scope.
   parameters:
     IntakePublicationId:
       name: publicationId
@@ -519,6 +743,52 @@ components:
         type: string
         examples: ['"1"']
   responses:
+    ProfileMediaNotFound:
+      description: |
+        `media.not-found` for an unknown, unavailable or unrelated image or reservation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    ProfileMediaReservationConflict:
+      description: |
+        `idempotency.request-in-progress` when equivalent signing is running, or
+        `media.upload-expired` when an unsigned transfer passed its original expiry.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    ProfileMediaReservationRefused:
+      description: |
+        `media.file-too-large` above 5,242,880 declared bytes, `media.unsupported-type` for a
+        disallowed image encoding, or `idempotency.key-reused` for a conflicting reservation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    ProfileMediaUploadStateConflict:
+      description: |
+        `media.upload-expired` for expiration, `media.upload-not-ready` for an upload that has not
+        arrived, or `media.upload-superseded` for an invalidated prior generation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    ProfileMediaUploadRefused:
+      description: |
+        `media.file-too-large`, `media.unsupported-type`, or `media.invalid-image` for metadata,
+        decoding, shape, dimension or safety failures.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    ProfileMediaUnavailable:
+      description: |
+        `storage.unavailable` when the dependency or durable media state is unavailable.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     BadRequest:
       description: |
         `request.invalid` with `details.issues`.

@@ -1,0 +1,155 @@
+openapi: 3.1.0
+info:
+  title: Cadenway shared profile media components
+  version: 1.0.0
+  description: Profile image declarations, owner reservations and verified raster references.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    ProfileMediaId:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      description: Opaque reservation identifier, reused for the verified immutable asset.
+      examples: [019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+    ProfileMediaKind:
+      type: string
+      enum: [avatar, organization-logo]
+      description: Kind of owner and the policy used to verify its image.
+    AvatarUploadContentType:
+      type: string
+      enum: [image/png, image/jpeg, image/webp]
+      description: An avatar source is a square PNG, JPEG or WebP image at least 256 pixels on each side.
+    OrganizationLogoUploadContentType:
+      type: string
+      enum: [image/png, image/svg+xml]
+      description: A logo source is a square PNG or SVG image. A 512-pixel image is recommended.
+    ProfileMediaSizeBytes:
+      type: integer
+      minimum: 1
+      maximum: 5242880
+      description: Image size in bytes, up to 5 MiB.
+      examples: [184320]
+    StartAvatarUpload:
+      type: object
+      additionalProperties: false
+      required: [contentType, sizeBytes]
+      properties:
+        contentType: { $ref: '#/components/schemas/AvatarUploadContentType' }
+        sizeBytes: { $ref: '#/components/schemas/ProfileMediaSizeBytes' }
+    StartOrganizationLogoUpload:
+      type: object
+      additionalProperties: false
+      required: [contentType, sizeBytes]
+      properties:
+        contentType: { $ref: '#/components/schemas/OrganizationLogoUploadContentType' }
+        sizeBytes: { $ref: '#/components/schemas/ProfileMediaSizeBytes' }
+    ProfileMediaUpload:
+      type: object
+      required: [uploadId, method, url, fields, expiresAt]
+      properties:
+        uploadId: { $ref: '#/components/schemas/ProfileMediaId' }
+        method: { const: POST }
+        url:
+          type: string
+          format: uri
+          description: Signed multipart destination, valid for at most five minutes and never beyond the reservation expiry.
+        fields:
+          type: object
+          minProperties: 1
+          additionalProperties: { type: string }
+          description: Signed form fields to append unchanged before the file part.
+        expiresAt:
+          type: string
+          format: date-time
+          description: Exclusive expiry of the signed transfer.
+    SetProfileMedia:
+      type: object
+      additionalProperties: false
+      required: [uploadId]
+      properties:
+        uploadId: { $ref: '#/components/schemas/ProfileMediaId' }
+    ProfileMediaReservation:
+      type: object
+      additionalProperties: false
+      required: [uploadId, expiresAt]
+      properties:
+        uploadId: { $ref: '#/components/schemas/ProfileMediaId' }
+        expiresAt:
+          type: string
+          format: date-time
+          description: Exclusive owner reservation expiry. Replays preserve this instant.
+    ProfileMediaReservationState:
+      type: object
+      additionalProperties: false
+      required: [uploadId, state, expiresAt]
+      properties:
+        uploadId: { $ref: '#/components/schemas/ProfileMediaId' }
+        state:
+          type: string
+          enum: [pending, committed]
+          description: Pending permits preparation within the lease. Committed identifies the same owner receipt on replay.
+        expiresAt:
+          type: string
+          format: date-time
+          description: Exclusive owner reservation expiry. Replays preserve this instant.
+    CurrentAvatarReference:
+      type: object
+      additionalProperties: false
+      required: [assetId]
+      properties:
+        assetId:
+          oneOf:
+            - $ref: '#/components/schemas/ProfileMediaId'
+            - type: 'null'
+          description: The current avatar, or null when the account has no avatar.
+    PrepareProfileMedia:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { $ref: '#/components/schemas/ProfileMediaKind' }
+    SignProfileMediaTransfer:
+      description: The media declaration and exclusive expiry already authorized by the owner service.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind, expiresAt, contentType, sizeBytes]
+          properties:
+            kind: { const: avatar }
+            expiresAt: { type: string, format: date-time }
+            contentType: { $ref: '#/components/schemas/AvatarUploadContentType' }
+            sizeBytes: { $ref: '#/components/schemas/ProfileMediaSizeBytes' }
+        - type: object
+          additionalProperties: false
+          required: [kind, expiresAt, contentType, sizeBytes]
+          properties:
+            kind: { const: organization-logo }
+            expiresAt: { type: string, format: date-time }
+            contentType: { $ref: '#/components/schemas/OrganizationLogoUploadContentType' }
+            sizeBytes: { $ref: '#/components/schemas/ProfileMediaSizeBytes' }
+    ProfileMediaRasterDimension:
+      type: integer
+      minimum: 1
+      maximum: 512
+      description: The width or height of the square prepared PNG in pixels.
+    ProfileMediaPreparation:
+      type: object
+      additionalProperties: false
+      description: |
+        Verified PNG metadata for the immutable upload. Storage verifies the same source bytes it
+        prepares, limits each decoded dimension to 4096 pixels and the decoded image to 4096²
+        pixels, and produces a square PNG of at most 512 pixels per side without source metadata.
+        A supported static SVG logo is rasterized with limits on resources and no external access.
+      required: [uploadId, contentType, width, height, sizeBytes]
+      properties:
+        uploadId: { $ref: '#/components/schemas/ProfileMediaId' }
+        contentType: { const: image/png }
+        width: { $ref: '#/components/schemas/ProfileMediaRasterDimension' }
+        height: { $ref: '#/components/schemas/ProfileMediaRasterDimension' }
+        sizeBytes: { $ref: '#/components/schemas/ProfileMediaSizeBytes' }

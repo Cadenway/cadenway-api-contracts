@@ -68,6 +68,35 @@ export type { UploadContentRefusedResponse } from './generated/public/attachment
 export type { UploadStartConflictResponse } from './generated/public/attachments/model/uploadStartConflictResponse';
 export type { UploadStartRefusedResponse } from './generated/public/attachments/model/uploadStartRefusedResponse';
 
+// openapi/public/profile-media.yaml
+export {
+  ProfileMediaService,
+  type DeleteAvatarClientResult,
+  type DeleteOrganizationLogoClientResult,
+  type GetAvatarClientResult,
+  type GetMemberAvatarClientResult,
+  type GetOrganizationLogoClientResult,
+  type SetAvatarClientResult,
+  type SetOrganizationLogoClientResult,
+  type StartAvatarUploadClientResult,
+  type StartOrganizationLogoUploadClientResult,
+} from './generated/public/profile-media/profile-media/profile-media.service';
+export { AvatarUploadContentType } from './generated/public/profile-media/model/avatarUploadContentType';
+export { OrganizationLogoUploadContentType } from './generated/public/profile-media/model/organizationLogoUploadContentType';
+export type { AccountMediaNotFoundResponse } from './generated/public/profile-media/model/accountMediaNotFoundResponse';
+export type { MemberMediaNotFoundResponse } from './generated/public/profile-media/model/memberMediaNotFoundResponse';
+export type { MemberReadForbiddenResponse } from './generated/public/profile-media/model/memberReadForbiddenResponse';
+export type { OrganizationMediaNotFoundResponse } from './generated/public/profile-media/model/organizationMediaNotFoundResponse';
+export type { ProfileMediaId } from './generated/public/profile-media/model/profileMediaId';
+export type { ProfileMediaImageResponse } from './generated/public/profile-media/model/profileMediaImageResponse';
+export type { ProfileMediaSizeBytes } from './generated/public/profile-media/model/profileMediaSizeBytes';
+export type { ProfileMediaUpload } from './generated/public/profile-media/model/profileMediaUpload';
+export type { ProfileMediaUploadFields } from './generated/public/profile-media/model/profileMediaUploadFields';
+export type { SetProfileMedia } from './generated/public/profile-media/model/setProfileMedia';
+export type { StartAvatarUpload } from './generated/public/profile-media/model/startAvatarUpload';
+export type { StartOrganizationLogoUpload } from './generated/public/profile-media/model/startOrganizationLogoUpload';
+export type { UploadStateConflictResponse } from './generated/public/profile-media/model/uploadStateConflictResponse';
+
 // openapi/public/inbox.yaml
 export {
   InboxService,

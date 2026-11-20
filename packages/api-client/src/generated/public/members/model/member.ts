@@ -10,6 +10,12 @@ export interface Member {
   id: string;
   /** Id of the account; the web application marks its own row "(vous)" with it. */
   userId: string;
+  /**
+     * Last observed opaque avatar reference or null, for display only.
+     * GET /v1/members/{memberId}/avatar checks live access and resolves the current image.
+     * @nullable
+     */
+  avatarId?: string | null;
   /** Full name of the account; the web application derives the initials from it. */
   name: string;
   email: Email;

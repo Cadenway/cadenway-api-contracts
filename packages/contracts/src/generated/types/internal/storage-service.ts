@@ -2588,6 +2588,187 @@ export interface AttachmentDownload {
 }
 
 /**
+ * Opaque reservation identifier, reused for the verified immutable asset.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type ProfileMediaId = string;
+
+/**
+ * Kind of owner and the policy used to verify its image.
+ */
+export type ProfileMediaKind = typeof ProfileMediaKind[keyof typeof ProfileMediaKind];
+
+
+export const ProfileMediaKind = {
+  avatar: 'avatar',
+  'organization-logo': 'organization-logo',
+} as const;
+
+/**
+ * An avatar source is a square PNG, JPEG or WebP image at least 256 pixels on each side.
+ */
+export type AvatarUploadContentType = typeof AvatarUploadContentType[keyof typeof AvatarUploadContentType];
+
+
+export const AvatarUploadContentType = {
+  'image/png': 'image/png',
+  'image/jpeg': 'image/jpeg',
+  'image/webp': 'image/webp',
+} as const;
+
+/**
+ * A logo source is a square PNG or SVG image. A 512-pixel image is recommended.
+ */
+export type OrganizationLogoUploadContentType = typeof OrganizationLogoUploadContentType[keyof typeof OrganizationLogoUploadContentType];
+
+
+export const OrganizationLogoUploadContentType = {
+  'image/png': 'image/png',
+  'image/svg+xml': 'image/svg+xml',
+} as const;
+
+/**
+ * Image size in bytes, up to 5 MiB.
+ * @minimum 1
+ * @maximum 5242880
+ */
+export type ProfileMediaSizeBytes = number;
+
+export interface StartAvatarUpload {
+  contentType: AvatarUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+}
+
+export interface StartOrganizationLogoUpload {
+  contentType: OrganizationLogoUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+}
+
+/**
+ * Signed form fields to append unchanged before the file part.
+ */
+export type ProfileMediaUploadFields = {[key: string]: string};
+
+export interface ProfileMediaUpload {
+  uploadId: ProfileMediaId;
+  method: 'POST';
+  /** Signed multipart destination, valid for at most five minutes and never beyond the reservation expiry. */
+  url: string;
+  /** Signed form fields to append unchanged before the file part. */
+  fields: ProfileMediaUploadFields;
+  /** Exclusive expiry of the signed transfer. */
+  expiresAt: string;
+}
+
+export interface SetProfileMedia {
+  uploadId: ProfileMediaId;
+}
+
+export interface ProfileMediaReservation {
+  uploadId: ProfileMediaId;
+  /** Exclusive owner reservation expiry. Replays preserve this instant. */
+  expiresAt: string;
+}
+
+/**
+ * Pending permits preparation within the lease. Committed identifies the same owner receipt on replay.
+ */
+export type ProfileMediaReservationStateState = typeof ProfileMediaReservationStateState[keyof typeof ProfileMediaReservationStateState];
+
+
+export const ProfileMediaReservationStateState = {
+  pending: 'pending',
+  committed: 'committed',
+} as const;
+
+export interface ProfileMediaReservationState {
+  uploadId: ProfileMediaId;
+  /** Pending permits preparation within the lease. Committed identifies the same owner receipt on replay. */
+  state: ProfileMediaReservationStateState;
+  /** Exclusive owner reservation expiry. Replays preserve this instant. */
+  expiresAt: string;
+}
+
+export interface CurrentAvatarReference {
+  /** The current avatar, or null when the account has no avatar. */
+  assetId: ProfileMediaId | null;
+}
+
+export interface PrepareProfileMedia {
+  kind: ProfileMediaKind;
+}
+
+/**
+ * The media declaration and exclusive expiry already authorized by the owner service.
+ */
+export type SignProfileMediaTransfer = {
+  kind: 'avatar';
+  expiresAt: string;
+  contentType: AvatarUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+} | {
+  kind: 'organization-logo';
+  expiresAt: string;
+  contentType: OrganizationLogoUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+};
+
+/**
+ * The width or height of the square prepared PNG in pixels.
+ * @minimum 1
+ * @maximum 512
+ */
+export type ProfileMediaRasterDimension = number;
+
+/**
+ * Verified PNG metadata for the immutable upload. Storage verifies the same source bytes it
+ * prepares, limits each decoded dimension to 4096 pixels and the decoded image to 4096²
+ * pixels, and produces a square PNG of at most 512 pixels per side without source metadata.
+ * A supported static SVG logo is rasterized with limits on resources and no external access.
+ */
+export interface ProfileMediaPreparation {
+  uploadId: ProfileMediaId;
+  contentType: 'image/png';
+  width: ProfileMediaRasterDimension;
+  height: ProfileMediaRasterDimension;
+  sizeBytes: ProfileMediaSizeBytes;
+}
+
+/**
+ * `media.not-found` for an unknown, unavailable or unrelated image or reservation.
+ */
+export type ProfileMediaNotFoundResponse = Problem;
+
+/**
+ * `idempotency.request-in-progress` when equivalent signing is running, or
+ * `media.upload-expired` when an unsigned transfer passed its original expiry.
+ */
+export type ProfileMediaReservationConflictResponse = Problem;
+
+/**
+ * `media.file-too-large` above 5,242,880 declared bytes, `media.unsupported-type` for a
+ * disallowed image encoding, or `idempotency.key-reused` for a conflicting reservation.
+ */
+export type ProfileMediaReservationRefusedResponse = Problem;
+
+/**
+ * `media.upload-expired` for expiration, `media.upload-not-ready` for an upload that has not
+ * arrived, or `media.upload-superseded` for an invalidated prior generation.
+ */
+export type ProfileMediaUploadStateConflictResponse = Problem;
+
+/**
+ * `media.file-too-large`, `media.unsupported-type`, or `media.invalid-image` for metadata,
+ * decoding, shape, dimension or safety failures.
+ */
+export type ProfileMediaUploadRefusedResponse = Problem;
+
+/**
+ * `storage.unavailable` when the dependency or durable media state is unavailable.
+ */
+export type ProfileMediaUnavailableResponse = Problem;
+
+/**
  * `request.invalid` with `details.issues`.
  */
 export type BadRequestResponse = Problem;
@@ -2673,6 +2854,11 @@ export type ListTaskAttachmentsInternalParams = {
    * @maximum 100
    */
   limit?: number;
+};
+
+export type GetAvatarImageInternalParams = {
+  /** Account id for the authorized reference. */
+  ownerUserId: string;
 };
 
 export type ListLargestAttachmentsInternalParams = {

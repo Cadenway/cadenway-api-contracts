@@ -1011,9 +1011,8 @@ export class AuthService {
  *   `400 request.invalid` with an issue on `timeZone`.
  * - `If-Match` is optional; a version that is no longer the current one answers
  *   `412 request.version-mismatch`.
- * - The address, the password and the photo do not change here: the address changes with
- *   `POST /v1/me/email-change`, the password with `PUT /v1/me/password`, and the photo in a
- *   later version.
+ * - Change the address with `POST /v1/me/email-change`, the password with
+ *   `PUT /v1/me/password` and the photo with the avatar operations in `profile-media.yaml`.
  *
  * Emits `user.profile-updated.v1` when something changed; a patch that changes nothing
  * answers `200` with the same version and emits nothing. Session only: a personal API token

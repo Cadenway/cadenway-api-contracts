@@ -362,6 +362,89 @@ export const sessionRevokedV1Schema = zod.object({
   userId: zod.uuid(),
 }) satisfies zod.ZodType<SessionRevokedV1>;
 
+/** Name of the event `user.avatar-changed.v1`. The avatar reference was set, replaced or removed. */
+export const USER_AVATAR_CHANGED_V1 = 'user.avatar-changed.v1';
+
+/** Payload of the event `user.avatar-changed.v1`. */
+export interface UserAvatarChangedV1 {
+  /** Event ID, the deduplication key. */
+  id: string;
+  /** UTC instant of the recorded reference change. */
+  occurredAt: string;
+  /** An avatar belongs to the account outside any organization. */
+  organizationId: null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Monotonic avatar generation after this change, separate from the profile version. */
+  version: number;
+  /** Account that owns the avatar and the reservation. */
+  userId: string;
+  /** Current immutable asset ID. Null after removal. */
+  assetId: string | null;
+  /** Retired immutable asset ID. Null on first activation. */
+  oldAssetId: string | null;
+}
+
+/** Validator of the payload of the event `user.avatar-changed.v1`. */
+export const userAvatarChangedV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.null(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1).max(9007199254740991),
+  userId: zod.uuid(),
+  assetId: zod.uuid().nullable(),
+  oldAssetId: zod.uuid().nullable(),
+}) satisfies zod.ZodType<UserAvatarChangedV1>;
+
+/** Name of the event `user.avatar-upload-abandoned.v1`. The owner ended an unused avatar reservation. */
+export const USER_AVATAR_UPLOAD_ABANDONED_V1 = 'user.avatar-upload-abandoned.v1';
+
+/** Payload of the event `user.avatar-upload-abandoned.v1`. */
+export interface UserAvatarUploadAbandonedV1 {
+  /** Event ID, the deduplication key. */
+  id: string;
+  /** UTC instant of the recorded abandonment. */
+  occurredAt: string;
+  /** An avatar belongs to the account outside any organization. */
+  organizationId: null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** The terminal version of this reservation. */
+  version: 1;
+  /** Account that owns the avatar and the reservation. */
+  userId: string;
+  /** Owner-allocated ID of the permanently abandoned reservation. */
+  uploadId: string;
+}
+
+/** Validator of the payload of the event `user.avatar-upload-abandoned.v1`. */
+export const userAvatarUploadAbandonedV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.null(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.literal(1),
+  userId: zod.uuid(),
+  uploadId: zod.uuid(),
+}) satisfies zod.ZodType<UserAvatarUploadAbandonedV1>;
+
 /** Name of the event `user.deleted.v1`. An account was deleted, at the end of its scheduled deletion. */
 export const USER_DELETED_V1 = 'user.deleted.v1';
 
@@ -1013,7 +1096,7 @@ export const userTwoStepVerificationChangedV1Schema = zod.object({
 }) satisfies zod.ZodType<UserTwoStepVerificationChangedV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, PASSWORD_RESET_LINK_ISSUED_V1, SESSION_OPENED_ON_NEW_DEVICE_V1, SESSION_ORGANIZATION_CHANGED_V1, SESSION_REVOKED_V1, USER_DELETED_V1, USER_DELETION_CANCELLED_V1, USER_DELETION_SCHEDULED_V1, USER_EMAIL_CHANGED_V1, USER_EMAIL_VERIFIED_V1, USER_PASSWORD_CHANGED_V1, USER_PROFILE_UPDATED_V1, USER_SIGNED_UP_V1, USER_TWO_STEP_VERIFICATION_CHANGED_V1] as const;
+export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, PASSWORD_RESET_LINK_ISSUED_V1, SESSION_OPENED_ON_NEW_DEVICE_V1, SESSION_ORGANIZATION_CHANGED_V1, SESSION_REVOKED_V1, USER_AVATAR_CHANGED_V1, USER_AVATAR_UPLOAD_ABANDONED_V1, USER_DELETED_V1, USER_DELETION_CANCELLED_V1, USER_DELETION_SCHEDULED_V1, USER_EMAIL_CHANGED_V1, USER_EMAIL_VERIFIED_V1, USER_PASSWORD_CHANGED_V1, USER_PROFILE_UPDATED_V1, USER_SIGNED_UP_V1, USER_TWO_STEP_VERIFICATION_CHANGED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -1035,6 +1118,8 @@ export interface EventPayloads {
   'session.opened-on-new-device.v1': SessionOpenedOnNewDeviceV1;
   'session.organization-changed.v1': SessionOrganizationChangedV1;
   'session.revoked.v1': SessionRevokedV1;
+  'user.avatar-changed.v1': UserAvatarChangedV1;
+  'user.avatar-upload-abandoned.v1': UserAvatarUploadAbandonedV1;
   'user.deleted.v1': UserDeletedV1;
   'user.deletion-cancelled.v1': UserDeletionCancelledV1;
   'user.deletion-scheduled.v1': UserDeletionScheduledV1;
@@ -1053,6 +1138,8 @@ export const eventSchemas = {
   'session.opened-on-new-device.v1': sessionOpenedOnNewDeviceV1Schema,
   'session.organization-changed.v1': sessionOrganizationChangedV1Schema,
   'session.revoked.v1': sessionRevokedV1Schema,
+  'user.avatar-changed.v1': userAvatarChangedV1Schema,
+  'user.avatar-upload-abandoned.v1': userAvatarUploadAbandonedV1Schema,
   'user.deleted.v1': userDeletedV1Schema,
   'user.deletion-cancelled.v1': userDeletionCancelledV1Schema,
   'user.deletion-scheduled.v1': userDeletionScheduledV1Schema,
