@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.23.0
+
+### Minor Changes
+
+- fcbc77f: Add the organization-scoped command palette search contract for visible tasks and lists.
+
 ## 0.22.0
 
 ### Minor Changes
