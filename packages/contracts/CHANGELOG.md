@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.20.0
+
+### Minor Changes
+
+- 86ccfef: Add an internal Identity lookup for Notification jobs to resolve one current verified email recipient and the account language and time zone.
+
 ## 0.19.0
 
 ### Minor Changes
