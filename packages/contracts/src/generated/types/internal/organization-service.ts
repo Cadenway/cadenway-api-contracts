@@ -177,6 +177,25 @@ export interface MyOrganizationPage {
   nextCursor: NextCursor | null;
 }
 
+export interface MemberNameLookup {
+  /**
+     * @minItems 1
+     * @maxItems 5000
+     */
+  userIds: string[];
+}
+
+export type MemberNameLookupResultItemsItem = {
+  userId: string;
+  /** Full name from the organization-service user directory. */
+  name: string;
+};
+
+export interface MemberNameLookupResult {
+  /** @maxItems 5000 */
+  items: MemberNameLookupResultItemsItem[];
+}
+
 export interface Member {
   id: string;
   userId: string;

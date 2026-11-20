@@ -7,7 +7,7 @@ import type { TeamDashboardAssigneeCount } from './teamDashboardAssigneeCount';
 import type { TeamDashboardCompletionWeek } from './teamDashboardCompletionWeek';
 import type { TeamDashboardStatusCount } from './teamDashboardStatusCount';
 import type { TeamDashboardTimeZone } from './teamDashboardTimeZone';
-import type { TeamDashboardWeeksProperty } from './teamDashboardWeeksProperty';
+import type { TeamDashboardWeeks } from './teamDashboardWeeks';
 
 /**
  * One team dashboard restricted to the caller's visible active task population.
@@ -16,8 +16,7 @@ export interface TeamDashboard {
   /** Calendar observation date supplied by the caller in the requested time zone. */
   today: string;
   timeZone: TeamDashboardTimeZone;
-  /** Selected number of weeks, including the observation week. */
-  weeks: TeamDashboardWeeksProperty;
+  weeks: TeamDashboardWeeks;
   /** Server observation instant in UTC. */
   observedAt: string;
   /**

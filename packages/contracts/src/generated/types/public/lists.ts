@@ -2791,7 +2791,7 @@ export type VersionMismatchResponse = Problem;
 export type RateLimitedResponse = Problem;
 
 /**
- * task-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+ * An upstream service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
  * `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
  * `upstream.deadline-exceeded`, with `details.service`.
  */

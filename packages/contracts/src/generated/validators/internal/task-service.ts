@@ -1213,12 +1213,26 @@ export const GetListTimesheetInternalResponse = zod.object({
 
 
 /**
- * Implements the visibility, filters, sorting and literal spreadsheet encoding of
- * `GET /v1/lists/{listId}/tasks/export`. Select the rows and ordered column definitions
- * in one consistent tenant read. Enforce the 10,000-row bound before starting the
- * response. The gateway relays the complete file, charset and safe filename. Internal
- * token from api-gateway with a user actor and organization required.
- * @summary Download the visible list tasks as CSV
+ * Implements the visibility, filters, row limit, sorting and literal spreadsheet encoding of
+ * `GET /v1/lists/{listId}/tasks/export`. Select the rows and columns in a consistent tenant
+ * snapshot. Reject more than 10,000 rows before returning any export data. Resolve `client`
+ * against the first active text definition named Client, case-insensitively. For `people`,
+ * return the rows in ordinary task order so that the gateway can use that order to break
+ * ties when it sorts by assignee name.
+ *
+ * The gateway looks up the returned assignee IDs in organization-service in batches of up
+ * to 5,000 on behalf of the same actor and organization. It sorts by the first assignee's
+ * name in French only for `people`, with missing names last in either direction. It joins
+ * known names in assignment order with a comma and a space, protects the resulting text
+ * from spreadsheet formulas and quotes it as a single CSV cell, doubling embedded quotes.
+ * It inserts that cell between the supplied cell arrays, joins each row's cells with
+ * semicolons and terminates the header and every row with CRLF. The supplied cells retain
+ * their quotes, escaped quotes and any embedded line breaks. The gateway sends the
+ * resulting UTF-8 CSV with an attachment header using the supplied basename. If the
+ * directory lookup fails, it returns a problem response before sending any CSV bytes.
+ *
+ * Internal token from api-gateway with a user actor and organization required.
+ * @summary Read the visible list task rows for CSV export
  */
 export const ExportListTasksInternalParams = zod.object({
   "listId": zod.uuid().describe('Id of the list.')
@@ -1257,7 +1271,28 @@ export const ExportListTasksInternalQueryParams = zod.object({
   "sheetSortDirection": zod.enum(['asc', 'desc']).optional().describe('Sheet export sort direction, ascending when omitted. Requires sheetSortColumn.')
 })
 
-export const ExportListTasksInternalResponse = zod.unknown()
+export const exportListTasksInternalResponseFilenameRegExp = new RegExp('^[A-Za-z0-9_-]{1,124}[.]csv$');
+export const exportListTasksInternalResponseRowsItemBeforeAssigneesMin = 4;
+export const exportListTasksInternalResponseRowsItemBeforeAssigneesMax = 4;
+
+export const exportListTasksInternalResponseRowsItemAssigneeIdsMax = 20;
+
+export const exportListTasksInternalResponseRowsItemAfterAssigneesMin = 2;
+export const exportListTasksInternalResponseRowsItemAfterAssigneesMax = 32;
+
+export const exportListTasksInternalResponseRowsMax = 10000;
+
+
+
+export const ExportListTasksInternalResponse = zod.object({
+  "filename": zod.string().regex(exportListTasksInternalResponseFilenameRegExp).describe('Safe attachment basename to use in the public Content-Disposition header.'),
+  "header": zod.string().describe('The complete encoded CSV header, with semicolon separators and without a trailing CRLF.'),
+  "rows": zod.array(zod.object({
+  "beforeAssignees": zod.array(zod.string()).min(exportListTasksInternalResponseRowsItemBeforeAssigneesMin).max(exportListTasksInternalResponseRowsItemBeforeAssigneesMax).describe('Encoded identifier, name, status and priority cells in column order.'),
+  "assigneeIds": zod.array(zod.uuid()).max(exportListTasksInternalResponseRowsItemAssigneeIdsMax).describe('Assignee account IDs in assignment order.'),
+  "afterAssignees": zod.array(zod.string()).min(exportListTasksInternalResponseRowsItemAfterAssigneesMin).max(exportListTasksInternalResponseRowsItemAfterAssigneesMax).describe('Encoded due date, labels and active custom field cells in column order.')
+})).max(exportListTasksInternalResponseRowsMax).describe('Ordered rows with the same columns as the header.')
+})
 
 
 /**
@@ -8013,12 +8048,12 @@ export const DeleteGoalResultInternalResponse = zod.void()
  * @summary Read the dashboard of visible team work
  */
 
-export const getTeamDashboardInternalQueryWeeksDefault = 8;
+
 
 export const GetTeamDashboardInternalQueryParams = zod.object({
   "today": zod.iso.date().describe('The date of the caller, in their time zone, which task-service does not know: the late\ntasks, the tasks due that day and the current sprints are counted against it.\n'),
   "timeZone": zod.string().min(1).describe('IANA time-zone identifier used to bucket completion activity.'),
-  "weeks": zod.preprocess((value) => value === '8' ? 8 : value === '12' ? 12 : value, zod.union([zod.literal(8),zod.literal(12)]).default(getTeamDashboardInternalQueryWeeksDefault)).describe('Number of weeks including the week of today.')
+  "weeks": zod.preprocess((value) => value === '8' ? 8 : value === '12' ? 12 : value, zod.union([zod.literal(8),zod.literal(12)]).default(8)).describe('Number of weeks including the week of today.')
 })
 
 
@@ -8058,7 +8093,7 @@ export const getTeamDashboardInternalResponseCompletionsMax = 12;
 export const GetTeamDashboardInternalResponse = zod.object({
   "today": zod.iso.date().describe('Calendar observation date supplied by the caller in the requested time zone.'),
   "timeZone": zod.string().min(1).describe('IANA time zone used to assign completion instants to local calendar days.'),
-  "weeks": zod.union([zod.literal(8),zod.literal(12)]).describe('Selected number of weeks, including the observation week.'),
+  "weeks": zod.union([zod.literal(8),zod.literal(12)]).describe('Number of calendar weeks, including the observation week.'),
   "observedAt": zod.iso.datetime({"offset":true}).describe('Server observation instant in UTC.'),
   "openCount": zod.int().min(getTeamDashboardInternalResponseOpenCountMin).describe('Visible tasks whose current status category is not closed.'),
   "lateCount": zod.int().min(getTeamDashboardInternalResponseLateCountMin).describe('Visible open tasks whose due date is earlier than today.'),

@@ -799,17 +799,26 @@ paths:
       - $ref: '#/components/parameters/ListId'
     get:
       operationId: exportListTasksInternal
-      summary: Download the visible list tasks as CSV
+      summary: Read the visible list task rows for CSV export
       description: |
-        Implements the visibility, filters, sorting and literal spreadsheet encoding of
-        `GET /v1/lists/{listId}/tasks/export`. Select the rows and ordered column definitions
-        in one consistent tenant read. Enforce the 10,000-row bound before fetching names or
-        starting the response. Resolve the selected rows' assignee names with organization-service
-        in bounded batches for the same actor and organization. Use those names in the CSV and
-        for the French `people` sort by the first assignee, with missing names last. Resolve
-        `client` against the first active text definition named Client, case-insensitively.
-        The ordinary task sort breaks ties. An unavailable name lookup aborts the export before
-        any CSV bytes are sent. The gateway relays the complete file, charset and safe filename.
+        Implements the visibility, filters, row limit, sorting and literal spreadsheet encoding of
+        `GET /v1/lists/{listId}/tasks/export`. Select the rows and columns in a consistent tenant
+        snapshot. Reject more than 10,000 rows before returning any export data. Resolve `client`
+        against the first active text definition named Client, case-insensitively. For `people`,
+        return the rows in ordinary task order so that the gateway can use that order to break
+        ties when it sorts by assignee name.
+
+        The gateway looks up the returned assignee IDs in organization-service in batches of up
+        to 5,000 on behalf of the same actor and organization. It sorts by the first assignee's
+        name in French only for `people`, with missing names last in either direction. It joins
+        known names in assignment order with a comma and a space, protects the resulting text
+        from spreadsheet formulas and quotes it as a single CSV cell, doubling embedded quotes.
+        It inserts that cell between the supplied cell arrays, joins each row's cells with
+        semicolons and terminates the header and every row with CRLF. The supplied cells retain
+        their quotes, escaped quotes and any embedded line breaks. The gateway sends the
+        resulting UTF-8 CSV with an attachment header using the supplied basename. If the
+        directory lookup fails, it returns a problem response before sending any CSV bytes.
+
         Internal token from api-gateway with a user actor and organization required.
       tags: [lists]
       parameters:
@@ -827,18 +836,20 @@ paths:
         - $ref: '#/components/parameters/SheetExportDirection'
       responses:
         '200':
-          description: The complete CSV file, including headers for an empty result.
-          headers:
-            Content-Disposition:
-              required: true
-              description: Safe attachment basename with the .csv extension, without path segments or control characters.
-              schema:
-                type: string
-                examples: ['attachment; filename="sprint-14.csv"']
+          description: The encoded header and visible task rows, with IDs for the assignee cells.
           content:
-            text/csv:
+            application/json:
               schema:
-                type: string
+                $ref: '#/components/schemas/ListTaskExport'
+              example:
+                filename: sprint-14.csv
+                header: '"Identifiant";"Nom";"Statut";"Priorité";"Assignés";"Échéance";"Étiquettes";"Points";"Client"'
+                rows:
+                  - beforeAssignees:
+                      ['"CAD-482"', '"Refondre l’écran de connexion SSO"', '"En cours"', '"Haute"']
+                    assigneeIds:
+                      [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30, 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+                    afterAssignees: ['"2026-11-12"', '"Auth, Front"', '"5"', '"Coopérative Lumen"']
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -849,8 +860,6 @@ paths:
           $ref: '#/components/responses/ListNotFound'
         '422':
           $ref: '#/components/responses/ExportRowLimitReached'
-        '503':
-          $ref: '#/components/responses/AssigneeNameLookupUnavailable'
   /internal/v1/lists/{listId}/counts:
     parameters:
       - $ref: '#/components/parameters/ListId'
@@ -5482,6 +5491,7 @@ components:
       description: Number of weeks including the week of today.
       schema:
         $ref: '../../components/dashboard.yaml#/components/schemas/TeamDashboardWeeks'
+        default: 8
     TemplateId:
       name: templateId
       in: path
@@ -5835,19 +5845,6 @@ components:
             title: Sprint not found.
             status: 404
             code: list.not-found
-    AssigneeNameLookupUnavailable:
-      description: '`upstream.unavailable`: the organization-service member name lookup is unavailable.'
-      content:
-        application/problem+json:
-          schema:
-            $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: Service Unavailable
-            status: 503
-            code: upstream.unavailable
-            details:
-              service: organization-service
     ExportRowLimitReached:
       description: |
         `list.export-row-limit-reached` when more than 10,000 readable rows match.
@@ -7639,6 +7636,49 @@ components:
             details:
               version: 13
   schemas:
+    ListTaskExport:
+      type: object
+      required: [filename, header, rows]
+      additionalProperties: false
+      properties:
+        filename:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{1,124}[.]csv$'
+          description: Safe attachment basename to use in the public Content-Disposition header.
+        header:
+          type: string
+          description: The complete encoded CSV header, with semicolon separators and without a trailing CRLF.
+        rows:
+          type: array
+          maxItems: 10000
+          description: Ordered rows with the same columns as the header.
+          items:
+            type: object
+            required: [beforeAssignees, assigneeIds, afterAssignees]
+            additionalProperties: false
+            properties:
+              beforeAssignees:
+                type: array
+                minItems: 4
+                maxItems: 4
+                description: Encoded identifier, name, status and priority cells in column order.
+                items:
+                  type: string
+              assigneeIds:
+                type: array
+                maxItems: 20
+                uniqueItems: true
+                description: Assignee account IDs in assignment order.
+                items:
+                  type: string
+                  format: uuid
+              afterAssignees:
+                type: array
+                minItems: 2
+                maxItems: 32
+                description: Encoded due date, labels and active custom field cells in column order.
+                items:
+                  type: string
     CustomFieldDefinition:
       $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinition'
     CustomFieldDefinitionPage:

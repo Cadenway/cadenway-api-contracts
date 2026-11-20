@@ -3,21 +3,21 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
- * Selected number of weeks, including the observation week.
- */
-export type TeamDashboardWeeksProperty = typeof TeamDashboardWeeksProperty[keyof typeof TeamDashboardWeeksProperty];
-
-
-export const TeamDashboardWeeksProperty = {
-  NUMBER_8: 8,
-  NUMBER_12: 12,
-} as const;
-
-/**
  * IANA time zone used to assign completion instants to local calendar days.
  * @minLength 1
  */
 export type TeamDashboardTimeZone = string;
+
+/**
+ * Number of calendar weeks, including the observation week.
+ */
+export type TeamDashboardWeeks = typeof TeamDashboardWeeks[keyof typeof TeamDashboardWeeks];
+
+
+export const TeamDashboardWeeks = {
+  NUMBER_8: 8,
+  NUMBER_12: 12,
+} as const;
 
 /**
  * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
@@ -224,8 +224,7 @@ export interface TeamDashboard {
   /** Calendar observation date supplied by the caller in the requested time zone. */
   today: string;
   timeZone: TeamDashboardTimeZone;
-  /** Selected number of weeks, including the observation week. */
-  weeks: TeamDashboardWeeksProperty;
+  weeks: TeamDashboardWeeks;
   /** Server observation instant in UTC. */
   observedAt: string;
   /**
@@ -2414,17 +2413,6 @@ export interface Problem {
   /** Members specific to the code, for example the fields that failed validation. */
   details?: ProblemDetails;
 }
-
-/**
- * Number of calendar weeks, including the observation week.
- */
-export type TeamDashboardWeeks = typeof TeamDashboardWeeks[keyof typeof TeamDashboardWeeks];
-
-
-export const TeamDashboardWeeks = {
-  NUMBER_8: 8,
-  NUMBER_12: 12,
-} as const;
 
 /**
  * `request.invalid`: the request does not match the contract. `details.issues` identifies

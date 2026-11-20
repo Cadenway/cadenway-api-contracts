@@ -176,7 +176,6 @@ export * from './teamDashboardTimeZone';
 export * from './teamDashboardTimeZoneParameter';
 export * from './teamDashboardWeeks';
 export * from './teamDashboardWeeksParameter';
-export * from './teamDashboardWeeksProperty';
 export * from './todayParameter';
 export * from './trashEmptied';
 export * from './trashEntry';

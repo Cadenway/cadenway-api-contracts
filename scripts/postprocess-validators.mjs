@@ -17,6 +17,33 @@ for (const root of ROOTS) {
     for (const path of Object.values(document.paths ?? {})) {
       for (const operation of Object.values(path)) {
         if (!operation?.operationId) continue;
+        // Orval emits unknown for a textual response even when its schema is a plain string.
+        const successResponses = Object.entries(operation.responses ?? {})
+          .filter(([status]) => /^2\d\d$/.test(status))
+          .map(([, response]) => response);
+        const textResponses = successResponses.flatMap((response) =>
+          Object.entries(response.content ?? {}),
+        );
+        const hasOnlyPlainTextResponses =
+          successResponses.length > 0 &&
+          successResponses.every((response) => Object.keys(response.content ?? {}).length > 0) &&
+          textResponses.every(([mediaType, content]) => {
+            const schema = content.schema;
+            return (
+              mediaType.toLowerCase().startsWith('text/') &&
+              schema?.type === 'string' &&
+              Object.keys(schema).every((key) =>
+                ['type', 'description', 'title', 'example', 'examples'].includes(key),
+              )
+            );
+          });
+        if (hasOnlyPlainTextResponses) {
+          const name = `${operation.operationId[0].toUpperCase()}${operation.operationId.slice(1)}Response`;
+          const original = `export const ${name} = zod.unknown()`;
+          if (generated.includes(original)) {
+            generated = generated.replace(original, `export const ${name} = zod.string()`);
+          }
+        }
         const parameters = new Map(
           [...(path.parameters ?? []), ...(operation.parameters ?? [])]
             .filter((parameter) => parameter.in === 'query')
@@ -285,12 +312,24 @@ for (const root of ROOTS) {
       if (start < 0 || end < 0)
         throw new Error(`${source}: missing dashboard query validator ${name}`);
       let query = generated.slice(start, end);
-      const weeks = `zod.union([zod.literal(8),zod.literal(12)]).default(${defaultName})`;
+      const union = 'zod.union([zod.literal(8),zod.literal(12)])';
+      const weeksWithDefault = `${union}.default(${defaultName})`;
+      const weeksWithoutDefault = `${union}.optional()`;
+      const weeks = query.includes(weeksWithDefault) ? weeksWithDefault : weeksWithoutDefault;
       if (!query.includes(weeks))
         throw new Error(`${source}: missing dashboard weeks validator ${name}`);
+      const operationId = `getTeamDashboard${suffix}`;
+      const operation = Object.values(document.paths ?? {})
+        .flatMap((path) => Object.values(path))
+        .find((entry) => entry?.operationId === operationId);
+      const defaultWeeks = operation?.parameters?.find((parameter) => parameter.name === 'weeks')
+        ?.schema?.default;
+      if (defaultWeeks !== 8) throw new Error(`${source}: missing dashboard weeks default`);
+      const validatedWeeks =
+        weeks === weeksWithDefault ? weeksWithDefault : `${union}.default(${defaultWeeks})`;
       query = query.replace(
         weeks,
-        `zod.preprocess((value) => value === '8' ? 8 : value === '12' ? 12 : value, ${weeks})`,
+        `zod.preprocess((value) => value === '8' ? 8 : value === '12' ? 12 : value, ${validatedWeeks})`,
       );
       generated = generated.slice(0, start) + query + generated.slice(end);
     }

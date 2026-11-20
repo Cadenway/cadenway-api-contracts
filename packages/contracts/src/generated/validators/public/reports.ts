@@ -21,12 +21,12 @@ import * as zod from 'zod';
  * @summary Read the dashboard of visible team work
  */
 
-export const getTeamDashboardQueryWeeksDefault = 8;
+
 
 export const GetTeamDashboardQueryParams = zod.object({
   "today": zod.iso.date().describe('The date of the caller, in their time zone, which task-service does not know: the late\ntasks, the tasks due that day and the current sprints are counted against it.\n'),
   "timeZone": zod.string().min(1).describe('IANA time-zone identifier used to bucket completion activity.'),
-  "weeks": zod.preprocess((value) => value === '8' ? 8 : value === '12' ? 12 : value, zod.union([zod.literal(8),zod.literal(12)]).default(getTeamDashboardQueryWeeksDefault)).describe('Number of weeks including the week of today.')
+  "weeks": zod.preprocess((value) => value === '8' ? 8 : value === '12' ? 12 : value, zod.union([zod.literal(8),zod.literal(12)]).default(8)).describe('Number of weeks including the week of today.')
 })
 
 
@@ -66,7 +66,7 @@ export const getTeamDashboardResponseCompletionsMax = 12;
 export const GetTeamDashboardResponse = zod.object({
   "today": zod.iso.date().describe('Calendar observation date supplied by the caller in the requested time zone.'),
   "timeZone": zod.string().min(1).describe('IANA time zone used to assign completion instants to local calendar days.'),
-  "weeks": zod.union([zod.literal(8),zod.literal(12)]).describe('Selected number of weeks, including the observation week.'),
+  "weeks": zod.union([zod.literal(8),zod.literal(12)]).describe('Number of calendar weeks, including the observation week.'),
   "observedAt": zod.iso.datetime({"offset":true}).describe('Server observation instant in UTC.'),
   "openCount": zod.int().min(getTeamDashboardResponseOpenCountMin).describe('Visible tasks whose current status category is not closed.'),
   "lateCount": zod.int().min(getTeamDashboardResponseLateCountMin).describe('Visible open tasks whose due date is earlier than today.'),

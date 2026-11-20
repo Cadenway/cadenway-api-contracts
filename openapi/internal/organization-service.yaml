@@ -1,12 +1,12 @@
-# Internal routes of organization-service. The API gateway calls the organization, member and
-# invitation routes. Task-service calls the member name lookup for CSV export.
+# Internal routes of organization-service, called by the API gateway for organizations,
+# members, invitations and the member name lookup for list CSV export.
 openapi: 3.1.0
 info:
   title: organization-service internal routes
   version: 1.0.0
   description: |
     What organization-service exposes to the API gateway for organizations, members and
-    invitations, and the member name lookup task-service uses for CSV export. The service has no
+    invitations, and the member name lookup it uses for CSV export. The service has no
     public route: the gateway serves `openapi/public/organizations.yaml` and
     `openapi/public/members.yaml` and calls the corresponding internal routes.
 
@@ -31,8 +31,7 @@ info:
 
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
     (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `organization-service`). Every route
-    accepts the actor `user`. The member name lookup accepts only the issuer `task-service`;
-    every other route accepts only `api-gateway`. Each operation says whether it
+    accepts the issuer `api-gateway` and the actor `user` only. Each operation says whether it
     requires an organization: an organization-scoped route acts on the organization of the token,
     the current organization of the session or the organization of the personal API token, and
     runs in the tenant transaction of that organization. A route that requires no organization
@@ -82,9 +81,9 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Relays the organization and member routes exposed in openapi/public/organizations.yaml and openapi/public/members.yaml.
-    - repository: cadenway-task-service
-      uses: Looks up the names of assignees on rows already authorized for list CSV export.
+      uses: >-
+        Relays the organization and member routes exposed in openapi/public/organizations.yaml
+        and openapi/public/members.yaml, and looks up assignee names for list CSV export.
 servers:
   - url: http://organization-service:3011
     description: organization-service on the internal network of each environment (`ORGANIZATION_SERVICE_URL`).
@@ -349,10 +348,10 @@ paths:
         Read the actor's membership and the requested names in one tenant snapshot. Omit accounts
         outside the organization, departed members and accounts without a directory name.
         Case-equivalent UUIDs and repeated identifiers resolve to at most one result per account.
-        Result order is unspecified. The caller supplies only assignees from rows the actor is
-        authorized to export.
+        Result order is unspecified. The gateway supplies only assignees from the result of
+        `GET /internal/v1/lists/{listId}/tasks/export` for the same actor and organization.
 
-        Internal token: issuer `task-service` only, actor `user` and organization required.
+        Internal token: issuer `api-gateway` only, actor `user` and organization required.
       tags: [members]
       requestBody:
         required: true
@@ -785,7 +784,7 @@ components:
       bearerFormat: JWT
       description: |
         Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` =
-        `organization-service`, issuer `api-gateway` or `task-service` for the member name lookup.
+        `organization-service`, issuer `api-gateway`.
   parameters:
     UserId:
       name: userId
@@ -1414,7 +1413,7 @@ components:
         userIds:
           type: array
           minItems: 1
-          maxItems: 100
+          maxItems: 5000
           items:
             type: string
             format: uuid
@@ -1425,7 +1424,7 @@ components:
       properties:
         items:
           type: array
-          maxItems: 100
+          maxItems: 5000
           items:
             type: object
             required: [userId, name]

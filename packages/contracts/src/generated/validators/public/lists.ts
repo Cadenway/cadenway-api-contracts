@@ -566,13 +566,22 @@ export const GetListWorkloadResponse = zod.object({
  * A direction without a column or a custom field unavailable in this space yields
  * `400 request.invalid`.
  *
+ * The `people` column sorts on the first assignee's directory name using French collation.
+ * Rows without a name for that assignee sort last in either direction. The `client`
+ * column sorts on the first active text field named Client, matching the field name
+ * case-insensitively in definition order. Rows without a value sort last. If no such
+ * field is defined, the ordinary task sort applies. Use the field ID to sort another
+ * custom field explicitly.
+ *
  * The UTF-8 file has semicolon-delimited, quoted fields with embedded quotes doubled.
  * The headers are "Identifiant", "Nom", "Statut", "Priorité", "Assignés", "Échéance"
  * and "Étiquettes", followed by active custom field names in definition order.
- * Status and priority use their French labels. Formula-like untrusted text, including
+ * The "Assignés" cell lists known directory names in assignment order, separated by a comma
+ * and a space. Status and priority use their French labels. Formula-like untrusted text, including
  * custom header names, is rendered literally when opened in a spreadsheet. The producer
- * checks the 10,000-row limit before sending any CSV bytes, and the gateway relays the
- * file and safe filename. Scope `tasks:read` for a personal API token.
+ * checks the 10,000-row limit before sending any export data. The gateway serves the file
+ * with the producer's safe filename. An unavailable assignee directory yields `503`
+ * before any CSV bytes are sent. Scope `tasks:read` for a personal API token.
  * @summary Download the visible list tasks as CSV
  */
 export const ExportListTasksParams = zod.object({
@@ -612,7 +621,7 @@ export const ExportListTasksQueryParams = zod.object({
   "sheetSortDirection": zod.enum(['asc', 'desc']).optional().describe('Sheet export sort direction, ascending when omitted. Requires sheetSortColumn.')
 })
 
-export const ExportListTasksResponse = zod.unknown()
+export const ExportListTasksResponse = zod.string()
 
 
 /**

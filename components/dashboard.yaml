@@ -20,7 +20,6 @@ components:
     TeamDashboardWeeks:
       type: integer
       enum: [8, 12]
-      default: 8
       description: Number of calendar weeks, including the observation week.
     TeamDashboardStatusCount:
       type: object
@@ -82,9 +81,7 @@ components:
           examples: ['2026-11-06']
         timeZone: { $ref: '#/components/schemas/TeamDashboardTimeZone' }
         weeks:
-          type: integer
-          enum: [8, 12]
-          description: Selected number of weeks, including the observation week.
+          $ref: '#/components/schemas/TeamDashboardWeeks'
         observedAt:
           type: string
           format: date-time

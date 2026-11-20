@@ -102,6 +102,7 @@ components:
       description: Number of weeks including the week of today.
       schema:
         $ref: '../../components/dashboard.yaml#/components/schemas/TeamDashboardWeeks'
+        default: 8
     Today:
       $ref: '../../components/task.yaml#/components/parameters/Today'
   responses:
