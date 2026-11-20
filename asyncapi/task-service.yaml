@@ -1,5 +1,5 @@
 # Events of task-service: spaces, lists and sprints, and tasks (creation, change, status, assignment),
-# their collaboration facts, access, archives, the trash and the deletions.
+# their collaboration and approval facts, access, archives, the trash and the deletions.
 asyncapi: 3.0.0
 info:
   title: task-service events
@@ -73,8 +73,14 @@ info:
     Markdown, comment quotes or attachment content. A notification consumer suppresses the actor,
     deduplicates mention, reply and watcher recipients, and rechecks visibility before delivery.
 
+    **Approvals.** The approval facts identify a round and use the task version after the
+    committed change. A vote can share that version with ordinary comment and status facts.
+    P4 notification consumers deduplicate by event ID and recheck current task access before
+    delivery. Read a change request's reason through the existing authorized comment route.
+
     **No restricted event.** None carries a secret; they travel on `evt.space.>`, `evt.list.>`,
-    `evt.task.>`, `evt.comment.>` and `evt.milestone.>`, the subjects the NATS user `task` publishes.
+    `evt.task.>`, `evt.comment.>`, `evt.approval.>` and `evt.milestone.>`, the subjects the NATS
+    user `task` publishes.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -92,7 +98,7 @@ info:
     - repository: cadenway-search-service
       uses: Planned, the creations, changes, access changes, archives, deletions, restorations and purges of spaces, lists and tasks, for the search index and who may find what.
     - repository: cadenway-notification-service
-      uses: Planned, assignments, watched status changes, comment creation and edits, description mention changes and comment deletion for the inbox and emails; access requests and their answers for notices.
+      uses: Planned, assignments, watched status changes, comment creation and edits, description mention changes and comment deletion for the inbox and emails; access requests and their answers for notices; approval requests and reviewer decisions in P4.
     - repository: cadenway-realtime-gateway
       uses: Planned, collaboration and resource changes to push updates to open lists and tasks and close rooms a person no longer sees; not access requests or their answers.
     - repository: cadenway-automation-service
@@ -126,6 +132,20 @@ channels:
     messages:
       commentDeletedV1:
         $ref: '#/components/messages/commentDeletedV1'
+  approvalRequestedV1:
+    address: evt.approval.requested.v1
+    description: |
+      A task approval round was opened or replaced. Emitted by task-service. Consumers: none yet; planned in P4, cadenway-notification-service.
+    messages:
+      approvalRequestedV1:
+        $ref: '#/components/messages/approvalRequestedV1'
+  approvalDecidedV1:
+    address: evt.approval.decided.v1
+    description: |
+      A reviewer cast, changed or withdrew a vote. Emitted by task-service. Consumers: none yet; planned in P4, cadenway-notification-service.
+    messages:
+      approvalDecidedV1:
+        $ref: '#/components/messages/approvalDecidedV1'
   taskDescriptionMentionsChangedV1:
     address: evt.task.description-mentions-changed.v1
     description: |
@@ -434,6 +454,22 @@ operations:
       $ref: '#/channels/commentDeletedV1'
     messages:
       - $ref: '#/channels/commentDeletedV1/messages/commentDeletedV1'
+  publishApprovalRequestedV1:
+    action: send
+    summary: task-service publishes an approval round was opened or replaced.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/approvalRequestedV1'
+    messages:
+      - $ref: '#/channels/approvalRequestedV1/messages/approvalRequestedV1'
+  publishApprovalDecidedV1:
+    action: send
+    summary: task-service publishes a reviewer cast, changed or withdrew a vote.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/approvalDecidedV1'
+    messages:
+      - $ref: '#/channels/approvalDecidedV1/messages/approvalDecidedV1'
   publishTaskDescriptionMentionsChangedV1:
     action: send
     summary: task-service publishes the description mention recipients changed.
@@ -1116,6 +1152,185 @@ components:
             listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
             commentId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
             commentVersion: 3
+    approvalRequestedV1:
+      name: approval.requested.v1
+      title: Approval requested
+      summary: A task approval round was opened or replaced.
+      description: |
+        Emitted when an editor opens a new approval round with no votes. Replacing a round opens
+        a new round with its own ID. The actor is the editor who requested the approvals.
+        Reviewer IDs identify the designated eligible editors at commit and can include the actor.
+
+        Personal data: IDs only.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            roundId,
+            reviewerUserIds,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Task version after the committed change.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Task key.
+          spaceId:
+            type: string
+            format: uuid
+            description: Space containing the task.
+          listId:
+            type: string
+            format: uuid
+            description: List containing the task.
+          roundId:
+            type: string
+            format: uuid
+            description: Identifier of the approval round for this task.
+          reviewerUserIds:
+            type: array
+            minItems: 1
+            description: Distinct account IDs of the designated reviewers.
+            items:
+              type: string
+              format: uuid
+      examples:
+        - name: atelierNord
+          summary: Camille Martin asks Inès Robert and Hugo Dubois to review CAD-482.
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5da1
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 14
+            key: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            roundId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6fa1
+            reviewerUserIds:
+              - 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+              - 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+    approvalDecidedV1:
+      name: approval.decided.v1
+      title: Approval decided
+      summary: A reviewer cast, changed or withdrew a vote.
+      description: |
+        Emitted for a committed change to the vote of a designated reviewer who still has edit
+        access. The actor is the reviewer. The decision describes that reviewer's vote;
+        `approved` does not imply unanimous approval. A withdrawal clears the vote without
+        changing the task's status. A change request links the comment created in the same
+        transaction. No fact is emitted when the transaction rolls back or the vote is unchanged.
+
+        Personal data: IDs only. The reason stays in the comment.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            roundId,
+            requesterUserId,
+            decision,
+            commentId,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Task version after the committed change.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Task key.
+          spaceId:
+            type: string
+            format: uuid
+            description: Space containing the task.
+          listId:
+            type: string
+            format: uuid
+            description: List containing the task.
+          roundId:
+            type: string
+            format: uuid
+            description: Identifier of the approval round for this task.
+          requesterUserId:
+            type: string
+            format: uuid
+            description: Account ID of the editor who requested the approvals for this round.
+          decision:
+            type: string
+            enum: [approved, changes-requested, withdrawn]
+            description: New vote of the reviewer, or withdrawn when the vote was cleared.
+          commentId:
+            type: [string, 'null']
+            format: uuid
+            description: Comment containing the reason for changes-requested, or null for another decision.
+      examples:
+        - name: changesRequested
+          summary: Inès Robert requests changes on CAD-482.
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5da2
+            occurredAt: '2026-11-08T10:45:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31 }
+            version: 15
+            key: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            roundId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6fa1
+            requesterUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            decision: changes-requested
+            commentId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4ba2
     taskDescriptionMentionsChangedV1:
       name: task.description-mentions-changed.v1
       title: Task description mentions changed

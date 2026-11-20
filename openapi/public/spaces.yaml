@@ -115,7 +115,8 @@ info:
     **Errors.** As in `openapi/public/auth.yaml`: a stable `code`, a French `title` for the codes
     the web application shows to the person, the English reason phrase otherwise.
 
-    **Later versions** add, without changing what is here: creation from the onboarding assistant.
+    The first-launch wizard provisions its selected space through `POST /v1/me/onboarding/finish`
+    in the tasks document, with the same permission and prefix rules as `POST /v1/spaces`.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -1033,6 +1034,269 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/spaces/{spaceId}/custom-fields:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: listSpaceCustomFields
+      summary: List the custom fields of a space
+      description: |
+        Lists active definitions in `(position, id)` order. The cursor is bound to the requested
+        space and order. Requires a role on the space itself; a list-only grant does not grant
+        this route (`404 space.not-found`). A readable list has its own definitions route.
+        Scope `tasks:read` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of active custom fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldDefinitionPage'
+              example:
+                items:
+                  - {
+                      id: 019a700a-1234-7567-89ab-cdef01234567,
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01,
+                      name: Points,
+                      type: number,
+                      position: 0,
+                      sprintPoints: true,
+                      version: 2,
+                    }
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: createSpaceCustomField
+      summary: Create a space custom field
+      description: |
+        Only a space manager can create a definition. It is active and appended to the
+        space's definition order, with a stable UUID v7 and an immutable value type.
+        It starts with `sprintPoints: false` and does not set a value on any task.
+        Up to 30 active definitions are allowed (`422 custom-field.limit-reached`).
+        An optional `Idempotency-Key` replays the original response and Location for 24 hours;
+        a changed body answers `422 idempotency.key-reused` and an in-flight request answers
+        `409 idempotency.request-in-progress`.
+        Scope `tasks:write` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldDefinitionCreation'
+            example: { name: Points, type: number }
+      responses:
+        '201':
+          description: The new custom field.
+          headers:
+            ETag:
+              description: Version of the custom field definition.
+              schema:
+                type: string
+            Location:
+              description: 'Path of the created definition, `/v1/spaces/{spaceId}/custom-fields/{fieldId}`.'
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldDefinition'
+              example:
+                {
+                  id: 019a700a-1234-7567-89ab-cdef01234567,
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01,
+                  name: Points,
+                  type: number,
+                  position: 0,
+                  sprintPoints: false,
+                  version: 1,
+                }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CustomFieldManageForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '409':
+          $ref: '#/components/responses/CustomFieldCreationConflict'
+        '422':
+          $ref: '#/components/responses/CustomFieldCreationRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/spaces/{spaceId}/custom-fields/{fieldId}:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+      - $ref: '#/components/parameters/CustomFieldId'
+    get:
+      operationId: getSpaceCustomField
+      summary: Get a space custom field
+      description: |
+        Reads one active definition in the specified space. Requires a role on the space itself.
+        A field that is absent, retired or belongs to another space answers `404 custom-field.not-found`.
+        Scope `tasks:read` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The active custom field.
+          headers:
+            ETag:
+              description: Version of the custom field definition.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldDefinition'
+              example:
+                {
+                  id: 019a700a-1234-7567-89ab-cdef01234567,
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01,
+                  name: Points,
+                  type: number,
+                  position: 0,
+                  sprintPoints: true,
+                  version: 2,
+                }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/CustomFieldNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateSpaceCustomField
+      summary: Update a space custom field
+      description: |
+        Only a space manager can change a definition. The JSON Merge Patch can rename the
+        field, move it to a zero-based position, or change whether it supplies sprint points.
+        A position outside the current definition order answers `422 custom-field.position-invalid`.
+        Moving a field shifts the intervening positions, preserving relative order. Designating
+        a numeric field clears the previous designation atomically. A text field or a numeric
+        field with a negative current value cannot be designated (`422 custom-field.sprint-points-invalid`).
+        This refusal preserves all values, historic sprint inputs and the previous designation.
+        Versions of definitions whose position or designation changes advance. A patch with no
+        change keeps the current version. Field IDs, types and values remain unchanged.
+        Scope `tasks:write` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldDefinitionPatch'
+            example: { name: Points, sprintPoints: true }
+      responses:
+        '200':
+          description: The updated custom field.
+          headers:
+            ETag:
+              description: Version of the custom field definition.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldDefinition'
+              example:
+                {
+                  id: 019a700a-1234-7567-89ab-cdef01234567,
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01,
+                  name: Points,
+                  type: number,
+                  position: 0,
+                  sprintPoints: true,
+                  version: 2,
+                }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CustomFieldManageForbidden'
+        '404':
+          $ref: '#/components/responses/CustomFieldNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/CustomFieldChangeRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: retireSpaceCustomField
+      summary: Retire a space custom field
+      description: |
+        Only a space manager can retire a definition. Retirement removes it from active columns
+        and task value reads, frees its position and capacity, and clears any sprint points
+        designation held by the field. Historic sprint inputs are retained. A retired field cannot
+        be set or read through the active field routes. Remaining definitions retain their relative
+        order and any shifted position advances the definition version.
+        Scope `tasks:write` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The custom field is retired.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CustomFieldManageForbidden'
+        '404':
+          $ref: '#/components/responses/CustomFieldNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
     sessionCookie:
@@ -1050,6 +1314,12 @@ components:
         `Authorization: Bearer`. It acts with the rights of its user in the organization it was
         created in, within the scopes each operation lists.
   parameters:
+    CustomFieldId:
+      name: fieldId
+      in: path
+      required: true
+      schema:
+        $ref: '../../components/task.yaml#/components/schemas/CustomFieldId'
     TemplateId:
       name: templateId
       in: path
@@ -1238,6 +1508,99 @@ components:
         status: 429
         code: rate-limit.exceeded
   responses:
+    CustomFieldManageForbidden:
+      description: |
+        - `space.manage-forbidden`: the caller does not manage the visible space.
+        - `auth.scope-missing`: the personal API token lacks `tasks:write`.
+        - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`.
+        - `auth.csrf-rejected`: the `Origin` of the request is refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            manageForbidden:
+              value:
+                type: about:blank
+                title: Vous ne pouvez pas gérer les champs personnalisés de cet espace.
+                status: 403
+                code: space.manage-forbidden
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    CustomFieldNotFound:
+      description: |
+        - `custom-field.not-found`: no active definition with this ID in the specified space.
+        - `space.not-found`: the caller does not see the space or it is absent or deleted.
+        - `organization.not-found`: the caller is not known as a current member.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            fieldNotFound:
+              value:
+                type: about:blank
+                title: Champ personnalisé introuvable.
+                status: 404
+                code: custom-field.not-found
+    CustomFieldCreationConflict:
+      description: |
+        `idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            requestInProgress:
+              $ref: '#/components/examples/RequestInProgress'
+    CustomFieldCreationRefused:
+      description: |
+        - `custom-field.limit-reached`: the space has 30 active definitions.
+        - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            limitReached:
+              value:
+                type: about:blank
+                title: Un espace peut contenir 30 champs personnalisés actifs.
+                status: 422
+                code: custom-field.limit-reached
+            idempotencyKeyReused:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: idempotency.key-reused
+    CustomFieldChangeRefused:
+      description: |
+        - `custom-field.position-invalid`: the requested position does not exist.
+        - `custom-field.sprint-points-invalid`: the field is text or has a negative current value.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invalidPosition:
+              value:
+                type: about:blank
+                title: Position du champ personnalisé invalide.
+                status: 422
+                code: custom-field.position-invalid
+            invalidSprintPoints:
+              value:
+                type: about:blank
+                title: Le champ ne peut pas servir aux points de sprint.
+                status: 422
+                code: custom-field.sprint-points-invalid
     TemplateWriteForbidden:
       description: |
         `access.role-insufficient` when the caller lacks edit on the space or source list;
@@ -1717,6 +2080,14 @@ components:
             details:
               service: task-service
   schemas:
+    CustomFieldDefinition:
+      $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinition'
+    CustomFieldDefinitionPage:
+      $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinitionPage'
+    CustomFieldDefinitionCreation:
+      $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinitionCreation'
+    CustomFieldDefinitionPatch:
+      $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinitionPatch'
     Favorite:
       $ref: '../../components/task.yaml#/components/schemas/Favorite'
     FavoriteCreation:

@@ -132,6 +132,13 @@ export interface Mention {
 export type TaskKey = string;
 
 /**
+ * Sparse values keyed by lowercase stable custom field ID. Only active definitions of the readable
+ * task's current space are included. Missing entries have no value. Absence of the member
+ * means the producer has not reported these values. Numeric zero and empty text are values.
+ */
+export interface TaskCustomFieldValues {[key: string]: number | string}
+
+/**
  * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
  * planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
  * ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
@@ -234,6 +241,7 @@ export interface Task {
   /** Structured spans in the current Markdown description. */
   descriptionMentions?: Mention[];
   nextOccurrenceKey?: TaskKey;
+  customFieldValues?: TaskCustomFieldValues;
   key: TaskKey;
   /** "Nom de la tâche", 300 characters at most. */
   name: string;
@@ -327,6 +335,7 @@ export interface TaskSummary {
   /** Whether this task is a milestone; absence means the producer did not report it. */
   milestone?: boolean;
   recurrence?: Recurrence;
+  customFieldValues?: TaskCustomFieldValues;
   key: TaskKey;
   /** "Nom de la tâche", 300 characters at most. */
   name: string;
@@ -575,6 +584,29 @@ export const SavedViewSheetColumn = {
   client: 'client',
 } as const;
 
+export type SavedViewCustomFieldSortDirection = typeof SavedViewCustomFieldSortDirection[keyof typeof SavedViewCustomFieldSortDirection];
+
+
+export const SavedViewCustomFieldSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+/**
+ * A stable UUID v7 identifying one custom field definition, in lowercase.
+ * @pattern ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+ */
+export type CustomFieldId = string;
+
+/**
+ * Feuille-only sort by a custom field's stable ID. It takes precedence over sheetSort while
+ * the list has that active definition. Otherwise the client falls back to sheetSort.
+ */
+export interface SavedViewCustomFieldSort {
+  fieldId: CustomFieldId;
+  direction: SavedViewCustomFieldSortDirection;
+}
+
 /**
  * Existing task-query filters. `me` is resolved for the person applying the view, not its
  * creator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.
@@ -627,8 +659,14 @@ export type SavedViewPresentationSheetSort = {
 export interface SavedViewPresentation {
   hiddenBoardStatusKeys?: StatusKey[];
   hiddenSheetColumns?: SavedViewSheetColumn[];
+  /**
+     * IDs of custom columns to hide, including stored preferences for retired fields.
+     * @maxItems 30
+     */
+  hiddenCustomFieldIds?: CustomFieldId[];
   /** Feuille-only sort applied to the fully loaded result by the client. */
   sheetSort?: SavedViewPresentationSheetSort;
+  customFieldSort?: SavedViewCustomFieldSort;
 }
 
 /**
@@ -655,8 +693,11 @@ export type SavedViewPresentationValueSheetSort = {
 export interface SavedViewPresentationValue {
   hiddenBoardStatusKeys?: StatusKey[];
   hiddenSheetColumns?: SavedViewSheetColumnValue[];
+  /** Stable IDs of hidden custom columns; clients ignore retired or unknown IDs. */
+  hiddenCustomFieldIds?: CustomFieldId[];
   /** Feuille-only sort applied to the fully loaded result by the client. */
   sheetSort?: SavedViewPresentationValueSheetSort;
+  customFieldSort?: SavedViewCustomFieldSort;
 }
 
 export type SavedViewConfigurationInputGroupBy = typeof SavedViewConfigurationInputGroupBy[keyof typeof SavedViewConfigurationInputGroupBy] | null;
@@ -726,13 +767,28 @@ export type SavedViewPresentationPatchSheetSort = {
   direction?: SavedViewPresentationPatchSheetSortDirection;
 } | null;
 
+export type SavedViewPresentationPatchCustomFieldSortDirection = typeof SavedViewPresentationPatchCustomFieldSortDirection[keyof typeof SavedViewPresentationPatchCustomFieldSortDirection];
+
+
+export const SavedViewPresentationPatchCustomFieldSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+export type SavedViewPresentationPatchCustomFieldSort = {
+  fieldId?: CustomFieldId;
+  direction?: SavedViewPresentationPatchCustomFieldSortDirection;
+} | null;
+
 /**
  * A nested merge patch; null removes the corresponding presentation setting.
  */
 export interface SavedViewPresentationPatch {
   hiddenBoardStatusKeys?: StatusKey[] | null;
   hiddenSheetColumns?: SavedViewSheetColumn[] | null;
+  hiddenCustomFieldIds?: CustomFieldId[] | null;
   sheetSort?: SavedViewPresentationPatchSheetSort;
+  customFieldSort?: SavedViewPresentationPatchCustomFieldSort;
 }
 
 export type SavedViewConfigurationPatchGroupBy = typeof SavedViewConfigurationPatchGroupBy[keyof typeof SavedViewConfigurationPatchGroupBy] | null;
@@ -1714,6 +1770,81 @@ export interface TaskRef {
 }
 
 /**
+ * An active definition of a custom column in a space.
+ */
+export interface CustomFieldDefinition {
+  id: CustomFieldId;
+  spaceId: string;
+  name: string;
+  /** Immutable kind. This delivery supports numeric and text values. */
+  type: string;
+  /**
+     * Zero-based position among the active definitions of the space.
+     * @minimum 0
+     */
+  position: number;
+  /** True only for the active numeric definition used for sprint points. */
+  sprintPoints: boolean;
+  /**
+     * Definition version used by its ETag.
+     * @minimum 1
+     */
+  version: number;
+}
+
+export interface CustomFieldDefinitionPage {
+  items: CustomFieldDefinition[];
+  nextCursor: NextCursor | null;
+}
+
+export type CustomFieldDefinitionCreationType = typeof CustomFieldDefinitionCreationType[keyof typeof CustomFieldDefinitionCreationType];
+
+
+export const CustomFieldDefinitionCreationType = {
+  number: 'number',
+  text: 'text',
+} as const;
+
+export interface CustomFieldDefinitionCreation {
+  /**
+     * Display name, trimmed. Renaming never changes the ID.
+     * @minLength 1
+     * @maxLength 80
+     * @pattern \S
+     */
+  name: string;
+  type: CustomFieldDefinitionCreationType;
+}
+
+export interface CustomFieldDefinitionPatch {
+  /**
+     * Display name, trimmed. Renaming never changes the ID.
+     * @minLength 1
+     * @maxLength 80
+     * @pattern \S
+     */
+  name?: string;
+  /**
+     * Move to this zero-based position in the active definition order.
+     * @minimum 0
+     * @maximum 29
+     */
+  position?: number;
+  /**
+     * True designates this numeric field, clearing any previous designation. False clears
+     * the designation if this field currently holds it.
+     */
+  sprintPoints?: boolean;
+}
+
+/**
+ * Merge values by lowercase active field ID in the task's resulting space. Omitted keys are unchanged.
+ * A null value clears that entry. A number or string must match the field's immutable type.
+ * A value of the designated sprint points field must be nonnegative, including zero.
+ */
+export interface TaskCustomFieldValuesPatch {[key: string]: number | string | null}
+
+/**
  * A subtask to create with its parent ("Ajouter une sous-tâche (Entrée pour valider)").
  */
 export interface SubtaskName {
@@ -1905,6 +2036,7 @@ export interface SubtaskCreation {
  * the members it does not declare, `assigneeIds` and `labels` included.
  */
 export interface TaskPatch {
+  customFieldValues?: TaskCustomFieldValuesPatch;
   /**
      * Structured spans in the description; replacing text clears prior spans unless a
      * replacement array is supplied. A spans-only patch also requires If-Match. Invalid

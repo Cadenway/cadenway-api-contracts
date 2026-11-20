@@ -1,8 +1,9 @@
 # Internal routes of task-service, called by cadenway-api-gateway: the spaces of
 # openapi/public/spaces.yaml, the lists and sprints of openapi/public/lists.yaml, the tasks,
 # queries, "Mes tâches" and "Accueil" of openapi/public/tasks.yaml, the grants and access requests
-# of openapi/public/access.yaml, the archives of openapi/public/archives.yaml and the trash of
-# openapi/public/trash.yaml; and the access checks called by cadenway-realtime-gateway.
+# of openapi/public/access.yaml, the archives of openapi/public/archives.yaml, the trash of
+# openapi/public/trash.yaml and the work logs and status durations of openapi/public/time.yaml;
+# and the access checks called by cadenway-realtime-gateway.
 openapi: 3.1.0
 info:
   title: task-service internal routes
@@ -11,9 +12,9 @@ info:
     What task-service exposes to the API gateway for spaces, lists, sprints, tasks, access,
     archives and the trash, and to the realtime gateway for its access checks. The service has no
     public route: the gateway serves `openapi/public/spaces.yaml`, `openapi/public/lists.yaml`,
-    `openapi/public/tasks.yaml`, `openapi/public/access.yaml`, `openapi/public/archives.yaml` and
-    `openapi/public/trash.yaml` and calls these routes, with the same bodies, the same answers and
-    the same codes.
+    `openapi/public/tasks.yaml`, `openapi/public/access.yaml`, `openapi/public/archives.yaml`,
+    `openapi/public/trash.yaml` and `openapi/public/time.yaml` and calls these routes, with the
+    same bodies, the same answers and the same codes.
 
     | Public route | Internal call |
     | --- | --- |
@@ -43,9 +44,18 @@ info:
     | `POST /v1/tasks/{taskKey}/checklist-items` | `POST /internal/v1/tasks/{taskKey}/checklist-items` |
     | `PATCH /v1/tasks/{taskKey}/checklist-items/{checklistItemId}` | `PATCH /internal/v1/tasks/{taskKey}/checklist-items/{checklistItemId}` |
     | `GET /v1/tasks/{taskKey}/activity` | `GET /internal/v1/tasks/{taskKey}/activity` |
+    | `GET /v1/tasks/{taskKey}/time-entries` | `GET /internal/v1/tasks/{taskKey}/time-entries` |
+    | `POST /v1/tasks/{taskKey}/time-entries` | `POST /internal/v1/tasks/{taskKey}/time-entries` |
+    | `GET /v1/tasks/{taskKey}/time-entries/{timeEntryId}` | `GET /internal/v1/tasks/{taskKey}/time-entries/{timeEntryId}` |
+    | `DELETE /v1/tasks/{taskKey}/time-entries/{timeEntryId}` | `DELETE /internal/v1/tasks/{taskKey}/time-entries/{timeEntryId}` |
+    | `GET /v1/tasks/{taskKey}/time-summary` | `GET /internal/v1/tasks/{taskKey}/time-summary` |
+    | `GET /v1/tasks/{taskKey}/status-durations` | `GET /internal/v1/tasks/{taskKey}/status-durations` |
     | `GET /v1/labels` | `GET /internal/v1/labels` |
     | `GET /v1/me/tasks` | `GET /internal/v1/users/{userId}/tasks` with the user the introspection returned |
     | `GET /v1/me/home` | `GET /internal/v1/users/{userId}/home` with the user the introspection returned |
+    | `GET` and `PATCH /v1/me/onboarding` | `GET` and `PATCH /internal/v1/users/{userId}/onboarding` with that same user |
+    | `PATCH /v1/me/onboarding/checklist` | `PATCH /internal/v1/users/{userId}/onboarding/checklist` |
+    | `POST /v1/me/onboarding/finish` | `POST /internal/v1/users/{userId}/onboarding/finish` |
     | `DELETE /v1/spaces/{spaceId}` | `DELETE /internal/v1/spaces/{spaceId}` |
     | `DELETE /v1/lists/{listId}` | `DELETE /internal/v1/lists/{listId}` |
     | `GET /v1/spaces/{spaceId}/grants` | `GET /internal/v1/spaces/{spaceId}/grants` |
@@ -153,7 +163,11 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Calls every route but the access checks through its generated client, for openapi/public/spaces.yaml, openapi/public/lists.yaml, openapi/public/tasks.yaml, openapi/public/access.yaml, openapi/public/archives.yaml and openapi/public/trash.yaml, and composes the task detail.
+      uses: >-
+        Calls every route except the access checks through its generated client for
+        openapi/public/spaces.yaml, openapi/public/lists.yaml, openapi/public/tasks.yaml,
+        openapi/public/access.yaml, openapi/public/archives.yaml, openapi/public/trash.yaml
+        and openapi/public/time.yaml. It also composes the task detail.
     - repository: cadenway-realtime-gateway
       uses: Planned, the access checks of a list and a task, before a socket joins their room.
 servers:
@@ -725,7 +739,9 @@ paths:
         as `POST /v1/lists/{listId}/tasks` says: the next keys of the space of the list, never
         given again, `422 task.status-hidden`, `422 task.cancel-reason-required`,
         `422 task.cancel-reason-unexpected`, `422 task.assignee-invalid`,
-        `422 task.start-date-invalid`. Records a creation per task. Emits `task.created.v1` per task
+        `422 task.start-date-invalid`. The actor's first creation through this route in their own
+        provisioned onboarding space also advances their first-task marker in this transaction.
+        Records a creation per task. Emits `task.created.v1` per task
         and `task.assigned.v1` per assignee of each. Internal token: actor `user`, organization
         required.
         Optional checklist entries are created unchecked in order with fresh IDs. Structured
@@ -953,8 +969,11 @@ paths:
         task and its subtasks, the parent, `If-Match` required with `description`
         (`400 request.invalid` with an issue on the header), `edit` on the list of the task and on
         the list it moves to (`403 access.role-insufficient`), `409 task.archived` for an archived
-        task or parent. Records the changes of status, priority and due date, the changes of the
-        priority and the due date of a task by the same actor within 60 seconds merged into one
+        task or parent. A custom field patch is checked against the resulting space, clears entries
+        set to null and refuses inactive or mismatched definitions and values with
+        `422 custom-field.value-invalid`. Cross-space move removes incompatible values from the
+        moved tasks in that transaction. Records the changes of status, priority and due date.
+        Changes of the priority and the due date of a task by the same actor within 60 seconds merge into one
         entry. Emits `task.updated.v1` and `task.status-changed.v1` as the public route says. The
         assignee, label, subtask and checklist routes below refuse an archived task the same way.
         Internal token: actor `user`, organization required.
@@ -1269,6 +1288,340 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/tasks/{taskKey}/time-entries:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskTimeEntriesInternal
+      summary: List task time entries
+      description: |
+        Lists entries on the visible task in descending `(createdAt,id)` order, with totals
+        before pagination. The cursor is bound to the task and ordering. Internal token: issuer
+        api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The page of time entries and its unpaginated totals.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/time.yaml#/components/schemas/TaskTimeEntryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+    post:
+      operationId: createTaskTimeEntryInternal
+      summary: Record time on a task
+      description: |
+        Requires `edit` on a live task's list. The verified actor becomes the author. A matching
+        Idempotency-Key replays the entry and Location for 24 hours. The supplied work date is
+        independent of the UTC creation instant. Internal token: issuer api-gateway, actor user
+        and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/time.yaml#/components/schemas/TaskTimeEntryCreation'
+            example:
+              { minutes: 150, workDate: '2026-11-07', note: Maquette et détection du domaine }
+      responses:
+        '201':
+          description: The recorded entry.
+          headers:
+            Location:
+              description: Internal path of the created time entry.
+              schema:
+                type: string
+                examples:
+                  ['/internal/v1/tasks/CAD-482/time-entries/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b03']
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/time.yaml#/components/schemas/TaskTimeEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TimeEntryCreationConflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+  /internal/v1/tasks/{taskKey}/time-entries/{timeEntryId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '../../components/time.yaml#/components/parameters/TimeEntryId'
+    get:
+      operationId: getTaskTimeEntryInternal
+      summary: Read a task time entry
+      description: |
+        Reads the created entry from the specified visible task. Archived tasks remain readable.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      responses:
+        '200':
+          description: The recorded entry.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/time.yaml#/components/schemas/TaskTimeEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TimeEntryNotFound'
+    delete:
+      operationId: deleteTaskTimeEntryInternal
+      summary: Delete a task time entry
+      description: |
+        Only the entry's author with `edit` on the live task's list can remove it. Internal
+        token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      responses:
+        '204':
+          description: The entry was removed and no longer contributes to the task totals.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/TimeEntryDeleteForbidden'
+        '404':
+          $ref: '#/components/responses/TimeEntryNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+  /internal/v1/tasks/{taskKey}/time-summary:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: getTaskTimeSummaryInternal
+      summary: Read the task time summary
+      description: |
+        Returns all work-log minutes for the visible task and its estimate. Entries on subtasks
+        contribute only to their own totals. Internal token: issuer api-gateway, actor user and
+        organization required.
+      tags: [tasks]
+      responses:
+        '200':
+          description: The recorded total and the task estimate.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/time.yaml#/components/schemas/TaskTimeSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/tasks/{taskKey}/status-durations:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: getTaskStatusDurationsInternal
+      summary: Read elapsed time per task status
+      description: |
+        Measures the latest reliable continuous status history up to one observation instant,
+        summing repeated visits. Uses the known initial status when history is complete.
+        A visible milestone has `summary: null`. Internal token: issuer api-gateway, actor
+        user and organization required.
+      tags: [tasks]
+      responses:
+        '200':
+          description: The status durations and coverage, or a null summary for a milestone.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/time.yaml#/components/schemas/TaskStatusDurationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/tasks/{taskKey}/approvals:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: getTaskApprovalInternal
+      summary: Read the current task approval
+      description: |
+        Reads the current round on a task visible to the caller. Returns `current: null` for a
+        milestone or a task without a round. An archived task keeps its approval readable.
+        Reviewers who no longer have edit access are omitted from both the reviewer list and
+        the outcome. A round without eligible reviewers is pending.
+        Requires an internal token from api-gateway with a user actor and an organization.
+      tags: [tasks]
+      responses:
+        '200':
+          description: The current approval and task version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskApprovalState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/tasks/{taskKey}/approvals/request:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: requestTaskApprovalInternal
+      summary: Start or replace the current task approval
+      description: |
+        An editor of the task starts a new round, replacing any current round and clearing its
+        votes from the current state. Closed round history is retained with the task.
+        The task must be ordinary and live. All requested reviewers, including the caller
+        when designated, must currently have edit access. Invalid reviewers cause
+        `422 approval.reviewer-invalid` without identifying them. The request keeps the task
+        status unchanged. The task version, round and approval event commit together.
+        Requires an internal token from api-gateway with a user actor and an organization.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/ApprovalIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskApprovalRequest'
+            example:
+              reviewerUserIds: [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+      responses:
+        '200':
+          description: The new current round and task version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskApprovalState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/ApprovalRoundConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/ApprovalReviewersRefused'
+  /internal/v1/tasks/{taskKey}/approvals/{roundId}/votes/me:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/ApprovalRoundId'
+    put:
+      operationId: voteOnTaskApprovalInternal
+      summary: Cast the caller's approval vote
+      description: |
+        The caller must be a designated reviewer of this current round and still have edit
+        access. Withdraw a recorded vote before casting another. A change request creates
+        a task comment with the supplied reason and moves the task to `progress`.
+        When the last pending eligible reviewer approves and every eligible vote approves,
+        the task moves to `done`. A refused status change leaves the vote, task, comment and
+        events untouched. The normal task status, activity and recurrence rules apply.
+        Requires an internal token from api-gateway with a user actor and an organization.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/ApprovalIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskApprovalVote'
+            example:
+              decision: changes-requested
+              reason: Merci de vérifier le parcours de connexion.
+      responses:
+        '200':
+          description: The recorded decision and resulting task version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskApprovalState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/ApprovalVoteForbidden'
+        '404':
+          $ref: '#/components/responses/ApprovalRoundNotFound'
+        '409':
+          $ref: '#/components/responses/ApprovalVoteConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/ApprovalTransitionRefused'
+    delete:
+      operationId: withdrawTaskApprovalVoteInternal
+      summary: Withdraw the caller's approval vote
+      description: |
+        The caller must be a designated reviewer of this current round and still have edit
+        access. Withdrawing a vote leaves the task status and any earlier comment unchanged.
+        The round is recomputed from the remaining eligible votes. When the caller has no
+        recorded vote, the request succeeds without a change to the task version or events.
+        Requires an internal token from api-gateway with a user actor and an organization.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/ApprovalIfMatch'
+      responses:
+        '204':
+          description: The caller has no recorded vote. A successful withdrawal changes the task version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/ApprovalVoteForbidden'
+        '404':
+          $ref: '#/components/responses/ApprovalRoundNotFound'
+        '409':
+          $ref: '#/components/responses/ApprovalRoundConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
   /internal/v1/tasks/{taskKey}/comments:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
@@ -2316,6 +2669,170 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/UserNotFound'
+  /internal/v1/users/{userId}/onboarding:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      operationId: getOnboardingInternal
+      summary: Read first-launch progress
+      description: |
+        Returns the actor's private onboarding state for the organization, as
+        `GET /v1/me/onboarding` says. Until the first write the state has version 1.
+        The internal token must be from the API gateway, with a user actor and an organization.
+        A `userId` other than the verified actor answers `404 user.not-found`.
+      tags: [users]
+      responses:
+        '200':
+          description: The caller's onboarding state.
+          headers:
+            ETag:
+              $ref: '#/components/headers/OnboardingETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+    patch:
+      operationId: updateOnboardingInternal
+      summary: Save or dismiss the first-launch wizard
+      description: |
+        Saves the actor's draft progress or dismisses the wizard, as `PATCH /v1/me/onboarding` says.
+        The condition compares the onboarding aggregate version.
+        The internal token must be from the API gateway, with a user actor and an organization.
+        A `userId` other than the verified actor answers `404 user.not-found`.
+      tags: [users]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingDraftPatch'
+      responses:
+        '200':
+          description: The caller's onboarding state.
+          headers:
+            ETag:
+              $ref: '#/components/headers/OnboardingETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+        '409':
+          $ref: '#/components/responses/OnboardingWizardClosed'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/users/{userId}/onboarding/checklist:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    patch:
+      operationId: updateOnboardingChecklistInternal
+      summary: Save the onboarding checklist presentation and markers
+      description: |
+        Saves the actor's presentation choices and invitation or Board markers, as
+        `PATCH /v1/me/onboarding/checklist` says. The organization invitation endpoint sends
+        invitations, and normal task creation advances the first-task marker. The condition
+        compares the onboarding aggregate version.
+        The internal token must be from the API gateway, with a user actor and an organization.
+        A `userId` other than the verified actor answers `404 user.not-found`.
+      tags: [users]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingChecklistPatch'
+      responses:
+        '200':
+          description: The caller's onboarding state.
+          headers:
+            ETag:
+              $ref: '#/components/headers/OnboardingETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+        '409':
+          $ref: '#/components/responses/OnboardingChecklistUnavailable'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/users/{userId}/onboarding/finish:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    post:
+      operationId: finishOnboardingInternal
+      summary: Provision the space selected in the first-launch wizard
+      description: |
+        Performs `POST /v1/me/onboarding/finish` in one tenant transaction. Uses the ordinary space,
+        list and task creation policies and outbox facts. Applies the prefix and role checks of
+        space creation. The condition compares the onboarding aggregate version. The gateway
+        forwards the idempotency key and a matching replay returns the original response.
+        The internal token must be from the API gateway, with a user actor and an organization.
+        A `userId` other than the verified actor answers `404 user.not-found`.
+      tags: [users]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingFinish'
+      responses:
+        '201':
+          description: The space exists and the state names it and its first list.
+          headers:
+            Location:
+              description: Relative URL `/internal/v1/spaces/<spaceId>` of the space.
+              schema:
+                type: string
+            ETag:
+              $ref: '#/components/headers/OnboardingETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+        '409':
+          $ref: '#/components/responses/OnboardingFinishConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
   /internal/v1/spaces/{spaceId}/grants:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -3823,6 +4340,277 @@ paths:
           $ref: '#/components/responses/FavoriteNotFound'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/spaces/{spaceId}/custom-fields:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: listSpaceCustomFieldsInternal
+      summary: List the custom fields of a space
+      description: |
+        Lists active definitions in `(position, id)` order. The cursor is bound to the requested
+        space and order. Requires a role on the space itself; a list-only grant does not grant
+        this route (`404 space.not-found`). A readable list has its own definitions route.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of active custom fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldDefinitionPage'
+              example:
+                items:
+                  - {
+                      id: 019a700a-1234-7567-89ab-cdef01234567,
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01,
+                      name: Points,
+                      type: number,
+                      position: 0,
+                      sprintPoints: true,
+                      version: 2,
+                    }
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+    post:
+      operationId: createSpaceCustomFieldInternal
+      summary: Create a space custom field
+      description: |
+        Only a space manager can create a definition. It is active and appended to the
+        space's definition order, with a stable UUID v7 and an immutable value type.
+        It starts with `sprintPoints: false` and does not set a value on any task.
+        Up to 30 active definitions are allowed (`422 custom-field.limit-reached`).
+        An optional `Idempotency-Key` replays the original response and Location for 24 hours;
+        a changed body answers `422 idempotency.key-reused` and an in-flight request answers
+        `409 idempotency.request-in-progress`.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldDefinitionCreation'
+            example: { name: Points, type: number }
+      responses:
+        '201':
+          description: The new custom field.
+          headers:
+            ETag:
+              description: Version of the custom field definition.
+              schema:
+                type: string
+            Location:
+              description: 'Path of the created definition, `/internal/v1/spaces/{spaceId}/custom-fields/{fieldId}`.'
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldDefinition'
+              example:
+                {
+                  id: 019a700a-1234-7567-89ab-cdef01234567,
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01,
+                  name: Points,
+                  type: number,
+                  position: 0,
+                  sprintPoints: false,
+                  version: 1,
+                }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CustomFieldManageForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '409':
+          $ref: '#/components/responses/CustomFieldCreationConflict'
+        '422':
+          $ref: '#/components/responses/CustomFieldCreationRefused'
+  /internal/v1/spaces/{spaceId}/custom-fields/{fieldId}:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+      - $ref: '#/components/parameters/CustomFieldId'
+    get:
+      operationId: getSpaceCustomFieldInternal
+      summary: Get a space custom field
+      description: |
+        Reads one active definition in the specified space. Requires a role on the space itself.
+        A field that is absent, retired or belongs to another space answers `404 custom-field.not-found`.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      responses:
+        '200':
+          description: The active custom field.
+          headers:
+            ETag:
+              description: Version of the custom field definition.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldDefinition'
+              example:
+                {
+                  id: 019a700a-1234-7567-89ab-cdef01234567,
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01,
+                  name: Points,
+                  type: number,
+                  position: 0,
+                  sprintPoints: true,
+                  version: 2,
+                }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/CustomFieldNotFound'
+    patch:
+      operationId: updateSpaceCustomFieldInternal
+      summary: Update a space custom field
+      description: |
+        Only a space manager can change a definition. The JSON Merge Patch can rename the
+        field, move it to a zero-based position, or change whether it supplies sprint points.
+        A position outside the current definition order answers `422 custom-field.position-invalid`.
+        Moving a field shifts the intervening positions, preserving relative order. Designating
+        a numeric field clears the previous designation atomically. A text field or a numeric
+        field with a negative current value cannot be designated (`422 custom-field.sprint-points-invalid`).
+        This refusal preserves all values, historic sprint inputs and the previous designation.
+        Versions of definitions whose position or designation changes advance. A patch with no
+        change keeps the current version. Field IDs, types and values remain unchanged.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldDefinitionPatch'
+            example: { name: Points, sprintPoints: true }
+      responses:
+        '200':
+          description: The updated custom field.
+          headers:
+            ETag:
+              description: Version of the custom field definition.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldDefinition'
+              example:
+                {
+                  id: 019a700a-1234-7567-89ab-cdef01234567,
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01,
+                  name: Points,
+                  type: number,
+                  position: 0,
+                  sprintPoints: true,
+                  version: 2,
+                }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CustomFieldManageForbidden'
+        '404':
+          $ref: '#/components/responses/CustomFieldNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/CustomFieldChangeRefused'
+    delete:
+      operationId: retireSpaceCustomFieldInternal
+      summary: Retire a space custom field
+      description: |
+        Only a space manager can retire a definition. Retirement removes it from active columns
+        and task value reads, frees its position and capacity, and clears any sprint points
+        designation held by the field. Historic sprint inputs are retained. A retired field cannot
+        be set or read through the active field routes. Remaining definitions retain their relative
+        order and any shifted position advances the definition version.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The custom field is retired.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CustomFieldManageForbidden'
+        '404':
+          $ref: '#/components/responses/CustomFieldNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/lists/{listId}/custom-fields:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: listListCustomFieldsInternal
+      summary: List the custom fields visible in a list
+      description: |
+        Lists active definitions in the list's space in `(position, id)` order. A read role on the
+        list suffices, including a direct list grant. The cursor is bound to this list and order.
+        The definitions remain readable on a retained archived list.
+        An unknown, invisible or deleted list answers `404 list.not-found`.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of active custom fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldDefinitionPage'
+              example:
+                items:
+                  - {
+                      id: 019a700a-1234-7567-89ab-cdef01234567,
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01,
+                      name: Points,
+                      type: number,
+                      position: 0,
+                      sprintPoints: true,
+                      version: 2,
+                    }
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
 components:
   securitySchemes:
     internalToken:
@@ -3833,6 +4621,12 @@ components:
         Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` = `task-service`,
         issuer `api-gateway`, or `realtime-gateway` for the access checks.
   parameters:
+    CustomFieldId:
+      name: fieldId
+      in: path
+      required: true
+      schema:
+        $ref: '../../components/task.yaml#/components/schemas/CustomFieldId'
     TemplateId:
       name: templateId
       in: path
@@ -3921,6 +4715,24 @@ components:
         type: string
         format: uuid
         examples: [019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12]
+    ApprovalRoundId:
+      name: roundId
+      in: path
+      required: true
+      description: Identifier of the current approval round.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+    ApprovalIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: The strong task version ETag last returned on the task or approval state.
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]*"$'
+        examples: ['"13"']
     TaskKey:
       name: taskKey
       in: path
@@ -4034,6 +4846,10 @@ components:
     ActorId:
       $ref: '../../components/task.yaml#/components/parameters/ActorId'
   headers:
+    OnboardingETag:
+      description: Version of the caller's onboarding state, `"<version>"`.
+      schema:
+        type: string
     ETag:
       description: Version of the space, the list or the task, `"<version>"`.
       schema:
@@ -4115,6 +4931,174 @@ components:
         status: 422
         code: idempotency.key-reused
   responses:
+    TimeEntryDeleteForbidden:
+      description: |
+        `time-entry.author-required` when an editor tries to delete another actor's entry.
+        `access.role-insufficient`, `auth.issuer-not-allowed`, `auth.actor-not-allowed` and
+        `auth.organization-required` are defined in `WriteForbidden`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            authorRequired:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: time-entry.author-required
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
+    TimeEntryNotFound:
+      description: |
+        `time-entry.not-found` for an entry missing from the task. `task.not-found`, `task.trashed`
+        and `organization.not-found` follow `TaskNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: time-entry.not-found
+    TimeEntryCreationConflict:
+      description: '`task.archived` or `idempotency.request-in-progress` while a request using this key is running.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskArchived:
+              $ref: '#/components/examples/TaskArchived'
+            requestInProgress:
+              $ref: '#/components/examples/RequestInProgress'
+    CustomFieldManageForbidden:
+      description: |
+        - `space.manage-forbidden`: the caller does not manage the visible space.
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
+          the internal token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            manageForbidden:
+              $ref: '#/components/examples/ManageForbidden'
+            actorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+    CustomFieldNotFound:
+      description: |
+        - `custom-field.not-found`: no active definition with this ID in the specified space.
+        - `space.not-found`: the caller does not see the space or it is absent or deleted.
+        - `organization.not-found`: the caller is not known as a current member.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            fieldNotFound:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: custom-field.not-found
+    CustomFieldCreationConflict:
+      description: |
+        `idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            requestInProgress:
+              $ref: '#/components/examples/RequestInProgress'
+    CustomFieldCreationRefused:
+      description: |
+        - `custom-field.limit-reached`: the space has 30 active definitions.
+        - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            limitReached:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: custom-field.limit-reached
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
+    CustomFieldChangeRefused:
+      description: |
+        - `custom-field.position-invalid`: the requested position does not exist.
+        - `custom-field.sprint-points-invalid`: the field is text or has a negative current value.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invalidPosition:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: custom-field.position-invalid
+            invalidSprintPoints:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: custom-field.sprint-points-invalid
+    OnboardingWizardClosed:
+      description: '`onboarding.wizard-closed`: the wizard has already finished or was dismissed.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Onboarding wizard closed.
+            status: 409
+            code: onboarding.wizard-closed
+    OnboardingChecklistUnavailable:
+      description: '`onboarding.checklist-unavailable`: the caller has no provisioned space for this change.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Onboarding checklist unavailable.
+            status: 409
+            code: onboarding.checklist-unavailable
+    OnboardingFinishConflict:
+      description: |
+        - `onboarding.wizard-closed`: this wizard was already finished or dismissed;
+        - `space.prefix-taken`: the prefix is reserved in the organization, given in `details.prefix`;
+        - `idempotency.request-in-progress`: a matching request with this key is still running.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            wizardClosed:
+              value:
+                type: about:blank
+                title: Onboarding wizard closed.
+                status: 409
+                code: onboarding.wizard-closed
+            prefixTaken:
+              value:
+                type: about:blank
+                title: Space prefix already taken.
+                status: 409
+                code: space.prefix-taken
+                details:
+                  prefix: CAD
+            requestInProgress:
+              $ref: '#/components/examples/RequestInProgress'
     TemplateNotFound:
       description: '`template.not-found`, `space.not-found`, `organization.not-found`.'
       content:
@@ -5028,6 +6012,140 @@ components:
             title: Not Found
             status: 404
             code: list.not-found
+    ApprovalVoteForbidden:
+      description: |
+        - `approval.reviewer-required` applies when an editor was omitted from the round.
+        - `access.role-insufficient` applies when the actor has a list role below `edit`.
+        - See `InternalAccessRefused` for `auth.issuer-not-allowed`, `auth.actor-not-allowed` and
+          `auth.organization-required`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            reviewerRequired:
+              value:
+                type: about:blank
+                title: 'Forbidden'
+                status: 403
+                code: approval.reviewer-required
+            RoleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
+            ActorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+            OrganizationRequired:
+              $ref: '#/components/examples/OrganizationRequired'
+    ApprovalRoundNotFound:
+      description: |
+        - `approval.round-not-found` applies when the supplied ID differs from the current round or the task has no round.
+        - See `TaskNotFound` for `task.not-found`, `task.trashed` and `organization.not-found`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roundNotFound:
+              value:
+                type: about:blank
+                title: 'Not Found'
+                status: 404
+                code: approval.round-not-found
+            taskNotFound:
+              value:
+                type: about:blank
+                title: 'Not Found'
+                status: 404
+                code: task.not-found
+    ApprovalRoundConflict:
+      description: |
+        - An archived task returns `task.archived`.
+        - A milestone returns `approval.milestone-unsupported`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            TaskArchived:
+              $ref: '#/components/examples/TaskArchived'
+            milestoneUnsupported:
+              value:
+                type: about:blank
+                title: 'Conflict'
+                status: 409
+                code: approval.milestone-unsupported
+    ApprovalVoteConflict:
+      description: |
+        - An archived task returns `task.archived`.
+        - A milestone returns `approval.milestone-unsupported`.
+        - An existing vote returns `approval.vote-already-recorded`. Withdraw it before casting another.
+        - The automated completion returns `recurrence.already-spawned` if it would repeat an occurrence.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            TaskArchived:
+              $ref: '#/components/examples/TaskArchived'
+            milestoneUnsupported:
+              value:
+                type: about:blank
+                title: 'Conflict'
+                status: 409
+                code: approval.milestone-unsupported
+            alreadyVoted:
+              value:
+                type: about:blank
+                title: 'Conflict'
+                status: 409
+                code: approval.vote-already-recorded
+            alreadySpawned:
+              value:
+                type: about:blank
+                title: 'Conflict'
+                status: 409
+                code: recurrence.already-spawned
+    ApprovalReviewersRefused:
+      description: |
+        A requested reviewer without edit access causes `approval.reviewer-invalid`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            reviewerInvalid:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: approval.reviewer-invalid
+    ApprovalTransitionRefused:
+      description: |
+        - `task.status-hidden` applies if the automatic status is unavailable in the task's space.
+        - `task.subtask-limit-reached` applies if the recurrence successor would exceed the parent capacity.
+        - `recurrence.date-out-of-range` applies if the successor dates are out of range.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            statusHidden:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: task.status-hidden
+            subtaskLimit:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: task.subtask-limit-reached
+            recurrenceDates:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: recurrence.date-out-of-range
     TaskNotFound:
       description: |
         - `task.not-found`: no task with this key that the actor sees, or a task in the trash the
@@ -5295,12 +6413,20 @@ components:
         `idempotency.key-reused`.
         - `mention.recipient-invalid`: a description mention recipient is ineligible;
         - `milestone.status-invalid` or `milestone.dates-invalid`: the final milestone is invalid;
-        - `recurrence.date-out-of-range`: the successor date cannot be represented.
+        - `recurrence.date-out-of-range`: the successor date cannot be represented;
+        - `custom-field.value-invalid`: on a patch, a field is absent, retired or outside the
+          resulting space, the value has the wrong type or designated sprint points are negative.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           examples:
+            invalidCustomFieldValue:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: custom-field.value-invalid
             subtaskDepthExceeded:
               summary: More than 3 levels
               value:
@@ -5374,6 +6500,14 @@ components:
             details:
               version: 13
   schemas:
+    CustomFieldDefinition:
+      $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinition'
+    CustomFieldDefinitionPage:
+      $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinitionPage'
+    CustomFieldDefinitionCreation:
+      $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinitionCreation'
+    CustomFieldDefinitionPatch:
+      $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinitionPatch'
     Favorite:
       $ref: '../../components/task.yaml#/components/schemas/Favorite'
     FavoriteCreation:
@@ -5418,6 +6552,12 @@ components:
       $ref: '../../components/task.yaml#/components/schemas/DependencyPage'
     Mention:
       $ref: '../../components/task.yaml#/components/schemas/Mention'
+    TaskApprovalState:
+      $ref: '../../components/approval.yaml#/components/schemas/TaskApprovalState'
+    TaskApprovalRequest:
+      $ref: '../../components/approval.yaml#/components/schemas/TaskApprovalRequest'
+    TaskApprovalVote:
+      $ref: '../../components/approval.yaml#/components/schemas/TaskApprovalVote'
     Comment:
       $ref: '../../components/task.yaml#/components/schemas/Comment'
     CommentPage:
@@ -5768,3 +6908,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TaskSummary'
+    OnboardingState:
+      $ref: '../../components/onboarding.yaml#/components/schemas/OnboardingState'
+    OnboardingDraftPatch:
+      $ref: '../../components/onboarding.yaml#/components/schemas/OnboardingDraftPatch'
+    OnboardingChecklistPatch:
+      $ref: '../../components/onboarding.yaml#/components/schemas/OnboardingChecklistPatch'
+    OnboardingFinish:
+      $ref: '../../components/onboarding.yaml#/components/schemas/OnboardingFinish'

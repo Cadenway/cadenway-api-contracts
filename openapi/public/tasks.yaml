@@ -88,8 +88,14 @@ info:
     `tasks:read` and `tasks:write`, 600 requests per minute, French titles for the codes the web
     application shows.
 
-    **Later versions** add, without changing what is here: templates, time tracking,
-    custom fields, attachments and development links; the detail gains their parts, named in
+    **Time tracking and status history.** See `openapi/public/time.yaml`.
+
+    **Custom fields.** Tasks and task summaries can include sparse values for active definitions
+    of their current space. The list definitions route in `openapi/public/lists.yaml` supplies
+    their stable IDs and display order. Existing filter and sort parameters keep their meanings.
+    New tasks start without custom values, including copies, templates and recurring successors.
+
+    **Later versions** add attachments and development links. The detail names their parts in
     `partial` when they cannot be read.
   contact:
     name: Cadenway
@@ -101,7 +107,7 @@ info:
     - repository: cadenway-api-gateway
       uses: Serves every route, through openapi/internal/task-service.yaml, composes the detail of a task and checks the scopes of every operation.
     - repository: cadenway-webapp
-      uses: Calls every route through @cadenway/api-client (list, board and Gantt views, "Créer une tâche", the task detail, "Mes tâches", "Accueil").
+      uses: Calls every route through @cadenway/api-client (list, board and Gantt views, "Créer une tâche", the task detail, "Mes tâches", "Accueil", first launch and "Bien démarrer").
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -115,7 +121,7 @@ tags:
   - name: task-activity
     description: The activity log of a task.
   - name: my-tasks
-    description: '"Mes tâches" and the task part of "Accueil".'
+    description: '"Mes tâches", the task part of "Accueil", and first-launch progress.'
 paths:
   /v1/lists/{listId}/tasks:
     parameters:
@@ -128,6 +134,8 @@ paths:
         14 · À faire · 2 sous-tâches."), with the next key of the space of the list, and, in the
         same transaction, the subtasks of `subtasks`, which take the keys that follow, the list and
         the first assignee of the task, the status `todo` and the priority `moyenne`.
+        The caller's first creation through this route in their onboarding space also completes
+        the first-task marker of `GET /v1/me/onboarding` in the same transaction.
 
         - `status` is `todo` by default; a status the space no longer uses answers
           `422 task.status-hidden`; `cancelled` needs `cancelReason`
@@ -525,6 +533,11 @@ paths:
         - The statuses a space no longer uses are those of the space the task is in after the
           patch: a move or an attachment keeps the status the task has, even one the new space no
           longer uses, while a new `status` in the same patch must be used by the new space.
+        - `customFieldValues`: set or clear values by active definition ID. A move to another
+          space removes incompatible values from the moved tasks in the same transaction. IDs in
+          this patch must belong to the resulting space and values must match their definitions
+          (`422 custom-field.value-invalid`). A null entry clears that value. Other entries remain
+          unchanged for a task that stays in its space. No custom values are copied to a successor.
         - `If-Match` is optional (`412 request.version-mismatch`), but required to change
           `description`, a long text: without it, `400 request.invalid` with an issue on the
           header.
@@ -535,7 +548,9 @@ paths:
         Records the changes of status, priority and due date in the activity log. Emits
         `task.updated.v1` when something changed, with `changed`, and also
         `task.status-changed.v1` for a new status; a move emits `task.updated.v1` for each subtask
-        that moves too. A patch that changes nothing answers `200` with the same version and emits
+        that moves too. An updated task's event can name `customFieldValues` in `changed`;
+        the event never carries the custom values themselves.
+        A patch that changes nothing answers `200` with the same version and emits
         nothing. Scope `tasks:write` for a personal API token.
         Description mentions require If-Match, including spans-only changes. Replacing text clears
         old spans unless replacements are supplied. Milestone conversion and recurrence follow
@@ -833,6 +848,228 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/approvals:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: getTaskApproval
+      summary: Read the current task approval
+      description: |
+        Reads the current round on a task visible to the caller. Returns `current: null` for a
+        milestone or a task without a round. An archived task keeps its approval readable.
+        Reviewers who no longer have edit access are omitted from both the reviewer list and
+        the outcome. A round without eligible reviewers is pending.
+        Scope `tasks:read` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The current approval and task version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskApprovalState'
+              example:
+                taskKey: CAD-482
+                taskVersion: 12
+                taskStatus: progress
+                current: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/approvals/request:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: requestTaskApproval
+      summary: Start or replace the current task approval
+      description: |
+        An editor of the task starts a new round, replacing any current round and clearing its
+        votes from the current state. Closed round history is retained with the task.
+        The task must be ordinary and live. All requested reviewers, including the caller
+        when designated, must currently have edit access. Invalid reviewers cause
+        `422 approval.reviewer-invalid` without identifying them. The request keeps the task
+        status unchanged. The task version, round and approval event commit together.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/ApprovalIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskApprovalRequest'
+            example:
+              reviewerUserIds: [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+      responses:
+        '200':
+          description: The new current round and task version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskApprovalState'
+              example:
+                taskKey: CAD-482
+                taskVersion: 13
+                taskStatus: progress
+                current:
+                  roundId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                  requesterUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  requestedAt: '2026-11-08T10:40:00Z'
+                  status: pending
+                  reviewers:
+                    - reviewerUserId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                      decision: null
+                      decidedAt: null
+                      commentId: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/ApprovalRoundConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/ApprovalReviewersRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/approvals/{roundId}/votes/me:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/ApprovalRoundId'
+    put:
+      operationId: voteOnTaskApproval
+      summary: Cast the caller's approval vote
+      description: |
+        The caller must be a designated reviewer of this current round and still have edit
+        access. Withdraw a recorded vote before casting another. A change request creates
+        a task comment with the supplied reason and moves the task to `progress`.
+        When the last pending eligible reviewer approves and every eligible vote approves,
+        the task moves to `done`. A refused status change leaves the vote, task, comment and
+        events untouched. The normal task status, activity and recurrence rules apply.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/ApprovalIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskApprovalVote'
+            example:
+              decision: changes-requested
+              reason: Merci de vérifier le parcours de connexion.
+      responses:
+        '200':
+          description: The recorded decision and resulting task version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskApprovalState'
+              example:
+                taskKey: CAD-482
+                taskVersion: 14
+                taskStatus: progress
+                current:
+                  roundId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                  requesterUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  requestedAt: '2026-11-08T10:40:00Z'
+                  status: changes-requested
+                  reviewers:
+                    - reviewerUserId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                      decision: changes-requested
+                      decidedAt: '2026-11-08T10:50:00Z'
+                      commentId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b02
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ApprovalVoteForbidden'
+        '404':
+          $ref: '#/components/responses/ApprovalRoundNotFound'
+        '409':
+          $ref: '#/components/responses/ApprovalVoteConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/ApprovalTransitionRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: withdrawTaskApprovalVote
+      summary: Withdraw the caller's approval vote
+      description: |
+        The caller must be a designated reviewer of this current round and still have edit
+        access. Withdrawing a vote leaves the task status and any earlier comment unchanged.
+        The round is recomputed from the remaining eligible votes. When the caller has no
+        recorded vote, the request succeeds without a change to the task version or events.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/ApprovalIfMatch'
+      responses:
+        '204':
+          description: The caller has no recorded vote. A successful withdrawal changes the task version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ApprovalVoteForbidden'
+        '404':
+          $ref: '#/components/responses/ApprovalRoundNotFound'
+        '409':
+          $ref: '#/components/responses/ApprovalRoundConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -2522,6 +2759,245 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/me/onboarding:
+    get:
+      operationId: getOnboarding
+      summary: Read first-launch progress
+      description: |
+        Returns the caller's own wizard and "Bien démarrer" checklist for the current organization,
+        separately from `GET /v1/me/home`. Before the first write it returns the initial state at
+        version 1. The result is private to this caller and organization. Scope `tasks:read`
+        for a personal API token.
+      tags: [my-tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The caller's onboarding state.
+          headers:
+            ETag:
+              $ref: '#/components/headers/OnboardingETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateOnboarding
+      summary: Save or dismiss the first-launch wizard
+      description: |
+        Saves the caller's wizard step or draft choices for later resumption. With
+        `dismissed: true`, closes the wizard at the current draft. Dismissal requires only current
+        organization membership. Finishing or dismissing the wizard closes it permanently. A
+        repeated dismissal or another change that leaves the saved state identical preserves its
+        version.
+        Scope `tasks:write` for a personal API token.
+      tags: [my-tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/OnboardingIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingDraftPatch'
+            example:
+              step: preset
+              name: Produit
+              prefix: CAD
+              color: violet
+              preset: dev
+      responses:
+        '200':
+          description: The caller's updated onboarding state.
+          headers:
+            ETag:
+              $ref: '#/components/headers/OnboardingETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OnboardingWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/OnboardingWizardClosed'
+        '412':
+          $ref: '#/components/responses/OnboardingVersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/onboarding/checklist:
+    patch:
+      operationId: updateOnboardingChecklist
+      summary: Save the onboarding checklist presentation and markers
+      description: |
+        Updates "Bien démarrer" for the caller. Changing its presentation or recording an attempt
+        of the Board view requires a provisioned space. The caller can record an invitation
+        outcome during the wizard or afterwards. To invite anyone, call `POST /v1/invitations`
+        separately under its normal authorization. Record only the marker after a successful
+        invitation result. Normal task creation updates `firstTaskCreated`. Reminder and mobile
+        actions depend on their own capabilities. A matching repeated marker preserves the current
+        version.
+        Scope `tasks:write` for a personal API token.
+      tags: [my-tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/OnboardingIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingChecklistPatch'
+            example:
+              presentation: collapsed
+              boardTried: true
+      responses:
+        '200':
+          description: The caller's updated onboarding state.
+          headers:
+            ETag:
+              $ref: '#/components/headers/OnboardingETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OnboardingWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/OnboardingChecklistUnavailable'
+        '412':
+          $ref: '#/components/responses/OnboardingVersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/onboarding/finish:
+    post:
+      operationId: finishOnboarding
+      summary: Provision the space selected in the first-launch wizard
+      description: |
+        Creates the caller's space and the chosen preset's lists and example tasks, then marks
+        the wizard finished in the same transaction. The caller needs the same organization role
+        as for `POST /v1/spaces`. The prefix is explicit and subject to the ordinary reservation
+        rules. Each created list and task uses the normal creation policies and keys, and the
+        command emits the ordinary space, list and task creation facts. Invitations use the
+        organization invitation route. Import is deferred.
+
+        | Preset | Lists in creation order | Example task names |
+        | --- | --- | --- |
+        | `dev` | Backlog, Sprint 1, Bugs | Définir le périmètre du premier sprint; Configurer l’intégration continue; Corriger le bug de connexion |
+        | `mkt` | Calendrier éditorial, Campagnes | Planifier les articles de décembre; Préparer la campagne de rentrée; Mettre à jour la page tarifs |
+        | `agency` | Projets clients, Demandes | Lancer le projet Studio Pixel; Valider le devis Lumen; Envoyer le compte rendu de réunion |
+        | `blank` | Première liste | None |
+
+        The table gives the complete list set. For `blank`, reuse the ordinary first list
+        "Première liste". `Sprint 1` is a standard list name in the `dev` preset. The first two
+        examples go in the first list. The third goes in Bugs for `dev` and in the first list
+        for the other nonblank presets. The first example uses `progress` and the other examples
+        use `todo`. Example tasks leave the first real task marker unchanged.
+
+        A matching `Idempotency-Key` replay within 24 hours returns the original status, state
+        and space location. Provisioning is limited to one space per caller and organization.
+        If provisioning fails, the wizard can still be resumed with the same draft.
+        Scope `tasks:write` for a personal API token.
+      tags: [my-tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/OnboardingIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingFinish'
+            example:
+              name: Produit
+              prefix: CAD
+              color: violet
+              preset: dev
+      responses:
+        '201':
+          description: The space exists and the state names it and its first list.
+          headers:
+            Location:
+              description: Relative URL `/v1/spaces/<spaceId>` of the space.
+              schema:
+                type: string
+            ETag:
+              $ref: '#/components/headers/OnboardingETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingState'
+              example:
+                version: 4
+                wizard:
+                  status: finished
+                  step: import
+                  preset: dev
+                  name: Produit
+                  prefix: CAD
+                  color: violet
+                provisioning:
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e05
+                  firstListId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f20
+                checklist:
+                  presentation: expanded
+                  firstTaskCreated: false
+                  invitationSent: true
+                  boardTried: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OnboardingWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/OnboardingFinishConflict'
+        '412':
+          $ref: '#/components/responses/OnboardingVersionMismatch'
+        '422':
+          $ref: '#/components/responses/OnboardingIdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
     sessionCookie:
@@ -2582,6 +3058,24 @@ components:
         type: string
         format: uuid
         examples: [019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12]
+    ApprovalRoundId:
+      name: roundId
+      in: path
+      required: true
+      description: Identifier of the current approval round.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+    ApprovalIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: The strong task version ETag last returned on the task or approval state.
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]*"$'
+        examples: ['"13"']
     TaskKey:
       name: taskKey
       in: path
@@ -2653,7 +3147,18 @@ components:
       $ref: '../../components/task.yaml#/components/parameters/MyTaskState'
     ActivityKind:
       $ref: '../../components/task.yaml#/components/parameters/ActivityKind'
+    OnboardingIfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Onboarding version returned by the ETag, for example `"3"`.
+      schema:
+        type: string
   headers:
+    OnboardingETag:
+      description: Version of the caller's onboarding state, `"<version>"`.
+      schema:
+        type: string
     ETag:
       description: Version of the task, `"<version>"`.
       schema:
@@ -2889,6 +3394,105 @@ components:
         status: 429
         code: rate-limit.exceeded
   responses:
+    OnboardingWizardClosed:
+      description: '`onboarding.wizard-closed`: the wizard has already finished or was dismissed.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Assistant déjà fermé.
+            status: 409
+            code: onboarding.wizard-closed
+    OnboardingChecklistUnavailable:
+      description: '`onboarding.checklist-unavailable`: the caller has no provisioned space for this change.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Liste de démarrage indisponible.
+            status: 409
+            code: onboarding.checklist-unavailable
+    OnboardingFinishConflict:
+      description: |
+        - `onboarding.wizard-closed`: this wizard was already finished or dismissed;
+        - `space.prefix-taken`: the prefix is reserved in the organization, given in `details.prefix`;
+        - `idempotency.request-in-progress`: a matching request with this key is still running.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            wizardClosed:
+              value:
+                type: about:blank
+                title: Assistant déjà fermé.
+                status: 409
+                code: onboarding.wizard-closed
+            prefixTaken:
+              value:
+                type: about:blank
+                title: Préfixe déjà utilisé.
+                status: 409
+                code: space.prefix-taken
+                details:
+                  prefix: CAD
+            requestInProgress:
+              value:
+                type: about:blank
+                title: Requête en cours.
+                status: 409
+                code: idempotency.request-in-progress
+    OnboardingWriteForbidden:
+      description: |
+        - `organization.role-forbidden`: for finish only, the caller cannot create a space;
+        - `auth.scope-missing`: the personal API token lacks `tasks:write`;
+        - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
+        - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roleForbidden:
+              value:
+                type: about:blank
+                title: Création d’espace non autorisée.
+                status: 403
+                code: organization.role-forbidden
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            organizationNotSelected:
+              $ref: '#/components/examples/OrganizationNotSelected'
+            organizationMfaRequired:
+              $ref: '#/components/examples/OrganizationMfaRequired'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    OnboardingIdempotencyKeyReused:
+      description: '`idempotency.key-reused`: the key was used with a different body.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            keyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
+    OnboardingVersionMismatch:
+      description: '`request.version-mismatch`: `details.version` is the current onboarding version to read again.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 4
     TaskDuplicateConflict:
       description: '`task.archived` or `idempotency.request-in-progress`.'
       content:
@@ -3453,6 +4057,128 @@ components:
             title: Liste introuvable.
             status: 404
             code: list.not-found
+    ApprovalVoteForbidden:
+      description: |
+        - `approval.reviewer-required` applies when an editor was omitted from the round.
+        - `access.role-insufficient` applies when the actor has a list role below `edit`.
+        - See `TasksWriteForbidden` for `auth.scope-missing`, `auth.csrf-rejected`,
+          `organization.not-selected` and `organization.mfa-required`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            reviewerRequired:
+              value:
+                type: about:blank
+                title: 'Vous ne faites pas partie des personnes chargées de l’approbation.'
+                status: 403
+                code: approval.reviewer-required
+            RoleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
+            ScopeMissingWrite:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            CrossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    ApprovalRoundNotFound:
+      description: |
+        - `approval.round-not-found` applies when the supplied ID differs from the current round or the task has no round.
+        - See `TaskNotFound` for `task.not-found`, `task.trashed` and `organization.not-found`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roundNotFound:
+              value:
+                type: about:blank
+                title: 'Cette demande d’approbation est introuvable.'
+                status: 404
+                code: approval.round-not-found
+            taskNotFound:
+              value:
+                type: about:blank
+                title: 'Tâche introuvable.'
+                status: 404
+                code: task.not-found
+    ApprovalRoundConflict:
+      description: |
+        - An archived task returns `task.archived`.
+        - A milestone returns `approval.milestone-unsupported`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            TaskArchived:
+              $ref: '#/components/examples/TaskArchived'
+            milestoneUnsupported:
+              value:
+                type: about:blank
+                title: 'Un jalon ne peut pas être soumis à approbation.'
+                status: 409
+                code: approval.milestone-unsupported
+    ApprovalVoteConflict:
+      description: |
+        - An archived task returns `task.archived`.
+        - A milestone returns `approval.milestone-unsupported`.
+        - An existing vote returns `approval.vote-already-recorded`. Withdraw it before casting another.
+        - The automated completion returns `recurrence.already-spawned` if it would repeat an occurrence.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            TaskArchived:
+              $ref: '#/components/examples/TaskArchived'
+            milestoneUnsupported:
+              value:
+                type: about:blank
+                title: 'Un jalon ne peut pas être soumis à approbation.'
+                status: 409
+                code: approval.milestone-unsupported
+            alreadyVoted:
+              value:
+                type: about:blank
+                title: 'Retirez votre vote avant d’en soumettre un autre.'
+                status: 409
+                code: approval.vote-already-recorded
+            alreadySpawned:
+              value:
+                type: about:blank
+                title: 'La prochaine occurrence a déjà été créée.'
+                status: 409
+                code: recurrence.already-spawned
+    ApprovalReviewersRefused:
+      description: |
+        A requested reviewer without edit access causes `approval.reviewer-invalid`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            reviewerInvalid:
+              value:
+                type: about:blank
+                title: 'Une personne choisie ne peut pas modifier cette tâche.'
+                status: 422
+                code: approval.reviewer-invalid
+    ApprovalTransitionRefused:
+      description: |
+        - `task.status-hidden` applies if the automatic status is unavailable in the task's space.
+        - `task.subtask-limit-reached` applies if the recurrence successor would exceed the parent capacity.
+        - `recurrence.date-out-of-range` applies if the successor dates are out of range.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            StatusHidden:
+              $ref: '#/components/examples/StatusHidden'
+            SubtaskLimitReached:
+              $ref: '#/components/examples/SubtaskLimitReached'
+            RecurrenceDateOutOfRange:
+              $ref: '#/components/examples/RecurrenceDateOutOfRange'
     TaskNotFound:
       description: |
         - `task.not-found`: no task with this key that the caller sees, or a task in the trash
@@ -3640,12 +4366,20 @@ components:
         - `mention.recipient-invalid`: a description mention recipient is ineligible;
         - `milestone.status-invalid`: the final milestone status is invalid;
         - `milestone.dates-invalid`: the final milestone dates or estimate are invalid;
-        - `recurrence.date-out-of-range`: the successor date cannot be represented.
+        - `recurrence.date-out-of-range`: the successor date cannot be represented;
+        - `custom-field.value-invalid`: a field is absent, retired or outside the resulting space,
+          the value has the wrong type or the designated sprint points value is negative.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           examples:
+            invalidCustomFieldValue:
+              value:
+                type: about:blank
+                title: Valeur de champ personnalisé invalide.
+                status: 422
+                code: custom-field.value-invalid
             mentionRecipientInvalid:
               $ref: '#/components/examples/MentionRecipientInvalid'
             milestoneStatusInvalid:
@@ -3776,6 +4510,12 @@ components:
       $ref: '../../components/task.yaml#/components/schemas/DependencyPage'
     Mention:
       $ref: '../../components/task.yaml#/components/schemas/Mention'
+    TaskApprovalState:
+      $ref: '../../components/approval.yaml#/components/schemas/TaskApprovalState'
+    TaskApprovalRequest:
+      $ref: '../../components/approval.yaml#/components/schemas/TaskApprovalRequest'
+    TaskApprovalVote:
+      $ref: '../../components/approval.yaml#/components/schemas/TaskApprovalVote'
     Comment:
       $ref: '../../components/task.yaml#/components/schemas/Comment'
     CommentPage:
@@ -4002,3 +4742,11 @@ components:
           items:
             type: string
             x-extensible-enum: [comments, attachments, development]
+    OnboardingState:
+      $ref: '../../components/onboarding.yaml#/components/schemas/OnboardingState'
+    OnboardingDraftPatch:
+      $ref: '../../components/onboarding.yaml#/components/schemas/OnboardingDraftPatch'
+    OnboardingChecklistPatch:
+      $ref: '../../components/onboarding.yaml#/components/schemas/OnboardingChecklistPatch'
+    OnboardingFinish:
+      $ref: '../../components/onboarding.yaml#/components/schemas/OnboardingFinish'

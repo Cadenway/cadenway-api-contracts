@@ -22,11 +22,13 @@ import type {
 
 import type {
   ActivityPage,
+  CustomFieldDefinitionPage,
   GetListCountsParams,
   ListCreation,
   ListDuplicate,
   ListDuplication,
   ListListActivityParams,
+  ListListCustomFieldsParams,
   ListListsParams,
   ListPatch,
   ListSavedViewsParams,
@@ -849,6 +851,50 @@ export class ListsService {
       }
     );
   }
+/**
+ * Lists active definitions in the list's space in `(position, id)` order. A read role on the
+ * list suffices, including a direct list grant. The cursor is bound to this list and order.
+ * The definitions remain readable on a retained archived list.
+ * An unknown, invisible or deleted list answers `404 list.not-found`.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List the custom fields visible in a list
+ */
+ listListCustomFields<TData = CustomFieldDefinitionPage>(listId: string,
+    params?: ListListCustomFieldsParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listListCustomFields<TData = CustomFieldDefinitionPage>(listId: string,
+    params?: ListListCustomFieldsParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listListCustomFields<TData = CustomFieldDefinitionPage>(listId: string,
+    params?: ListListCustomFieldsParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listListCustomFields<TData = CustomFieldDefinitionPage>(
+    listId: string,
+    params?: ListListCustomFieldsParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/custom-fields`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/custom-fields`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/lists/${listId}/custom-fields`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
 };
 
 export type CreateListClientResult = NonNullable<TaskList>
@@ -865,3 +911,4 @@ export type GetSavedViewClientResult = NonNullable<SavedView>
 export type UpdateSavedViewClientResult = NonNullable<SavedView>
 export type DeleteSavedViewClientResult = NonNullable<void>
 export type DuplicateSavedViewClientResult = NonNullable<SavedView>
+export type ListListCustomFieldsClientResult = NonNullable<CustomFieldDefinitionPage>

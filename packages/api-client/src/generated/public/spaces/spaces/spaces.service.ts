@@ -21,11 +21,16 @@ import type {
 } from 'rxjs';
 
 import type {
+  CustomFieldDefinition,
+  CustomFieldDefinitionCreation,
+  CustomFieldDefinitionPage,
+  CustomFieldDefinitionPatch,
   Favorite,
   FavoriteCreation,
   FavoritePage,
   GetSpaceOverviewParams,
   ListFavoritesParams,
+  ListSpaceCustomFieldsParams,
   ListSpaceMilestonesParams,
   ListSpacesParams,
   ListTaskTemplatesParams,
@@ -854,6 +859,234 @@ export class SpacesService {
       }
     );
   }
+/**
+ * Lists active definitions in `(position, id)` order. The cursor is bound to the requested
+ * space and order. Requires a role on the space itself; a list-only grant does not grant
+ * this route (`404 space.not-found`). A readable list has its own definitions route.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List the custom fields of a space
+ */
+ listSpaceCustomFields<TData = CustomFieldDefinitionPage>(spaceId: string,
+    params?: ListSpaceCustomFieldsParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listSpaceCustomFields<TData = CustomFieldDefinitionPage>(spaceId: string,
+    params?: ListSpaceCustomFieldsParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listSpaceCustomFields<TData = CustomFieldDefinitionPage>(spaceId: string,
+    params?: ListSpaceCustomFieldsParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listSpaceCustomFields<TData = CustomFieldDefinitionPage>(
+    spaceId: string,
+    params?: ListSpaceCustomFieldsParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/custom-fields`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/custom-fields`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/custom-fields`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * Only a space manager can create a definition. It is active and appended to the
+ * space's definition order, with a stable UUID v7 and an immutable value type.
+ * It starts with `sprintPoints: false` and does not set a value on any task.
+ * Up to 30 active definitions are allowed (`422 custom-field.limit-reached`).
+ * An optional `Idempotency-Key` replays the original response and Location for 24 hours;
+ * a changed body answers `422 idempotency.key-reused` and an in-flight request answers
+ * `409 idempotency.request-in-progress`.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Create a space custom field
+ */
+ createSpaceCustomField<TData = CustomFieldDefinition>(spaceId: string,
+    customFieldDefinitionCreation: CustomFieldDefinitionCreation, options?: HttpClientBodyOptions): Observable<TData>;
+ createSpaceCustomField<TData = CustomFieldDefinition>(spaceId: string,
+    customFieldDefinitionCreation: CustomFieldDefinitionCreation, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ createSpaceCustomField<TData = CustomFieldDefinition>(spaceId: string,
+    customFieldDefinitionCreation: CustomFieldDefinitionCreation, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  createSpaceCustomField<TData = CustomFieldDefinition>(
+    spaceId: string,
+    customFieldDefinitionCreation: CustomFieldDefinitionCreation, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/spaces/${spaceId}/custom-fields`,
+      customFieldDefinitionCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/spaces/${spaceId}/custom-fields`,
+      customFieldDefinitionCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/spaces/${spaceId}/custom-fields`,
+      customFieldDefinitionCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Reads one active definition in the specified space. Requires a role on the space itself.
+ * A field that is absent, retired or belongs to another space answers `404 custom-field.not-found`.
+ * Scope `tasks:read` for a personal API token.
+ * @summary Get a space custom field
+ */
+ getSpaceCustomField<TData = CustomFieldDefinition>(spaceId: string,
+    fieldId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ getSpaceCustomField<TData = CustomFieldDefinition>(spaceId: string,
+    fieldId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getSpaceCustomField<TData = CustomFieldDefinition>(spaceId: string,
+    fieldId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getSpaceCustomField<TData = CustomFieldDefinition>(
+    spaceId: string,
+    fieldId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/custom-fields/${fieldId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/custom-fields/${fieldId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/custom-fields/${fieldId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Only a space manager can change a definition. The JSON Merge Patch can rename the
+ * field, move it to a zero-based position, or change whether it supplies sprint points.
+ * A position outside the current definition order answers `422 custom-field.position-invalid`.
+ * Moving a field shifts the intervening positions, preserving relative order. Designating
+ * a numeric field clears the previous designation atomically. A text field or a numeric
+ * field with a negative current value cannot be designated (`422 custom-field.sprint-points-invalid`).
+ * This refusal preserves all values, historic sprint inputs and the previous designation.
+ * Versions of definitions whose position or designation changes advance. A patch with no
+ * change keeps the current version. Field IDs, types and values remain unchanged.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Update a space custom field
+ */
+ updateSpaceCustomField<TData = CustomFieldDefinition>(spaceId: string,
+    fieldId: string,
+    customFieldDefinitionPatch: CustomFieldDefinitionPatch, options?: HttpClientBodyOptions): Observable<TData>;
+ updateSpaceCustomField<TData = CustomFieldDefinition>(spaceId: string,
+    fieldId: string,
+    customFieldDefinitionPatch: CustomFieldDefinitionPatch, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ updateSpaceCustomField<TData = CustomFieldDefinition>(spaceId: string,
+    fieldId: string,
+    customFieldDefinitionPatch: CustomFieldDefinitionPatch, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  updateSpaceCustomField<TData = CustomFieldDefinition>(
+    spaceId: string,
+    fieldId: string,
+    customFieldDefinitionPatch: CustomFieldDefinitionPatch, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.patch<TData>(
+      `/v1/spaces/${spaceId}/custom-fields/${fieldId}`,
+      customFieldDefinitionPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.patch<TData>(
+      `/v1/spaces/${spaceId}/custom-fields/${fieldId}`,
+      customFieldDefinitionPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.patch<TData>(
+      `/v1/spaces/${spaceId}/custom-fields/${fieldId}`,
+      customFieldDefinitionPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Only a space manager can retire a definition. Retirement removes it from active columns
+ * and task value reads, frees its position and capacity, and clears any sprint points
+ * designation held by the field. Historic sprint inputs are retained. A retired field cannot
+ * be set or read through the active field routes. Remaining definitions retain their relative
+ * order and any shifted position advances the definition version.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Retire a space custom field
+ */
+ retireSpaceCustomField<TData = void>(spaceId: string,
+    fieldId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ retireSpaceCustomField<TData = void>(spaceId: string,
+    fieldId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ retireSpaceCustomField<TData = void>(spaceId: string,
+    fieldId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  retireSpaceCustomField<TData = void>(
+    spaceId: string,
+    fieldId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/spaces/${spaceId}/custom-fields/${fieldId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/spaces/${spaceId}/custom-fields/${fieldId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/spaces/${spaceId}/custom-fields/${fieldId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
 };
 
 export type CreateSpaceClientResult = NonNullable<SpaceCreated>
@@ -871,3 +1104,8 @@ export type ListFavoritesClientResult = NonNullable<FavoritePage>
 export type CreateFavoriteClientResult = NonNullable<Favorite>
 export type GetFavoriteClientResult = NonNullable<Favorite>
 export type DeleteFavoriteClientResult = NonNullable<void>
+export type ListSpaceCustomFieldsClientResult = NonNullable<CustomFieldDefinitionPage>
+export type CreateSpaceCustomFieldClientResult = NonNullable<CustomFieldDefinition>
+export type GetSpaceCustomFieldClientResult = NonNullable<CustomFieldDefinition>
+export type UpdateSpaceCustomFieldClientResult = NonNullable<CustomFieldDefinition>
+export type RetireSpaceCustomFieldClientResult = NonNullable<void>

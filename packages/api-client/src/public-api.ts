@@ -290,10 +290,13 @@ export type { TokenWriteForbiddenResponse } from './generated/public/api-tokens/
 export {
   SpacesService,
   type CreateSpaceClientResult,
+  type CreateSpaceCustomFieldClientResult,
   type DeleteSpaceClientResult,
   type GetSpaceClientResult,
+  type GetSpaceCustomFieldClientResult,
   type GetSpaceOverviewClientResult,
   type ListSpacesClientResult,
+  type ListSpaceCustomFieldsClientResult,
   type ListSpaceMilestonesClientResult,
   type ListTaskTemplatesClientResult,
   type CreateTaskTemplateClientResult,
@@ -303,8 +306,17 @@ export {
   type CreateFavoriteClientResult,
   type GetFavoriteClientResult,
   type DeleteFavoriteClientResult,
+  type RetireSpaceCustomFieldClientResult,
   type UpdateSpaceClientResult,
+  type UpdateSpaceCustomFieldClientResult,
 } from './generated/public/spaces/spaces/spaces.service';
+export type { CustomFieldDefinition } from './generated/public/spaces/model/customFieldDefinition';
+export type { CustomFieldDefinitionCreation } from './generated/public/spaces/model/customFieldDefinitionCreation';
+export { CustomFieldDefinitionCreationType } from './generated/public/spaces/model/customFieldDefinitionCreationType';
+export type { CustomFieldDefinitionPage } from './generated/public/spaces/model/customFieldDefinitionPage';
+export type { CustomFieldDefinitionPatch } from './generated/public/spaces/model/customFieldDefinitionPatch';
+export type { CustomFieldId } from './generated/public/spaces/model/customFieldId';
+export type { ListSpaceCustomFieldsParams } from './generated/public/spaces/model/listSpaceCustomFieldsParams';
 export type { TaskTemplate } from './generated/public/spaces/model/taskTemplate';
 export type { TaskTemplateCreation } from './generated/public/spaces/model/taskTemplateCreation';
 export type { TaskTemplatePage } from './generated/public/spaces/model/taskTemplatePage';
@@ -439,6 +451,7 @@ export {
   type GetListClientResult,
   type GetListCountsClientResult,
   type ListListActivityClientResult,
+  type ListListCustomFieldsClientResult,
   type ListListsClientResult,
   type UpdateListClientResult,
 } from './generated/public/lists/lists/lists.service';
@@ -447,8 +460,13 @@ export { ActivityKindParameterItem } from './generated/public/lists/model/activi
 export type { ActivityPage } from './generated/public/lists/model/activityPage';
 export type { ActorIdParameter } from './generated/public/lists/model/actorIdParameter';
 export type { GetListCountsParams } from './generated/public/lists/model/getListCountsParams';
+export type { ListListCustomFieldsParams } from './generated/public/lists/model/listListCustomFieldsParams';
 export type { SavedItemName } from './generated/public/lists/model/savedItemName';
 export type { SavedView } from './generated/public/lists/model/savedView';
+export type { SavedViewCustomFieldSort } from './generated/public/lists/model/savedViewCustomFieldSort';
+export { SavedViewCustomFieldSortDirection } from './generated/public/lists/model/savedViewCustomFieldSortDirection';
+export type { SavedViewPresentationPatchCustomFieldSort } from './generated/public/lists/model/savedViewPresentationPatchCustomFieldSort';
+export { SavedViewPresentationPatchCustomFieldSortDirection } from './generated/public/lists/model/savedViewPresentationPatchCustomFieldSortDirection';
 export type { SavedViewCreation } from './generated/public/lists/model/savedViewCreation';
 export type { SavedViewPatch } from './generated/public/lists/model/savedViewPatch';
 export type { SavedViewDuplicate } from './generated/public/lists/model/savedViewDuplicate';
@@ -511,13 +529,17 @@ export {
   type UnfollowTaskWatcherClientResult,
   type UpdateTaskCommentClientResult,
   type GetTaskClientResult,
+  type GetTaskApprovalClientResult,
   type GetTaskDetailClientResult,
   type ListLabelsClientResult,
   type ListSubtasksClientResult,
   type RemoveTaskLabelClientResult,
+  type RequestTaskApprovalClientResult,
   type UnassignTaskClientResult,
   type UpdateChecklistItemClientResult,
   type UpdateTaskClientResult,
+  type VoteOnTaskApprovalClientResult,
+  type WithdrawTaskApprovalVoteClientResult,
 } from './generated/public/tasks/tasks/tasks.service';
 export {
   TaskQueriesService,
@@ -530,9 +552,25 @@ export {
 } from './generated/public/tasks/task-activity/task-activity.service';
 export {
   MyTasksService,
+  type FinishOnboardingClientResult,
   type GetHomeClientResult,
+  type GetOnboardingClientResult,
   type ListMyTasksClientResult,
+  type UpdateOnboardingChecklistClientResult,
+  type UpdateOnboardingClientResult,
 } from './generated/public/tasks/my-tasks/my-tasks.service';
+export type { OnboardingChecklist } from './generated/public/tasks/model/onboardingChecklist';
+export type { OnboardingChecklistPatch } from './generated/public/tasks/model/onboardingChecklistPatch';
+export { OnboardingChecklistPresentation } from './generated/public/tasks/model/onboardingChecklistPresentation';
+export type { OnboardingDraftName } from './generated/public/tasks/model/onboardingDraftName';
+export type { OnboardingDraftPatch } from './generated/public/tasks/model/onboardingDraftPatch';
+export type { OnboardingDraftPrefix } from './generated/public/tasks/model/onboardingDraftPrefix';
+export type { OnboardingFinish } from './generated/public/tasks/model/onboardingFinish';
+export { OnboardingPreset } from './generated/public/tasks/model/onboardingPreset';
+export type { OnboardingProvisioning } from './generated/public/tasks/model/onboardingProvisioning';
+export type { OnboardingState } from './generated/public/tasks/model/onboardingState';
+export type { OnboardingWizard } from './generated/public/tasks/model/onboardingWizard';
+export { OnboardingWizardStep } from './generated/public/tasks/model/onboardingWizardStep';
 export type { AssigneeFilterParameter } from './generated/public/tasks/model/assigneeFilterParameter';
 export type { AssigneeRefusedResponse } from './generated/public/tasks/model/assigneeRefusedResponse';
 export type { BulkTaskAction } from './generated/public/tasks/model/bulkTaskAction';
@@ -607,6 +645,14 @@ export type { SearchParameter } from './generated/public/tasks/model/searchParam
 export type { StatusFilterParameter } from './generated/public/tasks/model/statusFilterParameter';
 export type { SubtaskCreationConflictResponse } from './generated/public/tasks/model/subtaskCreationConflictResponse';
 export type { SubtaskCreationRefusedResponse } from './generated/public/tasks/model/subtaskCreationRefusedResponse';
+export type { ApprovalIfMatchParameter } from './generated/public/tasks/model/approvalIfMatchParameter';
+export type { TaskApprovalRequest } from './generated/public/tasks/model/taskApprovalRequest';
+export type { TaskApprovalReviewer } from './generated/public/tasks/model/taskApprovalReviewer';
+export type { TaskApprovalRound } from './generated/public/tasks/model/taskApprovalRound';
+export type { TaskApprovalState } from './generated/public/tasks/model/taskApprovalState';
+export type { TaskApprovalVote } from './generated/public/tasks/model/taskApprovalVote';
+export type { TaskCustomFieldValues } from './generated/public/tasks/model/taskCustomFieldValues';
+export type { TaskCustomFieldValuesPatch } from './generated/public/tasks/model/taskCustomFieldValuesPatch';
 export type { TaskArchivedResponse } from './generated/public/tasks/model/taskArchivedResponse';
 export type { TaskChangeRefusedResponse } from './generated/public/tasks/model/taskChangeRefusedResponse';
 export type { TaskCreationRefusedResponse } from './generated/public/tasks/model/taskCreationRefusedResponse';
@@ -677,3 +723,25 @@ export {
 export type { ListTrashParams } from './generated/public/trash/model/listTrashParams';
 export type { TrashEntryNotFoundResponse } from './generated/public/trash/model/trashEntryNotFoundResponse';
 export type { TrashEntryPage } from './generated/public/trash/model/trashEntryPage';
+
+// openapi/public/time.yaml
+export {
+  TaskTimeService,
+  type CreateTaskTimeEntryClientResult,
+  type DeleteTaskTimeEntryClientResult,
+  type GetTaskStatusDurationsClientResult,
+  type GetTaskTimeEntryClientResult,
+  type GetTaskTimeSummaryClientResult,
+  type ListTaskTimeEntriesClientResult,
+} from './generated/public/time/task-time/task-time.service';
+export type { ListTaskTimeEntriesParams } from './generated/public/time/model/listTaskTimeEntriesParams';
+export type { TaskStatusDuration } from './generated/public/time/model/taskStatusDuration';
+export type { TaskStatusDurationResult } from './generated/public/time/model/taskStatusDurationResult';
+export type { TaskStatusDurationSummary } from './generated/public/time/model/taskStatusDurationSummary';
+export type { TaskTimeEntry } from './generated/public/time/model/taskTimeEntry';
+export type { TaskTimeEntryCreation } from './generated/public/time/model/taskTimeEntryCreation';
+export type { TaskTimeEntryPage } from './generated/public/time/model/taskTimeEntryPage';
+export type { TaskTimeSummary } from './generated/public/time/model/taskTimeSummary';
+export type { TaskWorkDate } from './generated/public/time/model/taskWorkDate';
+export type { TimeEntryId } from './generated/public/time/model/timeEntryId';
+export type { WorkLogMinutes } from './generated/public/time/model/workLogMinutes';

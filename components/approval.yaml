@@ -1,0 +1,120 @@
+# Shared by the task approval operations. Task keys and status keys use the task contract.
+openapi: 3.1.0
+info:
+  title: Cadenway shared task approval components
+  version: 1.0.0
+  description: Approval rounds, their current projected state, and the request and vote bodies.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    TaskApprovalState:
+      type: object
+      required: [taskKey, taskVersion, taskStatus, current]
+      description: The approval state at the current task version.
+      properties:
+        taskKey:
+          $ref: './task.yaml#/components/schemas/TaskKey'
+        taskVersion:
+          type: integer
+          minimum: 1
+          description: The version carried by the task ETag.
+        taskStatus:
+          $ref: './task.yaml#/components/schemas/StatusKey'
+        current:
+          description: The current round, or null if no round is visible for this task.
+          oneOf:
+            - $ref: '#/components/schemas/TaskApprovalRound'
+            - type: 'null'
+    TaskApprovalRound:
+      type: object
+      required: [roundId, requesterUserId, requestedAt, status, reviewers]
+      description: The current request and its votes from reviewers with current edit access.
+      properties:
+        roundId:
+          type: string
+          format: uuid
+          description: UUID v7 of the round. Each new round receives a different identifier.
+        requesterUserId:
+          type: string
+          format: uuid
+          description: Account that opened the round.
+        requestedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          x-extensible-enum: [pending, approved, changes-requested]
+          description: |
+            Pending while a reviewer is waiting or there are no eligible reviewers.
+            A change request takes precedence. Approval requires every eligible reviewer to approve.
+            Clients can display an unknown status as pending.
+        reviewers:
+          type: array
+          description: Eligible requested reviewers in request order, including those waiting to vote.
+          items:
+            $ref: '#/components/schemas/TaskApprovalReviewer'
+    TaskApprovalReviewer:
+      type: object
+      required: [reviewerUserId, decision, decidedAt, commentId]
+      properties:
+        reviewerUserId:
+          type: string
+          format: uuid
+        decision:
+          type: [string, 'null']
+          x-extensible-enum: [approved, changes-requested]
+          description: Null while no vote is recorded for the reviewer.
+        decidedAt:
+          type: [string, 'null']
+          format: date-time
+        commentId:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            The task comment created by a change request, or null for other decisions and while
+            waiting. Resolve it with the task comment route, which also handles removed comments.
+    TaskApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [reviewerUserIds]
+      properties:
+        reviewerUserIds:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          description: Distinct accounts with current edit access to the task, including the caller if requested.
+          items:
+            type: string
+            format: uuid
+          examples:
+            - [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31, 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+    TaskApprovalVote:
+      description: The vote made by the authenticated reviewer.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [decision]
+          properties:
+            decision:
+              type: string
+              const: approved
+        - type: object
+          additionalProperties: false
+          required: [decision, reason]
+          properties:
+            decision:
+              type: string
+              const: changes-requested
+            reason:
+              type: string
+              minLength: 1
+              maxLength: 5000
+              pattern: '\S'
+              description: Nonblank Markdown of up to 5,000 Unicode code points, stored as a task comment.
+              examples: ['Merci de vérifier le parcours de connexion.']

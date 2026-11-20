@@ -311,6 +311,15 @@ components:
       type: string
       description: Feuille column key from the mockup.
       enum: [name, status, priority, people, due, estimate, spent, labels, list, points, client]
+    SavedViewCustomFieldSort:
+      type: object
+      required: [fieldId, direction]
+      description: |
+        Feuille-only sort by a custom field's stable ID. It takes precedence over sheetSort while
+        the list has that active definition. Otherwise the client falls back to sheetSort.
+      properties:
+        fieldId: { $ref: '#/components/schemas/CustomFieldId' }
+        direction: { type: string, enum: [asc, desc] }
     SavedViewFilters:
       type: object
       description: |
@@ -331,6 +340,11 @@ components:
         hiddenSheetColumns:
           type: array
           items: { $ref: '#/components/schemas/SavedViewSheetColumn' }
+        hiddenCustomFieldIds:
+          type: array
+          maxItems: 30
+          description: IDs of custom columns to hide, including stored preferences for retired fields.
+          items: { $ref: '#/components/schemas/CustomFieldId' }
         sheetSort:
           type: object
           required: [column, direction]
@@ -338,6 +352,7 @@ components:
           properties:
             column: { $ref: '#/components/schemas/SavedViewSheetColumn' }
             direction: { type: string, enum: [asc, desc] }
+        customFieldSort: { $ref: '#/components/schemas/SavedViewCustomFieldSort' }
     SavedViewLayoutValue:
       type: string
       x-extensible-enum: [list, board, calendar, gantt, workload, table, form, activity, timesheet]
@@ -357,6 +372,10 @@ components:
         hiddenSheetColumns:
           type: array
           items: { $ref: '#/components/schemas/SavedViewSheetColumnValue' }
+        hiddenCustomFieldIds:
+          type: array
+          description: Stable IDs of hidden custom columns; clients ignore retired or unknown IDs.
+          items: { $ref: '#/components/schemas/CustomFieldId' }
         sheetSort:
           type: object
           required: [column, direction]
@@ -364,6 +383,7 @@ components:
           properties:
             column: { $ref: '#/components/schemas/SavedViewSheetColumnValue' }
             direction: { type: string, x-extensible-enum: [asc, desc] }
+        customFieldSort: { $ref: '#/components/schemas/SavedViewCustomFieldSort' }
     SavedViewConfigurationInput:
       type: object
       required: [layout, filters, sort, groupBy]
@@ -445,11 +465,24 @@ components:
             - type: array
               items: { $ref: '#/components/schemas/SavedViewSheetColumn' }
             - type: 'null'
+        hiddenCustomFieldIds:
+          oneOf:
+            - type: array
+              maxItems: 30
+              items: { $ref: '#/components/schemas/CustomFieldId' }
+            - type: 'null'
         sheetSort:
           oneOf:
             - type: object
               properties:
                 column: { $ref: '#/components/schemas/SavedViewSheetColumn' }
+                direction: { type: string, enum: [asc, desc] }
+            - type: 'null'
+        customFieldSort:
+          oneOf:
+            - type: object
+              properties:
+                fieldId: { $ref: '#/components/schemas/CustomFieldId' }
                 direction: { type: string, enum: [asc, desc] }
             - type: 'null'
     SavedViewConfigurationPatch:
@@ -1705,6 +1738,118 @@ components:
           type: string
         status:
           $ref: '#/components/schemas/StatusKey'
+    CustomFieldId:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      description: A stable UUID v7 identifying one custom field definition, in lowercase.
+      examples: [019a700a-1234-7567-89ab-cdef01234567]
+    CustomFieldDefinition:
+      type: object
+      required: [id, spaceId, name, type, position, sprintPoints, version]
+      description: An active definition of a custom column in a space.
+      properties:
+        id:
+          $ref: '#/components/schemas/CustomFieldId'
+        spaceId:
+          type: string
+          format: uuid
+          examples: [019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01]
+        name:
+          type: string
+          examples: [Points, Client]
+        type:
+          type: string
+          x-extensible-enum: [number, text]
+          description: Immutable kind. This delivery supports numeric and text values.
+        position:
+          type: integer
+          minimum: 0
+          description: Zero-based position among the active definitions of the space.
+        sprintPoints:
+          type: boolean
+          description: True only for the active numeric definition used for sprint points.
+        version:
+          type: integer
+          minimum: 1
+          description: Definition version used by its ETag.
+    CustomFieldDefinitionPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomFieldDefinition'
+        nextCursor:
+          $ref: 'http.yaml#/components/schemas/NextCursor'
+    CustomFieldDefinitionCreation:
+      type: object
+      required: [name, type]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: '\S'
+          description: Display name, trimmed. Renaming never changes the ID.
+          examples: [Points, Client]
+        type:
+          type: string
+          enum: [number, text]
+    CustomFieldDefinitionPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: '\S'
+          description: Display name, trimmed. Renaming never changes the ID.
+          examples: [Points, Client]
+        position:
+          type: integer
+          minimum: 0
+          maximum: 29
+          description: Move to this zero-based position in the active definition order.
+        sprintPoints:
+          type: boolean
+          description: |
+            True designates this numeric field, clearing any previous designation. False clears
+            the designation if this field currently holds it.
+    TaskCustomFieldValues:
+      type: object
+      description: |
+        Sparse values keyed by lowercase stable custom field ID. Only active definitions of the readable
+        task's current space are included. Missing entries have no value. Absence of the member
+        means the producer has not reported these values. Numeric zero and empty text are values.
+      propertyNames:
+        $ref: '#/components/schemas/CustomFieldId'
+      additionalProperties:
+        type: [number, string]
+      examples:
+        - 019a700a-1234-7567-89ab-cdef01234567: 0
+          019a700a-1234-7567-89ab-cdef01234568: Atelier Nord
+    TaskCustomFieldValuesPatch:
+      type: object
+      description: |
+        Merge values by lowercase active field ID in the task's resulting space. Omitted keys are unchanged.
+        A null value clears that entry. A number or string must match the field's immutable type.
+        A value of the designated sprint points field must be nonnegative, including zero.
+      maxProperties: 30
+      propertyNames:
+        $ref: '#/components/schemas/CustomFieldId'
+      additionalProperties:
+        oneOf:
+          - type: number
+          - type: string
+            maxLength: 500
+          - type: 'null'
+      examples:
+        - 019a700a-1234-7567-89ab-cdef01234567: 0
+          019a700a-1234-7567-89ab-cdef01234568: null
     TaskSummary:
       type: object
       required:
@@ -1737,6 +1882,8 @@ components:
           description: Whether this task is a milestone; absence means the producer did not report it.
         recurrence:
           $ref: '#/components/schemas/Recurrence'
+        customFieldValues:
+          $ref: '#/components/schemas/TaskCustomFieldValues'
         key:
           $ref: '#/components/schemas/TaskKey'
         name:
@@ -1847,6 +1994,8 @@ components:
         nextOccurrenceKey:
           $ref: '#/components/schemas/TaskKey'
           description: Successor key only when the successor is live and readable by the caller.
+        customFieldValues:
+          $ref: '#/components/schemas/TaskCustomFieldValues'
         key:
           $ref: '#/components/schemas/TaskKey'
         name:
@@ -2098,6 +2247,8 @@ components:
         the checklist are collections: they change through their own routes, and a patch ignores
         the members it does not declare, `assigneeIds` and `labels` included.
       properties:
+        customFieldValues:
+          $ref: '#/components/schemas/TaskCustomFieldValuesPatch'
         descriptionMentions:
           type: array
           maxItems: 20

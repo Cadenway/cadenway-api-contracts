@@ -3,6 +3,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dereference } from './lib/dereference.mjs';
 import { ROOTS, listYaml } from './lib/roots.mjs';
 
+// Use the authored component for both request and response map keys.
+const customFieldSchemas = dereference('components/task.yaml', process.cwd()).components.schemas;
+const customFieldIdPattern = customFieldSchemas.CustomFieldId.pattern;
+const customFieldPatch = customFieldSchemas.TaskCustomFieldValuesPatch;
+
 for (const root of ROOTS) {
   for (const spec of listYaml(root.openapi)) {
     const source = `${root.openapi}/${spec}.yaml`;
@@ -70,6 +75,76 @@ for (const root of ROOTS) {
           `.refine((value) => Array.from(value).length <= ${name}, { message: 'At most 5000 Unicode code points' })`,
         );
       }
+      // Orval strips extra fields on nonempty closed objects. Onboarding writes must refuse
+      // fields owned by the server, including the first-task marker and provisioning IDs.
+      for (const operation of [
+        'UpdateOnboarding',
+        'UpdateOnboardingChecklist',
+        'FinishOnboarding',
+      ]) {
+        const name = `${operation}${suffix}Body`;
+        const original = `export const ${name} = zod.object({`;
+        const strict = `export const ${name} = zod.strictObject({`;
+        if (!generated.includes(original) && !generated.includes(strict))
+          throw new Error(`${source}: missing onboarding request validator ${name}`);
+        generated = generated.replace(original, strict);
+      }
+    }
+    // Time-entry input is closed and its note length counts Unicode code points.
+    if (root.name === 'contracts' && ['public/time', 'internal/task-service'].includes(spec)) {
+      const operation =
+        spec === 'public/time' ? 'createTaskTimeEntry' : 'createTaskTimeEntryInternal';
+      const body = `export const ${operation[0].toUpperCase()}${operation.slice(1)}Body = `;
+      const object = body + 'zod.object({';
+      const length = `.max(${operation}BodyNoteMax)`;
+      if (!generated.includes(object) || !generated.includes(length)) {
+        throw new Error(`${source}: missing time-entry body or note length check`);
+      }
+      generated = generated
+        .replace(object, body + 'zod.strictObject({')
+        .replace(
+          length,
+          `.refine((value) => Array.from(value).length <= ${operation}BodyNoteMax, { message: 'At most 500 Unicode code points' })`,
+        );
+    }
+    // Reviewer IDs identify accounts, so differently cased UUIDs must not name the same reviewer.
+    if (
+      root.name === 'contracts' &&
+      (spec === 'public/tasks' || spec === 'internal/task-service')
+    ) {
+      const suffix = spec === 'public/tasks' ? '' : 'Internal';
+      const requestName = `RequestTaskApproval${suffix}Body`;
+      const requestStart = generated.indexOf(`export const ${requestName} = zod.object({`);
+      const requestEnd = generated.indexOf('\nexport const ', requestStart + 1);
+      if (requestStart < 0 || requestEnd < 0)
+        throw new Error(`${source}: missing approval request validator ${requestName}`);
+      let request = generated.slice(requestStart, requestEnd);
+      request = request.replace('zod.object({', 'zod.strictObject({');
+      const requestClose = request.lastIndexOf('})');
+      if (requestClose < 0) throw new Error(`${source}: missing approval request body close`);
+      request =
+        request.slice(0, requestClose) +
+        `}).refine((value) => new Set(value.reviewerUserIds.map((id) => id.toLowerCase())).size === value.reviewerUserIds.length, { path: ['reviewerUserIds'], message: 'Reviewer IDs must be distinct' })` +
+        request.slice(requestClose + 2);
+      generated = generated.slice(0, requestStart) + request + generated.slice(requestEnd);
+
+      const voteName = `VoteOnTaskApproval${suffix}Body`;
+      const voteStart = generated.indexOf(`export const ${voteName} = zod.union([`);
+      const voteEnd = generated.indexOf('\nexport const ', voteStart + 1);
+      if (voteStart < 0 || voteEnd < 0)
+        throw new Error(`${source}: missing approval vote validator ${voteName}`);
+      let vote = generated
+        .slice(voteStart, voteEnd)
+        .replaceAll('zod.object({', 'zod.strictObject({');
+      const limit = `voteOnTaskApproval${suffix}BodyTwoReasonMax`;
+      const lengthCheck = `.max(${limit})`;
+      if (!vote.includes(lengthCheck))
+        throw new Error(`${source}: missing approval reason length ${voteName}`);
+      vote = vote.replace(
+        lengthCheck,
+        `.refine((value) => Array.from(value).length <= ${limit}, { message: 'At most 5000 Unicode code points' })`,
+      );
+      generated = generated.slice(0, voteStart) + vote + generated.slice(voteEnd);
     }
     // Orval flattens allOf but loses the const true on milestone page items.
     if (
@@ -106,6 +181,49 @@ for (const root of ROOTS) {
         "}).refine((value) => new Set(value.selection.map((entry) => entry.taskKey)).size === value.selection.length, { path: ['selection'], message: 'Task keys must be distinct' }).describe('One atomic action over 1 to 50 distinct task keys.",
       );
       generated = generated.slice(0, start) + body + generated.slice(end);
+    }
+    // Orval omits propertyNames, maxProperties and additionalProperties on these schemas.
+    if (root.name === 'contracts') {
+      const mapKey = `zod.string().regex(new RegExp(${JSON.stringify(customFieldIdPattern)}))`;
+      const outputMap =
+        '"customFieldValues": zod.record(zod.string(), zod.union([zod.number(),zod.string()]))';
+      generated = generated.replaceAll(
+        outputMap,
+        outputMap.replace('zod.record(zod.string(),', `zod.record(${mapKey},`),
+      );
+
+      if (spec === 'public/tasks' || spec === 'internal/task-service') {
+        const suffix = spec === 'public/tasks' ? '' : 'Internal';
+        const name = `UpdateTask${suffix}Body`;
+        const maxName = `updateTask${suffix}BodyCustomFieldValuesTwoMax`;
+        const original = `"customFieldValues": zod.record(zod.string(), zod.union([zod.number(),zod.string().max(${maxName}),zod.null()]))`;
+        if (!generated.includes(original))
+          throw new Error(`${source}: missing custom field patch validator ${name}`);
+        const replacement = `"customFieldValues": zod.record(${mapKey}, zod.union([zod.number(),zod.string().refine((value) => Array.from(value).length <= ${maxName}, { message: 'At most ${customFieldPatch.additionalProperties.oneOf[1].maxLength} Unicode code points' }),zod.null()])).refine((value) => Object.keys(value).length <= ${customFieldPatch.maxProperties}, { message: 'At most ${customFieldPatch.maxProperties} custom fields' })`;
+        generated = generated.replace(original, replacement);
+      }
+
+      if (spec === 'public/spaces' || spec === 'internal/task-service') {
+        const suffix = spec === 'public/spaces' ? '' : 'Internal';
+        for (const operation of ['CreateSpaceCustomField', 'UpdateSpaceCustomField']) {
+          const name = `${operation}${suffix}Body`;
+          const original = `export const ${name} = zod.object({`;
+          if (!generated.includes(original))
+            throw new Error(`${source}: missing custom field definition validator ${name}`);
+          generated = generated.replace(
+            original,
+            original.replace('zod.object', 'zod.strictObject'),
+          );
+          const limit = `${operation[0].toLowerCase()}${operation.slice(1)}${suffix}BodyNameMax`;
+          const lengthCheck = `.max(${limit})`;
+          if (!generated.includes(lengthCheck))
+            throw new Error(`${source}: missing custom field name limit ${name}`);
+          generated = generated.replace(
+            lengthCheck,
+            `.refine((value) => Array.from(value).length <= ${limit}, { message: 'At most 80 Unicode code points' })`,
+          );
+        }
+      }
     }
     // Saved names use JSON Schema code-point length, not UTF-16 code units.
     if (

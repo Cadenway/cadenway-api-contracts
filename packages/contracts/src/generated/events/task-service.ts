@@ -4,6 +4,110 @@
  */
 import * as zod from 'zod';
 
+/** Name of the event `approval.decided.v1`. A reviewer cast, changed or withdrew a vote. */
+export const APPROVAL_DECIDED_V1 = 'approval.decided.v1';
+
+/** Payload of the event `approval.decided.v1`. */
+export interface ApprovalDecidedV1 {
+  /** Event ID, the deduplication key. */
+  id: string;
+  /** UTC commit instant. */
+  occurredAt: string;
+  /** Organization of the transaction. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Task version after the committed change. */
+  version: number;
+  /** Task key. */
+  key: string;
+  /** Space containing the task. */
+  spaceId: string;
+  /** List containing the task. */
+  listId: string;
+  /** Identifier of the approval round for this task. */
+  roundId: string;
+  /** Account ID of the editor who requested the approvals for this round. */
+  requesterUserId: string;
+  /** New vote of the reviewer, or withdrawn when the vote was cleared. */
+  decision: 'approved' | 'changes-requested' | 'withdrawn';
+  /** Comment containing the reason for changes-requested, or null for another decision. */
+  commentId: string | null;
+}
+
+/** Validator of the payload of the event `approval.decided.v1`. */
+export const approvalDecidedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  key: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceId: zod.uuid(),
+  listId: zod.uuid(),
+  roundId: zod.uuid(),
+  requesterUserId: zod.uuid(),
+  decision: zod.enum(['approved', 'changes-requested', 'withdrawn']),
+  commentId: zod.uuid().nullable(),
+}) satisfies zod.ZodType<ApprovalDecidedV1>;
+
+/** Name of the event `approval.requested.v1`. A task approval round was opened or replaced. */
+export const APPROVAL_REQUESTED_V1 = 'approval.requested.v1';
+
+/** Payload of the event `approval.requested.v1`. */
+export interface ApprovalRequestedV1 {
+  /** Event ID, the deduplication key. */
+  id: string;
+  /** UTC commit instant. */
+  occurredAt: string;
+  /** Organization of the transaction. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Task version after the committed change. */
+  version: number;
+  /** Task key. */
+  key: string;
+  /** Space containing the task. */
+  spaceId: string;
+  /** List containing the task. */
+  listId: string;
+  /** Identifier of the approval round for this task. */
+  roundId: string;
+  /** Distinct account IDs of the designated reviewers. */
+  reviewerUserIds: string[];
+}
+
+/** Validator of the payload of the event `approval.requested.v1`. */
+export const approvalRequestedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  key: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceId: zod.uuid(),
+  listId: zod.uuid(),
+  roundId: zod.uuid(),
+  reviewerUserIds: zod.array(zod.uuid()).min(1),
+}) satisfies zod.ZodType<ApprovalRequestedV1>;
+
 /** Name of the event `comment.created.v1`. A comment was posted. */
 export const COMMENT_CREATED_V1 = 'comment.created.v1';
 
@@ -2664,7 +2768,7 @@ export const taskWatcherChangedV1Schema = zod.object({
 }) satisfies zod.ZodType<TaskWatcherChangedV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [COMMENT_CREATED_V1, COMMENT_DELETED_V1, COMMENT_UPDATED_V1, LIST_ACCESS_CHANGED_V1, LIST_ACCESS_REQUEST_DECIDED_V1, LIST_ACCESS_REQUESTED_V1, LIST_ARCHIVED_V1, LIST_CREATED_V1, LIST_DELETED_V1, LIST_RESTORED_V1, LIST_SAVED_VIEW_CHANGED_V1, LIST_UNARCHIVED_V1, LIST_UPDATED_V1, MILESTONE_REACHED_V1, SPACE_ACCESS_CHANGED_V1, SPACE_ACCESS_REPUBLISHED_V1, SPACE_ACCESS_REQUEST_DECIDED_V1, SPACE_ACCESS_REQUESTED_V1, SPACE_CREATED_V1, SPACE_DELETED_V1, SPACE_RESTORED_V1, SPACE_TASK_TEMPLATE_CHANGED_V1, SPACE_UPDATED_V1, TASK_ACCESS_REQUEST_DECIDED_V1, TASK_ACCESS_REQUESTED_V1, TASK_ARCHIVED_V1, TASK_ASSIGNED_V1, TASK_CREATED_V1, TASK_DEPENDENCY_ADDED_V1, TASK_DEPENDENCY_REMOVED_V1, TASK_DESCRIPTION_MENTIONS_CHANGED_V1, TASK_OCCURRENCE_CREATED_V1, TASK_PURGED_V1, TASK_RESTORED_V1, TASK_STATUS_CHANGED_V1, TASK_TRASHED_V1, TASK_UNARCHIVED_V1, TASK_UPDATED_V1, TASK_WATCHER_CHANGED_V1] as const;
+export const EVENT_NAMES = [APPROVAL_DECIDED_V1, APPROVAL_REQUESTED_V1, COMMENT_CREATED_V1, COMMENT_DELETED_V1, COMMENT_UPDATED_V1, LIST_ACCESS_CHANGED_V1, LIST_ACCESS_REQUEST_DECIDED_V1, LIST_ACCESS_REQUESTED_V1, LIST_ARCHIVED_V1, LIST_CREATED_V1, LIST_DELETED_V1, LIST_RESTORED_V1, LIST_SAVED_VIEW_CHANGED_V1, LIST_UNARCHIVED_V1, LIST_UPDATED_V1, MILESTONE_REACHED_V1, SPACE_ACCESS_CHANGED_V1, SPACE_ACCESS_REPUBLISHED_V1, SPACE_ACCESS_REQUEST_DECIDED_V1, SPACE_ACCESS_REQUESTED_V1, SPACE_CREATED_V1, SPACE_DELETED_V1, SPACE_RESTORED_V1, SPACE_TASK_TEMPLATE_CHANGED_V1, SPACE_UPDATED_V1, TASK_ACCESS_REQUEST_DECIDED_V1, TASK_ACCESS_REQUESTED_V1, TASK_ARCHIVED_V1, TASK_ASSIGNED_V1, TASK_CREATED_V1, TASK_DEPENDENCY_ADDED_V1, TASK_DEPENDENCY_REMOVED_V1, TASK_DESCRIPTION_MENTIONS_CHANGED_V1, TASK_OCCURRENCE_CREATED_V1, TASK_PURGED_V1, TASK_RESTORED_V1, TASK_STATUS_CHANGED_V1, TASK_TRASHED_V1, TASK_UNARCHIVED_V1, TASK_UPDATED_V1, TASK_WATCHER_CHANGED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -2681,6 +2785,8 @@ export type RestrictedEventName = (typeof RESTRICTED_EVENT_NAMES)[number];
 
 /** Payload type of each event of this document, by event name. */
 export interface EventPayloads {
+  'approval.decided.v1': ApprovalDecidedV1;
+  'approval.requested.v1': ApprovalRequestedV1;
   'comment.created.v1': CommentCreatedV1;
   'comment.deleted.v1': CommentDeletedV1;
   'comment.updated.v1': CommentUpdatedV1;
@@ -2724,6 +2830,8 @@ export interface EventPayloads {
 
 /** Payload validator of each event of this document, by event name. */
 export const eventSchemas = {
+  'approval.decided.v1': approvalDecidedV1Schema,
+  'approval.requested.v1': approvalRequestedV1Schema,
   'comment.created.v1': commentCreatedV1Schema,
   'comment.deleted.v1': commentDeletedV1Schema,
   'comment.updated.v1': commentUpdatedV1Schema,

@@ -20,6 +20,8 @@ import type { Problem } from './problem';
  * - `mention.recipient-invalid`: a description mention recipient is ineligible;
  * - `milestone.status-invalid`: the final milestone status is invalid;
  * - `milestone.dates-invalid`: the final milestone dates or estimate are invalid;
- * - `recurrence.date-out-of-range`: the successor date cannot be represented.
+ * - `recurrence.date-out-of-range`: the successor date cannot be represented;
+ * - `custom-field.value-invalid`: a field is absent, retired or outside the resulting space,
+ *   the value has the wrong type or the designated sprint points value is negative.
  */
 export type TaskChangeRefusedResponse = Problem;

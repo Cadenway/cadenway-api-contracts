@@ -260,6 +260,13 @@ export const Recurrence = {
 } as const;
 
 /**
+ * Sparse values keyed by lowercase stable custom field ID. Only active definitions of the readable
+ * task's current space are included. Missing entries have no value. Absence of the member
+ * means the producer has not reported these values. Numeric zero and empty text are values.
+ */
+export interface TaskCustomFieldValues {[key: string]: number | string}
+
+/**
  * A person, by account. Only the account id in this version: the web application takes the
  * name and the initials from the member list. It may name a former member, for example the
  * owner of a space of the whole organization who left it. Later versions may add members.
@@ -296,6 +303,7 @@ export interface TaskSummary {
   /** Whether this task is a milestone; absence means the producer did not report it. */
   milestone?: boolean;
   recurrence?: Recurrence;
+  customFieldValues?: TaskCustomFieldValues;
   key: TaskKey;
   /** "Nom de la tâche", 300 characters at most. */
   name: string;
@@ -382,6 +390,82 @@ export interface Mention {
   /** @minimum 1 */
   end: number;
 }
+
+export interface TaskApprovalReviewer {
+  reviewerUserId: string;
+  /**
+     * Null while no vote is recorded for the reviewer.
+     * @nullable
+     */
+  decision: string | null;
+  /** @nullable */
+  decidedAt: string | null;
+  /**
+     * The task comment created by a change request, or null for other decisions and while
+     * waiting. Resolve it with the task comment route, which also handles removed comments.
+     * @nullable
+     */
+  commentId: string | null;
+}
+
+/**
+ * The current request and its votes from reviewers with current edit access.
+ */
+export interface TaskApprovalRound {
+  /** UUID v7 of the round. Each new round receives a different identifier. */
+  roundId: string;
+  /** Account that opened the round. */
+  requesterUserId: string;
+  requestedAt: string;
+  /**
+     * Pending while a reviewer is waiting or there are no eligible reviewers.
+     * A change request takes precedence. Approval requires every eligible reviewer to approve.
+     * Clients can display an unknown status as pending.
+     */
+  status: string;
+  /** Eligible requested reviewers in request order, including those waiting to vote. */
+  reviewers: TaskApprovalReviewer[];
+}
+
+/**
+ * The approval state at the current task version.
+ */
+export interface TaskApprovalState {
+  taskKey: TaskKey;
+  /**
+     * The version carried by the task ETag.
+     * @minimum 1
+     */
+  taskVersion: number;
+  taskStatus: StatusKey;
+  /** The current round, or null if no round is visible for this task. */
+  current: TaskApprovalRound | null;
+}
+
+export interface TaskApprovalRequest {
+  /**
+     * Distinct accounts with current edit access to the task, including the caller if requested.
+     * @minItems 1
+     * @maxItems 20
+     */
+  reviewerUserIds: string[];
+}
+
+/**
+ * The vote made by the authenticated reviewer.
+ */
+export type TaskApprovalVote = {
+  decision: 'approved';
+} | {
+  decision: 'changes-requested';
+  /**
+     * Nonblank Markdown of up to 5,000 Unicode code points, stored as a task comment.
+     * @minLength 1
+     * @maxLength 5000
+     * @pattern \S
+     */
+  reason: string;
+};
 
 /**
  * Who made a change: a person (`user`, `id` is the account), an automation rule
@@ -517,6 +601,7 @@ export interface Task {
   /** Structured spans in the current Markdown description. */
   descriptionMentions?: Mention[];
   nextOccurrenceKey?: TaskKey;
+  customFieldValues?: TaskCustomFieldValues;
   key: TaskKey;
   /** "Nom de la tâche", 300 characters at most. */
   name: string;
@@ -816,11 +901,19 @@ export interface SubtaskCreation {
 }
 
 /**
+ * Merge values by lowercase active field ID in the task's resulting space. Omitted keys are unchanged.
+ * A null value clears that entry. A number or string must match the field's immutable type.
+ * A value of the designated sprint points field must be nonnegative, including zero.
+ */
+export interface TaskCustomFieldValuesPatch {[key: string]: number | string | null}
+
+/**
  * JSON Merge Patch of a task; an empty object changes nothing. The assignees, the labels and
  * the checklist are collections: they change through their own routes, and a patch ignores
  * the members it does not declare, `assigneeIds` and `labels` included.
  */
 export interface TaskPatch {
+  customFieldValues?: TaskCustomFieldValuesPatch;
   /**
      * Structured spans in the description; replacing text clears prior spans unless a
      * replacement array is supplied. A spans-only patch also requires If-Match. Invalid
@@ -1339,6 +1432,176 @@ export interface TaskDetail {
 }
 
 /**
+ * Wizard screen. The import screen can be skipped and does not start an import.
+ */
+export type OnboardingWizardStep = typeof OnboardingWizardStep[keyof typeof OnboardingWizardStep];
+
+
+export const OnboardingWizardStep = {
+  space: 'space',
+  preset: 'preset',
+  team: 'team',
+  import: 'import',
+} as const;
+
+/**
+ * `dev` creates Backlog, Sprint 1 and Bugs. `mkt` creates Calendrier éditorial and
+ * Campagnes. `agency` creates Projets clients and Demandes. Those presets include the
+ * corresponding example tasks. `blank` creates only Première liste, with no example tasks.
+ */
+export type OnboardingPreset = typeof OnboardingPreset[keyof typeof OnboardingPreset];
+
+
+export const OnboardingPreset = {
+  dev: 'dev',
+  mkt: 'mkt',
+  agency: 'agency',
+  blank: 'blank',
+} as const;
+
+/**
+ * "Nom de l’espace", as typed; surrounding spaces are removed, and a name made only of spaces
+ * is refused with `400 request.invalid`.
+ * @minLength 1
+ * @maxLength 80
+ */
+export type SpaceName = string;
+
+/**
+ * Space name in the draft, or null when unset.
+ */
+export type OnboardingDraftName = SpaceName | null;
+
+/**
+ * Explicit space prefix in the draft, or null when unset.
+ */
+export type OnboardingDraftPrefix = SpacePrefix | null;
+
+export interface OnboardingWizard {
+  /** Only an in-progress wizard accepts further draft changes. */
+  status: string;
+  step: OnboardingWizardStep;
+  preset: OnboardingPreset;
+  name: OnboardingDraftName;
+  prefix: OnboardingDraftPrefix;
+  color: LookColorValue;
+}
+
+/**
+ * Space and first list created by the first successful finish.
+ */
+export interface OnboardingProvisioning {
+  /** UUID v7 of the provisioned space. */
+  spaceId: string;
+  /** UUID v7 of the first list of the selected preset. */
+  firstListId: string;
+}
+
+/**
+ * Presentation state of the personal checklist.
+ */
+export type OnboardingChecklistPresentation = typeof OnboardingChecklistPresentation[keyof typeof OnboardingChecklistPresentation];
+
+
+export const OnboardingChecklistPresentation = {
+  expanded: 'expanded',
+  collapsed: 'collapsed',
+  dismissed: 'dismissed',
+} as const;
+
+/**
+ * Personal progress markers for checklist actions available in this delivery.
+ */
+export interface OnboardingChecklist {
+  presentation: OnboardingChecklistPresentation;
+  /** Set by the first normal task creation by the caller in the provisioned space. */
+  firstTaskCreated: boolean;
+  /** The caller recorded a successful outcome from the organization invitation flow. */
+  invitationSent: boolean;
+  /** The caller recorded trying the Board view. */
+  boardTried: boolean;
+}
+
+/**
+ * First-launch state scoped to the verified caller and organization.
+ */
+export interface OnboardingState {
+  /**
+     * Version of the current state, used for conditional writes.
+     * @minimum 1
+     */
+  version: number;
+  wizard: OnboardingWizard;
+  /** IDs returned by successful provisioning, or null before it completes. */
+  provisioning: OnboardingProvisioning | null;
+  checklist: OnboardingChecklist;
+}
+
+/**
+ * Color of a space or a list ("Couleur"): `gris` ("Gris", the default), `violet` ("Améthyste"),
+ * `indigo` ("Indigo"), `azur` ("Azur"), `lagon` ("Lagon"), `vert` ("Jade"), `olive` ("Olive"),
+ * `jaune` ("Balise"), `orange` ("Cornaline"), `rouge` ("Grenat"), `rose` ("Rose"), `fuchsia`
+ * ("Fuchsia") or `ardoise` ("Ardoise"). The keys of `LOOK_COLORS` of the mockup.
+ */
+export type LookColor = typeof LookColor[keyof typeof LookColor];
+
+
+export const LookColor = {
+  gris: 'gris',
+  violet: 'violet',
+  indigo: 'indigo',
+  azur: 'azur',
+  lagon: 'lagon',
+  vert: 'vert',
+  olive: 'olive',
+  jaune: 'jaune',
+  orange: 'orange',
+  rouge: 'rouge',
+  rose: 'rose',
+  fuchsia: 'fuchsia',
+  ardoise: 'ardoise',
+} as const;
+
+/**
+ * Save wizard progress without provisioning a space. Omitted members keep their values.
+ * Null clears the draft name or prefix. Dismissal is terminal and requires only current
+ * organization membership.
+ */
+export interface OnboardingDraftPatch {
+  step?: OnboardingWizardStep;
+  preset?: OnboardingPreset;
+  name?: OnboardingDraftName;
+  prefix?: OnboardingDraftPrefix;
+  color?: LookColor;
+  /** Dismiss the wizard. */
+  dismissed?: true;
+}
+
+/**
+ * Update personal checklist presentation or mark an action as done. Invitation success
+ * can be recorded before provisioning. Presentation and Board progress require a
+ * provisioned space. The first-task marker is set by task creation.
+ */
+export interface OnboardingChecklistPatch {
+  presentation?: OnboardingChecklistPresentation;
+  /** Record the outcome of a successful organization invitation. */
+  invitationSent?: true;
+  /** Record trying the Board view. */
+  boardTried?: true;
+}
+
+/**
+ * Provision the first space from the selected preset. The caller supplies the prefix
+ * required by regular space creation. The command uses violet when color is omitted.
+ */
+export interface OnboardingFinish {
+  name: SpaceName;
+  prefix: SpacePrefix;
+  preset: OnboardingPreset;
+  color?: LookColor;
+}
+
+/**
  * A nonblank saved view or template name, at most 80 characters.
  * @minLength 1
  * @maxLength 80
@@ -1444,6 +1707,29 @@ export const SavedViewSheetColumn = {
   client: 'client',
 } as const;
 
+export type SavedViewCustomFieldSortDirection = typeof SavedViewCustomFieldSortDirection[keyof typeof SavedViewCustomFieldSortDirection];
+
+
+export const SavedViewCustomFieldSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+/**
+ * A stable UUID v7 identifying one custom field definition, in lowercase.
+ * @pattern ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+ */
+export type CustomFieldId = string;
+
+/**
+ * Feuille-only sort by a custom field's stable ID. It takes precedence over sheetSort while
+ * the list has that active definition. Otherwise the client falls back to sheetSort.
+ */
+export interface SavedViewCustomFieldSort {
+  fieldId: CustomFieldId;
+  direction: SavedViewCustomFieldSortDirection;
+}
+
 /**
  * Existing task-query filters. `me` is resolved for the person applying the view, not its
  * creator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.
@@ -1496,8 +1782,14 @@ export type SavedViewPresentationSheetSort = {
 export interface SavedViewPresentation {
   hiddenBoardStatusKeys?: StatusKey[];
   hiddenSheetColumns?: SavedViewSheetColumn[];
+  /**
+     * IDs of custom columns to hide, including stored preferences for retired fields.
+     * @maxItems 30
+     */
+  hiddenCustomFieldIds?: CustomFieldId[];
   /** Feuille-only sort applied to the fully loaded result by the client. */
   sheetSort?: SavedViewPresentationSheetSort;
+  customFieldSort?: SavedViewCustomFieldSort;
 }
 
 /**
@@ -1524,8 +1816,11 @@ export type SavedViewPresentationValueSheetSort = {
 export interface SavedViewPresentationValue {
   hiddenBoardStatusKeys?: StatusKey[];
   hiddenSheetColumns?: SavedViewSheetColumnValue[];
+  /** Stable IDs of hidden custom columns; clients ignore retired or unknown IDs. */
+  hiddenCustomFieldIds?: CustomFieldId[];
   /** Feuille-only sort applied to the fully loaded result by the client. */
   sheetSort?: SavedViewPresentationValueSheetSort;
+  customFieldSort?: SavedViewCustomFieldSort;
 }
 
 export type SavedViewConfigurationInputGroupBy = typeof SavedViewConfigurationInputGroupBy[keyof typeof SavedViewConfigurationInputGroupBy] | null;
@@ -1595,13 +1890,28 @@ export type SavedViewPresentationPatchSheetSort = {
   direction?: SavedViewPresentationPatchSheetSortDirection;
 } | null;
 
+export type SavedViewPresentationPatchCustomFieldSortDirection = typeof SavedViewPresentationPatchCustomFieldSortDirection[keyof typeof SavedViewPresentationPatchCustomFieldSortDirection];
+
+
+export const SavedViewPresentationPatchCustomFieldSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+export type SavedViewPresentationPatchCustomFieldSort = {
+  fieldId?: CustomFieldId;
+  direction?: SavedViewPresentationPatchCustomFieldSortDirection;
+} | null;
+
 /**
  * A nested merge patch; null removes the corresponding presentation setting.
  */
 export interface SavedViewPresentationPatch {
   hiddenBoardStatusKeys?: StatusKey[] | null;
   hiddenSheetColumns?: SavedViewSheetColumn[] | null;
+  hiddenCustomFieldIds?: CustomFieldId[] | null;
   sheetSort?: SavedViewPresentationPatchSheetSort;
+  customFieldSort?: SavedViewPresentationPatchCustomFieldSort;
 }
 
 export type SavedViewConfigurationPatchGroupBy = typeof SavedViewConfigurationPatchGroupBy[keyof typeof SavedViewConfigurationPatchGroupBy] | null;
@@ -1784,31 +2094,6 @@ export interface MilestonePage {
 }
 
 /**
- * Color of a space or a list ("Couleur"): `gris` ("Gris", the default), `violet` ("Améthyste"),
- * `indigo` ("Indigo"), `azur` ("Azur"), `lagon` ("Lagon"), `vert` ("Jade"), `olive` ("Olive"),
- * `jaune` ("Balise"), `orange` ("Cornaline"), `rouge` ("Grenat"), `rose` ("Rose"), `fuchsia`
- * ("Fuchsia") or `ardoise` ("Ardoise"). The keys of `LOOK_COLORS` of the mockup.
- */
-export type LookColor = typeof LookColor[keyof typeof LookColor];
-
-
-export const LookColor = {
-  gris: 'gris',
-  violet: 'violet',
-  indigo: 'indigo',
-  azur: 'azur',
-  lagon: 'lagon',
-  vert: 'vert',
-  olive: 'olive',
-  jaune: 'jaune',
-  orange: 'orange',
-  rouge: 'rouge',
-  rose: 'rose',
-  fuchsia: 'fuchsia',
-  ardoise: 'ardoise',
-} as const;
-
-/**
  * Who sees a space ("Confidentialité"): `organization` ("Tout Atelier Nord": every member of
  * the organization but the guests) or `private` ("Privé": its owner and the people it is
  * shared with).
@@ -1835,14 +2120,6 @@ export const AccessRole = {
   comment: 'comment',
   view: 'view',
 } as const;
-
-/**
- * "Nom de l’espace", as typed; surrounding spaces are removed, and a name made only of spaces
- * is refused with `400 request.invalid`.
- * @minLength 1
- * @maxLength 80
- */
-export type SpaceName = string;
 
 /**
  * "Description" ("Facultatif"), trimmed; `null` or an empty text for none.
@@ -2095,6 +2372,74 @@ export interface ListPatch {
 }
 
 /**
+ * An active definition of a custom column in a space.
+ */
+export interface CustomFieldDefinition {
+  id: CustomFieldId;
+  spaceId: string;
+  name: string;
+  /** Immutable kind. This delivery supports numeric and text values. */
+  type: string;
+  /**
+     * Zero-based position among the active definitions of the space.
+     * @minimum 0
+     */
+  position: number;
+  /** True only for the active numeric definition used for sprint points. */
+  sprintPoints: boolean;
+  /**
+     * Definition version used by its ETag.
+     * @minimum 1
+     */
+  version: number;
+}
+
+export interface CustomFieldDefinitionPage {
+  items: CustomFieldDefinition[];
+  nextCursor: NextCursor | null;
+}
+
+export type CustomFieldDefinitionCreationType = typeof CustomFieldDefinitionCreationType[keyof typeof CustomFieldDefinitionCreationType];
+
+
+export const CustomFieldDefinitionCreationType = {
+  number: 'number',
+  text: 'text',
+} as const;
+
+export interface CustomFieldDefinitionCreation {
+  /**
+     * Display name, trimmed. Renaming never changes the ID.
+     * @minLength 1
+     * @maxLength 80
+     * @pattern \S
+     */
+  name: string;
+  type: CustomFieldDefinitionCreationType;
+}
+
+export interface CustomFieldDefinitionPatch {
+  /**
+     * Display name, trimmed. Renaming never changes the ID.
+     * @minLength 1
+     * @maxLength 80
+     * @pattern \S
+     */
+  name?: string;
+  /**
+     * Move to this zero-based position in the active definition order.
+     * @minimum 0
+     * @maximum 29
+     */
+  position?: number;
+  /**
+     * True designates this numeric field, clearing any previous designation. False clears
+     * the designation if this field currently holds it.
+     */
+  sprintPoints?: boolean;
+}
+
+/**
  * The access of one person to a space or a list ("Personnes ayant accès"), given by someone
  * who manages it. A space or a list holds 200 grants at most. The owner of the space holds
  * none: they always have `edit` ("Propriétaire").
@@ -2326,6 +2671,41 @@ export interface Problem {
 }
 
 /**
+ * `onboarding.wizard-closed`: the wizard has already finished or was dismissed.
+ */
+export type OnboardingWizardClosedResponse = Problem;
+
+/**
+ * `onboarding.checklist-unavailable`: the caller has no provisioned space for this change.
+ */
+export type OnboardingChecklistUnavailableResponse = Problem;
+
+/**
+ * - `onboarding.wizard-closed`: this wizard was already finished or dismissed;
+ * - `space.prefix-taken`: the prefix is reserved in the organization, given in `details.prefix`;
+ * - `idempotency.request-in-progress`: a matching request with this key is still running.
+ */
+export type OnboardingFinishConflictResponse = Problem;
+
+/**
+ * - `organization.role-forbidden`: for finish only, the caller cannot create a space;
+ * - `auth.scope-missing`: the personal API token lacks `tasks:write`;
+ * - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`;
+ * - `auth.csrf-rejected`: the `Origin` or the `Content-Type` of the request is refused.
+ */
+export type OnboardingWriteForbiddenResponse = Problem;
+
+/**
+ * `idempotency.key-reused`: the key was used with a different body.
+ */
+export type OnboardingIdempotencyKeyReusedResponse = Problem;
+
+/**
+ * `request.version-mismatch`: `details.version` is the current onboarding version to read again.
+ */
+export type OnboardingVersionMismatchResponse = Problem;
+
+/**
  * `task.archived` or `idempotency.request-in-progress`.
  */
 export type TaskDuplicateConflictResponse = Problem;
@@ -2459,6 +2839,46 @@ export type OrganizationNotFoundResponse = Problem;
 export type ListNotFoundResponse = Problem;
 
 /**
+ * - `approval.reviewer-required` applies when an editor was omitted from the round.
+ * - `access.role-insufficient` applies when the actor has a list role below `edit`.
+ * - See `TasksWriteForbidden` for `auth.scope-missing`, `auth.csrf-rejected`,
+ *   `organization.not-selected` and `organization.mfa-required`.
+ */
+export type ApprovalVoteForbiddenResponse = Problem;
+
+/**
+ * - `approval.round-not-found` applies when the supplied ID differs from the current round or the task has no round.
+ * - See `TaskNotFound` for `task.not-found`, `task.trashed` and `organization.not-found`.
+ */
+export type ApprovalRoundNotFoundResponse = Problem;
+
+/**
+ * - An archived task returns `task.archived`.
+ * - A milestone returns `approval.milestone-unsupported`.
+ */
+export type ApprovalRoundConflictResponse = Problem;
+
+/**
+ * - An archived task returns `task.archived`.
+ * - A milestone returns `approval.milestone-unsupported`.
+ * - An existing vote returns `approval.vote-already-recorded`. Withdraw it before casting another.
+ * - The automated completion returns `recurrence.already-spawned` if it would repeat an occurrence.
+ */
+export type ApprovalVoteConflictResponse = Problem;
+
+/**
+ * A requested reviewer without edit access causes `approval.reviewer-invalid`.
+ */
+export type ApprovalReviewersRefusedResponse = Problem;
+
+/**
+ * - `task.status-hidden` applies if the automatic status is unavailable in the task's space.
+ * - `task.subtask-limit-reached` applies if the recurrence successor would exceed the parent capacity.
+ * - `recurrence.date-out-of-range` applies if the successor dates are out of range.
+ */
+export type ApprovalTransitionRefusedResponse = Problem;
+
+/**
  * - `task.not-found`: no task with this key that the caller sees, or a task in the trash
  *   that the caller could not change;
  * - `task.trashed`: the task is in the trash and the caller could change its list ("Tâche
@@ -2541,7 +2961,9 @@ export type SubtaskCreationRefusedResponse = Problem;
  * - `mention.recipient-invalid`: a description mention recipient is ineligible;
  * - `milestone.status-invalid`: the final milestone status is invalid;
  * - `milestone.dates-invalid`: the final milestone dates or estimate are invalid;
- * - `recurrence.date-out-of-range`: the successor date cannot be represented.
+ * - `recurrence.date-out-of-range`: the successor date cannot be represented;
+ * - `custom-field.value-invalid`: a field is absent, retired or outside the resulting space,
+ *   the value has the wrong type or the designated sprint points value is negative.
  */
 export type TaskChangeRefusedResponse = Problem;
 
@@ -2581,6 +3003,11 @@ export type RateLimitedResponse = Problem;
 export type UnavailableResponse = Problem;
 
 export type DependencyDirectionParameter = DependencyDirection;
+
+/**
+ * The strong task version ETag last returned on the task or approval state.
+ */
+export type ApprovalIfMatchParameter = string;
 
 /**
  * `"<version>"` of the task the change was made from, as the `ETag` gave it.
@@ -2692,6 +3119,11 @@ export const ActivityKindParameterItem = {
  * Kinds of entries to keep, separated by commas; every kind when absent.
  */
 export type ActivityKindParameter = ActivityKindParameterItem[];
+
+/**
+ * Onboarding version returned by the ETag, for example `"3"`.
+ */
+export type OnboardingIfMatchParameter = string;
 
 export type ListTasksParams = {
   /** Keep only milestones when true, or only ordinary tasks when false; absent leaves both. */
