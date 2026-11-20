@@ -35,6 +35,10 @@ info:
     | `POST /v1/auth/password-reset/confirmation` | `POST /internal/v1/auth/password-reset/confirmation` |
     | `POST /v1/auth/reauthentication` | `POST /internal/v1/sessions/{sessionId}/reauthentication` with the session the introspection returned |
     | `GET /v1/me` | `GET /internal/v1/users/{userId}` with the user the introspection returned |
+    | `POST /v1/me/avatar/uploads` | `POST /internal/v1/users/{userId}/avatar/uploads` before Storage signs the transfer |
+    | `PUT /v1/me/avatar` | Check `GET /internal/v1/users/{userId}/avatar/uploads/{uploadId}`, prepare pending assets through Storage, then `PUT /internal/v1/users/{userId}/avatar` |
+    | `DELETE /v1/me/avatar` | `DELETE /internal/v1/users/{userId}/avatar` |
+    | `GET /v1/me/avatar` or authorized `GET /v1/members/{memberId}/avatar` | `GET /internal/v1/users/{userId}/avatar-reference` before the Storage read |
     | `PATCH /v1/me` | `PATCH /internal/v1/users/{userId}` with the user the introspection returned |
     | `PUT /v1/me/password` | `PUT /internal/v1/users/{userId}/password` with the user and the session the introspection returned |
     | `POST /v1/me/email-change` | `POST /internal/v1/users/{userId}/email-change` with the user and the session the introspection returned |
@@ -838,6 +842,254 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/SessionNotFound'
+  /internal/v1/users/{userId}/avatar/uploads:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        description: Account id.
+        schema:
+          type: string
+          format: uuid
+          examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+    post:
+      operationId: reserveAvatarUploadInternal
+      summary: Reserve an account avatar upload
+      description: |
+        Allocates one pending reservation for the actor and the current avatar generation before the
+        gateway obtains a signed Storage transfer. Stores the bound declaration and expiry. While
+        authorization still holds, replaying an equivalent Idempotency-Key returns the original
+        reservation and expiry. Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+        claim is ignored for this account-scoped operation.
+      tags: [users]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Key scoped to the verified actor and image owner.
+          schema: { type: string, minLength: 1, maxLength: 255 }
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/profile-media.yaml#/components/schemas/StartAvatarUpload'
+            example: { contentType: image/webp, sizeBytes: 43024 }
+      responses:
+        '201':
+          description: The current owner reservation.
+          headers:
+            Location:
+              required: true
+              description: Path of the owner reservation.
+              schema:
+                type: string
+                examples:
+                  [
+                    /internal/v1/users/019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30/avatar/uploads/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01,
+                  ]
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaReservation'
+              example:
+                {
+                  uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01,
+                  expiresAt: '2026-11-08T08:10:00Z',
+                }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+        '409':
+          $ref: '#/components/responses/ProfileMediaReservationConflict'
+        '422':
+          $ref: '#/components/responses/ProfileMediaReservationRefused'
+  /internal/v1/users/{userId}/avatar/uploads/{uploadId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        description: Account id.
+        schema:
+          type: string
+          format: uuid
+          examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+      - name: uploadId
+        in: path
+        required: true
+        description: Opaque id allocated by the owning service.
+        schema:
+          $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaId'
+    get:
+      operationId: getAvatarUploadStateInternal
+      summary: Read account avatar upload state
+      description: |
+        Checks that the caller owns the reservation and returns whether it is pending or already
+        committed. An expired or superseded pending upload is refused. The gateway checks this before
+        asking Storage to prepare the pending upload. A committed replay skips preparation and cannot
+        reactivate a prior image. Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+        claim is ignored for this account-scoped operation.
+      tags: [users]
+      responses:
+        '200':
+          description: State of the caller’s reservation.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaReservationState'
+              example:
+                {
+                  uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01,
+                  state: pending,
+                  expiresAt: '2026-11-08T08:10:00Z',
+                }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/AvatarOwnerOrUploadNotFound'
+        '409':
+          $ref: '#/components/responses/ProfileMediaUploadStateConflict'
+  /internal/v1/users/{userId}/avatar:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        description: Account id.
+        schema:
+          type: string
+          format: uuid
+          examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+    put:
+      operationId: setAvatarInternal
+      summary: Publish the prepared avatar
+      description: |
+        The gateway calls this operation for a pending reservation only after Storage confirms
+        preparation for the same id and actor. Identity locks the account and reservation, checks the
+        scope, generation and expiry again, and changes the reference and appends
+        `user.avatar-changed.v1` in the same transaction. A committed replay is a no-op and returns
+        the current ETag. A stale optional If-Match on first publication is refused.
+        Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+        claim is ignored for this account-scoped operation.
+      tags: [users]
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: Strong ETag of the current account or organization.
+          schema:
+            type: string
+            pattern: '^"[1-9][0-9]*"$'
+            examples: ['"7"']
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/profile-media.yaml#/components/schemas/SetProfileMedia'
+            example: { uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01 }
+      responses:
+        '204':
+          description: The avatar was set or the reservation was already committed.
+          headers:
+            ETag:
+              required: true
+              description: Strong ETag of the current account or organization.
+              schema: { type: string, examples: ['"8"'] }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/AvatarOwnerOrUploadNotFound'
+        '409':
+          $ref: '#/components/responses/ProfileMediaUploadStateConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+    delete:
+      operationId: deleteAvatarInternal
+      summary: Clear the account avatar
+      description: |
+        Clears the reference and invalidates older pending uploads under the same lock as publication.
+        An actual reference change commits with `user.avatar-changed.v1`. An absent image leaves the
+        account version unchanged and emits no avatar change. Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+        claim is ignored for this account-scoped operation.
+      tags: [users]
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: Strong ETag of the current account or organization.
+          schema:
+            type: string
+            pattern: '^"[1-9][0-9]*"$'
+            examples: ['"7"']
+      responses:
+        '204':
+          description: The account no longer has an avatar.
+          headers:
+            ETag:
+              required: true
+              description: Strong ETag of the current account or organization.
+              schema: { type: string, examples: ['"8"'] }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/users/{userId}/avatar-reference:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        description: Account id.
+        schema:
+          type: string
+          format: uuid
+          examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+    get:
+      operationId: getAvatarReferenceInternal
+      summary: Read the active avatar reference
+      description: |
+        Returns only the current opaque image id or null, never a profile or storage capability.
+        For a self read, the verified actor matches userId, with any organization ignored. For a
+        different userId an organization is mandatory, and the API gateway must have just confirmed
+        both caller and target access through the current member lookup in the token organization.
+        The requested userId is the one returned by that lookup. Issuer api-gateway and actor user only.
+      tags: [users]
+      responses:
+        '200':
+          description: The current account avatar reference.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/profile-media.yaml#/components/schemas/CurrentAvatarReference'
+              example: { assetId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01 }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
   /internal/v1/users/{userId}:
     get:
       operationId: getUser
@@ -2359,6 +2611,36 @@ components:
           everyone: 7
         version: 2
   responses:
+    ProfileMediaReservationConflict:
+      description: |
+        `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    ProfileMediaReservationRefused:
+      description: |
+        `media.file-too-large` above 5,242,880 declared bytes, `media.unsupported-type` for a
+        disallowed image encoding, or `idempotency.key-reused` for a conflicting reservation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    ProfileMediaUploadStateConflict:
+      description: |
+        `media.upload-expired` for expiration, `media.upload-not-ready` for an upload that has not
+        arrived, or `media.upload-superseded` for an invalidated prior generation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    AvatarOwnerOrUploadNotFound:
+      description: |
+        `user.not-found` for a different or unavailable account, or `media.not-found` for an absent or unrelated upload.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     ChallengeIssued:
       description: |
         The account has two-step verification: no session, no token. The body is the challenge, the
@@ -3418,6 +3700,10 @@ components:
           type: [string, 'null']
           description: Job title; `null` when there is none.
           examples: [Responsable produit]
+        avatarId:
+          type: [string, 'null']
+          format: uuid
+          description: Current opaque avatar reference or null. The account owns it independently of any organization.
         timeZone:
           type: string
           description: IANA time zone name; `Europe/Paris` until the person chooses another.
@@ -3434,8 +3720,8 @@ components:
           type: integer
           minimum: 1
           description: |
-            Version of the account. A change of the profile, of the password, of the address, of
-            the two-step verification or of the scheduled deletion makes it the next one.
+            Version of the account. A change of the profile, avatar, password, address,
+            two-step verification or scheduled deletion makes it the next one.
     Role:
       $ref: '../../components/organization.yaml#/components/schemas/Role'
     ProfilePatch:

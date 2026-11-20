@@ -22,6 +22,11 @@ export interface CurrentUser {
      * @nullable
      */
   jobTitle: string | null;
+  /**
+     * Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.
+     * @nullable
+     */
+  avatarId?: string | null;
   timeZone: TimeZone;
   /**
      * When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.
@@ -30,9 +35,8 @@ export interface CurrentUser {
      */
   passwordChangedAt?: string;
   /**
-     * Version of the account, also sent as `ETag`. A change of the profile, of the password,
-     * of the address, of the two-step verification or of the scheduled deletion makes it the
-     * next one.
+     * Version of the account, also sent as `ETag`. A change of the profile, avatar, password,
+     * address, two-step verification or scheduled deletion makes it the next one.
      * @minimum 1
      */
   version: number;

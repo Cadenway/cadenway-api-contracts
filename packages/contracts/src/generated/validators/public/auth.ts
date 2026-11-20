@@ -164,9 +164,10 @@ export const VerifySignUpResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.'),
   "timeZone": zod.string().min(1).max(verifySignUpResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address, of the two-step verification or of the scheduled deletion makes it the\nnext one.\n')
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, avatar, password,\naddress, two-step verification or scheduled deletion makes it the next one.\n')
 }),
   "session": zod.object({
   "id": zod.uuid().describe('Id of the session; not its token.'),
@@ -233,9 +234,10 @@ export const SignInWithPasswordResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.'),
   "timeZone": zod.string().min(1).max(signInWithPasswordResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address, of the two-step verification or of the scheduled deletion makes it the\nnext one.\n')
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, avatar, password,\naddress, two-step verification or scheduled deletion makes it the next one.\n')
 }),
   "session": zod.object({
   "id": zod.uuid().describe('Id of the session; not its token.'),
@@ -313,9 +315,10 @@ export const SignInWithCodeResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.'),
   "timeZone": zod.string().min(1).max(signInWithCodeResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address, of the two-step verification or of the scheduled deletion makes it the\nnext one.\n')
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, avatar, password,\naddress, two-step verification or scheduled deletion makes it the next one.\n')
 }),
   "session": zod.object({
   "id": zod.uuid().describe('Id of the session; not its token.'),
@@ -417,9 +420,10 @@ export const AnswerSignInChallengeWithAuthenticatorAppResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.'),
   "timeZone": zod.string().min(1).max(answerSignInChallengeWithAuthenticatorAppResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address, of the two-step verification or of the scheduled deletion makes it the\nnext one.\n')
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, avatar, password,\naddress, two-step verification or scheduled deletion makes it the next one.\n')
 }),
   "session": zod.object({
   "id": zod.uuid().describe('Id of the session; not its token.'),
@@ -466,9 +470,10 @@ export const AnswerSignInChallengeWithBackupCodeResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.'),
   "timeZone": zod.string().min(1).max(answerSignInChallengeWithBackupCodeResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address, of the two-step verification or of the scheduled deletion makes it the\nnext one.\n')
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, avatar, password,\naddress, two-step verification or scheduled deletion makes it the next one.\n')
 }),
   "session": zod.object({
   "id": zod.uuid().describe('Id of the session; not its token.'),
@@ -589,9 +594,10 @@ export const AnswerSignInChallengeWithSecurityKeyResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.'),
   "timeZone": zod.string().min(1).max(answerSignInChallengeWithSecurityKeyResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address, of the two-step verification or of the scheduled deletion makes it the\nnext one.\n')
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, avatar, password,\naddress, two-step verification or scheduled deletion makes it the next one.\n')
 }),
   "session": zod.object({
   "id": zod.uuid().describe('Id of the session; not its token.'),
@@ -811,9 +817,10 @@ export const GetCurrentUserResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.'),
   "timeZone": zod.string().min(1).max(getCurrentUserResponseTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address, of the two-step verification or of the scheduled deletion makes it the\nnext one.\n')
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, avatar, password,\naddress, two-step verification or scheduled deletion makes it the next one.\n')
 })
 
 
@@ -827,9 +834,8 @@ export const GetCurrentUserResponse = zod.object({
  *   `400 request.invalid` with an issue on `timeZone`.
  * - `If-Match` is optional; a version that is no longer the current one answers
  *   `412 request.version-mismatch`.
- * - The address, the password and the photo do not change here: the address changes with
- *   `POST /v1/me/email-change`, the password with `PUT /v1/me/password`, and the photo in a
- *   later version.
+ * - Change the address with `POST /v1/me/email-change`, the password with
+ *   `PUT /v1/me/password` and the photo with the avatar operations in `profile-media.yaml`.
  *
  * Emits `user.profile-updated.v1` when something changed; a patch that changes nothing
  * answers `200` with the same version and emits nothing. Session only: a personal API token
@@ -872,9 +878,10 @@ export const UpdateCurrentUserResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.'),
   "timeZone": zod.string().min(1).max(updateCurrentUserResponseTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address, of the two-step verification or of the scheduled deletion makes it the\nnext one.\n')
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, avatar, password,\naddress, two-step verification or scheduled deletion makes it the next one.\n')
 })
 
 
@@ -937,9 +944,10 @@ export const ChangePasswordResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.'),
   "timeZone": zod.string().min(1).max(changePasswordResponseTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address, of the two-step verification or of the scheduled deletion makes it the\nnext one.\n')
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, avatar, password,\naddress, two-step verification or scheduled deletion makes it the next one.\n')
 })
 
 
@@ -1028,9 +1036,10 @@ export const ConfirmEmailChangeResponse = zod.object({
   "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
   "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
   "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.'),
   "timeZone": zod.string().min(1).max(confirmEmailChangeResponseTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
   "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
-  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, of the password,\nof the address, of the two-step verification or of the scheduled deletion makes it the\nnext one.\n')
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, avatar, password,\naddress, two-step verification or scheduled deletion makes it the next one.\n')
 })
 
 

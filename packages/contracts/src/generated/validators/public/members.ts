@@ -52,6 +52,7 @@ export const ListMembersResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.uuid().describe('Id of the membership, the `memberId` of the routes.'),
   "userId": zod.uuid().describe('Id of the account; the web application marks its own row "(vous)" with it.'),
+  "avatarId": zod.uuid().nullish().describe('Last observed opaque avatar reference or null, for display only.\nGET /v1/members/{memberId}/avatar checks live access and resolves the current image.\n'),
   "name": zod.string().describe('Full name of the account; the web application derives the initials from it.'),
   "email": zod.email().max(listMembersResponseItemsItemEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
@@ -90,6 +91,7 @@ export const getMemberResponseEmailMax = 254;
 export const GetMemberResponse = zod.object({
   "id": zod.uuid().describe('Id of the membership, the `memberId` of the routes.'),
   "userId": zod.uuid().describe('Id of the account; the web application marks its own row "(vous)" with it.'),
+  "avatarId": zod.uuid().nullish().describe('Last observed opaque avatar reference or null, for display only.\nGET /v1/members/{memberId}/avatar checks live access and resolves the current image.\n'),
   "name": zod.string().describe('Full name of the account; the web application derives the initials from it.'),
   "email": zod.email().max(getMemberResponseEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
@@ -129,6 +131,7 @@ export const changeMemberRoleResponseEmailMax = 254;
 export const ChangeMemberRoleResponse = zod.object({
   "id": zod.uuid().describe('Id of the membership, the `memberId` of the routes.'),
   "userId": zod.uuid().describe('Id of the account; the web application marks its own row "(vous)" with it.'),
+  "avatarId": zod.uuid().nullish().describe('Last observed opaque avatar reference or null, for display only.\nGET /v1/members/{memberId}/avatar checks live access and resolves the current image.\n'),
   "name": zod.string().describe('Full name of the account; the web application derives the initials from it.'),
   "email": zod.email().max(changeMemberRoleResponseEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),

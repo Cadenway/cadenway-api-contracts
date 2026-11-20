@@ -53,6 +53,7 @@ export const CreateOrganizationInternalResponse = zod.object({
   "slug": zod.string(),
   "description": zod.string().nullable(),
   "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
+  "logoId": zod.uuid().nullish().describe('Current opaque logo reference or null.'),
   "defaultLanguage": zod.string(),
   "plan": zod.string().describe('Always `free` until billing exists.'),
   "memberCount": zod.int().min(1).describe('Members that take a seat; guests are not counted.'),
@@ -117,6 +118,7 @@ export const GetOrganizationInternalResponse = zod.object({
   "slug": zod.string(),
   "description": zod.string().nullable(),
   "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
+  "logoId": zod.uuid().nullish().describe('Current opaque logo reference or null.'),
   "defaultLanguage": zod.string(),
   "plan": zod.string().describe('Always `free` until billing exists.'),
   "memberCount": zod.int().min(1).describe('Members that take a seat; guests are not counted.'),
@@ -168,6 +170,7 @@ export const UpdateOrganizationInternalResponse = zod.object({
   "slug": zod.string(),
   "description": zod.string().nullable(),
   "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
+  "logoId": zod.uuid().nullish().describe('Current opaque logo reference or null.'),
   "defaultLanguage": zod.string(),
   "plan": zod.string().describe('Always `free` until billing exists.'),
   "memberCount": zod.int().min(1).describe('Members that take a seat; guests are not counted.'),
@@ -175,6 +178,109 @@ export const UpdateOrganizationInternalResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().min(1)
 })
+
+
+/**
+ * Allocates a pending reservation for the actor and the current logo generation before the
+ * gateway obtains a signed Storage transfer. Stores the bound declaration and expiry. While
+ * authorization still holds, an equivalent Idempotency-Key replays the original reservation
+ * and expiry. Internal token issuer api-gateway, actor user with an organization. Organization requires
+ * the current owner or admin role from its own membership state.
+ * @summary Reserve an organization logo upload
+ */
+export const reserveOrganizationLogoUploadInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const ReserveOrganizationLogoUploadInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(reserveOrganizationLogoUploadInternalHeaderIdempotencyKeyMax).optional().describe('Key scoped to the verified actor and image owner.')
+})
+
+export const reserveOrganizationLogoUploadInternalBodySizeBytesMax = 5242880;
+
+
+
+export const ReserveOrganizationLogoUploadInternalBody = zod.strictObject({
+  "contentType": zod.enum(['image/png', 'image/svg+xml']).describe('A logo source is a square PNG or SVG image. A 512-pixel image is recommended.'),
+  "sizeBytes": zod.int().min(1).max(reserveOrganizationLogoUploadInternalBodySizeBytesMax).describe('Image size in bytes, up to 5 MiB.')
+})
+
+export const reserveOrganizationLogoUploadInternalResponseUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const ReserveOrganizationLogoUploadInternalResponse = zod.object({
+  "uploadId": zod.uuid().regex(reserveOrganizationLogoUploadInternalResponseUploadIdRegExp).describe('Opaque reservation identifier, reused for the verified immutable asset.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('Exclusive owner reservation expiry. Replays preserve this instant.')
+})
+
+
+/**
+ * Verifies the uploader and organization of the reservation, then reports whether it is pending
+ * or committed. An expired or superseded pending upload is refused. The gateway checks this
+ * before asking Storage to prepare a pending upload. A committed replay skips preparation.
+ * Internal token issuer api-gateway, actor user with an organization. Organization requires
+ * the current owner or admin role from its own membership state.
+ * @summary Read organization logo upload state
+ */
+export const getOrganizationLogoUploadStateInternalPathUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetOrganizationLogoUploadStateInternalParams = zod.object({
+  "uploadId": zod.uuid().regex(getOrganizationLogoUploadStateInternalPathUploadIdRegExp).describe('Opaque id allocated by the owning service.')
+})
+
+export const getOrganizationLogoUploadStateInternalResponseUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetOrganizationLogoUploadStateInternalResponse = zod.object({
+  "uploadId": zod.uuid().regex(getOrganizationLogoUploadStateInternalResponseUploadIdRegExp).describe('Opaque reservation identifier, reused for the verified immutable asset.'),
+  "state": zod.enum(['pending', 'committed']).describe('Pending permits preparation within the lease. Committed identifies the same owner receipt on replay.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('Exclusive owner reservation expiry. Replays preserve this instant.')
+})
+
+
+/**
+ * The gateway calls for a pending reservation only after Storage confirms preparation for the
+ * same id, organization and actor. Organization locks the relevant membership, organization and
+ * reservation, rechecks current role, generation and expiry, and persists the reference and
+ * `organization.logo-changed.v1` in the same transaction. An authorized committed retry returns
+ * the current ETag without changing the image. A stale optional If-Match on first publication
+ * is refused. Internal token issuer api-gateway, actor user with an organization. Organization requires
+ * the current owner or admin role from its own membership state.
+ * @summary Publish the prepared logo
+ */
+export const setOrganizationLogoInternalHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
+
+
+export const SetOrganizationLogoInternalHeader = zod.object({
+  "If-Match": zod.string().regex(setOrganizationLogoInternalHeaderIfMatchRegExp).optional().describe('Strong ETag of the current account or organization.')
+})
+
+export const setOrganizationLogoInternalBodyUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const SetOrganizationLogoInternalBody = zod.strictObject({
+  "uploadId": zod.uuid().regex(setOrganizationLogoInternalBodyUploadIdRegExp).describe('Opaque reservation identifier, reused for the verified immutable asset.')
+})
+
+export const SetOrganizationLogoInternalResponse = zod.void()
+
+
+/**
+ * Clears the reference and invalidates older pending uploads under the same lock as
+ * publication. An actual logo change commits with `organization.logo-changed.v1`. An absent
+ * image leaves the organization version unchanged and emits no logo change. Internal token issuer api-gateway, actor user with an organization. Organization requires
+ * the current owner or admin role from its own membership state.
+ * @summary Clear the organization logo
+ */
+export const deleteOrganizationLogoInternalHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
+
+
+export const DeleteOrganizationLogoInternalHeader = zod.object({
+  "If-Match": zod.string().regex(deleteOrganizationLogoInternalHeaderIfMatchRegExp).optional().describe('Strong ETag of the current account or organization.')
+})
+
+export const DeleteOrganizationLogoInternalResponse = zod.void()
 
 
 /**
@@ -220,6 +326,7 @@ export const ListMembersInternalResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.uuid(),
   "userId": zod.uuid(),
+  "avatarId": zod.uuid().nullish().describe('Last observed directory avatar reference or null. It does not grant image access.'),
   "name": zod.string().describe('Full name, from the user directory.'),
   "email": zod.email().max(listMembersInternalResponseItemsItemEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
@@ -291,6 +398,7 @@ export const getMemberInternalResponseEmailMax = 254;
 export const GetMemberInternalResponse = zod.object({
   "id": zod.uuid(),
   "userId": zod.uuid(),
+  "avatarId": zod.uuid().nullish().describe('Last observed directory avatar reference or null. It does not grant image access.'),
   "name": zod.string().describe('Full name, from the user directory.'),
   "email": zod.email().max(getMemberInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
@@ -327,6 +435,7 @@ export const changeMemberRoleInternalResponseEmailMax = 254;
 export const ChangeMemberRoleInternalResponse = zod.object({
   "id": zod.uuid(),
   "userId": zod.uuid(),
+  "avatarId": zod.uuid().nullish().describe('Last observed directory avatar reference or null. It does not grant image access.'),
   "name": zod.string().describe('Full name, from the user directory.'),
   "email": zod.email().max(changeMemberRoleInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),

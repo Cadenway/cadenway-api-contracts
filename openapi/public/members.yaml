@@ -1243,6 +1243,12 @@ components:
           type: string
           format: uuid
           description: Id of the account; the web application marks its own row "(vous)" with it.
+        avatarId:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            Last observed opaque avatar reference or null, for display only.
+            GET /v1/members/{memberId}/avatar checks live access and resolves the current image.
         name:
           type: string
           description: Full name of the account; the web application derives the initials from it.

@@ -18,6 +18,11 @@ export interface Organization {
      * @nullable
      */
   website: string | null;
+  /**
+     * Current opaque logo reference or null. Read the image with GET /v1/organization/logo.
+     * @nullable
+     */
+  logoId?: string | null;
   /** BCP 47 tag; `fr`, `en` or `de` today, more later (`x-extensible-enum`). */
   defaultLanguage: string;
   /**
