@@ -197,7 +197,7 @@ info:
         relaying to storage-service. It also composes the task detail and checks visibility and
         display data for the inbox and reminders.
     - repository: cadenway-realtime-gateway
-      uses: Checks room access and verifies notification subject visibility before relay.
+      uses: Checks list or task access before a room join and verifies notification subject visibility before relay.
 servers:
   - url: http://task-service:3013
     description: task-service on the internal network of each environment (`TASK_SERVICE_URL`).
@@ -3876,6 +3876,10 @@ paths:
         `task.trashed`; an archived task they see answers its role. One indexed read, as for a
         list; nothing is written and nothing is emitted.
 
+        The response supplies the stable `taskId` for the room `task:<id>`. The realtime gateway
+        uses this verified UUID to join the room. If an older task-service omits it, the gateway
+        refuses the join rather than using an unverified identifier.
+
         Internal token: issuer `realtime-gateway` only (`403 auth.issuer-not-allowed` for any
         other), actor `user`, organization required.
       tags: [access]
@@ -3891,6 +3895,7 @@ paths:
                 spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
                 listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
                 taskKey: CAD-482
+                taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -8315,6 +8320,12 @@ components:
           oneOf:
             - $ref: '../../components/task.yaml#/components/schemas/TaskKey'
             - type: 'null'
+        taskId:
+          type: string
+          format: uuid
+          description: |
+            Stable UUID of the checked task, present on task access checks once the producer
+            supports realtime room joins. Omitted on list access checks.
     NotificationSubjectLookup:
       type: object
       additionalProperties: false

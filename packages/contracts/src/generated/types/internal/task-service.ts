@@ -2781,6 +2781,11 @@ export interface AccessCheck {
   listId: string;
   /** The task checked; `null` for a list. */
   taskKey: TaskKey | null;
+  /**
+     * Stable UUID of the checked task, present on task access checks once the producer
+     * supports realtime room joins. Omitted on list access checks.
+     */
+  taskId?: string;
 }
 
 export interface NotificationTaskIdSubjectRef {

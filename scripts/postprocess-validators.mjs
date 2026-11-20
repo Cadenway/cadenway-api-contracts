@@ -88,18 +88,28 @@ for (const root of ROOTS) {
           }
           generated = generated.slice(0, start) + query + generated.slice(end);
         }
-        if (operation['x-cadenway-strict-empty'] !== true) continue;
+        const strictEmpty = operation['x-cadenway-strict-empty'] === true;
+        if (!strictEmpty && operation['x-cadenway-strict-body'] !== true) continue;
         const schema = operation.requestBody?.content?.['application/json']?.schema;
         if (
           schema?.type !== 'object' ||
           schema.additionalProperties !== false ||
-          Object.keys(schema.properties ?? {}).length !== 0
+          (strictEmpty && Object.keys(schema.properties ?? {}).length !== 0)
         )
-          throw new Error(`${source}: strict empty marker requires a closed empty body`);
+          throw new Error(`${source}: strict body marker requires a matching closed object`);
         const name = `${operation.operationId[0].toUpperCase()}${operation.operationId.slice(1)}Body`;
-        const pattern = new RegExp(`(export const ${name} = )zod\\.object\\(\\{\\s*\\}\\)`);
-        if (!pattern.test(generated)) throw new Error(`${source}: missing empty validator ${name}`);
-        generated = generated.replace(pattern, '$1zod.strictObject({})');
+        if (strictEmpty) {
+          const pattern = new RegExp(`(export const ${name} = )zod\\.object\\(\\{\\s*\\}\\)`);
+          if (!pattern.test(generated))
+            throw new Error(`${source}: missing empty validator ${name}`);
+          generated = generated.replace(pattern, '$1zod.strictObject({})');
+          continue;
+        }
+        const declaration = `export const ${name} = `;
+        const object = declaration + 'zod.object({';
+        if (!generated.includes(object))
+          throw new Error(`${source}: missing body validator ${name}`);
+        generated = generated.replace(object, declaration + 'zod.strictObject({');
       }
     }
     // Orval's zod max counts UTF-16 units; JSON Schema string length counts Unicode code points.
@@ -534,6 +544,7 @@ for (const root of ROOTS) {
         'public/inbox',
         'public/reminders',
         'internal/notification-service',
+        'public/realtime',
       ].includes(spec)
     ) {
       // Keep a single final newline in the generated capability type files.
