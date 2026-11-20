@@ -84,6 +84,22 @@ export type Email = string;
  */
 export type Language = string;
 
+export interface NotificationRecipient {
+  email: Email;
+  language: Language;
+  /**
+     * The account's IANA time zone name.
+     * @minLength 1
+     * @maxLength 64
+     */
+  timeZone: string;
+  /**
+     * Monotone account version as returned by the account route.
+     * @minimum 1
+     */
+  version: number;
+}
+
 /**
  * The browser a request came from, as the gateway saw it. Stored with the session it opens,
  * to show its device and address; shown in the security email of the request. No place is
