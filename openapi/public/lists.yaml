@@ -1522,7 +1522,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: Sprint introuvable.
+            title: Liste introuvable.
             status: 404
             code: list.not-found
     ExportRowLimitReached:

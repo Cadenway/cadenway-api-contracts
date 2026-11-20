@@ -562,7 +562,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: 'Requête invalide.'
+            title: Bad Request
             status: 400
             code: request.invalid
     Unauthenticated:
@@ -588,7 +588,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: 'Ce jeton d’API ne permet pas cette action.'
+            title: 'Ce jeton n’a pas la portée nécessaire pour cette requête.'
             status: 403
             code: auth.scope-missing
             details:
@@ -627,7 +627,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: 'Une demande identique est déjà en cours.'
+            title: Conflict
             status: 409
             code: idempotency.request-in-progress
     RateLimited:
@@ -645,7 +645,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: 'Trop de demandes. Réessayez plus tard.'
+            title: 'Trop de requêtes : réessayez dans un instant.'
             status: 429
             code: rate-limit.exceeded
     Unavailable:
@@ -693,13 +693,13 @@ components:
             organizationRoleForbidden:
               value:
                 type: about:blank
-                title: 'Vous ne pouvez pas gérer les objectifs de cette organisation.'
+                title: 'Votre rôle ne permet pas cette action.'
                 status: 403
                 code: organization.role-forbidden
             roleInsufficient:
               value:
                 type: about:blank
-                title: 'Vous n’avez pas le droit de modifier les objectifs de cet espace.'
+                title: 'Il faut le droit « Peut modifier » pour cette action.'
                 status: 403
                 code: access.role-insufficient
                 details:
