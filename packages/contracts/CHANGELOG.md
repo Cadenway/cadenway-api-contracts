@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.19.0
+
+### Minor Changes
+
+- 5cde36f: Add signed upload and authorized read contracts for account avatars and organization logos. Define their verified PNG derivatives and versioned owner decisions for publication and abandoned upload cleanup.
+
 ## 0.18.0
 
 ### Minor Changes
