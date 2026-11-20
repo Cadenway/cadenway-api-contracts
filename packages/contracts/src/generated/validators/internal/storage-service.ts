@@ -5,6 +5,91 @@
 import * as zod from 'zod';
 
 /**
+ * Internal token: api-gateway, actor system, with the organization returned by
+ * task-service for this reservation. The gateway must first obtain the same tenant,
+ * publication, attachment ID and draft expiry from the Task allocation operation.
+ * The body supplies the trusted allocated ID, expiry and file declaration.
+ *
+ * Issue one multipart upload capability for the same tenant, publication and allocated
+ * ID. Only the first declaration for that binding can be reserved. The staging
+ * destination exposed in the signed form is opaque and contains no organization,
+ * list or publication identifiers. The capability is valid for at most five minutes
+ * and never after the supplied draft expiry. A retry of the same reservation replays
+ * the original signed response and expiry. A terminal release already recorded for
+ * the allocation prevents issuance.
+ * @summary Sign an upload previously allocated by task-service
+ */
+export const startIntakeAttachmentUploadInternalPathPublicationIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const StartIntakeAttachmentUploadInternalParams = zod.object({
+  "publicationId": zod.uuid().regex(startIntakeAttachmentUploadInternalPathPublicationIdRegExp).describe('Internal publication ID provided by task-service for this reservation.')
+})
+
+export const startIntakeAttachmentUploadInternalBodyAttachmentIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const startIntakeAttachmentUploadInternalBodyFileNameMax = 255;
+
+
+export const startIntakeAttachmentUploadInternalBodyFileNameRegExp = new RegExp('^(?=[\\s\\S]*\\S)(?!\\s*\\.{1,2}\\s*$)(?:[^/\\\\\\x00-\\x1F\\x7F-\\x9F\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])+$');
+export const startIntakeAttachmentUploadInternalBodyContentTypeMax = 127;
+
+
+export const startIntakeAttachmentUploadInternalBodyContentTypeRegExp = new RegExp('^(?!\\*/)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+/(?!\\*$)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+$');
+export const startIntakeAttachmentUploadInternalBodySizeBytesMax = 26214400;
+
+
+
+export const StartIntakeAttachmentUploadInternalBody = zod.strictObject({
+  "attachmentId": zod.uuid().regex(startIntakeAttachmentUploadInternalBodyAttachmentIdRegExp),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('Task\'s exclusive draft lease cutoff. The signed upload expires at or before it.'),
+  "fileName": zod.string().min(1).refine((value) => Array.from(value).length <= startIntakeAttachmentUploadInternalBodyFileNameMax, { message: 'At most 255 Unicode code points' }).regex(startIntakeAttachmentUploadInternalBodyFileNameRegExp).describe('Original Unicode basename without path separators, control characters or whitespace-padded dot segments.'),
+  "contentType": zod.string().min(1).max(startIntakeAttachmentUploadInternalBodyContentTypeMax).regex(startIntakeAttachmentUploadInternalBodyContentTypeRegExp).describe('Concrete media type and subtype without wildcards or parameters.'),
+  "sizeBytes": zod.int().min(1).max(startIntakeAttachmentUploadInternalBodySizeBytesMax).describe('Validated file length in bytes, capped at 25 MiB.')
+}).describe('Trusted Task allocation and previously validated file declaration relayed by the gateway.')
+
+export const startIntakeAttachmentUploadInternalResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const StartIntakeAttachmentUploadInternalResponse = zod.object({
+  "id": zod.uuid().regex(startIntakeAttachmentUploadInternalResponseIdRegExp),
+  "method": zod.literal("POST"),
+  "url": zod.url().describe('Signed multipart upload destination, valid for five minutes.'),
+  "fields": zod.record(zod.string(), zod.string()).refine((value) => Object.keys(value).length >= 1, { message: 'At least 1 signed form field' }).describe('Signed form fields to append unchanged before the file part.'),
+  "expiresAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
+ * Internal token: api-gateway, actor system, with the organization returned by
+ * task-service for this reservation. The gateway must first authorize completion
+ * with task-service for the current publication and draft.
+ *
+ * Verify the same immutable bytes that will be retained, and commit election of the
+ * candidate together with the verification event. A successful retry returns the
+ * same acknowledgement without another verification fact. No task attachment
+ * metadata or ordinary file facts are published by this operation. Keep the elected
+ * candidate until the Task claim or release is applied, including past the draft
+ * expiry if event delivery is delayed.
+ * @summary Verify the applicant object and pin its elected copy
+ */
+export const completeIntakeAttachmentUploadInternalPathPublicationIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const completeIntakeAttachmentUploadInternalPathAttachmentIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const CompleteIntakeAttachmentUploadInternalParams = zod.object({
+  "publicationId": zod.uuid().regex(completeIntakeAttachmentUploadInternalPathPublicationIdRegExp).describe('Internal publication ID provided by task-service for this reservation.'),
+  "attachmentId": zod.uuid().regex(completeIntakeAttachmentUploadInternalPathAttachmentIdRegExp).describe('UUID allocated by the upload request.')
+})
+
+export const completeIntakeAttachmentUploadInternalResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const CompleteIntakeAttachmentUploadInternalResponse = zod.strictObject({
+  "id": zod.uuid().regex(completeIntakeAttachmentUploadInternalResponseIdRegExp)
+}).describe('Acknowledges verification for the identified reservation without exposing file data.')
+
+
+/**
  * Lists ready attachments in descending `(uploadedAt,id)` order. The opaque cursor is
  * bound to the caller's organization, task and ordering. The caller must be able to read
  * the task. Readable archived tasks remain accessible. Pending or deleted attachments

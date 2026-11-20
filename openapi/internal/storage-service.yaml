@@ -4,7 +4,9 @@ info:
   version: 1.0.0
   description: |
     Attachment resources owned by storage-service. The API gateway is the only HTTP caller.
-    Every request uses a verified `api-gateway` token with actor `user` and an organization.
+    Every request uses a verified `api-gateway` token with an organization. Task attachment
+    and quota operations require the `user` actor. Applicant upload operations require the
+    `system` actor and the organization resolved by task-service.
     Before relaying each task attachment request, the gateway requires a successful decision
     from `checkTaskAttachmentAccessInternal`. Task-service reads current placement, visibility,
     role and archive state in one snapshot. The gateway uses `read` for list, metadata and
@@ -15,6 +17,13 @@ info:
     permanently revokes the task key for attachments and schedules removal of pending and ready
     objects. Temporary URL cleanup covers expired reservations and leftover staged objects.
     Signed URLs are sensitive and must be omitted from logs and traces.
+
+    For applicant uploads the gateway obtains the trusted tenant, publication, reservation ID and
+    draft expiry from task-service. Storage verifies and pins the immutable candidate for the
+    reservation. It keeps candidate bytes until the authoritative claim or release from
+    task-service. Only a successful claim can publish ready task metadata and the normal uploaded
+    fact. Storage never receives the form's public key, the applicant's private draft key, or
+    their contact details.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -23,7 +32,7 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Authorizes task access and relays attachment operations using the generated internal client.
+      uses: Authorizes task and applicant upload access through task-service and relays attachment operations using the generated internal client.
 servers:
   - url: http://storage-service:3015
     description: Internal service endpoint.
@@ -32,7 +41,117 @@ security:
 tags:
   - name: attachments
     description: Signed upload and download, attachment metadata and cleanup.
+  - name: intake-attachments
+    description: Unbound applicant uploads awaiting an authoritative task claim or release.
 paths:
+  /internal/v1/intake-publications/{publicationId}/attachments:
+    parameters:
+      - $ref: '#/components/parameters/IntakePublicationId'
+    post:
+      operationId: startIntakeAttachmentUploadInternal
+      summary: Sign an upload previously allocated by task-service
+      description: |
+        Internal token: api-gateway, actor system, with the organization returned by
+        task-service for this reservation. The gateway must first obtain the same tenant,
+        publication, attachment ID and draft expiry from the Task allocation operation.
+        The body supplies the trusted allocated ID, expiry and file declaration.
+
+        Issue one multipart upload capability for the same tenant, publication and allocated
+        ID. Only the first declaration for that binding can be reserved. The staging
+        destination exposed in the signed form is opaque and contains no organization,
+        list or publication identifiers. The capability is valid for at most five minutes
+        and never after the supplied draft expiry. A retry of the same reservation replays
+        the original signed response and expiry. A terminal release already recorded for
+        the allocation prevents issuance.
+      tags: [intake-attachments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/intake.yaml#/components/schemas/IntakeAttachmentUploadStart'
+            example:
+              attachmentId: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+              expiresAt: '2026-11-20T14:30:00Z'
+              fileName: capture-sso.png
+              contentType: image/png
+              sizeBytes: 184320
+      responses:
+        '201':
+          description: The temporary upload capability for this reservation.
+          headers:
+            Location:
+              $ref: '#/components/headers/IntakeAttachmentLocation'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/attachments.yaml#/components/schemas/AttachmentUpload'
+              example:
+                id: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                method: POST
+                url: https://files.example.com/fixtures/intake-upload
+                fields: { Content-Type: image/png }
+                expiresAt: '2026-11-20T14:05:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/IntakeAttachmentNotFound'
+        '409':
+          $ref: '#/components/responses/UploadReservationConflict'
+        '422':
+          $ref: '#/components/responses/IntakeAttachmentStartRefused'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/intake-publications/{publicationId}/attachments/{attachmentId}/completion:
+    parameters:
+      - $ref: '#/components/parameters/IntakePublicationId'
+      - $ref: '#/components/parameters/AttachmentId'
+    post:
+      operationId: completeIntakeAttachmentUploadInternal
+      summary: Verify the applicant object and pin its elected copy
+      description: |
+        Internal token: api-gateway, actor system, with the organization returned by
+        task-service for this reservation. The gateway must first authorize completion
+        with task-service for the current publication and draft.
+
+        Verify the same immutable bytes that will be retained, and commit election of the
+        candidate together with the verification event. A successful retry returns the
+        same acknowledgement without another verification fact. No task attachment
+        metadata or ordinary file facts are published by this operation. Keep the elected
+        candidate until the Task claim or release is applied, including past the draft
+        expiry if event delivery is delayed.
+      tags: [intake-attachments]
+      responses:
+        '200':
+          description: The upload was verified for this reservation.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/intake.yaml#/components/schemas/IntakeAttachmentCompletion'
+              example: { id: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15 }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/IntakeAttachmentNotFound'
+        '409':
+          $ref: '#/components/responses/UploadStateConflict'
+        '422':
+          $ref: '#/components/responses/UploadContentRefused'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /internal/v1/tasks/{taskKey}/attachments:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
@@ -332,8 +451,15 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Signed internal token with issuer api-gateway, audience storage-service, actor user and a verified organization.
+      description: Signed internal token with issuer api-gateway, audience storage-service and a verified organization. Use actor user for task and quota operations, or actor system for applicant upload operations.
   parameters:
+    IntakePublicationId:
+      name: publicationId
+      in: path
+      required: true
+      description: Internal publication ID provided by task-service for this reservation.
+      schema:
+        $ref: '../../components/intake.yaml#/components/schemas/IntakePublicationId'
     TaskKey:
       name: taskKey
       in: path
@@ -367,6 +493,13 @@ components:
         pattern: '^"[1-9][0-9]*"$'
         examples: ['"1"']
   headers:
+    IntakeAttachmentLocation:
+      required: true
+      description: Internal path identifying the upload reservation.
+      schema:
+        type: string
+        examples:
+          - /internal/v1/intake-publications/019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12/attachments/019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
     Location:
       required: true
       description: Path of the reserved attachment. Its metadata becomes readable when the upload is complete.
@@ -414,6 +547,14 @@ components:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
+    IntakeAttachmentNotFound:
+      description: |
+        `attachment.not-found` for a missing, unavailable or unrelated reservation, an
+        allocation with an expired draft, or a recorded terminal claim or release.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     UploadReservationConflict:
       description: |
         `idempotency.request-in-progress` while the equivalent upload reservation is running.
@@ -433,6 +574,15 @@ components:
         `attachment.file-too-large` above 26,214,400 bytes, `attachment.upload-metadata-mismatch`
         for a missing or unknown extension or one that disagrees with the declared media type,
         or `idempotency.key-reused` for a key previously used with a different request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    IntakeAttachmentStartRefused:
+      description: |
+        `attachment.upload-metadata-mismatch` for an unsupported or inconsistent file
+        declaration, or `idempotency.key-reused` for a different declaration of the same
+        allocated reservation.
       content:
         application/problem+json:
           schema:

@@ -20,6 +20,20 @@ info:
     stable task key and schedules the attachment cleanup idempotently. The purge prevents
     pending uploads from becoming ready. Cleanup removes ready attachments and discards
     pending uploads for that same task, in bounded batches when necessary.
+
+    **Anonymous intake.** Storage-service publishes `intake.attachment-verified.v1` when
+    it commits the verified immutable object for a publication reservation. The object is
+    pinned until task-service commits one terminal decision for the same organization,
+    publication and attachment. Storage-service consumes
+    [`intake.attachment-claimed.v1`](./task-service.yaml#/components/messages/intakeAttachmentClaimedV1)
+    and [`intake.attachment-released.v1`](./task-service.yaml#/components/messages/intakeAttachmentReleasedV1).
+    Only a claim can make the attachment ready and append `file.uploaded.v1`, with the system
+    actor and the reserved attachment ID as the file ID. A release before readiness appends
+    no file event. The task purge fence prevents a late claim from restoring a purged file.
+    A release tombstone prevents a late reservation, upload or verification from restoring
+    the released attachment. Storage accepts these terminal decisions only with the Task system
+    actor. It keeps the committed disposition through the supported replay window, including
+    when the corresponding reservation has never been seen locally.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -31,7 +45,7 @@ info:
       description: Task attachments and their stored byte counts.
   x-consumers:
     - repository: cadenway-task-service
-      uses: Planned in P4, file.uploaded.v1 and file.deleted.v1 for attachment references on tasks.
+      uses: Planned in P4, intake.attachment-verified.v1 for intake reservations, and file.uploaded.v1 and file.deleted.v1 for attachment references on tasks.
     - repository: cadenway-billing-service
       uses: Planned in P5, file.uploaded.v1 and file.deleted.v1 for organization storage usage.
     - repository: cadenway-search-service
@@ -59,6 +73,15 @@ channels:
     messages:
       fileDeletedV1:
         $ref: '#/components/messages/fileDeletedV1'
+  intakeAttachmentVerifiedV1:
+    address: evt.intake.attachment-verified.v1
+    description: |
+      An anonymous intake upload was verified. Emitted by storage-service.
+      Planned consumer: cadenway-task-service.
+      Only the `storage` publisher may emit this exact subject.
+    messages:
+      intakeAttachmentVerifiedV1:
+        $ref: '#/components/messages/intakeAttachmentVerifiedV1'
 operations:
   publishFileUploadedV1:
     action: send
@@ -76,6 +99,14 @@ operations:
       $ref: '#/channels/fileDeletedV1'
     messages:
       - $ref: '#/channels/fileDeletedV1/messages/fileDeletedV1'
+  publishIntakeAttachmentVerifiedV1:
+    action: send
+    summary: storage-service publishes the verification of an intake attachment.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/intakeAttachmentVerifiedV1'
+    messages:
+      - $ref: '#/channels/intakeAttachmentVerifiedV1/messages/intakeAttachmentVerifiedV1'
 components:
   schemas:
     EventHeaders:
@@ -149,6 +180,62 @@ components:
             fileId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e03
             taskKey: CAD-482
             sizeBytes: 84216
+    intakeAttachmentVerifiedV1:
+      name: intake.attachment-verified.v1
+      title: Intake attachment verified
+      summary: Storage pinned the verified object for the exact intake reservation.
+      description: |
+        Appended once in the tenant transaction that elects and pins the immutable object.
+        The system actor is storage-service. Task-service accepts the fact only for a pending,
+        unexpired reservation matching the organization, publication and attachment. Replay uses
+        the same event ID. A verification arriving after claim, release or expiry has no effect.
+
+        Verification alone does not attach the file to a task, make the file downloadable or
+        account for its bytes as a ready file. The reservation identifiers identify state; they do
+        not grant access. The payload carries no draft credential, public key, filename, contact,
+        object key or signed URL.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required: [id, occurredAt, organizationId, actor, version, publicationId, attachmentId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Stable event ID, the delivery deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC instant when verification was recorded.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the intake reservation.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            maximum: 1
+            description: Version of the immutable Storage verification record.
+          publicationId:
+            $ref: '../components/intake.yaml#/components/schemas/IntakePublicationId'
+          attachmentId:
+            $ref: '../components/attachments.yaml#/components/schemas/AttachmentId'
+      examples:
+        - name: intakeUploadVerified
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d32
+            occurredAt: '2026-11-20T14:02:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: storage-service
+            version: 1
+            publicationId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01
+            attachmentId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e04
     fileDeletedV1:
       name: file.deleted.v1
       title: File deleted

@@ -1,4 +1,4 @@
-# Public intake is served by api-gateway and stored by task-service.
+# Public intake is served by api-gateway, with files stored by storage-service.
 openapi: 3.1.0
 info:
   title: Cadenway public intake
@@ -9,16 +9,19 @@ info:
     contains the text and field settings intended for applicants.
 
     Management uses the current organization of the session or personal API token and the
-    caller's current list role. Anonymous access uses only the publication key and ignores
-    cookies and personal API tokens. The key does not grant access to tasks or lists. Editors
-    choose what text they publish, and the default text contains no list or space metadata.
+    caller's current list role. Anonymous access resolves the form from the publication key
+    and ignores cookies and personal API tokens. The key does not grant access to tasks or
+    lists. An applicant's upload reservations are additionally bound to a private draft key.
+    Editors choose what text they publish, and the default text contains no list or space
+    metadata.
 
     The gateway applies its trusted client IP limit before lookup on the anonymous routes,
     including for unknown keys. The defaults are 30 form reads and 10 submissions per minute
-    per IP, in separate buckets. Public responses and responses containing the management
-    configuration or contact email use `Cache-Control: no-store`. The key and contact
-    email are redacted from request logs and tracing attributes. Problem instances use a
-    request reference without the key, and validation issues identify fields without values.
+    per IP, in separate buckets. Upload mutations have their own per-IP bucket. Public
+    responses and responses containing the management configuration or contact email use
+    `Cache-Control: no-store`. Publication keys, draft keys, contact email and signed transfer
+    details are redacted from request logs and tracing attributes. Problem instances use a
+    request reference without either key, and validation issues identify fields without values.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -27,9 +30,9 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Serves these routes, checks task scopes for management, rate-limits anonymous requests and relays operations to task-service.
+      uses: Serves these routes, checks task scopes for management, rate-limits anonymous requests and relays operations to task-service and storage-service.
     - repository: cadenway-webapp
-      uses: Configures list forms, serves the applicant page and displays contact email to task editors through @cadenway/api-client.
+      uses: Configures list forms, serves the applicant page and its signed uploads, and displays contact email to task editors through @cadenway/api-client.
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -39,7 +42,7 @@ tags:
   - name: intake-management
     description: List form settings and protected task contact information.
   - name: public-intake
-    description: Published forms and submissions.
+    description: Published forms, applicant uploads and submissions.
 paths:
   /v1/lists/{listId}/intake-form:
     parameters:
@@ -282,15 +285,25 @@ paths:
         required. Missing required fields and supplied disabled fields are reported by field
         in `details.issues`. An empty required text field is invalid after trimming.
 
-        The producer rechecks that the publication is active and its defaults are valid
-        before creating a normal task and saving the contact in the same transaction. A valid
-        form replays an identical request with the same idempotency key for 24 hours, with the
-        original receipt and no second task. The receipt is an acknowledgment without a
-        public task link or contact email.
+        When the form allows attachments, submit the IDs of up to five completed uploads
+        from the same draft, using `Intake-Draft-Key` and `Idempotency-Key`. Changing only
+        the order or hexadecimal case of the same attachment IDs is a matching replay.
+        The draft key requires an idempotency key even if no attachment IDs are supplied.
+        A submission without either a draft key or attachment IDs retains the ordinary
+        text-only behavior. A form that requires attachments refuses a submission with none.
+
+        The producer rechecks the active publication and its defaults before committing a
+        normal task, any contact, an opaque receipt and the selected upload claims in one
+        transaction. A committed draft releases its unselected reservations. Attachment
+        metadata becomes available only to authorized members through the task attachment API.
+        A valid publication replays a matching request with the same idempotency key for
+        24 hours, using the original receipt even if its successful draft is no longer open.
+        The receipt carries no attachment metadata, public task link or contact email.
       tags: [public-intake]
       security: []
       parameters:
         - $ref: '#/components/parameters/IntakeIdempotencyKey'
+        - $ref: '#/components/parameters/IntakeDraftKey'
       requestBody:
         required: true
         content:
@@ -316,15 +329,149 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
-          $ref: '#/components/responses/PublicIntakeNotFound'
+          $ref: '#/components/responses/IntakeDraftNotFound'
         '409':
-          $ref: '#/components/responses/IntakeSubmissionInProgress'
+          $ref: '#/components/responses/IntakeAttachmentSubmissionConflict'
         '422':
           $ref: '#/components/responses/IntakeSubmissionRefused'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/intake-forms/{publicKey}/attachments:
+    parameters:
+      - $ref: '#/components/parameters/IntakePublicKey'
+    post:
+      operationId: startPublicIntakeAttachmentUpload
+      summary: Reserve a signed upload for an applicant's draft
+      description: |
+        Reserve one upload on an active publication that allows attachments. Generate a
+        private draft key once for this submission and keep it with the draft. Use a distinct
+        idempotency key for each new file. The draft starts with its first reservation and
+        accepts up to five active reservations within its 30-minute lifetime.
+
+        The signed multipart POST permits up to 25 MiB and expires after five minutes at
+        most, bounded by the draft expiry. Append the returned fields unchanged to FormData,
+        then append the file as the final part named `file`. Call completion after transfer.
+        The declared media type must match the registered final filename extension. The
+        temporary destination does not identify the organization, list or publication.
+
+        The service retains the reservation key for 24 hours. While the draft and publication
+        remain eligible, a matching start replays the original signed response without
+        extending its expiry. Use a new reservation for another upload.
+      tags: [public-intake]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RequiredIntakeDraftKey'
+        - $ref: '#/components/parameters/IntakeAttachmentIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/attachments.yaml#/components/schemas/StartAttachmentUpload'
+            example: { fileName: capture-sso.png, contentType: image/png, sizeBytes: 184320 }
+      responses:
+        '201':
+          description: The reservation and its temporary upload capability.
+          headers:
+            Location:
+              $ref: '#/components/headers/IntakeAttachmentLocation'
+            Cache-Control:
+              $ref: '#/components/headers/IntakeAttachmentNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/attachments.yaml#/components/schemas/AttachmentUpload'
+              example:
+                id: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                method: POST
+                url: https://files.example.com/fixtures/intake-upload
+                fields: { Content-Type: image/png }
+                expiresAt: '2026-11-20T14:05:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/IntakeDraftNotFound'
+        '409':
+          $ref: '#/components/responses/IntakeSubmissionInProgress'
+        '422':
+          $ref: '#/components/responses/IntakeAttachmentStartRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/IntakeAttachmentUnavailable'
+  /v1/intake-forms/{publicKey}/attachments/{attachmentId}:
+    parameters:
+      - $ref: '#/components/parameters/IntakePublicKey'
+      - $ref: '#/components/parameters/IntakeAttachmentId'
+    delete:
+      operationId: abandonPublicIntakeAttachmentUpload
+      summary: Release an applicant's unused upload
+      description: |
+        Release a reservation of the same live publication and draft. This frees its slot
+        and schedules object cleanup. A matching repeat of an abandoned upload succeeds
+        while the draft and publication remain eligible. A claimed file cannot be removed
+        by an applicant. Files not selected at submission or left in an expired draft are
+        released without a separate request.
+      tags: [public-intake]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RequiredIntakeDraftKey'
+      responses:
+        '204':
+          description: The reservation has been released.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IntakeAttachmentNoStore'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/IntakeDraftNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/intake-forms/{publicKey}/attachments/{attachmentId}/completion:
+    parameters:
+      - $ref: '#/components/parameters/IntakePublicKey'
+      - $ref: '#/components/parameters/IntakeAttachmentId'
+    post:
+      operationId: completePublicIntakeAttachmentUpload
+      summary: Verify an applicant's uploaded file
+      description: |
+        Verify the file from the temporary upload on this same live publication and draft.
+        A matching retry returns the same acknowledgement without another verification
+        fact. Submission can briefly answer `409 attachment.upload-not-ready` while the
+        verification reaches task-service. Retry submission with the same idempotency key.
+        The acknowledgement gives the applicant no metadata or download access.
+      tags: [public-intake]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RequiredIntakeDraftKey'
+      responses:
+        '200':
+          description: The upload was verified for the current draft.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IntakeAttachmentNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/intake.yaml#/components/schemas/IntakeAttachmentCompletion'
+              example: { id: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15 }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/IntakeDraftNotFound'
+        '409':
+          $ref: '#/components/responses/IntakeAttachmentCompletionConflict'
+        '422':
+          $ref: '#/components/responses/IntakeAttachmentContentRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/IntakeAttachmentUnavailable'
 components:
   securitySchemes:
     sessionCookie:
@@ -389,6 +536,36 @@ components:
         minLength: 1
         maxLength: 255
         examples: [5d0c6f1e-2a3b-4c5d-8e9f-0a1b2c3d4e5f]
+    IntakeAttachmentId:
+      name: attachmentId
+      in: path
+      required: true
+      description: ID previously allocated to this draft by the reservation route.
+      schema:
+        $ref: '../../components/attachments.yaml#/components/schemas/AttachmentId'
+    IntakeDraftKey:
+      name: Intake-Draft-Key
+      in: header
+      required: false
+      description: Private applicant key, required when attachment IDs are supplied.
+      schema:
+        $ref: '../../components/intake.yaml#/components/schemas/IntakeDraftKey'
+    RequiredIntakeDraftKey:
+      name: Intake-Draft-Key
+      in: header
+      required: true
+      description: Private applicant key reused for the reservations and submission of this draft.
+      schema:
+        $ref: '../../components/intake.yaml#/components/schemas/IntakeDraftKey'
+    IntakeAttachmentIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-chosen reservation key scoped to the publication and draft.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
   headers:
     IntakeETag:
       description: Strong ETag of the returned or current form version.
@@ -400,6 +577,18 @@ components:
       schema:
         type: string
         const: no-store
+    IntakeAttachmentNoStore:
+      required: true
+      description: Prevents caches from storing an applicant upload response.
+      schema:
+        type: string
+        const: no-store
+    IntakeAttachmentLocation:
+      required: true
+      description: Relative reference to the reservation, resolved against the request URI.
+      schema:
+        type: string
+        examples: ['attachments/019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15']
   responses:
     IntakeConfiguration:
       description: Current list form configuration.
@@ -503,6 +692,22 @@ components:
             title: Formulaire introuvable
             status: 404
             code: intake-form.not-found
+    IntakeDraftNotFound:
+      description: |
+        `intake-form.not-found` for an unavailable publication, expired or closed draft, or
+        an unknown, unavailable or unrelated reservation. All have the same public response.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IntakeNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Formulaire introuvable
+            status: 404
+            code: intake-form.not-found
     IntakeListArchived:
       description: '`intake-form.list-archived`: editing or publishing an archived list’s form is refused.'
       content:
@@ -525,6 +730,49 @@ components:
             title: Conflict
             status: 409
             code: idempotency.request-in-progress
+    IntakeAttachmentSubmissionConflict:
+      description: |
+        `idempotency.request-in-progress` when a matching submission key is in progress,
+        or `attachment.upload-not-ready` when a selected reservation in this draft has
+        not yet been recorded as verified by task-service.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: La pièce jointe est en cours de vérification
+            status: 409
+            code: attachment.upload-not-ready
+    IntakeAttachmentCompletionConflict:
+      description: |
+        `attachment.upload-expired` when the signed transfer expired before verification,
+        or `attachment.upload-not-ready` when the reserved object has not arrived.
+        These errors apply only to an otherwise eligible reservation of the presented draft.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    IntakeAttachmentStartRefused:
+      description: |
+        `attachment.file-too-large` above 26,214,400 bytes, `attachment.upload-metadata-mismatch`
+        for an unsupported or inconsistent declaration, `intake-form.attachments-disabled`
+        when the current form disallows attachments, `intake-form.attachment-limit-exceeded`
+        when the draft already has five active reservations, or `idempotency.key-reused`
+        when a reservation key was used with a different declaration.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    IntakeAttachmentContentRefused:
+      description: |
+        `attachment.file-too-large` when the stored object exceeds 26,214,400 bytes,
+        or `attachment.upload-metadata-mismatch` when the stored length, media type or
+        detected type disagrees with the reservation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     IntakeVersionMismatch:
       description: '`request.version-mismatch`: `If-Match` is stale. `details.version` is the current form version.'
       content:
@@ -591,3 +839,14 @@ components:
             status: 503
             code: upstream.unavailable
             details: { service: task-service }
+    IntakeAttachmentUnavailable:
+      description: |
+        `storage.unavailable` when storage-service cannot reach its object store or durable
+        attachment state. For a service failure, the code is `upstream.unavailable`,
+        `upstream.unreachable`, `upstream.timeout`, `upstream.circuit-open`,
+        `upstream.failed`, `upstream.unauthorized` or `upstream.deadline-exceeded`.
+        `details.service` identifies the affected service, task-service or storage-service.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'

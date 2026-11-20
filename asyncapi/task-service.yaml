@@ -80,9 +80,20 @@ info:
     P4 notification consumers deduplicate by event ID and recheck current task access before
     delivery. Read a change request's reason through the existing authorized comment route.
 
+    **Anonymous intake.** Task-service consumes
+    [`intake.attachment-verified.v1`](./storage-service.yaml#/components/messages/intakeAttachmentVerifiedV1).
+    It requires the Storage system actor and marks only the matching live reservation verified.
+    A reservation gets at most one
+    terminal decision, claim or release, from task-service. The submission transaction commits
+    the task, optional contact, receipt and all attachment decisions together. A replay keeps
+    the original receipt, bindings, event IDs and versions. An abandoned reservation, even one
+    Storage has never seen, is released through the terminal outbox fact. Task retains decisions
+    throughout the supported replay window and reconciles any unbound verified objects.
+
     **No restricted event.** None carries a secret; they travel on `evt.space.>`, `evt.list.>`,
     `evt.task.>`, `evt.comment.>`, `evt.approval.>` and `evt.milestone.>`, the subjects the NATS
-    user `task` publishes.
+    user `task` publishes. For intake, `task` publishes only `evt.intake.attachment-claimed.v1`
+    and `evt.intake.attachment-released.v1`. Verification is a separate Storage subject.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -106,7 +117,7 @@ info:
     - repository: cadenway-automation-service
       uses: Planned, task.created.v1, task.status-changed.v1 and task.assigned.v1, as the triggers of the rules.
     - repository: cadenway-storage-service
-      uses: Planned, task.purged.v1, to erase the attachments of the tasks erased for good.
+      uses: Planned, intake.attachment-claimed.v1 and intake.attachment-released.v1 for anonymous reservations, and task.purged.v1 to erase the attachments of the tasks erased for good.
 servers:
   nats:
     host: nats:4222
@@ -439,6 +450,24 @@ channels:
     messages:
       taskNotificationDeliveryAuthorizedV1:
         $ref: '#/components/messages/taskNotificationDeliveryAuthorizedV1'
+  intakeAttachmentClaimedV1:
+    address: evt.intake.attachment-claimed.v1
+    description: |
+      A submission claimed a verified attachment. Emitted by task-service.
+      Planned consumer: cadenway-storage-service.
+      Only the `task` publisher may emit this exact subject.
+    messages:
+      intakeAttachmentClaimedV1:
+        $ref: '#/components/messages/intakeAttachmentClaimedV1'
+  intakeAttachmentReleasedV1:
+    address: evt.intake.attachment-released.v1
+    description: |
+      An anonymous intake attachment reservation was closed without a claim.
+      Emitted by task-service. Planned consumer: cadenway-storage-service.
+      Only the `task` publisher may emit this exact subject.
+    messages:
+      intakeAttachmentReleasedV1:
+        $ref: '#/components/messages/intakeAttachmentReleasedV1'
 operations:
   publishCommentCreatedV1:
     action: send
@@ -786,6 +815,22 @@ operations:
       $ref: '#/channels/taskNotificationDeliveryAuthorizedV1'
     messages:
       - $ref: '#/channels/taskNotificationDeliveryAuthorizedV1/messages/taskNotificationDeliveryAuthorizedV1'
+  publishIntakeAttachmentClaimedV1:
+    action: send
+    summary: task-service publishes the terminal claim of a verified intake attachment.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/intakeAttachmentClaimedV1'
+    messages:
+      - $ref: '#/channels/intakeAttachmentClaimedV1/messages/intakeAttachmentClaimedV1'
+  publishIntakeAttachmentReleasedV1:
+    action: send
+    summary: task-service publishes the terminal release of an intake attachment reservation.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/intakeAttachmentReleasedV1'
+    messages:
+      - $ref: '#/channels/intakeAttachmentReleasedV1/messages/intakeAttachmentReleasedV1'
 components:
   schemas:
     EventHeaders:
@@ -4952,3 +4997,121 @@ components:
             authorizationRequestId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a25
             decision: deny
             validUntil: '2026-11-08T11:00:15Z'
+    intakeAttachmentClaimedV1:
+      name: intake.attachment-claimed.v1
+      title: Intake attachment claimed
+      summary: A submission assigned the verified attachment to its new task.
+      description: |
+        Appended once when the tenant submission transaction commits the verified reservation
+        as claimed for the new task. The system actor is task-service. Storage matches all three
+        reservation identifiers and binds the pinned object idempotently. The draft deadline
+        governs the submission, regardless of how long the outbox delivery takes.
+        Storage preserves a task purge fence even when the claim arrives after the purge and
+        discards the pinned object in that case.
+
+        The claim is mutually exclusive with `intake.attachment-released.v1` for the same
+        reservation. Its identifiers do not grant access. The payload carries no draft
+        credential, public key, filename, contact, object key or signed URL.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [id, occurredAt, organizationId, actor, version, publicationId, attachmentId, taskKey]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Stable event ID, the delivery deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC instant when the submission was recorded.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the intake reservation and new task.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            maximum: 1
+            description: Version of the immutable Task decision record.
+          publicationId:
+            $ref: '../components/intake.yaml#/components/schemas/IntakePublicationId'
+          attachmentId:
+            $ref: '../components/attachments.yaml#/components/schemas/AttachmentId'
+          taskKey:
+            $ref: '../components/task.yaml#/components/schemas/TaskKey'
+      examples:
+        - name: intakeUploadClaimed
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d33
+            occurredAt: '2026-11-20T14:03:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: task-service
+            version: 1
+            publicationId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01
+            attachmentId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e04
+            taskKey: CAD-482
+    intakeAttachmentReleasedV1:
+      name: intake.attachment-released.v1
+      title: Intake attachment released
+      summary: Task closed an anonymous attachment reservation without attaching it.
+      description: |
+        Appended once with the terminal release after explicit removal, expiry or closing the
+        draft without claiming this reservation. The system actor is task-service. Storage
+        matches the organization, publication and attachment and commits a durable release
+        fence before scheduling idempotent cleanup, even when no Storage reservation exists.
+        A late upload or verification cannot reopen the release. Storage writes no ready file
+        fact when cleaning up a released reservation.
+
+        The release is mutually exclusive with `intake.attachment-claimed.v1` for the same
+        reservation. The payload carries no task reference, draft credential, public key,
+        filename, contact, object key or signed URL.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required: [id, occurredAt, organizationId, actor, version, publicationId, attachmentId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Stable event ID, the delivery deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC instant when the release was recorded.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the intake reservation.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            maximum: 1
+            description: Version of the immutable Task decision record.
+          publicationId:
+            $ref: '../components/intake.yaml#/components/schemas/IntakePublicationId'
+          attachmentId:
+            $ref: '../components/attachments.yaml#/components/schemas/AttachmentId'
+      examples:
+        - name: intakeUploadReleased
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d34
+            occurredAt: '2026-11-20T14:03:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: task-service
+            version: 1
+            publicationId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01
+            attachmentId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e05
