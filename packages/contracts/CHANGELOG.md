@@ -1,5 +1,13 @@
 # @cadenway/contracts
 
+## 0.18.0
+
+### Minor Changes
+
+- fb47723: Add private draft uploads to public intake, with additive form and submission fields, internal
+  Task and Storage operations, and verified, claimed and released attachment events. Existing
+  text-only submissions keep their request and receipt behavior.
+
 ## 0.17.0
 
 ### Minor Changes
