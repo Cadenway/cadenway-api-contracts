@@ -1,5 +1,11 @@
 # @cadenway/api-client
 
+## 0.18.1
+
+### Patch Changes
+
+- 93ed57b: Match the public document precondition example and document the existing session transport errors.
+
 ## 0.18.0
 
 ### Minor Changes
