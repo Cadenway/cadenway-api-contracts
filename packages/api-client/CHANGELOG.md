@@ -1,5 +1,17 @@
 # @cadenway/api-client
 
+## 0.11.0
+
+### Minor Changes
+
+- 19d9b96: Add space custom field definitions, list-scoped reads and optional task custom field values.
+  Allow saved sheet settings to reference custom columns by their stable field IDs.
+- 19d9b96: Add caller-private first-launch wizard and checklist contracts, including idempotent space provisioning and the first-task marker.
+- 19d9b96: Add task approval round reads, requests, votes, and withdrawals, plus the request and decision events.
+- 19d9b96: Add task time entries with a readable creation location, time summaries and measured status
+  durations. Mirror the six routes in the internal task-service API and expose the public client
+  and validators.
+
 ## 0.10.0
 
 ### Minor Changes
