@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.21.0
+
+### Minor Changes
+
+- 4a69c7b: Add the public and internal Document operations, the current Task space access check, and versioned document lifecycle events.
+
 ## 0.20.0
 
 ### Minor Changes
