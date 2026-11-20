@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.14.0
+
+### Minor Changes
+
+- 2b7ff63: Add an opt-in NDJSON response to the internal list task export so the gateway can prepare a CSV with bounded memory. Existing JSON callers and the public CSV contract keep their current representations.
+
 ## 0.13.1
 
 ### Patch Changes
