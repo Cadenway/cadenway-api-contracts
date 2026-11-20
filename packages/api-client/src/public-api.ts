@@ -11,6 +11,20 @@
  * type of the same name, exported together.
  */
 
+// openapi/public/search.yaml
+export {
+  SearchService,
+  type SearchClientResult,
+} from './generated/public/search/search/search.service';
+export { ListSearchHitKind, TaskSearchHitKind } from './generated/public/search/model';
+export type {
+  ListSearchHit,
+  SearchHit,
+  SearchPage,
+  SearchParams,
+  TaskSearchHit,
+} from './generated/public/search/model';
+
 // openapi/public/documents.yaml
 export {
   DocumentsService,

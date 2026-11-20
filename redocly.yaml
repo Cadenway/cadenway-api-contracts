@@ -44,6 +44,11 @@ apis:
     rules:
       no-empty-servers: off
       no-unused-components: off
+  shared-search-query:
+    root: components/search-query.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
   shared-task-approval:
     root: components/approval.yaml
     rules:

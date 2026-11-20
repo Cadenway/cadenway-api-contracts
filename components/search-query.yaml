@@ -1,0 +1,89 @@
+# Shared request and response shapes for the session search route.
+openapi: 3.1.0
+info:
+  title: Cadenway shared search query components
+  version: 1.0.0
+  description: The query and visible resource summaries used by the command palette.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  parameters:
+    SearchQuery:
+      name: q
+      in: query
+      required: true
+      description: |
+        Case-insensitive literal substring of a task's name and key joined with one space,
+        or of a list name. Leading and trailing whitespace is ignored.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+        pattern: '\S'
+      example: SSO
+    SearchCursor:
+      name: cursor
+      in: query
+      description: Opaque continuation from the prior page for this user, organization and query.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 1024
+  headers:
+    PrivateNoStore:
+      required: true
+      description: The browser and intermediaries must not store this response.
+      schema:
+        type: string
+        const: private, no-store
+  schemas:
+    SearchPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/SearchHit' }
+        nextCursor:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 1024
+          description: Cursor of the next visible page. The final page uses a null value.
+    SearchHit:
+      oneOf:
+        - $ref: '#/components/schemas/TaskSearchHit'
+        - $ref: '#/components/schemas/ListSearchHit'
+      discriminator:
+        propertyName: kind
+        mapping:
+          task: '#/components/schemas/TaskSearchHit'
+          list: '#/components/schemas/ListSearchHit'
+    TaskSearchHit:
+      type: object
+      additionalProperties: false
+      required: [kind, taskKey, name, status]
+      properties:
+        kind: { type: string, const: task }
+        taskKey: { $ref: './task.yaml#/components/schemas/TaskKey' }
+        name: { $ref: './task.yaml#/components/schemas/TaskName' }
+        status: { $ref: './task.yaml#/components/schemas/StatusKey' }
+    ListSearchHit:
+      type: object
+      additionalProperties: false
+      required: [kind, listId, name]
+      properties:
+        kind: { type: string, const: list }
+        listId:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+        name: { $ref: './task.yaml#/components/schemas/ListName' }
+        spaceName:
+          description: Current space name when the owner's access proof permits displaying it.
+          $ref: './task.yaml#/components/schemas/SpaceName'
