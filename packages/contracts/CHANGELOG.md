@@ -1,5 +1,15 @@
 # @cadenway/contracts
 
+## 0.13.0
+
+### Minor Changes
+
+- a32ecd7: Add quarter-bound goals, key-result mutations and a team dashboard that projects only the caller's visible tasks.
+- a32ecd7: Add list intake administration, revocable public forms with anonymous submission and opaque
+  receipts, and editor access to the separately stored intake contact address.
+- a32ecd7: Add sprint reports with explicit history coverage, list workload, weekly timesheets and list CSV export contracts.
+  Define the organization-service name lookup used by the CSV export to render and sort visible assignees.
+
 ## 0.12.1
 
 ### Patch Changes
