@@ -102,12 +102,19 @@ info:
     Document-service calls `POST /internal/v1/spaces/access/resolve` for the actor's effective
     space roles. This lookup has no public route.
 
+    Search-service calls the search projection routes to rebuild and refresh its index from
+    current Task data. Before returning search results, it checks candidate visibility through
+    the Task search access lookup for the verified user. These routes have no public counterpart.
+
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
     (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `task-service`). Every route accepts the
     issuer `api-gateway` and the actor `user` by default. The two access checks accept
     `realtime-gateway` with the actor `user`. The notification lookup accepts both gateways
     with the actor `user` and restricts enrichment to `api-gateway`. The document space lookup
-    accepts `document-service` with the actor `user`. The applicant intake routes accept `api-gateway`
+    accepts `document-service` with the actor `user`. Search projection routes accept the
+    `search-service` issuer and the `search-service` system actor, in the signed organization.
+    The search access lookup accepts the same issuer with a verified `user` actor instead.
+    The applicant intake routes accept `api-gateway`
     with the actor `system` and resolve the target exclusively from the publication key.
     All other routes require an organization and run in the tenant transaction for the
     organization's session or personal API token. They take the actor and organization from
@@ -205,6 +212,8 @@ info:
       uses: Checks list or task access before a room join and verifies notification subject visibility before relay.
     - repository: cadenway-document-service
       uses: Resolves the actor's current space roles before returning or mutating documents.
+    - repository: cadenway-search-service
+      uses: Rebuilds and refreshes Task search projections and verifies current candidate visibility.
 servers:
   - url: http://task-service:3013
     description: task-service on the internal network of each environment (`TASK_SERVICE_URL`).
@@ -235,7 +244,221 @@ tags:
     description: The trash and its entries.
   - name: intake
     description: List form configuration, applicant routes and protected task contacts.
+  - name: search-projections
+    description: Authorized exports for the Search service's index.
 paths:
+  /internal/v1/task-search-projections:
+    get:
+      operationId: listTaskSearchProjectionsInternal
+      summary: Export one page of Task search projections
+      description: |
+        Internal token: issuer `search-service` only, actor `{type: system, id: search-service}`,
+        organization required. The token supplies the tenant. The export is system-only and
+        does not grant any end-user access to its results. All responses are private, no-store.
+
+        Returns the requested kind in ascending immutable row UUID order. A read-only tenant
+        snapshot produces each page and checks its rows, lifecycle and current placement.
+        The first page captures an inclusive upper row UUID for the export scope. The opaque
+        cursor authenticates the tenant, kind, filters, upper bound and last emitted UUID.
+        A cursor that does not match this request answers `400 request.invalid`. A page may
+        contain fewer than `limit` items to keep the compact UTF-8 JSON response within 1,048,576 bytes. Only
+        `nextCursor: null` completes the export. A nonterminal page advances past the last
+        emitted record.
+
+        Trashed, deleted or archived records and tasks or lists made inactive by an ancestor
+        are excluded. A space moved out of active state also excludes its lists and tasks.
+        A `spaceId` may narrow a list or task export, and a `listId` may narrow a task export.
+        When both are supplied the filters intersect. A missing or cross-tenant parent matches
+        nothing. Other filter and kind combinations answer `400 request.invalid`.
+        A page is not a snapshot of the whole export. Search starts durable invalidations
+        before the first page and reconciles them against current source reads before
+        promoting the rebuilt index. A reopened parent needs a scoped export to discover
+        active descendants that were absent during an earlier build.
+        This operation writes and emits nothing.
+      tags: [search-projections]
+      parameters:
+        - $ref: '#/components/parameters/SearchProjectionKind'
+        - $ref: '#/components/parameters/SearchProjectionSpace'
+        - $ref: '#/components/parameters/SearchProjectionList'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A bounded page of active projections of the requested kind.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/SearchProjectionNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchProjectionPage'
+              example:
+                items:
+                  - kind: task
+                    id: CAD-482
+                    version: 12
+                    name: Refondre l’écran de connexion SSO
+                    status: progress
+                    lifecycle: active
+                    listId: 019a7001-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/SearchBadRequest'
+        '401':
+          $ref: '#/components/responses/SearchInternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/SearchInternalAccessRefused'
+        '503':
+          $ref: '#/components/responses/SearchProjectionsUnavailable'
+  /internal/v1/task-search-projections/resolve:
+    post:
+      operationId: resolveTaskSearchProjectionsInternal
+      summary: Resolve current Task search projections by identifier
+      description: |
+        Internal token: issuer `search-service` only, actor `{type: system, id: search-service}`,
+        organization required. The token supplies the tenant. All responses are private, no-store.
+
+        Returns exactly one decision for each input ID, in request order, from one read-only
+        tenant snapshot. Task IDs are their stable keys, such as `CAD-482`. List and space IDs
+        are their UUIDs, compared case-insensitively and returned in canonical lowercase. IDs
+        must be unique after normalization.
+        Invalid IDs for the selected kind or duplicate IDs answer `400 request.invalid`.
+
+        A current active record yields `present` with its projection. An absent record, an
+        inactive record or one with an inactive ancestor yields `absent`. An absent decision
+        reports the known same-tenant source version, or `null` when no source version is
+        available. An unknown or cross-tenant ID has the same absent result and a null version.
+        Parent changes may change whether a descendant is present without changing its own
+        version. Treat these decisions as current authority; a stale fact or an unchanged
+        descendant version cannot supersede them. This lookup does not confer end-user access.
+
+        If the complete compact UTF-8 JSON response exceeds 1,048,576 bytes, the caller splits
+        the batch after `422 task.projection-batch-too-large`. The producer never returns
+        partial decisions. The caller treats a missing, additional, malformed, out-of-order
+        or wrong-kind decision as an unavailable proof. This operation writes and emits nothing.
+      tags: [search-projections]
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchProjectionLookup'
+            example:
+              kind: task
+              ids: [CAD-482, CAD-483]
+      responses:
+        '200':
+          description: Current decisions in the exact order of the requested identifiers.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/SearchProjectionNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchProjectionDecisions'
+              example:
+                results:
+                  - status: present
+                    projection:
+                      kind: task
+                      id: CAD-482
+                      version: 12
+                      name: Refondre l’écran de connexion SSO
+                      lifecycle: active
+                      status: progress
+                      listId: 019a7001-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  - status: absent
+                    id: CAD-483
+                    version: null
+        '400':
+          $ref: '#/components/responses/SearchBadRequest'
+        '401':
+          $ref: '#/components/responses/SearchInternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/SearchInternalAccessRefused'
+        '422':
+          $ref: '#/components/responses/SearchProjectionBatchTooLarge'
+        '503':
+          $ref: '#/components/responses/SearchProjectionsUnavailable'
+  /internal/v1/task-search-access/resolve:
+    post:
+      operationId: resolveTaskSearchAccessInternal
+      summary: Prove current visibility of Task search candidates
+      description: |
+        Requires issuer `search-service`, a verified actor of type `user` and an organization
+        in the signed token. Search signs the request for its verified current user and tenant.
+        The body cannot override either. Every response carries `Cache-Control: private, no-store`.
+
+        Search obtains `membership` from Organization's current search membership proof for
+        this same actor and organization before calling Task. Task compares the membership ID,
+        version and role with its active membership projection, then reads resource placement,
+        lifecycle and effective grants in the same read-only tenant snapshot. The body supplies
+        a consistency check only. A missing local membership, any mismatch or an unavailable
+        snapshot fails the whole request with `503 task.search-access-unavailable`.
+
+        A request contains up to 100 unique selectors. An empty set still checks membership.
+        Task keys are stable. UUIDs are compared case-insensitively and returned in canonical
+        lowercase. A repeated selector after normalization answers `400 request.invalid`.
+        Task applies its canonical read policy to each candidate in its current placement.
+        Unknown, hidden, cross-tenant, archived, deleted and trashed candidates, including
+        those made inactive by a parent, are all omitted. The remaining proofs follow the
+        request order and carry only identities, versions, current parent IDs and the space
+        access distinction. A space accessible only through a list has `directSpace: false`.
+        A document in that space requires `directSpace: true`, regardless of grants on lists.
+
+        A proof is for the signed user and organization in this request only. Search excludes
+        omitted candidates and indexed records whose version or placement disagrees with current
+        proof. It rejects the whole proof if a result is malformed, duplicated, out of order or
+        outside the request. Results contain no titles, bodies or other display data. No state
+        changes and no events are emitted.
+      tags: [search-projections]
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchAccessLookup'
+            example:
+              membership:
+                memberId: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41
+                version: 2
+                role: admin
+              candidates:
+                - { kind: task, id: CAD-482 }
+                - { kind: space, id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01 }
+      responses:
+        '200':
+          description: Current proofs for visible candidates only, in request order.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/SearchProjectionNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchAccessProof'
+              example:
+                results:
+                  - kind: task
+                    id: CAD-482
+                    version: 12
+                    listId: 019a7001-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  - kind: space
+                    id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    version: 8
+                    directSpace: true
+        '400':
+          $ref: '#/components/responses/SearchBadRequest'
+        '401':
+          $ref: '#/components/responses/SearchInternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/SearchInternalAccessRefused'
+        '503':
+          $ref: '#/components/responses/SearchAccessUnavailable'
   /internal/v1/spaces:
     post:
       operationId: createSpaceInternal
@@ -5792,6 +6015,25 @@ components:
         Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` = `task-service`,
         issuer `api-gateway`, or `realtime-gateway` for the access checks.
   parameters:
+    SearchProjectionKind:
+      name: kind
+      in: query
+      required: true
+      description: Kind of Task resource to export.
+      schema:
+        $ref: '#/components/schemas/SearchProjectionKind'
+    SearchProjectionSpace:
+      name: spaceId
+      in: query
+      description: Parent space filter for task and list exports.
+      schema:
+        $ref: '#/components/schemas/SearchProjectionUuid'
+    SearchProjectionList:
+      name: listId
+      in: query
+      description: Parent list filter for task exports.
+      schema:
+        $ref: '#/components/schemas/SearchProjectionUuid'
     SheetExportColumn:
       name: sheetSortColumn
       in: query
@@ -6136,6 +6378,12 @@ components:
     ActorId:
       $ref: '../../components/task.yaml#/components/parameters/ActorId'
   headers:
+    SearchProjectionNoStore:
+      required: true
+      description: Prevents caches from storing search projection data.
+      schema:
+        type: string
+        const: private, no-store
     AttachmentAccessNoStore:
       required: true
       description: Prevents caches from storing the access decision.
@@ -6259,6 +6507,101 @@ components:
         status: 422
         code: idempotency.key-reused
   responses:
+    SearchBadRequest:
+      description: |
+        `request.invalid` with `details.issues` for an invalid request, selector or cursor.
+        `request.body-too-large` applies when the request exceeds the JSON body limit.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchProjectionNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+            details:
+              issues:
+                - in: body
+                  path: candidates
+                  code: duplicate
+                  message: Candidate selectors must be unique.
+    SearchInternalTokenRefused:
+      description: '`auth.token-missing` or `auth.token-invalid`.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchProjectionNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unauthorized
+            status: 401
+            code: auth.token-invalid
+            details:
+              reason: expired
+    SearchInternalAccessRefused:
+      description: |
+        `auth.issuer-not-allowed`, `auth.actor-not-allowed` or `auth.organization-required`.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchProjectionNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            actorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+            organizationRequired:
+              $ref: '#/components/examples/OrganizationRequired'
+    SearchAccessUnavailable:
+      description: '`task.search-access-unavailable`: current membership or candidate access could not be proved.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchProjectionNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: task.search-access-unavailable
+    SearchProjectionBatchTooLarge:
+      description: '`task.projection-batch-too-large`: the full result exceeds the response byte limit. Retry with smaller batches.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchProjectionNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Entity
+            status: 422
+            code: task.projection-batch-too-large
+    SearchProjectionsUnavailable:
+      description: '`task.projection-unavailable`: the producer could not complete the snapshot.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchProjectionNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: task.projection-unavailable
     SprintReportNotFound:
       description: |
         `list.not-found` when the list is not a readable sprint. `organization.not-found`
@@ -8189,6 +8532,291 @@ components:
             details:
               version: 13
   schemas:
+    SearchProjectionKind:
+      type: string
+      enum: [task, list, space]
+    SearchProjectionUuid:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+    SearchProjectionVersion:
+      type: integer
+      minimum: 1
+      maximum: 9007199254740991
+    SearchProjectionIdentifier:
+      oneOf:
+        - $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+        - $ref: '#/components/schemas/SearchProjectionUuid'
+    SearchTaskProjection:
+      type: object
+      additionalProperties: false
+      required: [kind, id, version, name, lifecycle, status, listId, spaceId]
+      properties:
+        kind:
+          type: string
+          const: task
+        id:
+          $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+        version:
+          $ref: '#/components/schemas/SearchProjectionVersion'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 300
+        lifecycle:
+          type: string
+          const: active
+        status:
+          $ref: '../../components/task.yaml#/components/schemas/StatusKey'
+        listId:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+        spaceId:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+    SearchListProjection:
+      type: object
+      additionalProperties: false
+      required: [kind, id, version, name, lifecycle, spaceId]
+      properties:
+        kind:
+          type: string
+          const: list
+        id:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+        version:
+          $ref: '#/components/schemas/SearchProjectionVersion'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        lifecycle:
+          type: string
+          const: active
+        spaceId:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+    SearchSpaceProjection:
+      type: object
+      additionalProperties: false
+      required: [kind, id, version, name, lifecycle]
+      properties:
+        kind:
+          type: string
+          const: space
+        id:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+        version:
+          $ref: '#/components/schemas/SearchProjectionVersion'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        lifecycle:
+          type: string
+          const: active
+    SearchProjection:
+      oneOf:
+        - $ref: '#/components/schemas/SearchTaskProjection'
+        - $ref: '#/components/schemas/SearchListProjection'
+        - $ref: '#/components/schemas/SearchSpaceProjection'
+    SearchProjectionPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/SearchProjection'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    SearchProjectionLookup:
+      oneOf:
+        - $ref: '#/components/schemas/SearchTaskProjectionLookup'
+        - $ref: '#/components/schemas/SearchListProjectionLookup'
+        - $ref: '#/components/schemas/SearchSpaceProjectionLookup'
+    SearchTaskProjectionLookup:
+      type: object
+      additionalProperties: false
+      required: [kind, ids]
+      properties:
+        kind:
+          type: string
+          const: task
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+    SearchListProjectionLookup:
+      type: object
+      additionalProperties: false
+      required: [kind, ids]
+      properties:
+        kind:
+          type: string
+          const: list
+        ids:
+          $ref: '#/components/schemas/SearchProjectionUuidBatch'
+    SearchSpaceProjectionLookup:
+      type: object
+      additionalProperties: false
+      required: [kind, ids]
+      properties:
+        kind:
+          type: string
+          const: space
+        ids:
+          $ref: '#/components/schemas/SearchProjectionUuidBatch'
+    SearchProjectionUuidBatch:
+      type: array
+      minItems: 1
+      maxItems: 100
+      uniqueItems: true
+      items:
+        $ref: '#/components/schemas/SearchProjectionUuid'
+    SearchProjectionPresent:
+      type: object
+      additionalProperties: false
+      required: [status, projection]
+      properties:
+        status:
+          type: string
+          const: present
+        projection:
+          $ref: '#/components/schemas/SearchProjection'
+    SearchProjectionAbsent:
+      type: object
+      additionalProperties: false
+      required: [status, id, version]
+      properties:
+        status:
+          type: string
+          const: absent
+        id:
+          $ref: '#/components/schemas/SearchProjectionIdentifier'
+        version:
+          oneOf:
+            - $ref: '#/components/schemas/SearchProjectionVersion'
+            - type: 'null'
+    SearchProjectionDecisions:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/SearchProjectionPresent'
+              - $ref: '#/components/schemas/SearchProjectionAbsent'
+    SearchAccessLookup:
+      type: object
+      additionalProperties: false
+      required: [membership, candidates]
+      properties:
+        membership:
+          $ref: '../../components/search.yaml#/components/schemas/SearchMembership'
+        candidates:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/SearchTaskCandidate'
+              - $ref: '#/components/schemas/SearchListCandidate'
+              - $ref: '#/components/schemas/SearchSpaceCandidate'
+    SearchTaskCandidate:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind:
+          type: string
+          const: task
+        id:
+          $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+    SearchListCandidate:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind:
+          type: string
+          const: list
+        id:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+    SearchSpaceCandidate:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind:
+          type: string
+          const: space
+        id:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+    SearchVisibleTask:
+      type: object
+      additionalProperties: false
+      required: [kind, id, version, listId, spaceId]
+      properties:
+        kind:
+          type: string
+          const: task
+        id:
+          $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+        version:
+          $ref: '#/components/schemas/SearchProjectionVersion'
+        listId:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+        spaceId:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+    SearchVisibleList:
+      type: object
+      additionalProperties: false
+      required: [kind, id, version, spaceId]
+      properties:
+        kind:
+          type: string
+          const: list
+        id:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+        version:
+          $ref: '#/components/schemas/SearchProjectionVersion'
+        spaceId:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+    SearchVisibleSpace:
+      type: object
+      additionalProperties: false
+      required: [kind, id, version, directSpace]
+      properties:
+        kind:
+          type: string
+          const: space
+        id:
+          $ref: '#/components/schemas/SearchProjectionUuid'
+        version:
+          $ref: '#/components/schemas/SearchProjectionVersion'
+        directSpace:
+          type: boolean
+          description: The actor has a current role on the space itself. List grants alone do not confer this role.
+    SearchAccessProof:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          maxItems: 100
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/SearchVisibleTask'
+              - $ref: '#/components/schemas/SearchVisibleList'
+              - $ref: '#/components/schemas/SearchVisibleSpace'
     ListTaskExport:
       type: object
       required: [filename, header, rows]

@@ -1,0 +1,26 @@
+# Components shared by the internal Search proof operations.
+openapi: 3.1.0
+info:
+  title: Cadenway internal search components
+  version: 1.0.0
+  description: Membership evidence shared by the owning services during search authorization.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    SearchMembership:
+      type: object
+      additionalProperties: false
+      required: [memberId, role, version]
+      properties:
+        memberId: { type: string, format: uuid }
+        role: { $ref: './organization.yaml#/components/schemas/Role' }
+        version:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Version of the active membership.
