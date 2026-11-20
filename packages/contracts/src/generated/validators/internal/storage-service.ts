@@ -524,3 +524,112 @@ export const ListLargestAttachmentsInternalResponse = zod.object({
 })),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
 })
+
+
+/**
+ * Requires issuer `search-service`, actor `{ type: 'system', id: 'search-service' }`, and
+ * an organization in the signed token. Every response carries `Cache-Control: private,
+ * no-store`. The operation exports only ready task attachments in that organization. A
+ * permanent Task purge recorded by Storage excludes all attachments of that task.
+ *
+ * The first page fixes an upper file ID in its read snapshot. Each page reads an independent
+ * tenant snapshot in ascending immutable file ID order up to that inclusive upper bound. The
+ * cursor binds the tenant, the upper bound and the last returned file ID. A new page uses an
+ * exclusive lower bound at that ID. An invalid cursor or cursor for another tenant returns
+ * `400 request.invalid`. The encoded UTF-8 JSON body is at most 1,048,576 bytes. When the byte
+ * cap shortens a page, the cursor advances only past returned items. Only `nextCursor: null`
+ * marks completion.
+ *
+ * Search starts consuming durable attachment and Task invalidations before the first page,
+ * then refreshes changes against the current owner state before activating the rebuilt index.
+ * Search must prove current attachment availability and Task visibility before disclosing
+ * results derived from this metadata.
+ * @summary Export ready attachments for search
+ */
+export const listAttachmentSearchProjectionsInternalQueryLimitDefault = 50;
+export const listAttachmentSearchProjectionsInternalQueryLimitMax = 100;
+
+
+
+export const ListAttachmentSearchProjectionsInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listAttachmentSearchProjectionsInternalQueryLimitMax).default(listAttachmentSearchProjectionsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listAttachmentSearchProjectionsInternalResponseItemsItemFileIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listAttachmentSearchProjectionsInternalResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listAttachmentSearchProjectionsInternalResponseItemsItemFileNameMax = 255;
+
+
+export const listAttachmentSearchProjectionsInternalResponseItemsItemFileNameRegExp = new RegExp('^(?=[\\s\\S]*\\S)(?!\\s*\\.{1,2}\\s*$)(?:[^/\\\\\\x00-\\x1F\\x7F-\\x9F\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])+$');
+export const listAttachmentSearchProjectionsInternalResponseItemsItemVersionMax = 9007199254740991;
+
+export const listAttachmentSearchProjectionsInternalResponseItemsMax = 100;
+
+
+
+export const ListAttachmentSearchProjectionsInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "fileId": zod.uuid().regex(listAttachmentSearchProjectionsInternalResponseItemsItemFileIdRegExp),
+  "taskKey": zod.string().regex(listAttachmentSearchProjectionsInternalResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "fileName": zod.string().min(1).refine((value) => Array.from(value).length <= listAttachmentSearchProjectionsInternalResponseItemsItemFileNameMax, { message: 'At most 255 Unicode code points' }).regex(listAttachmentSearchProjectionsInternalResponseItemsItemFileNameRegExp).describe('Original Unicode basename without path separators, control characters or whitespace-padded dot segments.'),
+  "version": zod.int().min(1).max(listAttachmentSearchProjectionsInternalResponseItemsItemVersionMax).describe('Owner version of the ready attachment.')
+})).max(listAttachmentSearchProjectionsInternalResponseItemsMax),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})
+
+
+/**
+ * Requires issuer `search-service`, actor `{ type: 'system', id: 'search-service' }`, and
+ * an organization in the signed token. Every response carries `Cache-Control: private,
+ * no-store`. In one tenant snapshot, returns one decision per requested file ID in request
+ * order. UUIDs are compared without regard to case. Duplicate IDs return `400 request.invalid`.
+ *
+ * A ready attachment of a task that Storage has not fenced for permanent purge yields
+ * `present`. A deleted attachment yields `absent` with the terminal version when Storage
+ * retains it. An unknown ID, a pending attachment, an ID outside the tenant, or a fenced task
+ * whose attachment terminal version is unavailable yields `absent` with `version: null`.
+ * An unavailable snapshot fails the entire batch with `503 storage.unavailable`; a consumer
+ * must not treat a failed, malformed or incomplete batch as evidence of absence.
+ * The response body is at most 1,048,576 bytes of UTF-8 JSON.
+ * @summary Read the current state of attachment search projections
+ */
+export const resolveAttachmentSearchProjectionsInternalBodyFileIdsItemRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveAttachmentSearchProjectionsInternalBodyFileIdsMax = 100;
+
+
+
+export const ResolveAttachmentSearchProjectionsInternalBody = zod.strictObject({
+  "fileIds": zod.array(zod.uuid().regex(resolveAttachmentSearchProjectionsInternalBodyFileIdsItemRegExp)).min(1).max(resolveAttachmentSearchProjectionsInternalBodyFileIdsMax)
+})
+
+export const resolveAttachmentSearchProjectionsInternalResponseResultsItemOneProjectionFileIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveAttachmentSearchProjectionsInternalResponseResultsItemOneProjectionTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const resolveAttachmentSearchProjectionsInternalResponseResultsItemOneProjectionFileNameMax = 255;
+
+
+export const resolveAttachmentSearchProjectionsInternalResponseResultsItemOneProjectionFileNameRegExp = new RegExp('^(?=[\\s\\S]*\\S)(?!\\s*\\.{1,2}\\s*$)(?:[^/\\\\\\x00-\\x1F\\x7F-\\x9F\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])+$');
+export const resolveAttachmentSearchProjectionsInternalResponseResultsItemOneProjectionVersionMax = 9007199254740991;
+
+export const resolveAttachmentSearchProjectionsInternalResponseResultsItemTwoFileIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveAttachmentSearchProjectionsInternalResponseResultsItemTwoVersionMax = 9007199254740991;
+
+export const resolveAttachmentSearchProjectionsInternalResponseResultsMax = 100;
+
+
+
+export const ResolveAttachmentSearchProjectionsInternalResponse = zod.object({
+  "results": zod.array(zod.union([zod.object({
+  "status": zod.literal("present"),
+  "projection": zod.object({
+  "fileId": zod.uuid().regex(resolveAttachmentSearchProjectionsInternalResponseResultsItemOneProjectionFileIdRegExp),
+  "taskKey": zod.string().regex(resolveAttachmentSearchProjectionsInternalResponseResultsItemOneProjectionTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "fileName": zod.string().min(1).refine((value) => Array.from(value).length <= resolveAttachmentSearchProjectionsInternalResponseResultsItemOneProjectionFileNameMax, { message: 'At most 255 Unicode code points' }).regex(resolveAttachmentSearchProjectionsInternalResponseResultsItemOneProjectionFileNameRegExp).describe('Original Unicode basename without path separators, control characters or whitespace-padded dot segments.'),
+  "version": zod.int().min(1).max(resolveAttachmentSearchProjectionsInternalResponseResultsItemOneProjectionVersionMax).describe('Owner version of the ready attachment.')
+})
+}),zod.object({
+  "status": zod.literal("absent"),
+  "fileId": zod.uuid().regex(resolveAttachmentSearchProjectionsInternalResponseResultsItemTwoFileIdRegExp),
+  "version": zod.int().min(1).max(resolveAttachmentSearchProjectionsInternalResponseResultsItemTwoVersionMax).nullable().describe('Terminal attachment version when known, or null.')
+})])).min(1).max(resolveAttachmentSearchProjectionsInternalResponseResultsMax)
+})

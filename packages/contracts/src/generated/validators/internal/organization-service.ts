@@ -696,3 +696,64 @@ export const RefuseInvitationInternalBody = zod.object({
 }).describe('Empty object `{}`, the body the public route carried.')
 
 export const RefuseInvitationInternalResponse = zod.void()
+
+
+/**
+ * Requires issuer `search-service` and actor `{ type: 'system', id: 'search-service' }`, with
+ * no organization claim. Every response carries `Cache-Control: private, no-store`.
+ * Returns only organization IDs. Search then signs each owner's export request with the
+ * organization of that export.
+ *
+ * The first page fixes an upper organization ID in its read snapshot. Independent pages
+ * read ascending immutable IDs up to that inclusive upper bound. The opaque cursor binds
+ * this operation, the upper bound, and the last returned ID. The next page starts strictly
+ * after that ID. An invalid cursor returns `400 request.invalid`. The UTF-8 JSON body is at
+ * most 1,048,576 bytes. Only `nextCursor: null` marks completion. Before its scan, Search
+ * starts consuming durable invalidations, including `member.joined.v1`. Organization
+ * creation emits the owner's join, so Search can schedule an export of a new tenant even
+ * when its ID is outside this page sequence.
+ * @summary List organization IDs for a search rebuild
+ */
+export const listSearchOrganizationsInternalQueryLimitDefault = 50;
+export const listSearchOrganizationsInternalQueryLimitMax = 100;
+
+
+
+export const ListSearchOrganizationsInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listSearchOrganizationsInternalQueryLimitMax).default(listSearchOrganizationsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listSearchOrganizationsInternalResponseItemsMax = 100;
+
+
+
+export const ListSearchOrganizationsInternalResponse = zod.object({
+  "items": zod.array(zod.uuid()).max(listSearchOrganizationsInternalResponseItemsMax),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})
+
+
+/**
+ * Requires issuer `search-service`, an actor of type `user` and an organization in the
+ * signed token. Search signs this call for the verified user and organization of the current
+ * request. Neither value comes from search input or indexed data. Every response carries
+ * `Cache-Control: private, no-store`.
+ *
+ * Returns the active membership's ID, version and role in one current tenant snapshot.
+ * The membership ID changes after removal and rejoining. The version is the version of
+ * that membership, independent of the organization's version. An unknown organization or
+ * absent active membership yields the same `404 organization.not-found`. The caller uses
+ * the proof to check that Task evaluates candidate access against the same membership
+ * identity and version. The proof alone grants no access to search results.
+ * @summary Prove current organization membership for search
+ */
+export const getSearchMembershipInternalResponseVersionMax = 9007199254740991;
+
+
+
+export const GetSearchMembershipInternalResponse = zod.object({
+  "memberId": zod.uuid(),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
+  "version": zod.int().min(1).max(getSearchMembershipInternalResponseVersionMax).describe('Version of the active membership.')
+})

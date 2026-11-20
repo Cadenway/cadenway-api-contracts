@@ -5,6 +5,296 @@
 import * as zod from 'zod';
 
 /**
+ * Internal token: issuer `search-service` only, actor `{type: system, id: search-service}`,
+ * organization required. The token supplies the tenant. The export is system-only and
+ * does not grant any end-user access to its results. All responses are private, no-store.
+ *
+ * Returns the requested kind in ascending immutable row UUID order. A read-only tenant
+ * snapshot produces each page and checks its rows, lifecycle and current placement.
+ * The first page captures an inclusive upper row UUID for the export scope. The opaque
+ * cursor authenticates the tenant, kind, filters, upper bound and last emitted UUID.
+ * A cursor that does not match this request answers `400 request.invalid`. A page may
+ * contain fewer than `limit` items to keep the compact UTF-8 JSON response within 1,048,576 bytes. Only
+ * `nextCursor: null` completes the export. A nonterminal page advances past the last
+ * emitted record.
+ *
+ * Trashed, deleted or archived records and tasks or lists made inactive by an ancestor
+ * are excluded. A space moved out of active state also excludes its lists and tasks.
+ * A `spaceId` may narrow a list or task export, and a `listId` may narrow a task export.
+ * When both are supplied the filters intersect. A missing or cross-tenant parent matches
+ * nothing. Other filter and kind combinations answer `400 request.invalid`.
+ * A page is not a snapshot of the whole export. Search starts durable invalidations
+ * before the first page and reconciles them against current source reads before
+ * promoting the rebuilt index. A reopened parent needs a scoped export to discover
+ * active descendants that were absent during an earlier build.
+ * This operation writes and emits nothing.
+ * @summary Export one page of Task search projections
+ */
+export const listTaskSearchProjectionsInternalQuerySpaceIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listTaskSearchProjectionsInternalQueryListIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listTaskSearchProjectionsInternalQueryLimitDefault = 50;
+export const listTaskSearchProjectionsInternalQueryLimitMax = 100;
+
+
+
+export const ListTaskSearchProjectionsInternalQueryParams = zod.object({
+  "kind": zod.enum(['task', 'list', 'space']).describe('Kind of Task resource to export.'),
+  "spaceId": zod.uuid().regex(listTaskSearchProjectionsInternalQuerySpaceIdRegExp).optional().describe('Parent space filter for task and list exports.'),
+  "listId": zod.uuid().regex(listTaskSearchProjectionsInternalQueryListIdRegExp).optional().describe('Parent list filter for task exports.'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listTaskSearchProjectionsInternalQueryLimitMax).default(listTaskSearchProjectionsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listTaskSearchProjectionsInternalResponseItemsItemOneIdRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listTaskSearchProjectionsInternalResponseItemsItemOneVersionMax = 9007199254740991;
+
+export const listTaskSearchProjectionsInternalResponseItemsItemOneNameMax = 300;
+
+export const listTaskSearchProjectionsInternalResponseItemsItemOneListIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listTaskSearchProjectionsInternalResponseItemsItemOneSpaceIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listTaskSearchProjectionsInternalResponseItemsItemTwoIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listTaskSearchProjectionsInternalResponseItemsItemTwoVersionMax = 9007199254740991;
+
+export const listTaskSearchProjectionsInternalResponseItemsItemTwoNameMax = 80;
+
+export const listTaskSearchProjectionsInternalResponseItemsItemTwoSpaceIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listTaskSearchProjectionsInternalResponseItemsItemThreeIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listTaskSearchProjectionsInternalResponseItemsItemThreeVersionMax = 9007199254740991;
+
+export const listTaskSearchProjectionsInternalResponseItemsItemThreeNameMax = 80;
+
+export const listTaskSearchProjectionsInternalResponseItemsMax = 100;
+
+
+
+export const ListTaskSearchProjectionsInternalResponse = zod.object({
+  "items": zod.array(zod.union([zod.object({
+  "kind": zod.literal("task"),
+  "id": zod.string().regex(listTaskSearchProjectionsInternalResponseItemsItemOneIdRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "version": zod.int().min(1).max(listTaskSearchProjectionsInternalResponseItemsItemOneVersionMax),
+  "name": zod.string().min(1).max(listTaskSearchProjectionsInternalResponseItemsItemOneNameMax),
+  "lifecycle": zod.literal("active"),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "listId": zod.uuid().regex(listTaskSearchProjectionsInternalResponseItemsItemOneListIdRegExp),
+  "spaceId": zod.uuid().regex(listTaskSearchProjectionsInternalResponseItemsItemOneSpaceIdRegExp)
+}),zod.object({
+  "kind": zod.literal("list"),
+  "id": zod.uuid().regex(listTaskSearchProjectionsInternalResponseItemsItemTwoIdRegExp),
+  "version": zod.int().min(1).max(listTaskSearchProjectionsInternalResponseItemsItemTwoVersionMax),
+  "name": zod.string().min(1).max(listTaskSearchProjectionsInternalResponseItemsItemTwoNameMax),
+  "lifecycle": zod.literal("active"),
+  "spaceId": zod.uuid().regex(listTaskSearchProjectionsInternalResponseItemsItemTwoSpaceIdRegExp)
+}),zod.object({
+  "kind": zod.literal("space"),
+  "id": zod.uuid().regex(listTaskSearchProjectionsInternalResponseItemsItemThreeIdRegExp),
+  "version": zod.int().min(1).max(listTaskSearchProjectionsInternalResponseItemsItemThreeVersionMax),
+  "name": zod.string().min(1).max(listTaskSearchProjectionsInternalResponseItemsItemThreeNameMax),
+  "lifecycle": zod.literal("active")
+})])).max(listTaskSearchProjectionsInternalResponseItemsMax),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})
+
+
+/**
+ * Internal token: issuer `search-service` only, actor `{type: system, id: search-service}`,
+ * organization required. The token supplies the tenant. All responses are private, no-store.
+ *
+ * Returns exactly one decision for each input ID, in request order, from one read-only
+ * tenant snapshot. Task IDs are their stable keys, such as `CAD-482`. List and space IDs
+ * are their UUIDs, compared case-insensitively and returned in canonical lowercase. IDs
+ * must be unique after normalization.
+ * Invalid IDs for the selected kind or duplicate IDs answer `400 request.invalid`.
+ *
+ * A current active record yields `present` with its projection. An absent record, an
+ * inactive record or one with an inactive ancestor yields `absent`. An absent decision
+ * reports the known same-tenant source version, or `null` when no source version is
+ * available. An unknown or cross-tenant ID has the same absent result and a null version.
+ * Parent changes may change whether a descendant is present without changing its own
+ * version. Treat these decisions as current authority; a stale fact or an unchanged
+ * descendant version cannot supersede them. This lookup does not confer end-user access.
+ *
+ * If the complete compact UTF-8 JSON response exceeds 1,048,576 bytes, the caller splits
+ * the batch after `422 task.projection-batch-too-large`. The producer never returns
+ * partial decisions. The caller treats a missing, additional, malformed, out-of-order
+ * or wrong-kind decision as an unavailable proof. This operation writes and emits nothing.
+ * @summary Resolve current Task search projections by identifier
+ */
+export const resolveTaskSearchProjectionsInternalBodyOneIdsItemRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const resolveTaskSearchProjectionsInternalBodyOneIdsMax = 100;
+
+export const resolveTaskSearchProjectionsInternalBodyTwoIdsItemRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchProjectionsInternalBodyTwoIdsMax = 100;
+
+export const resolveTaskSearchProjectionsInternalBodyThreeIdsItemRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchProjectionsInternalBodyThreeIdsMax = 100;
+
+
+
+export const ResolveTaskSearchProjectionsInternalBody = zod.union([zod.strictObject({
+  "kind": zod.literal("task"),
+  "ids": zod.array(zod.string().regex(resolveTaskSearchProjectionsInternalBodyOneIdsItemRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n')).min(1).max(resolveTaskSearchProjectionsInternalBodyOneIdsMax)
+}),zod.strictObject({
+  "kind": zod.literal("list"),
+  "ids": zod.array(zod.uuid().regex(resolveTaskSearchProjectionsInternalBodyTwoIdsItemRegExp)).min(1).max(resolveTaskSearchProjectionsInternalBodyTwoIdsMax)
+}),zod.strictObject({
+  "kind": zod.literal("space"),
+  "ids": zod.array(zod.uuid().regex(resolveTaskSearchProjectionsInternalBodyThreeIdsItemRegExp)).min(1).max(resolveTaskSearchProjectionsInternalBodyThreeIdsMax)
+})])
+
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionOneIdRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionOneVersionMax = 9007199254740991;
+
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionOneNameMax = 300;
+
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionOneListIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionOneSpaceIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionTwoIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionTwoVersionMax = 9007199254740991;
+
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionTwoNameMax = 80;
+
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionTwoSpaceIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionThreeIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionThreeVersionMax = 9007199254740991;
+
+export const resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionThreeNameMax = 80;
+
+export const resolveTaskSearchProjectionsInternalResponseResultsItemTwoIdOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const resolveTaskSearchProjectionsInternalResponseResultsItemTwoIdTwoRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchProjectionsInternalResponseResultsItemTwoVersionOneMax = 9007199254740991;
+
+export const resolveTaskSearchProjectionsInternalResponseResultsMax = 100;
+
+
+
+export const ResolveTaskSearchProjectionsInternalResponse = zod.object({
+  "results": zod.array(zod.union([zod.object({
+  "status": zod.literal("present"),
+  "projection": zod.union([zod.object({
+  "kind": zod.literal("task"),
+  "id": zod.string().regex(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionOneIdRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "version": zod.int().min(1).max(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionOneVersionMax),
+  "name": zod.string().min(1).max(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionOneNameMax),
+  "lifecycle": zod.literal("active"),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "listId": zod.uuid().regex(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionOneListIdRegExp),
+  "spaceId": zod.uuid().regex(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionOneSpaceIdRegExp)
+}),zod.object({
+  "kind": zod.literal("list"),
+  "id": zod.uuid().regex(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionTwoIdRegExp),
+  "version": zod.int().min(1).max(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionTwoVersionMax),
+  "name": zod.string().min(1).max(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionTwoNameMax),
+  "lifecycle": zod.literal("active"),
+  "spaceId": zod.uuid().regex(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionTwoSpaceIdRegExp)
+}),zod.object({
+  "kind": zod.literal("space"),
+  "id": zod.uuid().regex(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionThreeIdRegExp),
+  "version": zod.int().min(1).max(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionThreeVersionMax),
+  "name": zod.string().min(1).max(resolveTaskSearchProjectionsInternalResponseResultsItemOneProjectionThreeNameMax),
+  "lifecycle": zod.literal("active")
+})])
+}),zod.object({
+  "status": zod.literal("absent"),
+  "id": zod.union([zod.string().regex(resolveTaskSearchProjectionsInternalResponseResultsItemTwoIdOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.uuid().regex(resolveTaskSearchProjectionsInternalResponseResultsItemTwoIdTwoRegExp)]),
+  "version": zod.union([zod.int().min(1).max(resolveTaskSearchProjectionsInternalResponseResultsItemTwoVersionOneMax),zod.null()])
+})])).min(1).max(resolveTaskSearchProjectionsInternalResponseResultsMax)
+})
+
+
+/**
+ * Requires issuer `search-service`, a verified actor of type `user` and an organization
+ * in the signed token. Search signs the request for its verified current user and tenant.
+ * The body cannot override either. Every response carries `Cache-Control: private, no-store`.
+ *
+ * Search obtains `membership` from Organization's current search membership proof for
+ * this same actor and organization before calling Task. Task compares the membership ID,
+ * version and role with its active membership projection, then reads resource placement,
+ * lifecycle and effective grants in the same read-only tenant snapshot. The body supplies
+ * a consistency check only. A missing local membership, any mismatch or an unavailable
+ * snapshot fails the whole request with `503 task.search-access-unavailable`.
+ *
+ * A request contains up to 100 unique selectors. An empty set still checks membership.
+ * Task keys are stable. UUIDs are compared case-insensitively and returned in canonical
+ * lowercase. A repeated selector after normalization answers `400 request.invalid`.
+ * Task applies its canonical read policy to each candidate in its current placement.
+ * Unknown, hidden, cross-tenant, archived, deleted and trashed candidates, including
+ * those made inactive by a parent, are all omitted. The remaining proofs follow the
+ * request order and carry only identities, versions, current parent IDs and the space
+ * access distinction. A space accessible only through a list has `directSpace: false`.
+ * A document in that space requires `directSpace: true`, regardless of grants on lists.
+ *
+ * A proof is for the signed user and organization in this request only. Search excludes
+ * omitted candidates and indexed records whose version or placement disagrees with current
+ * proof. It rejects the whole proof if a result is malformed, duplicated, out of order or
+ * outside the request. Results contain no titles, bodies or other display data. No state
+ * changes and no events are emitted.
+ * @summary Prove current visibility of Task search candidates
+ */
+export const resolveTaskSearchAccessInternalBodyMembershipVersionMax = 9007199254740991;
+
+export const resolveTaskSearchAccessInternalBodyCandidatesItemOneIdRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const resolveTaskSearchAccessInternalBodyCandidatesItemTwoIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchAccessInternalBodyCandidatesItemThreeIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchAccessInternalBodyCandidatesMax = 100;
+
+
+
+export const ResolveTaskSearchAccessInternalBody = zod.strictObject({
+  "membership": zod.object({
+  "memberId": zod.uuid(),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
+  "version": zod.int().min(1).max(resolveTaskSearchAccessInternalBodyMembershipVersionMax).describe('Version of the active membership.')
+}),
+  "candidates": zod.array(zod.union([zod.object({
+  "kind": zod.literal("task"),
+  "id": zod.string().regex(resolveTaskSearchAccessInternalBodyCandidatesItemOneIdRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n')
+}),zod.object({
+  "kind": zod.literal("list"),
+  "id": zod.uuid().regex(resolveTaskSearchAccessInternalBodyCandidatesItemTwoIdRegExp)
+}),zod.object({
+  "kind": zod.literal("space"),
+  "id": zod.uuid().regex(resolveTaskSearchAccessInternalBodyCandidatesItemThreeIdRegExp)
+})])).max(resolveTaskSearchAccessInternalBodyCandidatesMax)
+})
+
+export const resolveTaskSearchAccessInternalResponseResultsItemOneIdRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const resolveTaskSearchAccessInternalResponseResultsItemOneVersionMax = 9007199254740991;
+
+export const resolveTaskSearchAccessInternalResponseResultsItemOneListIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchAccessInternalResponseResultsItemOneSpaceIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchAccessInternalResponseResultsItemTwoIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchAccessInternalResponseResultsItemTwoVersionMax = 9007199254740991;
+
+export const resolveTaskSearchAccessInternalResponseResultsItemTwoSpaceIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchAccessInternalResponseResultsItemThreeIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveTaskSearchAccessInternalResponseResultsItemThreeVersionMax = 9007199254740991;
+
+export const resolveTaskSearchAccessInternalResponseResultsMax = 100;
+
+
+
+export const ResolveTaskSearchAccessInternalResponse = zod.object({
+  "results": zod.array(zod.union([zod.object({
+  "kind": zod.literal("task"),
+  "id": zod.string().regex(resolveTaskSearchAccessInternalResponseResultsItemOneIdRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "version": zod.int().min(1).max(resolveTaskSearchAccessInternalResponseResultsItemOneVersionMax),
+  "listId": zod.uuid().regex(resolveTaskSearchAccessInternalResponseResultsItemOneListIdRegExp),
+  "spaceId": zod.uuid().regex(resolveTaskSearchAccessInternalResponseResultsItemOneSpaceIdRegExp)
+}),zod.object({
+  "kind": zod.literal("list"),
+  "id": zod.uuid().regex(resolveTaskSearchAccessInternalResponseResultsItemTwoIdRegExp),
+  "version": zod.int().min(1).max(resolveTaskSearchAccessInternalResponseResultsItemTwoVersionMax),
+  "spaceId": zod.uuid().regex(resolveTaskSearchAccessInternalResponseResultsItemTwoSpaceIdRegExp)
+}),zod.object({
+  "kind": zod.literal("space"),
+  "id": zod.uuid().regex(resolveTaskSearchAccessInternalResponseResultsItemThreeIdRegExp),
+  "version": zod.int().min(1).max(resolveTaskSearchAccessInternalResponseResultsItemThreeVersionMax),
+  "directSpace": zod.boolean().describe('The actor has a current role on the space itself. List grants alone do not confer this role.')
+})])).max(resolveTaskSearchAccessInternalResponseResultsMax)
+})
+
+
+/**
  * Creates a space owned by the actor and its list "Première liste", in one transaction, as
  * `POST /v1/spaces` says. A guest gets `403 organization.role-forbidden`; a current or former
  * prefix of another space, `409 space.prefix-taken`. Emits `space.created.v1` and

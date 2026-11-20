@@ -3,8 +3,8 @@ info:
   title: storage-service internal routes
   version: 1.0.0
   description: |
-    Attachment and profile image resources owned by storage-service. The API gateway is the
-    only HTTP caller. Every request uses a verified `api-gateway` token. Task attachment, quota
+    Attachment and profile image resources owned by storage-service. Gateway routes use a verified
+    `api-gateway` token. Search projection routes use a verified `search-service` token. Task attachment, quota
     and logo operations require a `user` actor and an organization. Applicant upload operations
     require a `system` actor and the organization resolved by task-service. The account owns
     its avatar independently of any organization. Avatar operations require a `user` actor.
@@ -35,6 +35,8 @@ info:
   x-consumers:
     - repository: cadenway-api-gateway
       uses: Authorizes task and applicant upload access through task-service and relays attachment and profile image operations using the generated internal client. Profile images require current owner or directory access.
+    - repository: cadenway-search-service
+      uses: Rebuilds and refreshes its index of ready task attachment filenames through the internal search projection routes.
 servers:
   - url: http://storage-service:3015
     description: Internal service endpoint.
@@ -47,6 +49,8 @@ tags:
     description: Unbound applicant uploads awaiting an authoritative task claim or release.
   - name: profile-media
     description: Signed transfers, verified raster preparation and authorized image reads.
+  - name: search-projections
+    description: Bounded snapshots and current attachment metadata for the search index.
 paths:
   /internal/v1/intake-publications/{publicationId}/attachments:
     parameters:
@@ -669,13 +673,120 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /internal/v1/attachment-search-projections:
+    get:
+      operationId: listAttachmentSearchProjectionsInternal
+      summary: Export ready attachments for search
+      description: |
+        Requires issuer `search-service`, actor `{ type: 'system', id: 'search-service' }`, and
+        an organization in the signed token. Every response carries `Cache-Control: private,
+        no-store`. The operation exports only ready task attachments in that organization. A
+        permanent Task purge recorded by Storage excludes all attachments of that task.
+
+        The first page fixes an upper file ID in its read snapshot. Each page reads an independent
+        tenant snapshot in ascending immutable file ID order up to that inclusive upper bound. The
+        cursor binds the tenant, the upper bound and the last returned file ID. A new page uses an
+        exclusive lower bound at that ID. An invalid cursor or cursor for another tenant returns
+        `400 request.invalid`. The encoded UTF-8 JSON body is at most 1,048,576 bytes. When the byte
+        cap shortens a page, the cursor advances only past returned items. Only `nextCursor: null`
+        marks completion.
+
+        Search starts consuming durable attachment and Task invalidations before the first page,
+        then refreshes changes against the current owner state before activating the rebuilt index.
+        Search must prove current attachment availability and Task visibility before disclosing
+        results derived from this metadata.
+      tags: [search-projections]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of ready attachment projections.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/SearchPrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentSearchProjectionPage'
+              example:
+                items:
+                  - fileId: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                    taskKey: CAD-482
+                    fileName: maquette-sso.png
+                    version: 1
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/SearchProjectionBadRequest'
+        '401':
+          $ref: '#/components/responses/SearchProjectionTokenRefused'
+        '403':
+          $ref: '#/components/responses/SearchProjectionAccessRefused'
+        '503':
+          $ref: '#/components/responses/SearchProjectionUnavailable'
+  /internal/v1/attachment-search-projections/resolve:
+    post:
+      operationId: resolveAttachmentSearchProjectionsInternal
+      summary: Read the current state of attachment search projections
+      description: |
+        Requires issuer `search-service`, actor `{ type: 'system', id: 'search-service' }`, and
+        an organization in the signed token. Every response carries `Cache-Control: private,
+        no-store`. In one tenant snapshot, returns one decision per requested file ID in request
+        order. UUIDs are compared without regard to case. Duplicate IDs return `400 request.invalid`.
+
+        A ready attachment of a task that Storage has not fenced for permanent purge yields
+        `present`. A deleted attachment yields `absent` with the terminal version when Storage
+        retains it. An unknown ID, a pending attachment, an ID outside the tenant, or a fenced task
+        whose attachment terminal version is unavailable yields `absent` with `version: null`.
+        An unavailable snapshot fails the entire batch with `503 storage.unavailable`; a consumer
+        must not treat a failed, malformed or incomplete batch as evidence of absence.
+        The response body is at most 1,048,576 bytes of UTF-8 JSON.
+      tags: [search-projections]
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveAttachmentSearchProjectionsRequest'
+            example:
+              fileIds: [019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15, 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f16]
+      responses:
+        '200':
+          description: Current projection decisions in request order.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/SearchPrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveAttachmentSearchProjectionsResult'
+              example:
+                results:
+                  - status: present
+                    projection:
+                      fileId: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                      taskKey: CAD-482
+                      fileName: maquette-sso.png
+                      version: 1
+                  - status: absent
+                    fileId: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f16
+                    version: 2
+        '400':
+          $ref: '#/components/responses/SearchProjectionBadRequest'
+        '401':
+          $ref: '#/components/responses/SearchProjectionTokenRefused'
+        '403':
+          $ref: '#/components/responses/SearchProjectionAccessRefused'
+        '503':
+          $ref: '#/components/responses/SearchProjectionUnavailable'
 components:
   securitySchemes:
     internalToken:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Signed internal token with issuer api-gateway and audience storage-service. Task, quota and profile image operations require actor user. Applicant upload operations require actor system. The operation defines the required organization scope.
+      description: Signed internal token with audience storage-service. The operation defines the accepted issuer, actor and organization scope.
   parameters:
     IntakePublicationId:
       name: publicationId
@@ -717,6 +828,12 @@ components:
         pattern: '^"[1-9][0-9]*"$'
         examples: ['"1"']
   headers:
+    SearchPrivateNoStore:
+      required: true
+      description: Keeps the private attachment projection out of HTTP caches.
+      schema:
+        type: string
+        const: 'private, no-store'
     IntakeAttachmentLocation:
       required: true
       description: Internal path identifying the upload reservation.
@@ -743,6 +860,48 @@ components:
         type: string
         examples: ['"1"']
   responses:
+    SearchProjectionBadRequest:
+      description: |
+        `request.invalid` for invalid input, including an invalid cursor or duplicate file IDs.
+        `request.body-too-large` when the incoming request body exceeds the JSON body limit.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    SearchProjectionTokenRefused:
+      description: '`auth.token-missing` or `auth.token-invalid`.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    SearchProjectionAccessRefused:
+      description: |
+        `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+        type or ID, or `auth.organization-required` for an unscoped token.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    SearchProjectionUnavailable:
+      description: |
+        `storage.unavailable` when Storage cannot complete the requested snapshot.
+        No partial page or batch is returned.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     ProfileMediaNotFound:
       description: |
         `media.not-found` for an unknown, unavailable or unrelated image or reservation.
@@ -880,3 +1039,71 @@ components:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
+  schemas:
+    AttachmentSearchProjection:
+      type: object
+      additionalProperties: false
+      required: [fileId, taskKey, fileName, version]
+      properties:
+        fileId: { $ref: '../../components/attachments.yaml#/components/schemas/AttachmentId' }
+        taskKey: { $ref: '../../components/task.yaml#/components/schemas/TaskKey' }
+        fileName:
+          { $ref: '../../components/attachments.yaml#/components/schemas/AttachmentFileName' }
+        version:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Owner version of the ready attachment.
+    AttachmentSearchProjectionPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/AttachmentSearchProjection' }
+        nextCursor: { $ref: '../../components/http.yaml#/components/schemas/NextCursor' }
+    ResolveAttachmentSearchProjectionsRequest:
+      type: object
+      additionalProperties: false
+      required: [fileIds]
+      properties:
+        fileIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '../../components/attachments.yaml#/components/schemas/AttachmentId' }
+    ResolveAttachmentSearchProjectionsResult:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/PresentAttachmentSearchProjection'
+              - $ref: '#/components/schemas/AbsentAttachmentSearchProjection'
+    PresentAttachmentSearchProjection:
+      type: object
+      additionalProperties: false
+      required: [status, projection]
+      properties:
+        status: { const: present }
+        projection: { $ref: '#/components/schemas/AttachmentSearchProjection' }
+    AbsentAttachmentSearchProjection:
+      type: object
+      additionalProperties: false
+      required: [status, fileId, version]
+      properties:
+        status: { const: absent }
+        fileId: { $ref: '../../components/attachments.yaml#/components/schemas/AttachmentId' }
+        version:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 9007199254740991
+          description: Terminal attachment version when known, or null.

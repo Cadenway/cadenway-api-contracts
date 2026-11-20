@@ -4,7 +4,7 @@ info:
   title: document-service internal routes
   version: 1.0.0
   description: |
-    Internal requests use a signed `api-gateway` token for the verified user and selected
+    Catalog and editing requests use a signed `api-gateway` token for the verified user and selected
     organization, with `document-service` as audience. The gateway applies session, CSRF and rate
     limits. Document owns its data, derives the tenant and actor from the token, and resolves live
     direct-space access in bounded batches through `resolveDocumentSpaceAccessInternal` in Task.
@@ -20,6 +20,10 @@ info:
     is checked anew even if a cursor or replay receipt is available. Document state, creation
     receipt and the corresponding outbox fact commit together. Create and delete emit
     `doc.created.v1` and `doc.deleted.v1` respectively. A changed patch emits `doc.updated.v1`.
+
+    Search projection reads use a separate `search-service` system token and the organization
+    carried by it. The projection stays on the internal service boundary. Search must establish
+    current access and version before exposing an indexed result to a user.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -28,7 +32,9 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Calls these routes through its generated internal client.
+      uses: Calls the document catalog and editing routes through its generated internal client.
+    - repository: cadenway-search-service
+      uses: Reads document projections for index reconstruction and invalidation processing.
 servers:
   - url: http://document-service:3014
     description: Document service on the internal network.
@@ -37,6 +43,8 @@ security:
 tags:
   - name: documents
     description: Space-scoped documents and their Markdown content.
+  - name: search-projections
+    description: Tenant-scoped source projections for the internal search index.
 paths:
   /internal/v1/documents:
     get:
@@ -224,12 +232,219 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /internal/v1/document-search-projections:
+    get:
+      operationId: listDocumentSearchProjectionsInternal
+      summary: Export a page of active document projections
+      description: |
+        Requires issuer `search-service`, actor `{ type: system, id: search-service }`, audience
+        `document-service`, and an organization claim. The claim scopes every read and cursor.
+
+        The first page captures the highest active document UUIDv7 in its read snapshot. Each
+        page reads active rows in ascending document UUID order up to that inclusive bound, in
+        one read snapshot per request. A continuation is opaque, binds the tenant and upper
+        bound, and resumes strictly after the last returned UUID. Each page has at most `limit`
+        items and at most 1,048,576 bytes of compact UTF-8 JSON, excluding HTTP framing.
+        A page shortened by the byte limit resumes after its last returned item.
+        Only `nextCursor: null` means the scan is complete.
+
+        There is no cross-page snapshot. Search starts recording document invalidations before
+        its first page and re-resolves their IDs before activating the rebuilt index. Concurrent
+        inserts may fall behind the cursor and updates or deletes may supersede an exported
+        version. The event payloads supply invalidation IDs, not document content.
+      tags: [search-projections]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Complete page within the item and byte bounds.
+          headers:
+            Cache-Control:
+              $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSearchProjectionPage'
+              example:
+                items:
+                  - documentId: 019a7005-4b2c-7d4e-8f5a-6b7c8d9e0f17
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    version: 3
+                    title: Notes de version 3.1
+                    body: |-
+                      # Nouveautés
+                      - Export CSV qui respecte les filtres et le tri
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/SearchProjectionBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ReadForbidden'
+        '503':
+          $ref: '#/components/responses/SearchProjectionUnavailable'
+  /internal/v1/document-search-projections/resolve:
+    post:
+      operationId: resolveDocumentSearchProjectionsInternal
+      summary: Resolve current search projections or confirmed absences
+      description: |
+        Requires issuer `search-service`, actor `{ type: system, id: search-service }`, audience
+        `document-service`, and an organization claim. Resolve the whole batch in one read
+        snapshot. Return exactly one result for each requested UUID in input order.
+
+        An active document returns its current version and projection. A deleted document
+        returns only its UUID and committed terminal version. An ID with no record in the
+        selected organization returns an absence with a null version, regardless of whether
+        another organization owns that ID. A source error or an incomplete or ambiguous
+        result fails the whole batch with 503. Search keeps those IDs pending for retry.
+
+        The 200 response is at most 1,048,576 bytes of compact UTF-8 JSON, excluding HTTP framing.
+        When the complete batch would exceed that bound, return 422 without a partial result.
+        Search can split the batch and retry. A single legal Document projection fits this bound.
+        This action only reads data.
+      tags: [search-projections]
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveDocumentSearchProjections'
+            example:
+              documentIds:
+                - 019a7005-4b2c-7d4e-8f5a-6b7c8d9e0f17
+                - 019a7005-4b2c-7d4e-8f5a-6b7c8d9e0f18
+                - 019a7005-4b2c-7d4e-8f5a-6b7c8d9e0f19
+      responses:
+        '200':
+          description: Complete ordered resolution of the requested document IDs.
+          headers:
+            Cache-Control:
+              $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSearchProjectionResults'
+              example:
+                results:
+                  - status: present
+                    projection:
+                      documentId: 019a7005-4b2c-7d4e-8f5a-6b7c8d9e0f17
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      version: 3
+                      title: Notes de version 3.1
+                      body: |-
+                        # Nouveautés
+                        - Export CSV qui respecte les filtres et le tri
+                  - status: absent
+                    documentId: 019a7005-4b2c-7d4e-8f5a-6b7c8d9e0f18
+                    version: 6
+                  - status: absent
+                    documentId: 019a7005-4b2c-7d4e-8f5a-6b7c8d9e0f19
+                    version: null
+        '400':
+          $ref: '#/components/responses/SearchProjectionBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ReadForbidden'
+        '422':
+          $ref: '#/components/responses/SearchProjectionBatchTooLarge'
+        '503':
+          $ref: '#/components/responses/SearchProjectionUnavailable'
 components:
   securitySchemes:
     internalToken:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  schemas:
+    DocumentSearchProjectionVersion:
+      type: integer
+      minimum: 1
+      maximum: 9007199254740991
+      description: Committed version of the document at the source.
+    DocumentSearchProjection:
+      type: object
+      additionalProperties: false
+      required: [documentId, spaceId, version, title, body]
+      properties:
+        documentId:
+          $ref: '../../components/documents.yaml#/components/schemas/DocumentUuid'
+        spaceId:
+          type: string
+          format: uuid
+          description: The owning space of the document.
+        version:
+          $ref: '#/components/schemas/DocumentSearchProjectionVersion'
+        title:
+          $ref: '../../components/documents.yaml#/components/schemas/DocumentTitle'
+        body:
+          $ref: '../../components/documents.yaml#/components/schemas/DocumentMarkdown'
+    DocumentSearchProjectionPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/DocumentSearchProjection'
+        nextCursor:
+          $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    ResolveDocumentSearchProjections:
+      type: object
+      additionalProperties: false
+      required: [documentIds]
+      properties:
+        documentIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          description: Ordered document UUIDs. Case variants of the same UUID count as duplicates.
+          items:
+            $ref: '../../components/documents.yaml#/components/schemas/DocumentUuid'
+    DocumentSearchProjectionPresent:
+      type: object
+      additionalProperties: false
+      required: [status, projection]
+      properties:
+        status:
+          type: string
+          const: present
+        projection:
+          $ref: '#/components/schemas/DocumentSearchProjection'
+    DocumentSearchProjectionAbsent:
+      type: object
+      additionalProperties: false
+      required: [status, documentId, version]
+      properties:
+        status:
+          type: string
+          const: absent
+        documentId:
+          $ref: '../../components/documents.yaml#/components/schemas/DocumentUuid'
+        version:
+          description: Committed terminal version, or null when the tenant has no record for this ID.
+          oneOf:
+            - $ref: '#/components/schemas/DocumentSearchProjectionVersion'
+            - type: 'null'
+    DocumentSearchProjectionResults:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/DocumentSearchProjectionPresent'
+              - $ref: '#/components/schemas/DocumentSearchProjectionAbsent'
   responses:
     DocumentResult:
       description: The current document including its Markdown body.
@@ -364,6 +579,40 @@ components:
       description: |
         `document.unavailable` when Document cannot complete the request or establish current space
         authority with Task. A failed authority check produces no document data or write.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    SearchProjectionBadRequest:
+      description: |
+        `request.invalid` with `details.issues` for malformed input, an invalid cursor, or
+        duplicate document IDs. `request.body-too-large` applies when a request body exceeds
+        the HTTP limit.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    SearchProjectionBatchTooLarge:
+      description: |
+        `document.projection-batch-too-large` when the complete resolution would exceed the
+        response byte limit. No projection is returned. Split the input and retry.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    SearchProjectionUnavailable:
+      description: |
+        `document.unavailable` when Document cannot establish a complete and consistent
+        source result. No page, batch result or continuation is returned.
       headers:
         Cache-Control:
           $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'

@@ -34,13 +34,15 @@ info:
     | `POST /v1/me/invitations/{invitationId}/refuse` | `POST /internal/v1/users/{userId}/invitations/{invitationId}/refuse` |
 
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
-    (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `organization-service`). Every route
-    accepts the issuer `api-gateway` and the actor `user` only. Each operation says whether it
+    (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `organization-service`). Gateway routes
+    accept the issuer `api-gateway` and the actor `user` only. The isolated Search routes accept
+    `search-service` with the actor and scope declared by each operation. Each operation says whether it
     requires an organization: an organization-scoped route acts on the organization of the token,
     the current organization of the session or the organization of the personal API token, and
     runs in the tenant transaction of that organization. A route that requires no organization
     ignores the one the token may carry, the current organization of the session, and opens no
-    tenant transaction from it. The guard of the kit answers
+    tenant transaction from it. The Search organization export instead requires an unscoped token.
+    The guard of the kit answers
     `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
     `403 auth.actor-not-allowed` and `403 auth.organization-required`. The gateway answers
     `403 organization.not-selected` itself, before the call, when the session has no current
@@ -93,6 +95,8 @@ info:
       uses: >-
         Relays the organization, member and logo routes exposed in the public specs, and looks
         up names for list CSV export and authorized notification actors.
+    - repository: cadenway-search-service
+      uses: Enumerates organization IDs for rebuilds and checks the current signed user's membership before disclosing search results.
 servers:
   - url: http://organization-service:3011
     description: organization-service on the internal network of each environment (`ORGANIZATION_SERVICE_URL`).
@@ -105,6 +109,8 @@ tags:
     description: Members of the organization of the token.
   - name: invitations
     description: Invitations of the organization of the token, and those addressed to the actor.
+  - name: search
+    description: Organization IDs for search rebuilds and current membership proofs.
 paths:
   /internal/v1/organizations:
     post:
@@ -972,6 +978,90 @@ paths:
           $ref: '#/components/responses/InvitationOrUserNotFound'
         '409':
           $ref: '#/components/responses/InvitationNotPending'
+  /internal/v1/search-organizations:
+    get:
+      operationId: listSearchOrganizationsInternal
+      summary: List organization IDs for a search rebuild
+      description: |
+        Requires issuer `search-service` and actor `{ type: 'system', id: 'search-service' }`, with
+        no organization claim. Every response carries `Cache-Control: private, no-store`.
+        Returns only organization IDs. Search then signs each owner's export request with the
+        organization of that export.
+
+        The first page fixes an upper organization ID in its read snapshot. Independent pages
+        read ascending immutable IDs up to that inclusive upper bound. The opaque cursor binds
+        this operation, the upper bound, and the last returned ID. The next page starts strictly
+        after that ID. An invalid cursor returns `400 request.invalid`. The UTF-8 JSON body is at
+        most 1,048,576 bytes. Only `nextCursor: null` marks completion. Before its scan, Search
+        starts consuming durable invalidations, including `member.joined.v1`. Organization
+        creation emits the owner's join, so Search can schedule an export of a new tenant even
+        when its ID is outside this page sequence.
+      tags: [search]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of organization IDs.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/SearchPrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchOrganizationPage'
+              example:
+                items: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f]
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/SearchAuthorityBadRequest'
+        '401':
+          $ref: '#/components/responses/SearchAuthorityTokenRefused'
+        '403':
+          $ref: '#/components/responses/SearchOrganizationAccessRefused'
+        '503':
+          $ref: '#/components/responses/SearchAuthorityUnavailable'
+  /internal/v1/search-membership:
+    get:
+      operationId: getSearchMembershipInternal
+      summary: Prove current organization membership for search
+      description: |
+        Requires issuer `search-service`, an actor of type `user` and an organization in the
+        signed token. Search signs this call for the verified user and organization of the current
+        request. Neither value comes from search input or indexed data. Every response carries
+        `Cache-Control: private, no-store`.
+
+        Returns the active membership's ID, version and role in one current tenant snapshot.
+        The membership ID changes after removal and rejoining. The version is the version of
+        that membership, independent of the organization's version. An unknown organization or
+        absent active membership yields the same `404 organization.not-found`. The caller uses
+        the proof to check that Task evaluates candidate access against the same membership
+        identity and version. The proof alone grants no access to search results.
+      tags: [search]
+      responses:
+        '200':
+          description: The active membership of the signed actor in the selected organization.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/SearchPrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchMembership'
+              example:
+                memberId: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41
+                role: admin
+                version: 2
+        '400':
+          $ref: '#/components/responses/SearchAuthorityBadRequest'
+        '401':
+          $ref: '#/components/responses/SearchAuthorityTokenRefused'
+        '403':
+          $ref: '#/components/responses/SearchMembershipAccessRefused'
+        '404':
+          $ref: '#/components/responses/SearchMembershipNotFound'
+        '503':
+          $ref: '#/components/responses/SearchAuthorityUnavailable'
 components:
   securitySchemes:
     internalToken:
@@ -980,7 +1070,8 @@ components:
       bearerFormat: JWT
       description: |
         Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` =
-        `organization-service`, issuer `api-gateway`.
+        `organization-service`. The operation defines the accepted issuer, actor and organization
+        scope.
   parameters:
     UserId:
       name: userId
@@ -1017,6 +1108,12 @@ components:
       schema:
         type: string
   headers:
+    SearchPrivateNoStore:
+      required: true
+      description: Keeps private search authority responses out of HTTP caches.
+      schema:
+        type: string
+        const: 'private, no-store'
     ETag:
       description: Version of the organization, `"<version>"`.
       schema:
@@ -1122,6 +1219,68 @@ components:
           remaining: 2
           nextAvailableAt: '2026-11-07T09:12:00Z'
   responses:
+    SearchAuthorityBadRequest:
+      description: '`request.invalid` for invalid input, including an invalid organization export cursor.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    SearchAuthorityTokenRefused:
+      description: '`auth.token-missing` or `auth.token-invalid`.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    SearchOrganizationAccessRefused:
+      description: |
+        `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
+        actor type or ID, or `auth.organization-not-allowed` when the global export receives a
+        verified token scoped to an organization. The export checks the last condition after
+        token verification.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    SearchMembershipAccessRefused:
+      description: |
+        `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for a non-user
+        actor, or `auth.organization-required` for an unscoped token.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    SearchMembershipNotFound:
+      description: '`organization.not-found` for a missing organization or absent active membership.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    SearchAuthorityUnavailable:
+      description: |
+        `organization.unavailable` when Organization cannot complete the requested snapshot.
+        No partial page or membership proof is returned.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/SearchPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     ProfileMediaReservationConflict:
       description: |
         `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
@@ -1457,6 +1616,21 @@ components:
             details:
               version: 4
   schemas:
+    SearchOrganizationPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        nextCursor: { $ref: '../../components/http.yaml#/components/schemas/NextCursor' }
+    SearchMembership:
+      $ref: '../../components/search.yaml#/components/schemas/SearchMembership'
     Email:
       type: string
       format: email

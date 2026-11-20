@@ -3,6 +3,84 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type AttachmentId = string;
+
+/**
+ * Key of a task, the only way a task is named outside task-service: the prefix of the space
+ * it was created in, a dash and a number. A key never changes, also when the task moves to
+ * another space or its space changes prefix, and is never given to another task.
+ * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
+ */
+export type TaskKey = string;
+
+/**
+ * Original Unicode basename without path separators, control characters or whitespace-padded dot segments.
+ * @minLength 1
+ * @maxLength 255
+ * @pattern ^(?=[\s\S]*\S)(?!\s*\.{1,2}\s*$)(?:[^/\\\x00-\x1F\x7F-\x9F\uD800-\uDFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF])+$
+ */
+export type AttachmentFileName = string;
+
+export interface AttachmentSearchProjection {
+  fileId: AttachmentId;
+  taskKey: TaskKey;
+  fileName: AttachmentFileName;
+  /**
+     * Owner version of the ready attachment.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+export interface AttachmentSearchProjectionPage {
+  /** @maxItems 100 */
+  items: AttachmentSearchProjection[];
+  nextCursor: NextCursor | null;
+}
+
+export interface ResolveAttachmentSearchProjectionsRequest {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  fileIds: AttachmentId[];
+}
+
+export interface PresentAttachmentSearchProjection {
+  status: 'present';
+  projection: AttachmentSearchProjection;
+}
+
+export interface AbsentAttachmentSearchProjection {
+  status: 'absent';
+  fileId: AttachmentId;
+  /**
+     * Terminal attachment version when known, or null.
+     * @minimum 1
+     * @maximum 9007199254740991
+     * @nullable
+     */
+  version: number | null;
+}
+
+export interface ResolveAttachmentSearchProjectionsResult {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  results: (PresentAttachmentSearchProjection | AbsentAttachmentSearchProjection)[];
+}
+
+/**
  * Form heading supplied by a list editor. The service trims surrounding whitespace.
  * @minLength 1
  * @maxLength 300
@@ -158,11 +236,6 @@ export const PriorityKey = {
 } as const;
 
 /**
- * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
- */
-export type AttachmentId = string;
-
-/**
  * The service validates configurable fields against the current publication after resolving
  * the form key. Disabled fields must be omitted. Required fields must contain a value.
  */
@@ -230,14 +303,6 @@ export interface IntakeAttachmentAllocation {
 }
 
 /**
- * Original Unicode basename without path separators, control characters or whitespace-padded dot segments.
- * @minLength 1
- * @maxLength 255
- * @pattern ^(?=[\s\S]*\S)(?!\s*\.{1,2}\s*$)(?:[^/\\\x00-\x1F\x7F-\x9F\uD800-\uDFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF])+$
- */
-export type AttachmentFileName = string;
-
-/**
  * Concrete media type and subtype without wildcards or parameters.
  * @minLength 1
  * @maxLength 127
@@ -268,14 +333,6 @@ export interface IntakeAttachmentUploadStart {
 export interface IntakeAttachmentCompletion {
   id: AttachmentId;
 }
-
-/**
- * Key of a task, the only way a task is named outside task-service: the prefix of the space
- * it was created in, a dash and a number. A key never changes, also when the task moves to
- * another space or its space changes prefix, and is never given to another task.
- * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
- */
-export type TaskKey = string;
 
 /**
  * A nonblank saved view or template name, at most 80 characters.
@@ -317,12 +374,6 @@ export interface TaskTemplate {
   /** @minimum 1 */
   version: number;
 }
-
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
 
 /**
  * Space templates ordered by creation time and ID.
@@ -2735,6 +2786,29 @@ export interface ProfileMediaPreparation {
 }
 
 /**
+ * `request.invalid` for invalid input, including an invalid cursor or duplicate file IDs.
+ * `request.body-too-large` when the incoming request body exceeds the JSON body limit.
+ */
+export type SearchProjectionBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type SearchProjectionTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID, or `auth.organization-required` for an unscoped token.
+ */
+export type SearchProjectionAccessRefusedResponse = Problem;
+
+/**
+ * `storage.unavailable` when Storage cannot complete the requested snapshot.
+ * No partial page or batch is returned.
+ */
+export type SearchProjectionUnavailableResponse = Problem;
+
+/**
  * `media.not-found` for an unknown, unavailable or unrelated image or reservation.
  */
 export type ProfileMediaNotFoundResponse = Problem;
@@ -2862,6 +2936,17 @@ export type GetAvatarImageInternalParams = {
 };
 
 export type ListLargestAttachmentsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListAttachmentSearchProjectionsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: string;
   /**

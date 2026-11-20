@@ -214,3 +214,116 @@ export const DeleteDocumentInternalHeader = zod.object({
 })
 
 export const DeleteDocumentInternalResponse = zod.void()
+
+
+/**
+ * Requires issuer `search-service`, actor `{ type: system, id: search-service }`, audience
+ * `document-service`, and an organization claim. The claim scopes every read and cursor.
+ *
+ * The first page captures the highest active document UUIDv7 in its read snapshot. Each
+ * page reads active rows in ascending document UUID order up to that inclusive bound, in
+ * one read snapshot per request. A continuation is opaque, binds the tenant and upper
+ * bound, and resumes strictly after the last returned UUID. Each page has at most `limit`
+ * items and at most 1,048,576 bytes of compact UTF-8 JSON, excluding HTTP framing.
+ * A page shortened by the byte limit resumes after its last returned item.
+ * Only `nextCursor: null` means the scan is complete.
+ *
+ * There is no cross-page snapshot. Search starts recording document invalidations before
+ * its first page and re-resolves their IDs before activating the rebuilt index. Concurrent
+ * inserts may fall behind the cursor and updates or deletes may supersede an exported
+ * version. The event payloads supply invalidation IDs, not document content.
+ * @summary Export a page of active document projections
+ */
+export const listDocumentSearchProjectionsInternalQueryLimitDefault = 50;
+export const listDocumentSearchProjectionsInternalQueryLimitMax = 100;
+
+
+
+export const ListDocumentSearchProjectionsInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listDocumentSearchProjectionsInternalQueryLimitMax).default(listDocumentSearchProjectionsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listDocumentSearchProjectionsInternalResponseItemsItemDocumentIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listDocumentSearchProjectionsInternalResponseItemsItemVersionMax = 9007199254740991;
+
+export const listDocumentSearchProjectionsInternalResponseItemsItemTitleMax = 200;
+
+
+export const listDocumentSearchProjectionsInternalResponseItemsItemTitleRegExp = new RegExp('\\S');
+export const listDocumentSearchProjectionsInternalResponseItemsItemBodyMax = 100000;
+
+export const listDocumentSearchProjectionsInternalResponseItemsMax = 100;
+
+
+
+export const ListDocumentSearchProjectionsInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "documentId": zod.uuid().regex(listDocumentSearchProjectionsInternalResponseItemsItemDocumentIdRegExp).describe('A UUID version 7.'),
+  "spaceId": zod.uuid().describe('The owning space of the document.'),
+  "version": zod.int().min(1).max(listDocumentSearchProjectionsInternalResponseItemsItemVersionMax).describe('Committed version of the document at the source.'),
+  "title": zod.string().min(1).max(listDocumentSearchProjectionsInternalResponseItemsItemTitleMax).regex(listDocumentSearchProjectionsInternalResponseItemsItemTitleRegExp).describe('Display title. Leading and trailing whitespace is trimmed.'),
+  "body": zod.string().max(listDocumentSearchProjectionsInternalResponseItemsItemBodyMax).describe('Ordered blocks serialized as lightweight Markdown. The editor supports paragraphs,\nheadings 1–3, bulleted and numbered items, checkboxes, quotes, fenced code and separators.\nInline marks include bold, italic, underline, strikethrough, code and links. This is\nsource text. A consumer treats raw HTML as text and does not activate non-HTTP(S) links.\nAn empty string represents a document without content.\n')
+})).max(listDocumentSearchProjectionsInternalResponseItemsMax),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})
+
+
+/**
+ * Requires issuer `search-service`, actor `{ type: system, id: search-service }`, audience
+ * `document-service`, and an organization claim. Resolve the whole batch in one read
+ * snapshot. Return exactly one result for each requested UUID in input order.
+ *
+ * An active document returns its current version and projection. A deleted document
+ * returns only its UUID and committed terminal version. An ID with no record in the
+ * selected organization returns an absence with a null version, regardless of whether
+ * another organization owns that ID. A source error or an incomplete or ambiguous
+ * result fails the whole batch with 503. Search keeps those IDs pending for retry.
+ *
+ * The 200 response is at most 1,048,576 bytes of compact UTF-8 JSON, excluding HTTP framing.
+ * When the complete batch would exceed that bound, return 422 without a partial result.
+ * Search can split the batch and retry. A single legal Document projection fits this bound.
+ * This action only reads data.
+ * @summary Resolve current search projections or confirmed absences
+ */
+export const resolveDocumentSearchProjectionsInternalBodyDocumentIdsItemRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveDocumentSearchProjectionsInternalBodyDocumentIdsMax = 100;
+
+
+
+export const ResolveDocumentSearchProjectionsInternalBody = zod.strictObject({
+  "documentIds": zod.array(zod.uuid().regex(resolveDocumentSearchProjectionsInternalBodyDocumentIdsItemRegExp).describe('A UUID version 7.')).min(1).max(resolveDocumentSearchProjectionsInternalBodyDocumentIdsMax).describe('Ordered document UUIDs. Case variants of the same UUID count as duplicates.')
+})
+
+export const resolveDocumentSearchProjectionsInternalResponseResultsItemOneProjectionDocumentIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveDocumentSearchProjectionsInternalResponseResultsItemOneProjectionVersionMax = 9007199254740991;
+
+export const resolveDocumentSearchProjectionsInternalResponseResultsItemOneProjectionTitleMax = 200;
+
+
+export const resolveDocumentSearchProjectionsInternalResponseResultsItemOneProjectionTitleRegExp = new RegExp('\\S');
+export const resolveDocumentSearchProjectionsInternalResponseResultsItemOneProjectionBodyMax = 100000;
+
+export const resolveDocumentSearchProjectionsInternalResponseResultsItemTwoDocumentIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const resolveDocumentSearchProjectionsInternalResponseResultsItemTwoVersionOneMax = 9007199254740991;
+
+export const resolveDocumentSearchProjectionsInternalResponseResultsMax = 100;
+
+
+
+export const ResolveDocumentSearchProjectionsInternalResponse = zod.object({
+  "results": zod.array(zod.union([zod.object({
+  "status": zod.literal("present"),
+  "projection": zod.object({
+  "documentId": zod.uuid().regex(resolveDocumentSearchProjectionsInternalResponseResultsItemOneProjectionDocumentIdRegExp).describe('A UUID version 7.'),
+  "spaceId": zod.uuid().describe('The owning space of the document.'),
+  "version": zod.int().min(1).max(resolveDocumentSearchProjectionsInternalResponseResultsItemOneProjectionVersionMax).describe('Committed version of the document at the source.'),
+  "title": zod.string().min(1).max(resolveDocumentSearchProjectionsInternalResponseResultsItemOneProjectionTitleMax).regex(resolveDocumentSearchProjectionsInternalResponseResultsItemOneProjectionTitleRegExp).describe('Display title. Leading and trailing whitespace is trimmed.'),
+  "body": zod.string().max(resolveDocumentSearchProjectionsInternalResponseResultsItemOneProjectionBodyMax).describe('Ordered blocks serialized as lightweight Markdown. The editor supports paragraphs,\nheadings 1–3, bulleted and numbered items, checkboxes, quotes, fenced code and separators.\nInline marks include bold, italic, underline, strikethrough, code and links. This is\nsource text. A consumer treats raw HTML as text and does not activate non-HTTP(S) links.\nAn empty string represents a document without content.\n')
+})
+}),zod.object({
+  "status": zod.literal("absent"),
+  "documentId": zod.uuid().regex(resolveDocumentSearchProjectionsInternalResponseResultsItemTwoDocumentIdRegExp).describe('A UUID version 7.'),
+  "version": zod.union([zod.int().min(1).max(resolveDocumentSearchProjectionsInternalResponseResultsItemTwoVersionOneMax).describe('Committed version of the document at the source.'),zod.null()]).describe('Committed terminal version, or null when the tenant has no record for this ID.')
+})])).min(1).max(resolveDocumentSearchProjectionsInternalResponseResultsMax)
+})

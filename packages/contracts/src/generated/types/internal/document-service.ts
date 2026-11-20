@@ -3,15 +3,17 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
+ * Committed version of the document at the source.
+ * @minimum 1
+ * @maximum 9007199254740991
+ */
+export type DocumentSearchProjectionVersion = number;
+
+/**
  * A UUID version 7.
  * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
  */
 export type DocumentUuid = string;
-
-/**
- * @pattern ^"[1-9][0-9]*"$
- */
-export type DocumentTag = string;
 
 /**
  * Display title. Leading and trailing whitespace is trimmed.
@@ -30,6 +32,61 @@ export type DocumentTitle = string;
  * @maxLength 100000
  */
 export type DocumentMarkdown = string;
+
+export interface DocumentSearchProjection {
+  documentId: DocumentUuid;
+  /** The owning space of the document. */
+  spaceId: string;
+  version: DocumentSearchProjectionVersion;
+  title: DocumentTitle;
+  body: DocumentMarkdown;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+export interface DocumentSearchProjectionPage {
+  /** @maxItems 100 */
+  items: DocumentSearchProjection[];
+  nextCursor: NextCursor | null;
+}
+
+export interface ResolveDocumentSearchProjections {
+  /**
+     * Ordered document UUIDs. Case variants of the same UUID count as duplicates.
+     * @minItems 1
+     * @maxItems 100
+     */
+  documentIds: DocumentUuid[];
+}
+
+export interface DocumentSearchProjectionPresent {
+  status: 'present';
+  projection: DocumentSearchProjection;
+}
+
+export interface DocumentSearchProjectionAbsent {
+  status: 'absent';
+  documentId: DocumentUuid;
+  /** Committed terminal version, or null when the tenant has no record for this ID. */
+  version: DocumentSearchProjectionVersion | null;
+}
+
+export interface DocumentSearchProjectionResults {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  results: (DocumentSearchProjectionPresent | DocumentSearchProjectionAbsent)[];
+}
+
+/**
+ * @pattern ^"[1-9][0-9]*"$
+ */
+export type DocumentTag = string;
 
 export interface DocumentMetadata {
   id: DocumentUuid;
@@ -50,12 +107,6 @@ export interface DocumentMetadata {
 export type DocumentDetail = DocumentMetadata & {
   body: DocumentMarkdown;
 };
-
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
 
 export interface DocumentPage {
   items: DocumentMetadata[];
@@ -167,6 +218,25 @@ export type VersionMismatchResponse = Problem;
  */
 export type UnavailableResponse = Problem;
 
+/**
+ * `request.invalid` with `details.issues` for malformed input, an invalid cursor, or
+ * duplicate document IDs. `request.body-too-large` applies when a request body exceeds
+ * the HTTP limit.
+ */
+export type SearchProjectionBadRequestResponse = Problem;
+
+/**
+ * `document.projection-batch-too-large` when the complete resolution would exceed the
+ * response byte limit. No projection is returned. Split the input and retry.
+ */
+export type SearchProjectionBatchTooLargeResponse = Problem;
+
+/**
+ * `document.unavailable` when Document cannot establish a complete and consistent
+ * source result. No page, batch result or continuation is returned.
+ */
+export type SearchProjectionUnavailableResponse = Problem;
+
 export type ListDocumentsInternalParams = {
   /**
    * Case-insensitive literal substring of the title or Markdown body. Leading and trailing
@@ -174,6 +244,17 @@ export type ListDocumentsInternalParams = {
    * @maxLength 200
    */
   q?: string;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListDocumentSearchProjectionsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: string;
   /**

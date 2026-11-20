@@ -3,10 +3,16 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
- * Email address, compared without regard to case.
- * @maxLength 254
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
  */
-export type Email = string;
+export type NextCursor = string | null;
+
+export interface SearchOrganizationPage {
+  /** @maxItems 100 */
+  items: string[];
+  nextCursor: NextCursor | null;
+}
 
 /**
  * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
@@ -21,6 +27,23 @@ export const Role = {
   member: 'member',
   guest: 'guest',
 } as const;
+
+export interface SearchMembership {
+  memberId: string;
+  role: Role;
+  /**
+     * Version of the active membership.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+/**
+ * Email address, compared without regard to case.
+ * @maxLength 254
+ */
+export type Email = string;
 
 /**
  * A role that can be given; never `owner`.
@@ -170,12 +193,6 @@ export interface MyOrganization {
   plan: string;
   joinedAt: string;
 }
-
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
 
 export interface MyOrganizationPage {
   items: MyOrganization[];
@@ -487,6 +504,41 @@ export interface ProfileMediaPreparation {
 }
 
 /**
+ * `request.invalid` for invalid input, including an invalid organization export cursor.
+ */
+export type SearchAuthorityBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type SearchAuthorityTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
+ * actor type or ID, or `auth.organization-not-allowed` when the global export receives a
+ * verified token scoped to an organization. The export checks the last condition after
+ * token verification.
+ */
+export type SearchOrganizationAccessRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for a non-user
+ * actor, or `auth.organization-required` for an unscoped token.
+ */
+export type SearchMembershipAccessRefusedResponse = Problem;
+
+/**
+ * `organization.not-found` for a missing organization or absent active membership.
+ */
+export type SearchMembershipNotFoundResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the requested snapshot.
+ * No partial page or membership proof is returned.
+ */
+export type SearchAuthorityUnavailableResponse = Problem;
+
+/**
  * `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
  */
 export type ProfileMediaReservationConflictResponse = Problem;
@@ -689,6 +741,17 @@ export type ListInvitationsInternalParams = {
 };
 
 export type ListReceivedInvitationsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListSearchOrganizationsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: string;
   /**
