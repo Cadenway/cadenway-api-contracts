@@ -819,6 +819,16 @@ paths:
         resulting UTF-8 CSV with an attachment header using the supplied basename. If the
         directory lookup fails, it returns a problem response before sending any CSV bytes.
 
+        A request with `Accept: application/x-ndjson` opts into streaming the same snapshot as
+        UTF-8 newline-delimited JSON. Otherwise the representation remains `application/json`.
+        Each record, including its LF terminator, is at most 131,072 bytes. The first record is
+        `metadata`. It is followed by zero to 10,000 `row` records in the same order as the JSON
+        representation and exactly one final `complete` record whose `rowCount` equals the number of
+        rows. The stream ends immediately after the final LF. A truncated stream, invalid record,
+        count mismatch, or missing or early completion invalidates the whole export. The gateway
+        verifies successful completion and finishes directory resolution before sending the public
+        response headers or any CSV bytes.
+
         Internal token from api-gateway with a user actor and organization required.
       tags: [lists]
       parameters:
@@ -850,6 +860,47 @@ paths:
                     assigneeIds:
                       [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30, 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
                     afterAssignees: ['"2026-11-12"', '"Auth, Front"', '"5"', '"Coopérative Lumen"']
+            application/x-ndjson:
+              schema:
+                type: string
+                description: UTF-8 JSON records separated and terminated by LF.
+              x-ndjson-record-schema:
+                oneOf:
+                  - type: object
+                    required: [kind, filename, header]
+                    additionalProperties: false
+                    properties:
+                      kind:
+                        const: metadata
+                        type: string
+                      filename:
+                        $ref: '#/components/schemas/ListTaskExport/properties/filename'
+                      header:
+                        $ref: '#/components/schemas/ListTaskExport/properties/header'
+                  - type: object
+                    required: [kind, row]
+                    additionalProperties: false
+                    properties:
+                      kind:
+                        const: row
+                        type: string
+                      row:
+                        $ref: '#/components/schemas/ListTaskExport/properties/rows/items'
+                  - type: object
+                    required: [kind, rowCount]
+                    additionalProperties: false
+                    properties:
+                      kind:
+                        const: complete
+                        type: string
+                      rowCount:
+                        type: integer
+                        minimum: 0
+                        maximum: 10000
+              example: |
+                {"kind":"metadata","filename":"sprint-14.csv","header":"\"Identifiant\";\"Nom\";\"Statut\";\"Priorité\";\"Assignés\";\"Échéance\";\"Étiquettes\";\"Points\";\"Client\""}
+                {"kind":"row","row":{"beforeAssignees":["\"CAD-482\"","\"Refondre l’écran de connexion SSO\"","\"En cours\"","\"Haute\""],"assigneeIds":["019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30","019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31"],"afterAssignees":["\"2026-11-12\"","\"Auth, Front\"","\"5\"","\"Coopérative Lumen\""]}}
+                {"kind":"complete","rowCount":1}
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

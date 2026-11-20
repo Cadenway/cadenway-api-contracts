@@ -1231,6 +1231,16 @@ export const GetListTimesheetInternalResponse = zod.object({
  * resulting UTF-8 CSV with an attachment header using the supplied basename. If the
  * directory lookup fails, it returns a problem response before sending any CSV bytes.
  *
+ * A request with `Accept: application/x-ndjson` opts into streaming the same snapshot as
+ * UTF-8 newline-delimited JSON. Otherwise the representation remains `application/json`.
+ * Each record, including its LF terminator, is at most 131,072 bytes. The first record is
+ * `metadata`. It is followed by zero to 10,000 `row` records in the same order as the JSON
+ * representation and exactly one final `complete` record whose `rowCount` equals the number of
+ * rows. The stream ends immediately after the final LF. A truncated stream, invalid record,
+ * count mismatch, or missing or early completion invalidates the whole export. The gateway
+ * verifies successful completion and finishes directory resolution before sending the public
+ * response headers or any CSV bytes.
+ *
  * Internal token from api-gateway with a user actor and organization required.
  * @summary Read the visible list task rows for CSV export
  */
