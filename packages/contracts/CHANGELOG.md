@@ -1,5 +1,12 @@
 # @cadenway/contracts
 
+## 0.12.1
+
+### Patch Changes
+
+- faf0dc4: Align task time, custom field, approval, and onboarding error examples with the gateway's
+  existing titles for their problem codes.
+
 ## 0.12.0
 
 ### Minor Changes
