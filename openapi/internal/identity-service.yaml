@@ -3,7 +3,8 @@
 # of a personal API token, the sessions of a user, their revocation and the choice of their
 # organization, the password reset and the recent re-authentication, the reading, the profile, the
 # password, the address, the two-step verification and the deletion of a user, the authentication
-# policy of an organization, and the personal API tokens of openapi/public/api-tokens.yaml.
+# policy of an organization, the personal API tokens of openapi/public/api-tokens.yaml, and
+# issuing realtime tickets. Only cadenway-realtime-gateway redeems a realtime ticket.
 openapi: 3.1.0
 info:
   title: identity-service internal routes
@@ -14,6 +15,8 @@ info:
     tokens. The service has no public route: the gateway serves `openapi/public/auth.yaml`,
     `openapi/public/api-tokens.yaml`, and the choice of the current organization and the
     authentication policy of `openapi/public/organizations.yaml`, and calls these routes.
+    It also issues tickets for `openapi/public/realtime.yaml`. The realtime gateway calls the
+    single-use redemption route before accepting a socket.
 
     | Public route | Internal call |
     | --- | --- |
@@ -54,6 +57,7 @@ info:
     | `DELETE /v1/sessions/{sessionId}` | `DELETE /internal/v1/sessions/{sessionId}` with the id of the path |
     | `POST /v1/sessions/revoke-others` | `POST /internal/v1/sessions/{sessionId}/revoke-others` with the session the introspection returned |
     | `PUT /v1/session/organization` | `PUT /internal/v1/sessions/{sessionId}/organization` with the session the introspection returned |
+    | `POST /v1/realtime/tickets` | `POST /internal/v1/realtime/tickets` with the session and organization the introspection returned |
     | `POST /v1/api-tokens` | `POST /internal/v1/api-tokens` |
     | `GET /v1/api-tokens` | `GET /internal/v1/api-tokens` |
     | `DELETE /v1/api-tokens/{apiTokenId}` | `DELETE /internal/v1/api-tokens/{apiTokenId}` |
@@ -152,12 +156,11 @@ info:
     of an organization. It never calls organization-service for it.
 
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
-    (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `identity-service`). Every route accepts
-    the issuer `api-gateway` only. Each operation says which actor it accepts: `anonymous` for the
-    flows that run before a session exists, `system` for the introspections, `user` for the routes
-    of the signed-in user; and whether it requires an organization: only the personal API token
-    routes and the authentication policy do, the current organization of the session that calls
-    them. The guard of the kit
+    (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `identity-service`). Realtime ticket
+    redemption accepts only `realtime-gateway`. All other routes accept only `api-gateway`.
+    Each operation declares its actor and whether it requires an organization. Realtime ticket
+    issuance, personal API token management and the authentication policy use the current
+    organization of the session. The guard of the kit
     answers `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
     `403 auth.actor-not-allowed` and `403 auth.organization-required`. The gateway answers
     `403 organization.not-selected` itself, before the call, when the session has no current
@@ -186,7 +189,12 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Calls every route through its generated client, for openapi/public/auth.yaml, openapi/public/api-tokens.yaml, the choice of the current organization and its authentication policy, and the guard of every authenticated route (session and personal API token introspection, including the withheld organization).
+      uses: >-
+        Calls every route except realtime ticket redemption through its generated client for
+        authentication, personal API tokens, the current organization and its authentication
+        policy, and realtime ticket issuance.
+    - repository: cadenway-realtime-gateway
+      uses: Redeems a realtime ticket before authenticating a Socket.IO connection.
 servers:
   - url: http://identity-service:3010
     description: identity-service on the internal network of each environment (`IDENTITY_SERVICE_URL`).
@@ -197,6 +205,8 @@ tags:
     description: Sign-up, email verification, sign-in and its two-step challenge, and password reset, before a session exists.
   - name: sessions
     description: Introspection, list, recent re-authentication and revocation of sessions.
+  - name: realtime-tickets
+    description: Issue and redeem one-time Socket.IO credentials.
   - name: users
     description: Accounts, their profile, password, address and deletion.
   - name: api-tokens
@@ -2066,6 +2076,103 @@ paths:
           $ref: '#/components/responses/TwoStepNotEnabled'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/realtime/tickets:
+    post:
+      operationId: issueRealtimeTicketInternal
+      x-cadenway-strict-body: true
+      summary: Issue a realtime ticket for an open session
+      description: |
+        Internal token: issuer `api-gateway` only, actor `user`, organization required.
+        The API gateway sends the session id obtained from the verified cookie. Identity checks
+        in the issuance transaction that this session belongs to the actor, is open, and acts
+        on the organization in the signed internal token. The current membership and its
+        authentication policy still have to permit access. No ticket is issued on refusal.
+
+        Identity keeps the SHA-256 digest of the ticket, its bound session, session version and
+        organization, and its expiration. The opaque value has 256 random bits and is returned
+        once. It expires no later than 60 seconds after issuance. Use a fresh call if the result
+        was lost.
+      tags: [realtime-tickets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RealtimeTicketIssuance'
+            example:
+              sessionId: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
+      responses:
+        '200':
+          description: The new credential, returned once.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/RealtimeNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealtimeTicket'
+              example:
+                token: 0123456789abcdefghijklmnopqrstuvwxyzABCDEFA
+                expiresAt: '2026-11-20T09:01:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RealtimeTicketIssuanceRefused'
+        '404':
+          $ref: '#/components/responses/RealtimeTicketSessionNotFound'
+  /internal/v1/realtime/tickets/redemption:
+    post:
+      operationId: redeemRealtimeTicketInternal
+      x-cadenway-strict-body: true
+      summary: Redeem a realtime ticket once
+      description: |
+        Internal token: issuer `realtime-gateway` only, actor `system`, without an organization.
+        The realtime gateway checks the socket's Origin before forwarding its ticket. The
+        organization, session, user and active membership come from Identity's records.
+
+        In one transaction, revalidate the active session, its bound version and organization,
+        current membership and its authentication policy, and consume the unexpired ticket atomically.
+        At most one concurrent redemption succeeds. A ticket that is absent, expired, already
+        consumed or whose binding no longer authorizes the session answers the same `404`.
+        Neither a success nor a refusal exposes a ticket in logs, traces or events.
+        Do not retry redemption after an ambiguous result. A new handshake needs a fresh ticket.
+      tags: [realtime-tickets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RealtimeTicketRedemption'
+            example:
+              token: 0123456789abcdefghijklmnopqrstuvwxyzABCDEFA
+      responses:
+        '200':
+          description: The verified identity and its organization for this connection.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/RealtimeNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealtimeSession'
+              example:
+                sessionId: 019a6a2e-4b1c-7d3e-8f5a-2c9b7e1d4a60
+                sessionVersion: 2
+                userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                memberId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b31
+                role: owner
+                sessionExpiresAt: '2026-11-20T20:00:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RealtimeTicketRedemptionRefused'
+        '404':
+          $ref: '#/components/responses/RealtimeTicketNotFound'
   /internal/v1/api-tokens:
     post:
       operationId: createApiTokenInternal
@@ -2272,7 +2379,8 @@ components:
       bearerFormat: JWT
       description: |
         Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` = `identity-service`,
-        issuer `api-gateway`.
+        issuer `api-gateway` except for realtime ticket redemption, which accepts only
+        `realtime-gateway`.
   parameters:
     SessionId:
       name: sessionId
@@ -2293,6 +2401,12 @@ components:
         format: uuid
         examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
   headers:
+    RealtimeNoStore:
+      description: Prevents storage by caches.
+      schema:
+        type: string
+        const: no-store
+        examples: [no-store]
     RetryAfter:
       description: Seconds to wait before the request can succeed (RFC 9110).
       schema:
@@ -2708,6 +2822,65 @@ components:
             title: Forbidden
             status: 403
             code: auth.actor-not-allowed
+    RealtimeTicketIssuanceRefused:
+      description: |
+        - `organization.not-selected`: the session no longer acts in the organization of the
+          request. The response does not name another organization.
+        - `organization.mfa-required`: the organization requires two-step verification for
+          the actor, who has none. `details.organizationId` identifies the organization.
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`:
+          see the internal token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Forbidden
+            status: 403
+            code: organization.not-selected
+    RealtimeTicketSessionNotFound:
+      description: |
+        - `session.not-found`: the session is no longer open or does not belong to the user.
+          The API gateway maps this to `401 auth.session-expired`.
+        - `organization.not-found`: Identity does not recognize a current membership in the
+          organization of the signed request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: session.not-found
+    RealtimeTicketRedemptionRefused:
+      description: |
+        The internal token is valid but the issuer is not `realtime-gateway`
+        (`auth.issuer-not-allowed`), the actor is not `system` (`auth.actor-not-allowed`),
+        or the token carries an organization (`auth.organization-not-allowed`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Forbidden
+            status: 403
+            code: auth.issuer-not-allowed
+    RealtimeTicketNotFound:
+      description: |
+        `realtime-ticket.not-found`: no usable ticket was found. There is no detail identifying
+        its state, session, organization or former holder.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: realtime-ticket.not-found
     SignInForbidden:
       description: |
         - `auth.email-not-verified`: the password is right but the address is not verified yet;
@@ -3129,6 +3302,63 @@ components:
                 status: 404
                 code: session.not-found
   schemas:
+    RealtimeTicketIssuance:
+      type: object
+      required: [sessionId]
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: The session of the verified browser request, as returned by introspection.
+    RealtimeTicket:
+      $ref: '../../components/realtime.yaml#/components/schemas/RealtimeTicket'
+    RealtimeTicketRedemption:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token:
+          $ref: '../../components/realtime.yaml#/components/schemas/RealtimeTicketToken'
+          writeOnly: true
+    RealtimeSession:
+      type: object
+      required:
+        [sessionId, sessionVersion, userId, organizationId, memberId, role, sessionExpiresAt]
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: Identifies the session for the revocation subscription.
+        sessionVersion:
+          type: integer
+          minimum: 1
+          description: The Identity session version after the authorization check. It advances on organization change or revocation.
+        userId:
+          type: string
+          format: uuid
+          description: The authenticated socket user.
+        organizationId:
+          type: string
+          format: uuid
+          description: The currently authorized organization of this connection.
+        memberId:
+          type: string
+          format: uuid
+          description: |
+            Its verified active membership in that organization. The personal room uses
+            `member:<memberId>`. For events keyed by user ID, resolve the membership by both
+            organization ID and user ID before addressing that room.
+        role:
+          $ref: '#/components/schemas/Role'
+        sessionExpiresAt:
+          type: string
+          format: date-time
+          pattern: 'Z$'
+          description: |
+            The earlier of the session's absolute expiration and its current inactivity
+            deadline. Close the socket by this instant even if no revocation event arrives.
     Email:
       type: string
       format: email

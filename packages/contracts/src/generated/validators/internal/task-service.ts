@@ -6086,7 +6086,8 @@ export const CheckListAccessInternalResponse = zod.object({
   "role": zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),
   "spaceId": zod.uuid(),
   "listId": zod.uuid().describe('The list checked, or the list of the task checked.'),
-  "taskKey": zod.union([zod.string().regex(checkListAccessInternalResponseTaskKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The task checked; `null` for a list.')
+  "taskKey": zod.union([zod.string().regex(checkListAccessInternalResponseTaskKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The task checked; `null` for a list.'),
+  "taskId": zod.uuid().optional().describe('Stable UUID of the checked task, present on task access checks once the producer\nsupports realtime room joins. Omitted on list access checks.\n')
 }).describe('What the realtime gateway needs to let a socket join the room of a list or a task: the role\nof the actor and where the list or the task is.\n')
 
 
@@ -6096,6 +6097,10 @@ export const CheckListAccessInternalResponse = zod.object({
  * task they do not see, a task in the trash included, answers `404 task.not-found`, never
  * `task.trashed`; an archived task they see answers its role. One indexed read, as for a
  * list; nothing is written and nothing is emitted.
+ *
+ * The response supplies the stable `taskId` for the room `task:<id>`. The realtime gateway
+ * uses this verified UUID to join the room. If an older task-service omits it, the gateway
+ * refuses the join rather than using an unverified identifier.
  *
  * Internal token: issuer `realtime-gateway` only (`403 auth.issuer-not-allowed` for any
  * other), actor `user`, organization required.
@@ -6115,7 +6120,8 @@ export const CheckTaskAccessInternalResponse = zod.object({
   "role": zod.string().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n'),
   "spaceId": zod.uuid(),
   "listId": zod.uuid().describe('The list checked, or the list of the task checked.'),
-  "taskKey": zod.union([zod.string().regex(checkTaskAccessInternalResponseTaskKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The task checked; `null` for a list.')
+  "taskKey": zod.union([zod.string().regex(checkTaskAccessInternalResponseTaskKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The task checked; `null` for a list.'),
+  "taskId": zod.uuid().optional().describe('Stable UUID of the checked task, present on task access checks once the producer\nsupports realtime room joins. Omitted on list access checks.\n')
 }).describe('What the realtime gateway needs to let a socket join the room of a list or a task: the role\nof the actor and where the list or the task is.\n')
 
 

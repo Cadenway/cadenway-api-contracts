@@ -11,6 +11,17 @@
  * type of the same name, exported together.
  */
 
+// openapi/public/realtime.yaml
+export {
+  RealtimeService,
+  type IssueRealtimeTicketClientResult,
+} from './generated/public/realtime/realtime/realtime.service';
+export type {
+  RealtimeTicket,
+  RealtimeTicketRequest,
+  RealtimeTicketToken,
+} from './generated/public/realtime/model';
+
 // openapi/public/goals.yaml
 export {
   GoalsService,
