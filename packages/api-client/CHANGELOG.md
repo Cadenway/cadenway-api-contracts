@@ -1,5 +1,11 @@
 # @cadenway/api-client
 
+## 0.13.0
+
+### Minor Changes
+
+- 754145e: Add signed upload and download contracts for task attachments and versioned storage lifecycle facts.
+
 ## 0.12.0
 
 ### Minor Changes
