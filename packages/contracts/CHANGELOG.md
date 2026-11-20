@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.13.1
+
+### Patch Changes
+
+- 3de7cb9: Align shared Problem response example titles in the goals, reports, list sprint report and intake contracts with their existing public error codes.
+
 ## 0.13.0
 
 ### Minor Changes
