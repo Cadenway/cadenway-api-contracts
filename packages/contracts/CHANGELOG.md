@@ -1,5 +1,12 @@
 # @cadenway/contracts
 
+## 0.17.0
+
+### Minor Changes
+
+- 9a61cc0: Define single-use realtime ticket issuance and redemption, with a verified task ID for authorized socket room joins.
+  Add the Socket.IO receive and presence protocol and the Identity session organization-change fact.
+
 ## 0.16.0
 
 ### Minor Changes
