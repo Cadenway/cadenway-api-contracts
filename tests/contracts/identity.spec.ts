@@ -238,6 +238,7 @@ describe('events of identity-service', () => {
       'one-time-code.issued.v1',
       'password-reset-link.issued.v1',
       'session.opened-on-new-device.v1',
+      'session.organization-changed.v1',
       'session.revoked.v1',
       'user.avatar-changed.v1',
       'user.avatar-upload-abandoned.v1',

@@ -11,6 +11,17 @@
  * type of the same name, exported together.
  */
 
+// openapi/public/realtime.yaml
+export {
+  RealtimeService,
+  type IssueRealtimeTicketClientResult,
+} from './generated/public/realtime/realtime/realtime.service';
+export type {
+  RealtimeTicket,
+  RealtimeTicketRequest,
+  RealtimeTicketToken,
+} from './generated/public/realtime/model';
+
 // openapi/public/goals.yaml
 export {
   GoalsService,
@@ -911,10 +922,17 @@ export {
 } from './generated/public/intake/intake-management/intake-management.service';
 export {
   PublicIntakeService,
+  type AbandonPublicIntakeAttachmentUploadClientResult,
+  type CompletePublicIntakeAttachmentUploadClientResult,
   type GetPublicIntakeFormClientResult,
+  type StartPublicIntakeAttachmentUploadClientResult,
   type SubmitPublicIntakeFormClientResult,
 } from './generated/public/intake/public-intake/public-intake.service';
+export type { IntakeAttachmentCompletion } from './generated/public/intake/model/intakeAttachmentCompletion';
+export type { IntakeAttachmentIdempotencyKeyParameter } from './generated/public/intake/model/intakeAttachmentIdempotencyKeyParameter';
 export type { IntakeConfigurationResponse } from './generated/public/intake/model/intakeConfigurationResponse';
+export type { IntakeDraftKey } from './generated/public/intake/model/intakeDraftKey';
+export type { IntakeDraftKeyParameter } from './generated/public/intake/model/intakeDraftKeyParameter';
 export { IntakeFieldMode } from './generated/public/intake/model/intakeFieldMode';
 export type { IntakeFormConfiguration } from './generated/public/intake/model/intakeFormConfiguration';
 export type { IntakeFormFields } from './generated/public/intake/model/intakeFormFields';
@@ -923,4 +941,5 @@ export type { IntakeFormPatch } from './generated/public/intake/model/intakeForm
 export type { IntakeReceipt } from './generated/public/intake/model/intakeReceipt';
 export type { IntakeSubmission } from './generated/public/intake/model/intakeSubmission';
 export type { PublicIntakeForm } from './generated/public/intake/model/publicIntakeForm';
+export type { RequiredIntakeDraftKeyParameter } from './generated/public/intake/model/requiredIntakeDraftKeyParameter';
 export type { TaskIntakeContact } from './generated/public/intake/model/taskIntakeContact';

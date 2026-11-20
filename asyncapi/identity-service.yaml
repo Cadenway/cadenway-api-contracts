@@ -10,9 +10,9 @@ info:
     through the outbox of `@cadenway/nest-messaging` once its change is committed, at least once:
     a consumer deduplicates on `id` and ignores a `version` of the aggregate it has already applied.
 
-    None of these events belongs to an organization: `organizationId` is always `null`, also in
-    `session.revoked.v1` of a session that acts on an organization, and the events are appended in
-    a system transaction.
+    None of these events belongs to an organization. `organizationId` is always `null`, including
+    session events about a session that acts on an organization. The events are appended in a
+    system transaction.
 
     **Aggregates.** An event of the account (`user.*`) carries the version of the account, which
     the sign-up, the verification, a change of the profile, of the password, of the address or of
@@ -58,7 +58,7 @@ info:
     - repository: cadenway-notification-service
       uses: one-time-code.issued.v1, to send the verification, sign-in and change of address code emails; password-reset-link.issued.v1, user.password-changed.v1, user.email-changed.v1, session.opened-on-new-device.v1, user.deletion-scheduled.v1, user.deletion-cancelled.v1 and user.two-step-verification-changed.v1, to send the security emails. Planned, user.signed-up.v1, user.profile-updated.v1, user.email-changed.v1 and user.deleted.v1 for its projection of user profiles.
     - repository: cadenway-realtime-gateway
-      uses: Planned, session.revoked.v1, to close the sockets of the revoked session.
+      uses: Planned, session.revoked.v1 and session.organization-changed.v1, to close revoked sockets and sockets bound to a previous organization context.
     - repository: cadenway-organization-service
       uses: user.signed-up.v1, user.email-verified.v1, user.profile-updated.v1 and user.email-changed.v1, for its user directory (names and addresses of the members, invitations matched with the account that verified their address); user.two-step-verification-changed.v1, for the column "Deux étapes" of its member list; user.deleted.v1, to remove the memberships of a deleted account. Planned, user.avatar-changed.v1 for the directory's avatar hint.
     - repository: cadenway-storage-service
@@ -175,6 +175,14 @@ channels:
     messages:
       sessionRevokedV1:
         $ref: '#/components/messages/sessionRevokedV1'
+  sessionOrganizationChangedV1:
+    address: evt.session.organization-changed.v1
+    description: |
+      A session changed its active organization or membership. Emitted by identity-service.
+      Planned consumer: cadenway-realtime-gateway.
+    messages:
+      sessionOrganizationChangedV1:
+        $ref: '#/components/messages/sessionOrganizationChangedV1'
   passwordResetLinkIssuedV1:
     address: restricted.password-reset-link.issued.v1
     description: |
@@ -297,6 +305,16 @@ operations:
       $ref: '#/channels/sessionRevokedV1'
     messages:
       - $ref: '#/channels/sessionRevokedV1/messages/sessionRevokedV1'
+  publishSessionOrganizationChangedV1:
+    action: send
+    summary: identity-service publishes a change of the session's active organization context.
+    description: |
+      Appended to the outbox in the transaction that changes the session. A choice that
+      leaves the session version unchanged appends no event.
+    channel:
+      $ref: '#/channels/sessionOrganizationChangedV1'
+    messages:
+      - $ref: '#/channels/sessionOrganizationChangedV1/messages/sessionOrganizationChangedV1'
   publishPasswordResetLinkIssuedV1:
     action: send
     summary: identity-service publishes a password reset link to email.
@@ -764,6 +782,66 @@ components:
             type: string
             format: uuid
             description: Account of the session.
+    sessionOrganizationChangedV1:
+      name: session.organization-changed.v1
+      title: Session organization changed
+      summary: The active organization or membership of a session changed.
+      description: |
+        Emitted when a successful organization selection changes the session's organization
+        or membership. This includes the first selection. Selecting the same membership
+        and ordinary session activity emit nothing. The actor is the account of the session.
+
+        The session version is shared with ticket issuance and redemption. Before evicting
+        sockets, the realtime gateway records the greatest version seen for this session.
+        A socket bound to an older version becomes invalid, including a socket whose ticket
+        was redeemed before the event arrived but whose registration is still in progress.
+        A newer authenticated socket is unaffected by duplicate or older switch events.
+
+        Personal data: session and account IDs only. The previous and selected organizations,
+        credentials and ticket material are omitted.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required: [id, occurredAt, organizationId, actor, version, sessionId, userId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: 'null'
+            description: Session-scoped fact appended in a system transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Persisted session version after the selection.
+          sessionId:
+            type: string
+            format: uuid
+          userId:
+            type: string
+            format: uuid
+            description: Account of the session.
+      examples:
+        - name: changed
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d4c
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: null
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 3
+            sessionId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
     oneTimeCodeIssuedV1:
       name: one-time-code.issued.v1
       title: One-time code issued

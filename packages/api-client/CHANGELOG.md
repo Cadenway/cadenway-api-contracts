@@ -1,5 +1,20 @@
 # @cadenway/api-client
 
+## 0.16.0
+
+### Minor Changes
+
+- fb47723: Add private draft uploads to public intake, with additive form and submission fields, internal
+  Task and Storage operations, and verified, claimed and released attachment events. Existing
+  text-only submissions keep their request and receipt behavior.
+
+## 0.15.0
+
+### Minor Changes
+
+- 9a61cc0: Define single-use realtime ticket issuance and redemption, with a verified task ID for authorized socket room joins.
+  Add the Socket.IO receive and presence protocol and the Identity session organization-change fact.
+
 ## 0.14.0
 
 ### Minor Changes

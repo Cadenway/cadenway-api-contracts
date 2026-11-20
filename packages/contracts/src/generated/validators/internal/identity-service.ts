@@ -1855,6 +1855,76 @@ export const UpdateAuthenticationPolicyInternalResponse = zod.object({
 
 
 /**
+ * Internal token: issuer `api-gateway` only, actor `user`, organization required.
+ * The API gateway sends the session id obtained from the verified cookie. Identity checks
+ * in the issuance transaction that this session belongs to the actor, is open, and acts
+ * on the organization in the signed internal token. The current membership and its
+ * authentication policy still have to permit access. No ticket is issued on refusal.
+ *
+ * Identity keeps the SHA-256 digest of the ticket, its bound session, session version and
+ * organization, and its expiration. The opaque value has 256 random bits and is returned
+ * once. It expires no later than 60 seconds after issuance. Use a fresh call if the result
+ * was lost.
+ * @summary Issue a realtime ticket for an open session
+ */
+export const IssueRealtimeTicketInternalBody = zod.strictObject({
+  "sessionId": zod.uuid().describe('The session of the verified browser request, as returned by introspection.')
+})
+
+export const issueRealtimeTicketInternalResponseTokenMin = 43;
+export const issueRealtimeTicketInternalResponseTokenMax = 43;
+
+
+export const issueRealtimeTicketInternalResponseTokenRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+export const issueRealtimeTicketInternalResponseExpiresAtRegExp = new RegExp('Z$');
+
+
+export const IssueRealtimeTicketInternalResponse = zod.object({
+  "token": zod.string().min(issueRealtimeTicketInternalResponseTokenMin).max(issueRealtimeTicketInternalResponseTokenMax).regex(issueRealtimeTicketInternalResponseTokenRegExp).describe('Opaque credential containing 256 random bits encoded as unpadded base64url.\nThe token is single-use. Keep it out of URLs and logs.\n'),
+  "expiresAt": zod.iso.datetime({"offset":true}).regex(issueRealtimeTicketInternalResponseExpiresAtRegExp).describe('UTC instant at which the ticket expires, at most 60 seconds after issuance.')
+}).describe('Single-use credential for the real-time handshake.')
+
+
+/**
+ * Internal token: issuer `realtime-gateway` only, actor `system`, without an organization.
+ * The realtime gateway checks the socket's Origin before forwarding its ticket. The
+ * organization, session, user and active membership come from Identity's records.
+ *
+ * In one transaction, revalidate the active session, its bound version and organization,
+ * current membership and its authentication policy, and consume the unexpired ticket atomically.
+ * At most one concurrent redemption succeeds. A ticket that is absent, expired, already
+ * consumed or whose binding no longer authorizes the session answers the same `404`.
+ * Neither a success nor a refusal exposes a ticket in logs, traces or events.
+ * Do not retry redemption after an ambiguous result. A new handshake needs a fresh ticket.
+ * @summary Redeem a realtime ticket once
+ */
+export const redeemRealtimeTicketInternalBodyTokenMin = 43;
+export const redeemRealtimeTicketInternalBodyTokenMax = 43;
+
+
+export const redeemRealtimeTicketInternalBodyTokenRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+
+
+export const RedeemRealtimeTicketInternalBody = zod.strictObject({
+  "token": zod.string().min(redeemRealtimeTicketInternalBodyTokenMin).max(redeemRealtimeTicketInternalBodyTokenMax).regex(redeemRealtimeTicketInternalBodyTokenRegExp).describe('Opaque credential containing 256 random bits encoded as unpadded base64url.\nThe token is single-use. Keep it out of URLs and logs.\n')
+})
+
+
+export const redeemRealtimeTicketInternalResponseSessionExpiresAtRegExp = new RegExp('Z$');
+
+
+export const RedeemRealtimeTicketInternalResponse = zod.object({
+  "sessionId": zod.uuid().describe('Identifies the session for the revocation subscription.'),
+  "sessionVersion": zod.int().min(1).describe('The Identity session version after the authorization check. It advances on organization change or revocation.'),
+  "userId": zod.uuid().describe('The authenticated socket user.'),
+  "organizationId": zod.uuid().describe('The currently authorized organization of this connection.'),
+  "memberId": zod.uuid().describe('Its verified active membership in that organization. The personal room uses\n`member:<memberId>`. For events keyed by user ID, resolve the membership by both\norganization ID and user ID before addressing that room.\n'),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
+  "sessionExpiresAt": zod.iso.datetime({"offset":true}).regex(redeemRealtimeTicketInternalResponseSessionExpiresAtRegExp).describe('The earlier of the session\'s absolute expiration and its current inactivity\ndeadline. Close the socket by this instant even if no revocation event arrives.\n')
+})
+
+
+/**
  * Creates a token of the actor in the organization of the internal token, the current
  * organization of the session, as `POST /v1/api-tokens` says, and returns its secret once:
  * `cw_pat_`, 30 base62 characters from `node:crypto`, then 6 characters of CRC32 check.

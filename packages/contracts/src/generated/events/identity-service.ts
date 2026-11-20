@@ -279,6 +279,45 @@ export const sessionOpenedOnNewDeviceV1Schema = zod.object({
   timeZone: zod.string().min(1).max(64),
 }) satisfies zod.ZodType<SessionOpenedOnNewDeviceV1>;
 
+/** Name of the event `session.organization-changed.v1`. The active organization or membership of a session changed. */
+export const SESSION_ORGANIZATION_CHANGED_V1 = 'session.organization-changed.v1';
+
+/** Payload of the event `session.organization-changed.v1`. */
+export interface SessionOrganizationChangedV1 {
+  /** Event ID, the deduplication key. */
+  id: string;
+  /** UTC commit instant. */
+  occurredAt: string;
+  /** Session-scoped fact appended in a system transaction. */
+  organizationId: null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Persisted session version after the selection. */
+  version: number;
+  sessionId: string;
+  /** Account of the session. */
+  userId: string;
+}
+
+/** Validator of the payload of the event `session.organization-changed.v1`. */
+export const sessionOrganizationChangedV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.null(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2),
+  sessionId: zod.uuid(),
+  userId: zod.uuid(),
+}) satisfies zod.ZodType<SessionOrganizationChangedV1>;
+
 /** Name of the event `session.revoked.v1`. A session ended before its expiry. */
 export const SESSION_REVOKED_V1 = 'session.revoked.v1';
 
@@ -1057,7 +1096,7 @@ export const userTwoStepVerificationChangedV1Schema = zod.object({
 }) satisfies zod.ZodType<UserTwoStepVerificationChangedV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, PASSWORD_RESET_LINK_ISSUED_V1, SESSION_OPENED_ON_NEW_DEVICE_V1, SESSION_REVOKED_V1, USER_AVATAR_CHANGED_V1, USER_AVATAR_UPLOAD_ABANDONED_V1, USER_DELETED_V1, USER_DELETION_CANCELLED_V1, USER_DELETION_SCHEDULED_V1, USER_EMAIL_CHANGED_V1, USER_EMAIL_VERIFIED_V1, USER_PASSWORD_CHANGED_V1, USER_PROFILE_UPDATED_V1, USER_SIGNED_UP_V1, USER_TWO_STEP_VERIFICATION_CHANGED_V1] as const;
+export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, PASSWORD_RESET_LINK_ISSUED_V1, SESSION_OPENED_ON_NEW_DEVICE_V1, SESSION_ORGANIZATION_CHANGED_V1, SESSION_REVOKED_V1, USER_AVATAR_CHANGED_V1, USER_AVATAR_UPLOAD_ABANDONED_V1, USER_DELETED_V1, USER_DELETION_CANCELLED_V1, USER_DELETION_SCHEDULED_V1, USER_EMAIL_CHANGED_V1, USER_EMAIL_VERIFIED_V1, USER_PASSWORD_CHANGED_V1, USER_PROFILE_UPDATED_V1, USER_SIGNED_UP_V1, USER_TWO_STEP_VERIFICATION_CHANGED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -1077,6 +1116,7 @@ export interface EventPayloads {
   'one-time-code.issued.v1': OneTimeCodeIssuedV1;
   'password-reset-link.issued.v1': PasswordResetLinkIssuedV1;
   'session.opened-on-new-device.v1': SessionOpenedOnNewDeviceV1;
+  'session.organization-changed.v1': SessionOrganizationChangedV1;
   'session.revoked.v1': SessionRevokedV1;
   'user.avatar-changed.v1': UserAvatarChangedV1;
   'user.avatar-upload-abandoned.v1': UserAvatarUploadAbandonedV1;
@@ -1096,6 +1136,7 @@ export const eventSchemas = {
   'one-time-code.issued.v1': oneTimeCodeIssuedV1Schema,
   'password-reset-link.issued.v1': passwordResetLinkIssuedV1Schema,
   'session.opened-on-new-device.v1': sessionOpenedOnNewDeviceV1Schema,
+  'session.organization-changed.v1': sessionOrganizationChangedV1Schema,
   'session.revoked.v1': sessionRevokedV1Schema,
   'user.avatar-changed.v1': userAvatarChangedV1Schema,
   'user.avatar-upload-abandoned.v1': userAvatarUploadAbandonedV1Schema,

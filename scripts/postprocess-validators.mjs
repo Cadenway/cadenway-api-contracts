@@ -11,6 +11,20 @@ const attachmentSchemas = dereference('components/attachments.yaml', process.cwd
   .schemas;
 const mediaSchemas = dereference('components/profile-media.yaml', process.cwd()).components.schemas;
 
+const signedUploadOperations = {
+  'public/attachments': ['StartTaskAttachmentUpload'],
+  'public/intake': ['StartPublicIntakeAttachmentUpload'],
+  'internal/storage-service': [
+    'StartTaskAttachmentUploadInternal',
+    'StartIntakeAttachmentUploadInternal',
+  ],
+};
+const closedIntakeResponses = {
+  'public/intake': ['CompletePublicIntakeAttachmentUpload'],
+  'internal/task-service': ['AllocateIntakeAttachmentInternal', 'ResolveIntakeAttachmentInternal'],
+  'internal/storage-service': ['CompleteIntakeAttachmentUploadInternal'],
+};
+
 for (const root of ROOTS) {
   for (const spec of listYaml(root.openapi)) {
     const source = `${root.openapi}/${spec}.yaml`;
@@ -262,12 +276,22 @@ for (const root of ROOTS) {
         const end = generated.indexOf('\nexport const ', start + 1);
         if (start < 0 || end < 0)
           throw new Error(`${source}: missing intake request validator ${name}`);
-        const body = generated.slice(start, end);
+        let body = generated.slice(start, end);
         if (
           operation === 'UpdateIntakeFormConfiguration' &&
           !body.includes('"fields": zod.object({')
         )
           throw new Error(`${source}: missing intake field settings validator ${name}`);
+        if (operation === 'SubmitPublicIntakeForm') {
+          const maxItems = `.max(submitPublicIntakeForm${suffix}BodyAttachmentIdsMax)`;
+          if (!body.includes(maxItems))
+            throw new Error(`${source}: missing intake attachment array validator ${name}`);
+          // Orval omits uniqueItems. UUID comparison must also ignore case.
+          body = body.replace(
+            maxItems,
+            `${maxItems}.refine((value) => new Set(value.map((id) => id.toLowerCase())).size === value.length, { message: 'Attachment IDs must be distinct' })`,
+          );
+        }
         generated =
           generated.slice(0, start) +
           body.replaceAll('zod.object({', 'zod.strictObject({') +
@@ -479,39 +503,53 @@ for (const root of ROOTS) {
       if (!generated.includes(query)) throw new Error(`${source}: missing attachment access query`);
       generated = generated.replace(query, query.replace('zod.object', 'zod.strictObject'));
     }
-    if (
-      root.name === 'contracts' &&
-      (spec === 'public/attachments' || spec === 'internal/storage-service')
-    ) {
-      const suffix = spec === 'public/attachments' ? '' : 'Internal';
-      const body = `export const StartTaskAttachmentUpload${suffix}Body = zod.object({`;
-      if (!generated.includes(body)) throw new Error(`${source}: missing upload body validator`);
-      generated = generated.replace(body, body.replace('zod.object', 'zod.strictObject'));
+    if (root.name === 'contracts') {
+      const signedUploads = signedUploadOperations[spec] ?? [];
+      const declarations =
+        spec === 'internal/task-service' ? ['AllocateIntakeAttachmentInternal'] : signedUploads;
+      for (const operation of declarations) {
+        const body = `export const ${operation}Body = zod.object({`;
+        if (!generated.includes(body))
+          throw new Error(`${source}: missing ${operation} body validator`);
+        generated = generated.replace(body, body.replace('zod.object', 'zod.strictObject'));
+      }
 
-      const response = `export const StartTaskAttachmentUpload${suffix}Response = `;
-      const start = generated.indexOf(response);
-      const end = generated.indexOf('\nexport const ', start + response.length);
-      if (start < 0 || end < 0) throw new Error(`${source}: missing upload response validator`);
-      const fields = '"fields": zod.record(zod.string(), zod.string())';
-      const uploadResponse = generated.slice(start, end);
-      if (!uploadResponse.includes(fields)) throw new Error(`${source}: missing upload fields`);
-      const minFields = attachmentSchemas.AttachmentUpload.properties.fields.minProperties;
-      generated =
-        generated.slice(0, start) +
-        uploadResponse.replace(
-          fields,
-          `${fields}.refine((value) => Object.keys(value).length >= ${minFields}, { message: 'At least ${minFields} signed form field' })`,
-        ) +
-        generated.slice(end);
+      for (const operation of signedUploads) {
+        const response = `export const ${operation}Response = `;
+        const start = generated.indexOf(response);
+        const next = generated.indexOf('\nexport const ', start + response.length);
+        if (start < 0) throw new Error(`${source}: missing ${operation} response validator`);
+        const end = next < 0 ? generated.length : next;
+        const fields = '"fields": zod.record(zod.string(), zod.string())';
+        const uploadResponse = generated.slice(start, end);
+        if (!uploadResponse.includes(fields)) throw new Error(`${source}: missing upload fields`);
+        const minFields = attachmentSchemas.AttachmentUpload.properties.fields.minProperties;
+        generated =
+          generated.slice(0, start) +
+          uploadResponse.replace(
+            fields,
+            `${fields}.refine((value) => Object.keys(value).length >= ${minFields}, { message: 'At least ${minFields} signed form field' })`,
+          ) +
+          generated.slice(end);
+      }
 
-      const maxName = attachmentSchemas.AttachmentFileName.maxLength;
-      const names = [...generated.matchAll(/\.max\(([A-Za-z][A-Za-z0-9]*FileNameMax)\)/g)];
-      if (names.length === 0) throw new Error(`${source}: missing file name validators`);
-      for (const [, limit] of names) {
-        generated = generated.replaceAll(
-          `.max(${limit})`,
-          `.refine((value) => Array.from(value).length <= ${limit}, { message: 'At most ${maxName} Unicode code points' })`,
-        );
+      if (declarations.length > 0) {
+        const maxName = attachmentSchemas.AttachmentFileName.maxLength;
+        const names = [...generated.matchAll(/\.max\(([A-Za-z][A-Za-z0-9]*FileNameMax)\)/g)];
+        if (names.length === 0) throw new Error(`${source}: missing file name validators`);
+        for (const [, limit] of names) {
+          generated = generated.replaceAll(
+            `.max(${limit})`,
+            `.refine((value) => Array.from(value).length <= ${limit}, { message: 'At most ${maxName} Unicode code points' })`,
+          );
+        }
+      }
+
+      for (const operation of closedIntakeResponses[spec] ?? []) {
+        const response = `export const ${operation}Response = zod.object({`;
+        if (!generated.includes(response))
+          throw new Error(`${source}: missing ${operation} response validator`);
+        generated = generated.replace(response, response.replace('zod.object', 'zod.strictObject'));
       }
     }
     if (
@@ -546,11 +584,13 @@ for (const root of ROOTS) {
       root.name === 'contracts' &&
       [
         'public/attachments',
+        'public/intake',
         'internal/storage-service',
         'public/inbox',
         'public/reminders',
         'internal/notification-service',
         'public/profile-media',
+        'public/realtime',
       ].includes(spec)
     ) {
       // Keep a single final newline in the generated capability type files.

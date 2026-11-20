@@ -1,0 +1,37 @@
+# The public and internal real-time ticket routes share the ticket representation.
+openapi: 3.1.0
+info:
+  title: Cadenway shared real-time components
+  version: 1.0.0
+  description: Ticket format for authenticating a real-time connection.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    RealtimeTicketToken:
+      type: string
+      minLength: 43
+      maxLength: 43
+      pattern: '^[A-Za-z0-9_-]{43}$'
+      description: |
+        Opaque credential containing 256 random bits encoded as unpadded base64url.
+        The token is single-use. Keep it out of URLs and logs.
+    RealtimeTicket:
+      type: object
+      additionalProperties: false
+      required: [token, expiresAt]
+      description: Single-use credential for the real-time handshake.
+      properties:
+        token: { $ref: '#/components/schemas/RealtimeTicketToken' }
+        expiresAt:
+          type: string
+          format: date-time
+          pattern: 'Z$'
+          description: UTC instant at which the ticket expires, at most 60 seconds after issuance.
+      examples:
+        - token: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFA'
+          expiresAt: '2026-11-20T09:01:00Z'

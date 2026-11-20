@@ -8,6 +8,7 @@
 # Public and internal routes.
 /openapi/ @Cadenway/maintainers
 /openapi/public/profile-media.yaml @Cadenway/maintainers
+/openapi/public/realtime.yaml @Cadenway/maintainers
 
 # Events.
 /asyncapi/ @Cadenway/maintainers
