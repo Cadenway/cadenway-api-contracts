@@ -1,0 +1,170 @@
+# The public and internal onboarding routes use the same state and write inputs.
+openapi: 3.1.0
+info:
+  title: Cadenway shared onboarding components
+  version: 1.0.0
+  description: First-launch onboarding state, space provisioning and the personal checklist.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    OnboardingWizardStep:
+      type: string
+      enum: [space, preset, team, import]
+      description: Wizard screen. The import screen can be skipped and does not start an import.
+    OnboardingPreset:
+      type: string
+      enum: [dev, mkt, agency, blank]
+      description: |
+        `dev` creates Backlog, Sprint 1 and Bugs. `mkt` creates Calendrier éditorial and
+        Campagnes. `agency` creates Projets clients and Demandes. Those presets include the
+        corresponding example tasks. `blank` creates only Première liste, with no example tasks.
+    OnboardingDraftName:
+      description: Space name in the draft, or null when unset.
+      oneOf:
+        - $ref: './task.yaml#/components/schemas/SpaceName'
+        - type: 'null'
+    OnboardingDraftPrefix:
+      description: Explicit space prefix in the draft, or null when unset.
+      oneOf:
+        - $ref: './task.yaml#/components/schemas/SpacePrefix'
+        - type: 'null'
+    OnboardingWizard:
+      type: object
+      required: [status, step, preset, name, prefix, color]
+      properties:
+        status:
+          type: string
+          x-extensible-enum: [in-progress, finished, dismissed]
+          description: Only an in-progress wizard accepts further draft changes.
+        step: { $ref: '#/components/schemas/OnboardingWizardStep' }
+        preset: { $ref: '#/components/schemas/OnboardingPreset' }
+        name: { $ref: '#/components/schemas/OnboardingDraftName' }
+        prefix: { $ref: '#/components/schemas/OnboardingDraftPrefix' }
+        color: { $ref: './task.yaml#/components/schemas/LookColorValue' }
+    OnboardingProvisioning:
+      type: object
+      required: [spaceId, firstListId]
+      description: Space and first list created by the first successful finish.
+      properties:
+        spaceId:
+          type: string
+          format: uuid
+          description: UUID v7 of the provisioned space.
+        firstListId:
+          type: string
+          format: uuid
+          description: UUID v7 of the first list of the selected preset.
+    OnboardingChecklistPresentation:
+      type: string
+      enum: [expanded, collapsed, dismissed]
+      description: Presentation state of the personal checklist.
+    OnboardingChecklist:
+      type: object
+      description: Personal progress markers for checklist actions available in this delivery.
+      required: [presentation, firstTaskCreated, invitationSent, boardTried]
+      properties:
+        presentation: { $ref: '#/components/schemas/OnboardingChecklistPresentation' }
+        firstTaskCreated:
+          type: boolean
+          description: Set by the first normal task creation by the caller in the provisioned space.
+        invitationSent:
+          type: boolean
+          description: The caller recorded a successful outcome from the organization invitation flow.
+        boardTried:
+          type: boolean
+          description: The caller recorded trying the Board view.
+    OnboardingState:
+      type: object
+      description: First-launch state scoped to the verified caller and organization.
+      required: [version, wizard, provisioning, checklist]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: Version of the current state, used for conditional writes.
+        wizard: { $ref: '#/components/schemas/OnboardingWizard' }
+        provisioning:
+          description: IDs returned by successful provisioning, or null before it completes.
+          oneOf:
+            - $ref: '#/components/schemas/OnboardingProvisioning'
+            - type: 'null'
+        checklist: { $ref: '#/components/schemas/OnboardingChecklist' }
+      examples:
+        - version: 1
+          wizard:
+            status: in-progress
+            step: space
+            preset: dev
+            name: null
+            prefix: null
+            color: violet
+          provisioning: null
+          checklist:
+            presentation: expanded
+            firstTaskCreated: false
+            invitationSent: false
+            boardTried: false
+    OnboardingDraftPatch:
+      type: object
+      additionalProperties: false
+      description: |
+        Save wizard progress without provisioning a space. Omitted members keep their values.
+        Null clears the draft name or prefix. Dismissal is terminal and requires only current
+        organization membership.
+      properties:
+        step: { $ref: '#/components/schemas/OnboardingWizardStep' }
+        preset: { $ref: '#/components/schemas/OnboardingPreset' }
+        name: { $ref: '#/components/schemas/OnboardingDraftName' }
+        prefix: { $ref: '#/components/schemas/OnboardingDraftPrefix' }
+        color: { $ref: './task.yaml#/components/schemas/LookColor' }
+        dismissed:
+          type: boolean
+          enum: [true]
+          description: Dismiss the wizard.
+      examples:
+        - step: preset
+          name: Produit
+          prefix: CAD
+          color: violet
+    OnboardingChecklistPatch:
+      type: object
+      additionalProperties: false
+      description: |
+        Update personal checklist presentation or mark an action as done. Invitation success
+        can be recorded before provisioning. Presentation and Board progress require a
+        provisioned space. The first-task marker is set by task creation.
+      properties:
+        presentation: { $ref: '#/components/schemas/OnboardingChecklistPresentation' }
+        invitationSent:
+          type: boolean
+          enum: [true]
+          description: Record the outcome of a successful organization invitation.
+        boardTried:
+          type: boolean
+          enum: [true]
+          description: Record trying the Board view.
+      examples:
+        - presentation: collapsed
+          boardTried: true
+    OnboardingFinish:
+      type: object
+      additionalProperties: false
+      description: |
+        Provision the first space from the selected preset. The caller supplies the prefix
+        required by regular space creation. The command uses violet when color is omitted.
+      required: [name, prefix, preset]
+      properties:
+        name: { $ref: './task.yaml#/components/schemas/SpaceName' }
+        prefix: { $ref: './task.yaml#/components/schemas/SpacePrefix' }
+        preset: { $ref: '#/components/schemas/OnboardingPreset' }
+        color: { $ref: './task.yaml#/components/schemas/LookColor' }
+      examples:
+        - name: Produit
+          prefix: CAD
+          preset: blank
+          color: violet

@@ -590,6 +590,7 @@ export const ListSpaceMilestonesResponse = zod.object({
   "items": zod.array(zod.object({
   "milestone": zod.literal(true).describe('Whether this task is a milestone; absence means the producer did not report it.'),
   "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "customFieldValues": zod.record(zod.string().regex(new RegExp("^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")), zod.union([zod.number(),zod.string()])).optional().describe('Sparse values keyed by lowercase stable custom field ID. Only active definitions of the readable\ntask\'s current space are included. Missing entries have no value. Absence of the member\nmeans the producer has not reported these values. Numeric zero and empty text are values.\n'),
   "key": zod.string().regex(listSpaceMilestonesResponseItemsItemOneKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
@@ -1003,3 +1004,207 @@ export const DeleteFavoriteHeader = zod.object({
 })
 
 export const DeleteFavoriteResponse = zod.void()
+
+
+/**
+ * Lists active definitions in `(position, id)` order. The cursor is bound to the requested
+ * space and order. Requires a role on the space itself; a list-only grant does not grant
+ * this route (`404 space.not-found`). A readable list has its own definitions route.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List the custom fields of a space
+ */
+export const ListSpaceCustomFieldsParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space, as the list of spaces gives it.')
+})
+
+export const listSpaceCustomFieldsQueryLimitDefault = 50;
+export const listSpaceCustomFieldsQueryLimitMax = 100;
+
+
+
+export const ListSpaceCustomFieldsQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listSpaceCustomFieldsQueryLimitMax).default(listSpaceCustomFieldsQueryLimitDefault).describe('Page size.')
+})
+
+export const listSpaceCustomFieldsResponseItemsItemIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const listSpaceCustomFieldsResponseItemsItemPositionMin = 0;
+
+
+
+
+export const ListSpaceCustomFieldsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid().regex(listSpaceCustomFieldsResponseItemsItemIdRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
+  "spaceId": zod.uuid(),
+  "name": zod.string(),
+  "type": zod.string().describe('Immutable kind. This delivery supports numeric and text values.'),
+  "position": zod.int().min(listSpaceCustomFieldsResponseItemsItemPositionMin).describe('Zero-based position among the active definitions of the space.'),
+  "sprintPoints": zod.boolean().describe('True only for the active numeric definition used for sprint points.'),
+  "version": zod.int().min(1).describe('Definition version used by its ETag.')
+}).describe('An active definition of a custom column in a space.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})
+
+
+/**
+ * Only a space manager can create a definition. It is active and appended to the
+ * space's definition order, with a stable UUID v7 and an immutable value type.
+ * It starts with `sprintPoints: false` and does not set a value on any task.
+ * Up to 30 active definitions are allowed (`422 custom-field.limit-reached`).
+ * An optional `Idempotency-Key` replays the original response and Location for 24 hours;
+ * a changed body answers `422 idempotency.key-reused` and an in-flight request answers
+ * `409 idempotency.request-in-progress`.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Create a space custom field
+ */
+export const CreateSpaceCustomFieldParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space, as the list of spaces gives it.')
+})
+
+export const createSpaceCustomFieldHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateSpaceCustomFieldHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createSpaceCustomFieldHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
+})
+
+export const createSpaceCustomFieldBodyNameMax = 80;
+
+
+export const createSpaceCustomFieldBodyNameRegExp = new RegExp('\\S');
+
+
+export const CreateSpaceCustomFieldBody = zod.strictObject({
+  "name": zod.string().min(1).refine((value) => Array.from(value).length <= createSpaceCustomFieldBodyNameMax, { message: 'At most 80 Unicode code points' }).regex(createSpaceCustomFieldBodyNameRegExp).describe('Display name, trimmed. Renaming never changes the ID.'),
+  "type": zod.enum(['number', 'text'])
+})
+
+export const createSpaceCustomFieldResponseIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const createSpaceCustomFieldResponsePositionMin = 0;
+
+
+
+
+export const CreateSpaceCustomFieldResponse = zod.object({
+  "id": zod.uuid().regex(createSpaceCustomFieldResponseIdRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
+  "spaceId": zod.uuid(),
+  "name": zod.string(),
+  "type": zod.string().describe('Immutable kind. This delivery supports numeric and text values.'),
+  "position": zod.int().min(createSpaceCustomFieldResponsePositionMin).describe('Zero-based position among the active definitions of the space.'),
+  "sprintPoints": zod.boolean().describe('True only for the active numeric definition used for sprint points.'),
+  "version": zod.int().min(1).describe('Definition version used by its ETag.')
+}).describe('An active definition of a custom column in a space.')
+
+
+/**
+ * Reads one active definition in the specified space. Requires a role on the space itself.
+ * A field that is absent, retired or belongs to another space answers `404 custom-field.not-found`.
+ * Scope `tasks:read` for a personal API token.
+ * @summary Get a space custom field
+ */
+export const getSpaceCustomFieldPathFieldIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+
+
+export const GetSpaceCustomFieldParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space, as the list of spaces gives it.'),
+  "fieldId": zod.uuid().regex(getSpaceCustomFieldPathFieldIdRegExp)
+})
+
+export const getSpaceCustomFieldResponseIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const getSpaceCustomFieldResponsePositionMin = 0;
+
+
+
+
+export const GetSpaceCustomFieldResponse = zod.object({
+  "id": zod.uuid().regex(getSpaceCustomFieldResponseIdRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
+  "spaceId": zod.uuid(),
+  "name": zod.string(),
+  "type": zod.string().describe('Immutable kind. This delivery supports numeric and text values.'),
+  "position": zod.int().min(getSpaceCustomFieldResponsePositionMin).describe('Zero-based position among the active definitions of the space.'),
+  "sprintPoints": zod.boolean().describe('True only for the active numeric definition used for sprint points.'),
+  "version": zod.int().min(1).describe('Definition version used by its ETag.')
+}).describe('An active definition of a custom column in a space.')
+
+
+/**
+ * Only a space manager can change a definition. The JSON Merge Patch can rename the
+ * field, move it to a zero-based position, or change whether it supplies sprint points.
+ * A position outside the current definition order answers `422 custom-field.position-invalid`.
+ * Moving a field shifts the intervening positions, preserving relative order. Designating
+ * a numeric field clears the previous designation atomically. A text field or a numeric
+ * field with a negative current value cannot be designated (`422 custom-field.sprint-points-invalid`).
+ * This refusal preserves all values, historic sprint inputs and the previous designation.
+ * Versions of definitions whose position or designation changes advance. A patch with no
+ * change keeps the current version. Field IDs, types and values remain unchanged.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Update a space custom field
+ */
+export const updateSpaceCustomFieldPathFieldIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+
+
+export const UpdateSpaceCustomFieldParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space, as the list of spaces gives it.'),
+  "fieldId": zod.uuid().regex(updateSpaceCustomFieldPathFieldIdRegExp)
+})
+
+export const UpdateSpaceCustomFieldHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const updateSpaceCustomFieldBodyNameMax = 80;
+
+
+export const updateSpaceCustomFieldBodyNameRegExp = new RegExp('\\S');
+export const updateSpaceCustomFieldBodyPositionMin = 0;
+export const updateSpaceCustomFieldBodyPositionMax = 29;
+
+
+
+export const UpdateSpaceCustomFieldBody = zod.strictObject({
+  "name": zod.string().min(1).refine((value) => Array.from(value).length <= updateSpaceCustomFieldBodyNameMax, { message: 'At most 80 Unicode code points' }).regex(updateSpaceCustomFieldBodyNameRegExp).optional().describe('Display name, trimmed. Renaming never changes the ID.'),
+  "position": zod.int().min(updateSpaceCustomFieldBodyPositionMin).max(updateSpaceCustomFieldBodyPositionMax).optional().describe('Move to this zero-based position in the active definition order.'),
+  "sprintPoints": zod.boolean().optional().describe('True designates this numeric field, clearing any previous designation. False clears\nthe designation if this field currently holds it.\n')
+})
+
+export const updateSpaceCustomFieldResponseIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const updateSpaceCustomFieldResponsePositionMin = 0;
+
+
+
+
+export const UpdateSpaceCustomFieldResponse = zod.object({
+  "id": zod.uuid().regex(updateSpaceCustomFieldResponseIdRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
+  "spaceId": zod.uuid(),
+  "name": zod.string(),
+  "type": zod.string().describe('Immutable kind. This delivery supports numeric and text values.'),
+  "position": zod.int().min(updateSpaceCustomFieldResponsePositionMin).describe('Zero-based position among the active definitions of the space.'),
+  "sprintPoints": zod.boolean().describe('True only for the active numeric definition used for sprint points.'),
+  "version": zod.int().min(1).describe('Definition version used by its ETag.')
+}).describe('An active definition of a custom column in a space.')
+
+
+/**
+ * Only a space manager can retire a definition. Retirement removes it from active columns
+ * and task value reads, frees its position and capacity, and clears any sprint points
+ * designation held by the field. Historic sprint inputs are retained. A retired field cannot
+ * be set or read through the active field routes. Remaining definitions retain their relative
+ * order and any shifted position advances the definition version.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Retire a space custom field
+ */
+export const retireSpaceCustomFieldPathFieldIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+
+
+export const RetireSpaceCustomFieldParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space, as the list of spaces gives it.'),
+  "fieldId": zod.uuid().regex(retireSpaceCustomFieldPathFieldIdRegExp)
+})
+
+export const RetireSpaceCustomFieldHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const RetireSpaceCustomFieldResponse = zod.void()

@@ -44,6 +44,9 @@ import type {
   ListTaskWatchersParams,
   SubtaskCreation,
   Task,
+  TaskApprovalRequest,
+  TaskApprovalState,
+  TaskApprovalVote,
   TaskCreation,
   TaskDetail,
   TaskDuplicate,
@@ -183,6 +186,8 @@ export class TasksService {
  * 14 · À faire · 2 sous-tâches."), with the next key of the space of the list, and, in the
  * same transaction, the subtasks of `subtasks`, which take the keys that follow, the list and
  * the first assignee of the task, the status `todo` and the priority `moyenne`.
+ * The caller's first creation through this route in their onboarding space also completes
+ * the first-task marker of `GET /v1/me/onboarding` in the same transaction.
  *
  * - `status` is `todo` by default; a status the space no longer uses answers
  *   `422 task.status-hidden`; `cancelled` needs `cancelReason`
@@ -360,6 +365,11 @@ export class TasksService {
  * - The statuses a space no longer uses are those of the space the task is in after the
  *   patch: a move or an attachment keeps the status the task has, even one the new space no
  *   longer uses, while a new `status` in the same patch must be used by the new space.
+ * - `customFieldValues`: set or clear values by active definition ID. A move to another
+ *   space removes incompatible values from the moved tasks in the same transaction. IDs in
+ *   this patch must belong to the resulting space and values must match their definitions
+ *   (`422 custom-field.value-invalid`). A null entry clears that value. Other entries remain
+ *   unchanged for a task that stays in its space. No custom values are copied to a successor.
  * - `If-Match` is optional (`412 request.version-mismatch`), but required to change
  *   `description`, a long text: without it, `400 request.invalid` with an issue on the
  *   header.
@@ -370,7 +380,9 @@ export class TasksService {
  * Records the changes of status, priority and due date in the activity log. Emits
  * `task.updated.v1` when something changed, with `changed`, and also
  * `task.status-changed.v1` for a new status; a move emits `task.updated.v1` for each subtask
- * that moves too. A patch that changes nothing answers `200` with the same version and emits
+ * that moves too. An updated task's event can name `customFieldValues` in `changed`;
+ * the event never carries the custom values themselves.
+ * A patch that changes nothing answers `200` with the same version and emits
  * nothing. Scope `tasks:write` for a personal API token.
  * Description mentions require If-Match, including spans-only changes. Replacing text clears
  * old spans unless replacements are supplied. Milestone conversion and recurrence follow
@@ -519,6 +531,184 @@ export class TasksService {
 
     return this.http.get<TData>(
       `/v1/tasks/${taskKey}/detail`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Reads the current round on a task visible to the caller. Returns `current: null` for a
+ * milestone or a task without a round. An archived task keeps its approval readable.
+ * Reviewers who no longer have edit access are omitted from both the reviewer list and
+ * the outcome. A round without eligible reviewers is pending.
+ * Scope `tasks:read` for a personal API token.
+ * @summary Read the current task approval
+ */
+ getTaskApproval<TData = TaskApprovalState>(taskKey: string, options?: HttpClientBodyOptions): Observable<TData>;
+ getTaskApproval<TData = TaskApprovalState>(taskKey: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getTaskApproval<TData = TaskApprovalState>(taskKey: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getTaskApproval<TData = TaskApprovalState>(
+    taskKey: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/approvals`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/approvals`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/approvals`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * An editor of the task starts a new round, replacing any current round and clearing its
+ * votes from the current state. Closed round history is retained with the task.
+ * The task must be ordinary and live. All requested reviewers, including the caller
+ * when designated, must currently have edit access. Invalid reviewers cause
+ * `422 approval.reviewer-invalid` without identifying them. The request keeps the task
+ * status unchanged. The task version, round and approval event commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Start or replace the current task approval
+ */
+ requestTaskApproval<TData = TaskApprovalState>(taskKey: string,
+    taskApprovalRequest: TaskApprovalRequest, options?: HttpClientBodyOptions): Observable<TData>;
+ requestTaskApproval<TData = TaskApprovalState>(taskKey: string,
+    taskApprovalRequest: TaskApprovalRequest, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ requestTaskApproval<TData = TaskApprovalState>(taskKey: string,
+    taskApprovalRequest: TaskApprovalRequest, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  requestTaskApproval<TData = TaskApprovalState>(
+    taskKey: string,
+    taskApprovalRequest: TaskApprovalRequest, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/approvals/request`,
+      taskApprovalRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/approvals/request`,
+      taskApprovalRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/approvals/request`,
+      taskApprovalRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * The caller must be a designated reviewer of this current round and still have edit
+ * access. Withdraw a recorded vote before casting another. A change request creates
+ * a task comment with the supplied reason and moves the task to `progress`.
+ * When the last pending eligible reviewer approves and every eligible vote approves,
+ * the task moves to `done`. A refused status change leaves the vote, task, comment and
+ * events untouched. The normal task status, activity and recurrence rules apply.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Cast the caller's approval vote
+ */
+ voteOnTaskApproval<TData = TaskApprovalState>(taskKey: string,
+    roundId: string,
+    taskApprovalVote: TaskApprovalVote, options?: HttpClientBodyOptions): Observable<TData>;
+ voteOnTaskApproval<TData = TaskApprovalState>(taskKey: string,
+    roundId: string,
+    taskApprovalVote: TaskApprovalVote, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ voteOnTaskApproval<TData = TaskApprovalState>(taskKey: string,
+    roundId: string,
+    taskApprovalVote: TaskApprovalVote, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  voteOnTaskApproval<TData = TaskApprovalState>(
+    taskKey: string,
+    roundId: string,
+    taskApprovalVote: TaskApprovalVote, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.put<TData>(
+      `/v1/tasks/${taskKey}/approvals/${roundId}/votes/me`,
+      taskApprovalVote,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.put<TData>(
+      `/v1/tasks/${taskKey}/approvals/${roundId}/votes/me`,
+      taskApprovalVote,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.put<TData>(
+      `/v1/tasks/${taskKey}/approvals/${roundId}/votes/me`,
+      taskApprovalVote,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * The caller must be a designated reviewer of this current round and still have edit
+ * access. Withdrawing a vote leaves the task status and any earlier comment unchanged.
+ * The round is recomputed from the remaining eligible votes. When the caller has no
+ * recorded vote, the request succeeds without a change to the task version or events.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Withdraw the caller's approval vote
+ */
+ withdrawTaskApprovalVote<TData = void>(taskKey: string,
+    roundId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ withdrawTaskApprovalVote<TData = void>(taskKey: string,
+    roundId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ withdrawTaskApprovalVote<TData = void>(taskKey: string,
+    roundId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  withdrawTaskApprovalVote<TData = void>(
+    taskKey: string,
+    roundId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/approvals/${roundId}/votes/me`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/approvals/${roundId}/votes/me`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/approvals/${roundId}/votes/me`,{
         ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
       }
@@ -1594,6 +1784,10 @@ export type GetTaskClientResult = NonNullable<Task>
 export type UpdateTaskClientResult = NonNullable<Task>
 export type DuplicateTaskClientResult = NonNullable<Task>
 export type GetTaskDetailClientResult = NonNullable<TaskDetail>
+export type GetTaskApprovalClientResult = NonNullable<TaskApprovalState>
+export type RequestTaskApprovalClientResult = NonNullable<TaskApprovalState>
+export type VoteOnTaskApprovalClientResult = NonNullable<TaskApprovalState>
+export type WithdrawTaskApprovalVoteClientResult = NonNullable<void>
 export type ListTaskCommentsClientResult = NonNullable<CommentPage>
 export type CreateTaskCommentClientResult = NonNullable<Comment>
 export type GetTaskCommentClientResult = NonNullable<Comment>

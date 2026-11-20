@@ -27,6 +27,11 @@ rules:
   cadenway/event-payload: error
 # Shared components have no routes or servers. Their members are used by specs in other files.
 apis:
+  shared-task-approval:
+    root: components/approval.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
   shared-http:
     root: components/http.yaml
     rules:
@@ -39,6 +44,16 @@ apis:
       no-unused-components: off
   shared-task:
     root: components/task.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
+  shared-time:
+    root: components/time.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
+  shared-onboarding:
+    root: components/onboarding.yaml
     rules:
       no-empty-servers: off
       no-unused-components: off

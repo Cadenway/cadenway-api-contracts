@@ -24,7 +24,11 @@ import type {
   GetHomeParams,
   Home,
   ListMyTasksParams,
-  MyTaskPage
+  MyTaskPage,
+  OnboardingChecklistPatch,
+  OnboardingDraftPatch,
+  OnboardingFinish,
+  OnboardingState
 } from '../model';
 
 import type {
@@ -250,7 +254,194 @@ export class MyTasksService {
         params: filteredParams,}
     );
   }
+/**
+ * Returns the caller's own wizard and "Bien démarrer" checklist for the current organization,
+ * separately from `GET /v1/me/home`. Before the first write it returns the initial state at
+ * version 1. The result is private to this caller and organization. Scope `tasks:read`
+ * for a personal API token.
+ * @summary Read first-launch progress
+ */
+ getOnboarding<TData = OnboardingState>( options?: HttpClientBodyOptions): Observable<TData>;
+ getOnboarding<TData = OnboardingState>( options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getOnboarding<TData = OnboardingState>( options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getOnboarding<TData = OnboardingState>(
+     options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/me/onboarding`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/me/onboarding`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/me/onboarding`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Saves the caller's wizard step or draft choices for later resumption. With
+ * `dismissed: true`, closes the wizard at the current draft. Dismissal requires only current
+ * organization membership. Finishing or dismissing the wizard closes it permanently. A
+ * repeated dismissal or another change that leaves the saved state identical preserves its
+ * version.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Save or dismiss the first-launch wizard
+ */
+ updateOnboarding<TData = OnboardingState>(onboardingDraftPatch: OnboardingDraftPatch, options?: HttpClientBodyOptions): Observable<TData>;
+ updateOnboarding<TData = OnboardingState>(onboardingDraftPatch: OnboardingDraftPatch, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ updateOnboarding<TData = OnboardingState>(onboardingDraftPatch: OnboardingDraftPatch, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  updateOnboarding<TData = OnboardingState>(
+    onboardingDraftPatch: OnboardingDraftPatch, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.patch<TData>(
+      `/v1/me/onboarding`,
+      onboardingDraftPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.patch<TData>(
+      `/v1/me/onboarding`,
+      onboardingDraftPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.patch<TData>(
+      `/v1/me/onboarding`,
+      onboardingDraftPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Updates "Bien démarrer" for the caller. Changing its presentation or recording an attempt
+ * of the Board view requires a provisioned space. The caller can record an invitation
+ * outcome during the wizard or afterwards. To invite anyone, call `POST /v1/invitations`
+ * separately under its normal authorization. Record only the marker after a successful
+ * invitation result. Normal task creation updates `firstTaskCreated`. Reminder and mobile
+ * actions depend on their own capabilities. A matching repeated marker preserves the current
+ * version.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Save the onboarding checklist presentation and markers
+ */
+ updateOnboardingChecklist<TData = OnboardingState>(onboardingChecklistPatch: OnboardingChecklistPatch, options?: HttpClientBodyOptions): Observable<TData>;
+ updateOnboardingChecklist<TData = OnboardingState>(onboardingChecklistPatch: OnboardingChecklistPatch, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ updateOnboardingChecklist<TData = OnboardingState>(onboardingChecklistPatch: OnboardingChecklistPatch, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  updateOnboardingChecklist<TData = OnboardingState>(
+    onboardingChecklistPatch: OnboardingChecklistPatch, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.patch<TData>(
+      `/v1/me/onboarding/checklist`,
+      onboardingChecklistPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.patch<TData>(
+      `/v1/me/onboarding/checklist`,
+      onboardingChecklistPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.patch<TData>(
+      `/v1/me/onboarding/checklist`,
+      onboardingChecklistPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Creates the caller's space and the chosen preset's lists and example tasks, then marks
+ * the wizard finished in the same transaction. The caller needs the same organization role
+ * as for `POST /v1/spaces`. The prefix is explicit and subject to the ordinary reservation
+ * rules. Each created list and task uses the normal creation policies and keys, and the
+ * command emits the ordinary space, list and task creation facts. Invitations use the
+ * organization invitation route. Import is deferred.
+ *
+ * | Preset | Lists in creation order | Example task names |
+ * | --- | --- | --- |
+ * | `dev` | Backlog, Sprint 1, Bugs | Définir le périmètre du premier sprint; Configurer l’intégration continue; Corriger le bug de connexion |
+ * | `mkt` | Calendrier éditorial, Campagnes | Planifier les articles de décembre; Préparer la campagne de rentrée; Mettre à jour la page tarifs |
+ * | `agency` | Projets clients, Demandes | Lancer le projet Studio Pixel; Valider le devis Lumen; Envoyer le compte rendu de réunion |
+ * | `blank` | Première liste | None |
+ *
+ * The table gives the complete list set. For `blank`, reuse the ordinary first list
+ * "Première liste". `Sprint 1` is a standard list name in the `dev` preset. The first two
+ * examples go in the first list. The third goes in Bugs for `dev` and in the first list
+ * for the other nonblank presets. The first example uses `progress` and the other examples
+ * use `todo`. Example tasks leave the first real task marker unchanged.
+ *
+ * A matching `Idempotency-Key` replay within 24 hours returns the original status, state
+ * and space location. Provisioning is limited to one space per caller and organization.
+ * If provisioning fails, the wizard can still be resumed with the same draft.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Provision the space selected in the first-launch wizard
+ */
+ finishOnboarding<TData = OnboardingState>(onboardingFinish: OnboardingFinish, options?: HttpClientBodyOptions): Observable<TData>;
+ finishOnboarding<TData = OnboardingState>(onboardingFinish: OnboardingFinish, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ finishOnboarding<TData = OnboardingState>(onboardingFinish: OnboardingFinish, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  finishOnboarding<TData = OnboardingState>(
+    onboardingFinish: OnboardingFinish, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/me/onboarding/finish`,
+      onboardingFinish,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/me/onboarding/finish`,
+      onboardingFinish,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/me/onboarding/finish`,
+      onboardingFinish,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
 };
 
 export type ListMyTasksClientResult = NonNullable<MyTaskPage>
 export type GetHomeClientResult = NonNullable<Home>
+export type GetOnboardingClientResult = NonNullable<OnboardingState>
+export type UpdateOnboardingClientResult = NonNullable<OnboardingState>
+export type UpdateOnboardingChecklistClientResult = NonNullable<OnboardingState>
+export type FinishOnboardingClientResult = NonNullable<OnboardingState>

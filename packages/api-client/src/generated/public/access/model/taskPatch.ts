@@ -8,6 +8,7 @@ import type { Mention } from './mention';
 import type { PriorityKey } from './priorityKey';
 import type { Recurrence } from './recurrence';
 import type { StatusKey } from './statusKey';
+import type { TaskCustomFieldValuesPatch } from './taskCustomFieldValuesPatch';
 import type { TaskDescription } from './taskDescription';
 import type { TaskKey } from './taskKey';
 import type { TaskName } from './taskName';
@@ -18,6 +19,7 @@ import type { TaskName } from './taskName';
  * the members it does not declare, `assigneeIds` and `labels` included.
  */
 export interface TaskPatch {
+  customFieldValues?: TaskCustomFieldValuesPatch;
   /**
      * Structured spans in the description; replacing text clears prior spans unless a
      * replacement array is supplied. A spans-only patch also requires If-Match. Invalid

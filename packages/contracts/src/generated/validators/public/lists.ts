@@ -510,6 +510,8 @@ export const listSavedViewsResponseItemsItemConfigurationFiltersLabelItemMax = 3
 
 export const listSavedViewsResponseItemsItemConfigurationFiltersLabelMax = 20;
 
+export const listSavedViewsResponseItemsItemConfigurationPresentationHiddenCustomFieldIdsItemRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const listSavedViewsResponseItemsItemConfigurationPresentationCustomFieldSortFieldIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
 
 
 
@@ -532,10 +534,15 @@ export const ListSavedViewsResponse = zod.object({
   "presentation": zod.object({
   "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
   "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "hiddenCustomFieldIds": zod.array(zod.uuid().regex(listSavedViewsResponseItemsItemConfigurationPresentationHiddenCustomFieldIdsItemRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.')).optional().describe('Stable IDs of hidden custom columns; clients ignore retired or unknown IDs.'),
   "sheetSort": zod.object({
   "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
   "direction": zod.string()
-}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.'),
+  "customFieldSort": zod.object({
+  "fieldId": zod.uuid().regex(listSavedViewsResponseItemsItemConfigurationPresentationCustomFieldSortFieldIdRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
+  "direction": zod.enum(['asc', 'desc'])
+}).optional().describe('Feuille-only sort by a custom field\'s stable ID. It takes precedence over sheetSort while\nthe list has that active definition. Otherwise the client falls back to sheetSort.\n')
 }).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
 }).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -589,6 +596,10 @@ export const createSavedViewBodyConfigurationFiltersLabelItemMax = 32;
 
 export const createSavedViewBodyConfigurationFiltersLabelMax = 20;
 
+export const createSavedViewBodyConfigurationPresentationHiddenCustomFieldIdsItemRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const createSavedViewBodyConfigurationPresentationHiddenCustomFieldIdsMax = 30;
+
+export const createSavedViewBodyConfigurationPresentationCustomFieldSortFieldIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
 
 
 export const CreateSavedViewBody = zod.object({
@@ -607,10 +618,15 @@ export const CreateSavedViewBody = zod.object({
   "presentation": zod.object({
   "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
   "hiddenSheetColumns": zod.array(zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.')).optional(),
+  "hiddenCustomFieldIds": zod.array(zod.uuid().regex(createSavedViewBodyConfigurationPresentationHiddenCustomFieldIdsItemRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.')).max(createSavedViewBodyConfigurationPresentationHiddenCustomFieldIdsMax).optional().describe('IDs of custom columns to hide, including stored preferences for retired fields.'),
   "sheetSort": zod.object({
   "column": zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.'),
   "direction": zod.enum(['asc', 'desc'])
-}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.'),
+  "customFieldSort": zod.object({
+  "fieldId": zod.uuid().regex(createSavedViewBodyConfigurationPresentationCustomFieldSortFieldIdRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
+  "direction": zod.enum(['asc', 'desc'])
+}).optional().describe('Feuille-only sort by a custom field\'s stable ID. It takes precedence over sheetSort while\nthe list has that active definition. Otherwise the client falls back to sheetSort.\n')
 }).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
 }).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n')
 })
@@ -626,6 +642,8 @@ export const createSavedViewResponseConfigurationFiltersLabelItemMax = 32;
 
 export const createSavedViewResponseConfigurationFiltersLabelMax = 20;
 
+export const createSavedViewResponseConfigurationPresentationHiddenCustomFieldIdsItemRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const createSavedViewResponseConfigurationPresentationCustomFieldSortFieldIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
 
 
 
@@ -647,10 +665,15 @@ export const CreateSavedViewResponse = zod.object({
   "presentation": zod.object({
   "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
   "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "hiddenCustomFieldIds": zod.array(zod.uuid().regex(createSavedViewResponseConfigurationPresentationHiddenCustomFieldIdsItemRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.')).optional().describe('Stable IDs of hidden custom columns; clients ignore retired or unknown IDs.'),
   "sheetSort": zod.object({
   "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
   "direction": zod.string()
-}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.'),
+  "customFieldSort": zod.object({
+  "fieldId": zod.uuid().regex(createSavedViewResponseConfigurationPresentationCustomFieldSortFieldIdRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
+  "direction": zod.enum(['asc', 'desc'])
+}).optional().describe('Feuille-only sort by a custom field\'s stable ID. It takes precedence over sheetSort while\nthe list has that active definition. Otherwise the client falls back to sheetSort.\n')
 }).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
 }).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -685,6 +708,8 @@ export const getSavedViewResponseConfigurationFiltersLabelItemMax = 32;
 
 export const getSavedViewResponseConfigurationFiltersLabelMax = 20;
 
+export const getSavedViewResponseConfigurationPresentationHiddenCustomFieldIdsItemRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const getSavedViewResponseConfigurationPresentationCustomFieldSortFieldIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
 
 
 
@@ -706,10 +731,15 @@ export const GetSavedViewResponse = zod.object({
   "presentation": zod.object({
   "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
   "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "hiddenCustomFieldIds": zod.array(zod.uuid().regex(getSavedViewResponseConfigurationPresentationHiddenCustomFieldIdsItemRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.')).optional().describe('Stable IDs of hidden custom columns; clients ignore retired or unknown IDs.'),
   "sheetSort": zod.object({
   "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
   "direction": zod.string()
-}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.'),
+  "customFieldSort": zod.object({
+  "fieldId": zod.uuid().regex(getSavedViewResponseConfigurationPresentationCustomFieldSortFieldIdRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
+  "direction": zod.enum(['asc', 'desc'])
+}).optional().describe('Feuille-only sort by a custom field\'s stable ID. It takes precedence over sheetSort while\nthe list has that active definition. Otherwise the client falls back to sheetSort.\n')
 }).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
 }).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -755,6 +785,10 @@ export const updateSavedViewBodyConfigurationFiltersLabelOneItemMax = 32;
 
 export const updateSavedViewBodyConfigurationFiltersLabelOneMax = 20;
 
+export const updateSavedViewBodyConfigurationPresentationOneHiddenCustomFieldIdsOneItemRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const updateSavedViewBodyConfigurationPresentationOneHiddenCustomFieldIdsOneMax = 30;
+
+export const updateSavedViewBodyConfigurationPresentationOneCustomFieldSortOneFieldIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
 
 
 export const UpdateSavedViewBody = zod.object({
@@ -773,8 +807,13 @@ export const UpdateSavedViewBody = zod.object({
   "presentation": zod.union([zod.object({
   "hiddenBoardStatusKeys": zod.union([zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')),zod.null()]).optional(),
   "hiddenSheetColumns": zod.union([zod.array(zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.')),zod.null()]).optional(),
+  "hiddenCustomFieldIds": zod.union([zod.array(zod.uuid().regex(updateSavedViewBodyConfigurationPresentationOneHiddenCustomFieldIdsOneItemRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.')).max(updateSavedViewBodyConfigurationPresentationOneHiddenCustomFieldIdsOneMax),zod.null()]).optional(),
   "sheetSort": zod.union([zod.object({
   "column": zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).optional().describe('Feuille column key from the mockup.'),
+  "direction": zod.enum(['asc', 'desc']).optional()
+}),zod.null()]).optional(),
+  "customFieldSort": zod.union([zod.object({
+  "fieldId": zod.uuid().regex(updateSavedViewBodyConfigurationPresentationOneCustomFieldSortOneFieldIdRegExp).optional().describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
   "direction": zod.enum(['asc', 'desc']).optional()
 }),zod.null()]).optional()
 }).describe('A nested merge patch; null removes the corresponding presentation setting.'),zod.null()]).optional()
@@ -792,6 +831,8 @@ export const updateSavedViewResponseConfigurationFiltersLabelItemMax = 32;
 
 export const updateSavedViewResponseConfigurationFiltersLabelMax = 20;
 
+export const updateSavedViewResponseConfigurationPresentationHiddenCustomFieldIdsItemRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const updateSavedViewResponseConfigurationPresentationCustomFieldSortFieldIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
 
 
 
@@ -813,10 +854,15 @@ export const UpdateSavedViewResponse = zod.object({
   "presentation": zod.object({
   "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
   "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "hiddenCustomFieldIds": zod.array(zod.uuid().regex(updateSavedViewResponseConfigurationPresentationHiddenCustomFieldIdsItemRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.')).optional().describe('Stable IDs of hidden custom columns; clients ignore retired or unknown IDs.'),
   "sheetSort": zod.object({
   "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
   "direction": zod.string()
-}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.'),
+  "customFieldSort": zod.object({
+  "fieldId": zod.uuid().regex(updateSavedViewResponseConfigurationPresentationCustomFieldSortFieldIdRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
+  "direction": zod.enum(['asc', 'desc'])
+}).optional().describe('Feuille-only sort by a custom field\'s stable ID. It takes precedence over sheetSort while\nthe list has that active definition. Otherwise the client falls back to sheetSort.\n')
 }).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
 }).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -893,6 +939,8 @@ export const duplicateSavedViewResponseConfigurationFiltersLabelItemMax = 32;
 
 export const duplicateSavedViewResponseConfigurationFiltersLabelMax = 20;
 
+export const duplicateSavedViewResponseConfigurationPresentationHiddenCustomFieldIdsItemRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const duplicateSavedViewResponseConfigurationPresentationCustomFieldSortFieldIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
 
 
 
@@ -914,13 +962,60 @@ export const DuplicateSavedViewResponse = zod.object({
   "presentation": zod.object({
   "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
   "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "hiddenCustomFieldIds": zod.array(zod.uuid().regex(duplicateSavedViewResponseConfigurationPresentationHiddenCustomFieldIdsItemRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.')).optional().describe('Stable IDs of hidden custom columns; clients ignore retired or unknown IDs.'),
   "sheetSort": zod.object({
   "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
   "direction": zod.string()
-}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.'),
+  "customFieldSort": zod.object({
+  "fieldId": zod.uuid().regex(duplicateSavedViewResponseConfigurationPresentationCustomFieldSortFieldIdRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
+  "direction": zod.enum(['asc', 'desc'])
+}).optional().describe('Feuille-only sort by a custom field\'s stable ID. It takes precedence over sheetSort while\nthe list has that active definition. Otherwise the client falls back to sheetSort.\n')
 }).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
 }).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().min(1)
 }).describe('A view shared with readers of a list.')
+
+
+/**
+ * Lists active definitions in the list's space in `(position, id)` order. A read role on the
+ * list suffices, including a direct list grant. The cursor is bound to this list and order.
+ * The definitions remain readable on a retained archived list.
+ * An unknown, invisible or deleted list answers `404 list.not-found`.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List the custom fields visible in a list
+ */
+export const ListListCustomFieldsParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const listListCustomFieldsQueryLimitDefault = 50;
+export const listListCustomFieldsQueryLimitMax = 100;
+
+
+
+export const ListListCustomFieldsQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listListCustomFieldsQueryLimitMax).default(listListCustomFieldsQueryLimitDefault).describe('Page size.')
+})
+
+export const listListCustomFieldsResponseItemsItemIdRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+export const listListCustomFieldsResponseItemsItemPositionMin = 0;
+
+
+
+
+export const ListListCustomFieldsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid().regex(listListCustomFieldsResponseItemsItemIdRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.'),
+  "spaceId": zod.uuid(),
+  "name": zod.string(),
+  "type": zod.string().describe('Immutable kind. This delivery supports numeric and text values.'),
+  "position": zod.int().min(listListCustomFieldsResponseItemsItemPositionMin).describe('Zero-based position among the active definitions of the space.'),
+  "sprintPoints": zod.boolean().describe('True only for the active numeric definition used for sprint points.'),
+  "version": zod.int().min(1).describe('Definition version used by its ETag.')
+}).describe('An active definition of a custom column in a space.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})

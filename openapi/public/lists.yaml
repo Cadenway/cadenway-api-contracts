@@ -53,6 +53,9 @@ info:
     optional `Idempotency-Key` on a creation, the scopes `tasks:read` and `tasks:write`, 600
     requests per minute, French titles for the codes the web application shows.
 
+    **Custom fields.** Every list uses the active definitions of its space, including a newly
+    created list. Its creation does not alter the definitions or assign values to tasks.
+
     **Later versions** add, without changing what is here: the CSV export and the sprint report.
   contact:
     name: Cadenway
@@ -985,6 +988,56 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/custom-fields:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: listListCustomFields
+      summary: List the custom fields visible in a list
+      description: |
+        Lists active definitions in the list's space in `(position, id)` order. A read role on the
+        list suffices, including a direct list grant. The cursor is bound to this list and order.
+        The definitions remain readable on a retained archived list.
+        An unknown, invisible or deleted list answers `404 list.not-found`.
+        Scope `tasks:read` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of active custom fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldDefinitionPage'
+              example:
+                items:
+                  - {
+                      id: 019a700a-1234-7567-89ab-cdef01234567,
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01,
+                      name: Points,
+                      type: number,
+                      position: 0,
+                      sprintPoints: true,
+                      version: 2,
+                    }
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
     sessionCookie:
@@ -1463,6 +1516,8 @@ components:
             details:
               service: task-service
   schemas:
+    CustomFieldDefinitionPage:
+      $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinitionPage'
     SavedView:
       $ref: '../../components/task.yaml#/components/schemas/SavedView'
     SavedViewCreation:

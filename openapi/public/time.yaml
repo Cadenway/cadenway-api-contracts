@@ -1,0 +1,474 @@
+# Task time tracking is served by the API gateway and stored by task-service.
+openapi: 3.1.0
+info:
+  title: Cadenway task time
+  version: 1.0.0
+  description: |
+    Work logs and status durations of the current organization's tasks. Task keys and
+    permissions follow `openapi/public/tasks.yaml`. The task-service routes in
+    `openapi/internal/task-service.yaml` own the data and enforce list access.
+
+    Task readers can see time entries, totals and status history on visible tasks. An archived
+    task is readable and refuses time-entry changes with `409 task.archived`. Time entries
+    follow a task when it moves or is restored from the trash. Hard purge erases them. An
+    invisible or erased task and a task in another organization answer `404 task.not-found`.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves these routes, checks task scopes and relays them to task-service.
+    - repository: cadenway-webapp
+      uses: Reads the task detail time and status panels and records manual or stopped stopwatch entries through @cadenway/api-client.
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+tags:
+  - name: task-time
+    description: Recorded work and elapsed time in task statuses.
+paths:
+  /v1/tasks/{taskKey}/time-entries:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskTimeEntries
+      summary: List task time entries
+      description: |
+        Lists entries in descending `(createdAt,id)` order. The opaque cursor is bound to
+        the task and ordering. The total count and total minutes cover all entries on this
+        task, before pagination. Subtasks have their own entries and totals.
+      tags: [task-time]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The page of time entries and its unpaginated totals.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/time.yaml#/components/schemas/TaskTimeEntryPage'
+              example:
+                items:
+                  - id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                    taskKey: CAD-482
+                    authorUserId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    minutes: 45
+                    workDate: '2026-11-08'
+                    note: null
+                    createdAt: '2026-11-08T08:05:00Z'
+                  - id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b02
+                    taskKey: CAD-482
+                    authorUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    minutes: 95
+                    workDate: '2026-11-07'
+                    note: Boutons OAuth
+                    createdAt: '2026-11-07T16:30:00Z'
+                  - id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b03
+                    taskKey: CAD-482
+                    authorUserId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    minutes: 150
+                    workDate: '2026-11-07'
+                    note: Maquette et détection du domaine
+                    createdAt: '2026-11-07T13:10:00Z'
+                nextCursor: null
+                total: 3
+                totalMinutes: 290
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TimeReadForbidden'
+        '404':
+          $ref: '#/components/responses/TimeTaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: createTaskTimeEntry
+      summary: Record time on a task
+      description: |
+        Requires `edit` on a live task's list. The verified caller becomes the author. Manual
+        entry, shortcuts and a stopped stopwatch create the same resource. For a stopped
+        stopwatch, the client sends the elapsed minutes rounded to the nearest whole minute
+        with a minimum of one. A matching Idempotency-Key replays the entry and Location
+        for 24 hours.
+      tags: [task-time]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/time.yaml#/components/schemas/TaskTimeEntryCreation'
+            example:
+              { minutes: 150, workDate: '2026-11-07', note: Maquette et détection du domaine }
+      responses:
+        '201':
+          description: The recorded entry.
+          headers:
+            Location:
+              description: Public path of the created time entry.
+              schema:
+                type: string
+                examples: ['/v1/tasks/CAD-482/time-entries/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b03']
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/time.yaml#/components/schemas/TaskTimeEntry'
+              example:
+                id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b03
+                taskKey: CAD-482
+                authorUserId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                minutes: 150
+                workDate: '2026-11-07'
+                note: Maquette et détection du domaine
+                createdAt: '2026-11-07T13:10:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TimeWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TimeTaskNotFound'
+        '409':
+          $ref: '#/components/responses/TimeEntryCreationConflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/time-entries/{timeEntryId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '../../components/time.yaml#/components/parameters/TimeEntryId'
+    get:
+      operationId: getTaskTimeEntry
+      summary: Read a task time entry
+      description: |
+        Reads the entry at the Location returned by creation. The entry must belong to the
+        specified visible task. Archived tasks remain readable.
+      tags: [task-time]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The recorded entry.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/time.yaml#/components/schemas/TaskTimeEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TimeReadForbidden'
+        '404':
+          $ref: '#/components/responses/TimeEntryNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteTaskTimeEntry
+      summary: Delete a task time entry
+      description: Only the entry's author with `edit` on the live task's list can remove it.
+      tags: [task-time]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      responses:
+        '204':
+          description: The entry was removed and no longer contributes to the task totals.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TimeEntryDeleteForbidden'
+        '404':
+          $ref: '#/components/responses/TimeEntryNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/time-summary:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: getTaskTimeSummary
+      summary: Read the task time summary
+      description: |
+        Returns the sum of work-log minutes for this task and its estimate. A zero or unset
+        estimate appears as null and gives no gauge. Entries on subtasks contribute only to
+        their own totals.
+      tags: [task-time]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The recorded total and the task estimate.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/time.yaml#/components/schemas/TaskTimeSummary'
+              example: { totalMinutes: 290, estimateMinutes: 480 }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TimeReadForbidden'
+        '404':
+          $ref: '#/components/responses/TimeTaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/status-durations:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: getTaskStatusDurations
+      summary: Read elapsed time per task status
+      description: |
+        Uses recorded status transitions ordered by `(occurredAt,id)`. If the initial status
+        is known and the history is continuous, coverage begins at task creation. With
+        incomplete history, coverage is limited to the latest reliable continuous history.
+        Repeated visits are summed before display rounding. The current status accumulates
+        time until the server observation instant. A terminal status has no active marker.
+        A visible milestone has `summary: null`.
+      tags: [task-time]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The status durations and coverage of an ordinary task, or a null summary for a milestone.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/time.yaml#/components/schemas/TaskStatusDurationResult'
+              examples:
+                ordinaryTask:
+                  summary: Complete observation of CAD-482
+                  value:
+                    summary:
+                      observedAt: '2026-11-08T10:00:00Z'
+                      coverageStartedAt: '2026-11-07T09:00:00Z'
+                      complete: true
+                      durations:
+                        - { status: todo, durationMilliseconds: 3600000, active: false }
+                        - { status: progress, durationMilliseconds: 82800000, active: false }
+                        - { status: review, durationMilliseconds: 3600000, active: true }
+                milestone:
+                  summary: No duration panel for a milestone
+                  value: { summary: null }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TimeReadForbidden'
+        '404':
+          $ref: '#/components/responses/TimeTaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: Session held by the caller's browser.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: Personal API token with the operation's required task scope.
+  parameters:
+    TaskKey:
+      name: taskKey
+      in: path
+      required: true
+      description: Stable task key.
+      schema:
+        $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Client-chosen key. Sending the same request again within 24 hours replays the original response.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        examples: [5d0c6f1e-2a3b-4c5d-8e9f-0a1b2c3d4e5f]
+  responses:
+    BadRequest:
+      description: '`request.invalid`: the request is invalid. `details.issues` identifies the invalid parameters or fields.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            { type: about:blank, title: Requête invalide, status: 400, code: request.invalid }
+    Unauthenticated:
+      description: '`auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            {
+              type: about:blank,
+              title: Connexion requise,
+              status: 401,
+              code: auth.session-required,
+            }
+    TimeReadForbidden:
+      description: '`auth.scope-missing`, `organization.not-selected` or `organization.mfa-required`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Droit de lecture manquant
+            status: 403
+            code: auth.scope-missing
+            details: { requiredScopes: ['tasks:read'] }
+    TimeWriteForbidden:
+      description: |
+        `access.role-insufficient`, `auth.scope-missing`, `organization.not-selected`,
+        `organization.mfa-required` or `auth.csrf-rejected`. Insufficient role gives
+        `details.role` and `details.requiredRole` with the value `edit` for the latter.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Droit de modification manquant
+            status: 403
+            code: access.role-insufficient
+            details: { role: view, requiredRole: edit }
+    TimeEntryDeleteForbidden:
+      description: |
+        `time-entry.author-required` when an editor tries to delete another author's entry.
+        `access.role-insufficient`, `auth.scope-missing`, `organization.not-selected`,
+        `organization.mfa-required` and `auth.csrf-rejected` are defined in `TimeWriteForbidden`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Seul l’auteur peut supprimer cette saisie
+            status: 403
+            code: time-entry.author-required
+    TimeTaskNotFound:
+      description: |
+        `task.not-found` for a task the caller cannot see, `task.trashed` with trash entry
+        metadata for an authorized restorer, or `organization.not-found` for a missing
+        membership, as in the task detail contract.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            { type: about:blank, title: Tâche introuvable, status: 404, code: task.not-found }
+    TimeEntryNotFound:
+      description: |
+        `time-entry.not-found` for an entry missing from the task. `task.not-found`, `task.trashed`
+        and `organization.not-found` follow `TimeTaskNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Saisie de temps introuvable
+            status: 404
+            code: time-entry.not-found
+    TaskArchived:
+      description: '`task.archived`: changes to the archived task are refused. `details.key` is the task key.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Tâche archivée
+            status: 409
+            code: task.archived
+            details: { key: CAD-482 }
+    TimeEntryCreationConflict:
+      description: '`task.archived` or `idempotency.request-in-progress` while a request using this key is running.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Requête en cours
+            status: 409
+            code: idempotency.request-in-progress
+    IdempotencyKeyReused:
+      description: '`idempotency.key-reused`: this key was already used with a different request body.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Clé d’idempotence déjà utilisée
+            status: 422
+            code: idempotency.key-reused
+    RateLimited:
+      description: '`rate-limit.exceeded`: the gateway rate limit was reached.'
+      headers:
+        Retry-After:
+          description: Whole seconds before retrying.
+          schema: { type: integer, minimum: 0 }
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            { type: about:blank, title: Trop de requêtes, status: 429, code: rate-limit.exceeded }
+    Unavailable:
+      description: |
+        `upstream.unavailable`, `upstream.unreachable`, `upstream.timeout`,
+        `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+        `upstream.deadline-exceeded`. `details.service` identifies task-service.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service indisponible
+            status: 503
+            code: upstream.unavailable
+            details: { service: task-service }

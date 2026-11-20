@@ -3,6 +3,86 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
+ * A stable UUID v7 identifying one custom field definition, in lowercase.
+ * @pattern ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+ */
+export type CustomFieldId = string;
+
+/**
+ * An active definition of a custom column in a space.
+ */
+export interface CustomFieldDefinition {
+  id: CustomFieldId;
+  spaceId: string;
+  name: string;
+  /** Immutable kind. This delivery supports numeric and text values. */
+  type: string;
+  /**
+     * Zero-based position among the active definitions of the space.
+     * @minimum 0
+     */
+  position: number;
+  /** True only for the active numeric definition used for sprint points. */
+  sprintPoints: boolean;
+  /**
+     * Definition version used by its ETag.
+     * @minimum 1
+     */
+  version: number;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+export interface CustomFieldDefinitionPage {
+  items: CustomFieldDefinition[];
+  nextCursor: NextCursor | null;
+}
+
+export type CustomFieldDefinitionCreationType = typeof CustomFieldDefinitionCreationType[keyof typeof CustomFieldDefinitionCreationType];
+
+
+export const CustomFieldDefinitionCreationType = {
+  number: 'number',
+  text: 'text',
+} as const;
+
+export interface CustomFieldDefinitionCreation {
+  /**
+     * Display name, trimmed. Renaming never changes the ID.
+     * @minLength 1
+     * @maxLength 80
+     * @pattern \S
+     */
+  name: string;
+  type: CustomFieldDefinitionCreationType;
+}
+
+export interface CustomFieldDefinitionPatch {
+  /**
+     * Display name, trimmed. Renaming never changes the ID.
+     * @minLength 1
+     * @maxLength 80
+     * @pattern \S
+     */
+  name?: string;
+  /**
+     * Move to this zero-based position in the active definition order.
+     * @minimum 0
+     * @maximum 29
+     */
+  position?: number;
+  /**
+     * True designates this numeric field, clearing any previous designation. False clears
+     * the designation if this field currently holds it.
+     */
+  sprintPoints?: boolean;
+}
+
+/**
  * Current visible target name and public resource path; listId is present for a saved view.
  */
 export type FavoriteTarget = {
@@ -43,12 +123,6 @@ export interface FavoriteCreation {
   /** UUID of the target resource. */
   targetId: string;
 }
-
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
 
 /**
  * The caller's currently accessible active targets in insertion order by creation time and ID.
@@ -156,6 +230,23 @@ export type SavedViewGroupByValue = string | null;
  */
 export type SavedViewSheetColumnValue = string;
 
+export type SavedViewCustomFieldSortDirection = typeof SavedViewCustomFieldSortDirection[keyof typeof SavedViewCustomFieldSortDirection];
+
+
+export const SavedViewCustomFieldSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+/**
+ * Feuille-only sort by a custom field's stable ID. It takes precedence over sheetSort while
+ * the list has that active definition. Otherwise the client falls back to sheetSort.
+ */
+export interface SavedViewCustomFieldSort {
+  fieldId: CustomFieldId;
+  direction: SavedViewCustomFieldSortDirection;
+}
+
 /**
  * Feuille-only sort applied to the fully loaded result by the client.
  */
@@ -170,8 +261,11 @@ export type SavedViewPresentationValueSheetSort = {
 export interface SavedViewPresentationValue {
   hiddenBoardStatusKeys?: StatusKey[];
   hiddenSheetColumns?: SavedViewSheetColumnValue[];
+  /** Stable IDs of hidden custom columns; clients ignore retired or unknown IDs. */
+  hiddenCustomFieldIds?: CustomFieldId[];
   /** Feuille-only sort applied to the fully loaded result by the client. */
   sheetSort?: SavedViewPresentationValueSheetSort;
+  customFieldSort?: SavedViewCustomFieldSort;
 }
 
 /**
@@ -329,8 +423,14 @@ export type SavedViewPresentationSheetSort = {
 export interface SavedViewPresentation {
   hiddenBoardStatusKeys?: StatusKey[];
   hiddenSheetColumns?: SavedViewSheetColumn[];
+  /**
+     * IDs of custom columns to hide, including stored preferences for retired fields.
+     * @maxItems 30
+     */
+  hiddenCustomFieldIds?: CustomFieldId[];
   /** Feuille-only sort applied to the fully loaded result by the client. */
   sheetSort?: SavedViewPresentationSheetSort;
+  customFieldSort?: SavedViewCustomFieldSort;
 }
 
 /**
@@ -391,9 +491,22 @@ export const SavedViewPresentationPatchSheetSortDirection = {
   desc: 'desc',
 } as const;
 
+export type SavedViewPresentationPatchCustomFieldSortDirection = typeof SavedViewPresentationPatchCustomFieldSortDirection[keyof typeof SavedViewPresentationPatchCustomFieldSortDirection];
+
+
+export const SavedViewPresentationPatchCustomFieldSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
 export type SavedViewPresentationPatchSheetSort = {
   column?: SavedViewSheetColumn;
   direction?: SavedViewPresentationPatchSheetSortDirection;
+} | null;
+
+export type SavedViewPresentationPatchCustomFieldSort = {
+  fieldId?: CustomFieldId;
+  direction?: SavedViewPresentationPatchCustomFieldSortDirection;
 } | null;
 
 /**
@@ -402,7 +515,9 @@ export type SavedViewPresentationPatchSheetSort = {
 export interface SavedViewPresentationPatch {
   hiddenBoardStatusKeys?: StatusKey[] | null;
   hiddenSheetColumns?: SavedViewSheetColumn[] | null;
+  hiddenCustomFieldIds?: CustomFieldId[] | null;
   sheetSort?: SavedViewPresentationPatchSheetSort;
+  customFieldSort?: SavedViewPresentationPatchCustomFieldSort;
 }
 
 /**
@@ -767,6 +882,13 @@ export const Recurrence = {
 } as const;
 
 /**
+ * Sparse values keyed by lowercase stable custom field ID. Only active definitions of the readable
+ * task's current space are included. Missing entries have no value. Absence of the member
+ * means the producer has not reported these values. Numeric zero and empty text are values.
+ */
+export interface TaskCustomFieldValues {[key: string]: number | string}
+
+/**
  * A person, by account. Only the account id in this version: the web application takes the
  * name and the initials from the member list. It may name a former member, for example the
  * owner of a space of the whole organization who left it. Later versions may add members.
@@ -803,6 +925,7 @@ export interface TaskSummary {
   /** Whether this task is a milestone; absence means the producer did not report it. */
   milestone?: boolean;
   recurrence?: Recurrence;
+  customFieldValues?: TaskCustomFieldValues;
   key: TaskKey;
   /** "Nom de la tâche", 300 characters at most. */
   name: string;
@@ -917,6 +1040,82 @@ export interface Mention {
   /** @minimum 1 */
   end: number;
 }
+
+export interface TaskApprovalReviewer {
+  reviewerUserId: string;
+  /**
+     * Null while no vote is recorded for the reviewer.
+     * @nullable
+     */
+  decision: string | null;
+  /** @nullable */
+  decidedAt: string | null;
+  /**
+     * The task comment created by a change request, or null for other decisions and while
+     * waiting. Resolve it with the task comment route, which also handles removed comments.
+     * @nullable
+     */
+  commentId: string | null;
+}
+
+/**
+ * The current request and its votes from reviewers with current edit access.
+ */
+export interface TaskApprovalRound {
+  /** UUID v7 of the round. Each new round receives a different identifier. */
+  roundId: string;
+  /** Account that opened the round. */
+  requesterUserId: string;
+  requestedAt: string;
+  /**
+     * Pending while a reviewer is waiting or there are no eligible reviewers.
+     * A change request takes precedence. Approval requires every eligible reviewer to approve.
+     * Clients can display an unknown status as pending.
+     */
+  status: string;
+  /** Eligible requested reviewers in request order, including those waiting to vote. */
+  reviewers: TaskApprovalReviewer[];
+}
+
+/**
+ * The approval state at the current task version.
+ */
+export interface TaskApprovalState {
+  taskKey: TaskKey;
+  /**
+     * The version carried by the task ETag.
+     * @minimum 1
+     */
+  taskVersion: number;
+  taskStatus: StatusKey;
+  /** The current round, or null if no round is visible for this task. */
+  current: TaskApprovalRound | null;
+}
+
+export interface TaskApprovalRequest {
+  /**
+     * Distinct accounts with current edit access to the task, including the caller if requested.
+     * @minItems 1
+     * @maxItems 20
+     */
+  reviewerUserIds: string[];
+}
+
+/**
+ * The vote made by the authenticated reviewer.
+ */
+export type TaskApprovalVote = {
+  decision: 'approved';
+} | {
+  decision: 'changes-requested';
+  /**
+     * Nonblank Markdown of up to 5,000 Unicode code points, stored as a task comment.
+     * @minLength 1
+     * @maxLength 5000
+     * @pattern \S
+     */
+  reason: string;
+};
 
 /**
  * A live comment in the flat task timeline; deleted comments are omitted.
@@ -1487,6 +1686,7 @@ export interface Task {
   /** Structured spans in the current Markdown description. */
   descriptionMentions?: Mention[];
   nextOccurrenceKey?: TaskKey;
+  customFieldValues?: TaskCustomFieldValues;
   key: TaskKey;
   /** "Nom de la tâche", 300 characters at most. */
   name: string;
@@ -1786,11 +1986,19 @@ export interface SubtaskCreation {
 }
 
 /**
+ * Merge values by lowercase active field ID in the task's resulting space. Omitted keys are unchanged.
+ * A null value clears that entry. A number or string must match the field's immutable type.
+ * A value of the designated sprint points field must be nonnegative, including zero.
+ */
+export interface TaskCustomFieldValuesPatch {[key: string]: number | string | null}
+
+/**
  * JSON Merge Patch of a task; an empty object changes nothing. The assignees, the labels and
  * the checklist are collections: they change through their own routes, and a patch ignores
  * the members it does not declare, `assigneeIds` and `labels` included.
  */
 export interface TaskPatch {
+  customFieldValues?: TaskCustomFieldValuesPatch;
   /**
      * Structured spans in the description; replacing text clears prior spans unless a
      * replacement array is supplied. A spans-only patch also requires If-Match. Invalid
@@ -2318,6 +2526,143 @@ export interface TaskDetailCore {
 }
 
 /**
+ * Wizard screen. The import screen can be skipped and does not start an import.
+ */
+export type OnboardingWizardStep = typeof OnboardingWizardStep[keyof typeof OnboardingWizardStep];
+
+
+export const OnboardingWizardStep = {
+  space: 'space',
+  preset: 'preset',
+  team: 'team',
+  import: 'import',
+} as const;
+
+/**
+ * `dev` creates Backlog, Sprint 1 and Bugs. `mkt` creates Calendrier éditorial and
+ * Campagnes. `agency` creates Projets clients and Demandes. Those presets include the
+ * corresponding example tasks. `blank` creates only Première liste, with no example tasks.
+ */
+export type OnboardingPreset = typeof OnboardingPreset[keyof typeof OnboardingPreset];
+
+
+export const OnboardingPreset = {
+  dev: 'dev',
+  mkt: 'mkt',
+  agency: 'agency',
+  blank: 'blank',
+} as const;
+
+/**
+ * Space name in the draft, or null when unset.
+ */
+export type OnboardingDraftName = SpaceName | null;
+
+/**
+ * Explicit space prefix in the draft, or null when unset.
+ */
+export type OnboardingDraftPrefix = SpacePrefix | null;
+
+export interface OnboardingWizard {
+  /** Only an in-progress wizard accepts further draft changes. */
+  status: string;
+  step: OnboardingWizardStep;
+  preset: OnboardingPreset;
+  name: OnboardingDraftName;
+  prefix: OnboardingDraftPrefix;
+  color: LookColorValue;
+}
+
+/**
+ * Space and first list created by the first successful finish.
+ */
+export interface OnboardingProvisioning {
+  /** UUID v7 of the provisioned space. */
+  spaceId: string;
+  /** UUID v7 of the first list of the selected preset. */
+  firstListId: string;
+}
+
+/**
+ * Presentation state of the personal checklist.
+ */
+export type OnboardingChecklistPresentation = typeof OnboardingChecklistPresentation[keyof typeof OnboardingChecklistPresentation];
+
+
+export const OnboardingChecklistPresentation = {
+  expanded: 'expanded',
+  collapsed: 'collapsed',
+  dismissed: 'dismissed',
+} as const;
+
+/**
+ * Personal progress markers for checklist actions available in this delivery.
+ */
+export interface OnboardingChecklist {
+  presentation: OnboardingChecklistPresentation;
+  /** Set by the first normal task creation by the caller in the provisioned space. */
+  firstTaskCreated: boolean;
+  /** The caller recorded a successful outcome from the organization invitation flow. */
+  invitationSent: boolean;
+  /** The caller recorded trying the Board view. */
+  boardTried: boolean;
+}
+
+/**
+ * First-launch state scoped to the verified caller and organization.
+ */
+export interface OnboardingState {
+  /**
+     * Version of the current state, used for conditional writes.
+     * @minimum 1
+     */
+  version: number;
+  wizard: OnboardingWizard;
+  /** IDs returned by successful provisioning, or null before it completes. */
+  provisioning: OnboardingProvisioning | null;
+  checklist: OnboardingChecklist;
+}
+
+/**
+ * Save wizard progress without provisioning a space. Omitted members keep their values.
+ * Null clears the draft name or prefix. Dismissal is terminal and requires only current
+ * organization membership.
+ */
+export interface OnboardingDraftPatch {
+  step?: OnboardingWizardStep;
+  preset?: OnboardingPreset;
+  name?: OnboardingDraftName;
+  prefix?: OnboardingDraftPrefix;
+  color?: LookColor;
+  /** Dismiss the wizard. */
+  dismissed?: true;
+}
+
+/**
+ * Update personal checklist presentation or mark an action as done. Invitation success
+ * can be recorded before provisioning. Presentation and Board progress require a
+ * provisioned space. The first-task marker is set by task creation.
+ */
+export interface OnboardingChecklistPatch {
+  presentation?: OnboardingChecklistPresentation;
+  /** Record the outcome of a successful organization invitation. */
+  invitationSent?: true;
+  /** Record trying the Board view. */
+  boardTried?: true;
+}
+
+/**
+ * Provision the first space from the selected preset. The caller supplies the prefix
+ * required by regular space creation. The command uses violet when color is omitted.
+ */
+export interface OnboardingFinish {
+  name: SpaceName;
+  prefix: SpacePrefix;
+  preset: OnboardingPreset;
+  color?: LookColor;
+}
+
+/**
  * Members specific to the code, for example the fields that failed validation.
  */
 export type ProblemDetails = { [key: string]: unknown };
@@ -2341,6 +2686,170 @@ export interface Problem {
   /** Members specific to the code, for example the fields that failed validation. */
   details?: ProblemDetails;
 }
+
+/**
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type TimeEntryId = string;
+
+/**
+ * Whole minutes recorded in this entry.
+ * @minimum 1
+ * @maximum 1440
+ */
+export type WorkLogMinutes = number;
+
+/**
+ * Work date in the caller's time zone from 0001-01-01 to 9999-12-31, independent of the UTC creation instant.
+ * @pattern ^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$
+ */
+export type TaskWorkDate = string;
+
+export interface TaskTimeEntryCreation {
+  minutes: WorkLogMinutes;
+  workDate: TaskWorkDate;
+  /**
+     * Plain text. Surrounding whitespace is removed. An empty note is stored as null.
+     * @maxLength 500
+     */
+  note?: string;
+}
+
+export interface TaskTimeEntry {
+  id: TimeEntryId;
+  taskKey: TaskKey;
+  /** Stable ID of the verified author, including after the author leaves the organization. */
+  authorUserId: string;
+  minutes: WorkLogMinutes;
+  workDate: TaskWorkDate;
+  /**
+     * The normalized note, or null when absent.
+     * @nullable
+     */
+  note: string | null;
+  /** Server creation instant in UTC. */
+  createdAt: string;
+}
+
+export interface TaskTimeEntryPage {
+  items: TaskTimeEntry[];
+  nextCursor: NextCursor | null;
+  /**
+     * Number of entries on the task before pagination.
+     * @minimum 0
+     */
+  total: number;
+  /**
+     * Sum over all entries on the task before pagination. Subtasks are counted separately.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+export interface TaskTimeSummary {
+  /**
+     * Sum over all entries on the task. Subtasks are counted separately.
+     * @minimum 0
+     */
+  totalMinutes: number;
+  estimateMinutes: EstimateMinutes | null;
+}
+
+export interface TaskStatusDuration {
+  status: StatusKey;
+  /**
+     * Sum of elapsed milliseconds across the covered visits to this status.
+     * @minimum 0
+     */
+  durationMilliseconds: number;
+  /** True only for the current status when its category is open or active. */
+  active: boolean;
+}
+
+export interface TaskStatusDurationSummary {
+  /** One server observation instant in UTC used for all spans in this summary. */
+  observedAt: string;
+  /** Earliest reliable boundary of the covered suffix, or observedAt with no earlier boundary. */
+  coverageStartedAt: string;
+  /** True when the initial status and all transitions are known since task creation. */
+  complete: boolean;
+  /**
+     * One row per covered status, in order of first appearance in the covered suffix.
+     * The observed current status has a row even when its measured duration is zero.
+     */
+  durations: TaskStatusDuration[];
+}
+
+export interface TaskStatusDurationResult {
+  /** Null for a milestone. */
+  summary: TaskStatusDurationSummary | null;
+}
+
+/**
+ * `time-entry.author-required` when an editor tries to delete another actor's entry.
+ * `access.role-insufficient`, `auth.issuer-not-allowed`, `auth.actor-not-allowed` and
+ * `auth.organization-required` are defined in `WriteForbidden`.
+ */
+export type TimeEntryDeleteForbiddenResponse = Problem;
+
+/**
+ * `time-entry.not-found` for an entry missing from the task. `task.not-found`, `task.trashed`
+ * and `organization.not-found` follow `TaskNotFound`.
+ */
+export type TimeEntryNotFoundResponse = Problem;
+
+/**
+ * `task.archived` or `idempotency.request-in-progress` while a request using this key is running.
+ */
+export type TimeEntryCreationConflictResponse = Problem;
+
+/**
+ * - `space.manage-forbidden`: the caller does not manage the visible space.
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
+ *   the internal token.
+ */
+export type CustomFieldManageForbiddenResponse = Problem;
+
+/**
+ * - `custom-field.not-found`: no active definition with this ID in the specified space.
+ * - `space.not-found`: the caller does not see the space or it is absent or deleted.
+ * - `organization.not-found`: the caller is not known as a current member.
+ */
+export type CustomFieldNotFoundResponse = Problem;
+
+/**
+ * `idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.
+ */
+export type CustomFieldCreationConflictResponse = Problem;
+
+/**
+ * - `custom-field.limit-reached`: the space has 30 active definitions.
+ * - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+ */
+export type CustomFieldCreationRefusedResponse = Problem;
+
+/**
+ * - `custom-field.position-invalid`: the requested position does not exist.
+ * - `custom-field.sprint-points-invalid`: the field is text or has a negative current value.
+ */
+export type CustomFieldChangeRefusedResponse = Problem;
+
+/**
+ * `onboarding.wizard-closed`: the wizard has already finished or was dismissed.
+ */
+export type OnboardingWizardClosedResponse = Problem;
+
+/**
+ * `onboarding.checklist-unavailable`: the caller has no provisioned space for this change.
+ */
+export type OnboardingChecklistUnavailableResponse = Problem;
+
+/**
+ * - `onboarding.wizard-closed`: this wizard was already finished or dismissed;
+ * - `space.prefix-taken`: the prefix is reserved in the organization, given in `details.prefix`;
+ * - `idempotency.request-in-progress`: a matching request with this key is still running.
+ */
+export type OnboardingFinishConflictResponse = Problem;
 
 /**
  * `template.not-found`, `space.not-found`, `organization.not-found`.
@@ -2582,6 +3091,46 @@ export type SpaceNotFoundResponse = Problem;
 export type ListNotFoundResponse = Problem;
 
 /**
+ * - `approval.reviewer-required` applies when an editor was omitted from the round.
+ * - `access.role-insufficient` applies when the actor has a list role below `edit`.
+ * - See `InternalAccessRefused` for `auth.issuer-not-allowed`, `auth.actor-not-allowed` and
+ *   `auth.organization-required`.
+ */
+export type ApprovalVoteForbiddenResponse = Problem;
+
+/**
+ * - `approval.round-not-found` applies when the supplied ID differs from the current round or the task has no round.
+ * - See `TaskNotFound` for `task.not-found`, `task.trashed` and `organization.not-found`.
+ */
+export type ApprovalRoundNotFoundResponse = Problem;
+
+/**
+ * - An archived task returns `task.archived`.
+ * - A milestone returns `approval.milestone-unsupported`.
+ */
+export type ApprovalRoundConflictResponse = Problem;
+
+/**
+ * - An archived task returns `task.archived`.
+ * - A milestone returns `approval.milestone-unsupported`.
+ * - An existing vote returns `approval.vote-already-recorded`. Withdraw it before casting another.
+ * - The automated completion returns `recurrence.already-spawned` if it would repeat an occurrence.
+ */
+export type ApprovalVoteConflictResponse = Problem;
+
+/**
+ * A requested reviewer without edit access causes `approval.reviewer-invalid`.
+ */
+export type ApprovalReviewersRefusedResponse = Problem;
+
+/**
+ * - `task.status-hidden` applies if the automatic status is unavailable in the task's space.
+ * - `task.subtask-limit-reached` applies if the recurrence successor would exceed the parent capacity.
+ * - `recurrence.date-out-of-range` applies if the successor dates are out of range.
+ */
+export type ApprovalTransitionRefusedResponse = Problem;
+
+/**
  * - `task.not-found`: no task with this key that the actor sees, or a task in the trash the
  *   actor could not change;
  * - `task.trashed`: the task is in the trash and the actor could change its list, with
@@ -2694,7 +3243,9 @@ export type SprintDatesInvalidResponse = Problem;
  * `idempotency.key-reused`.
  * - `mention.recipient-invalid`: a description mention recipient is ineligible;
  * - `milestone.status-invalid` or `milestone.dates-invalid`: the final milestone is invalid;
- * - `recurrence.date-out-of-range`: the successor date cannot be represented.
+ * - `recurrence.date-out-of-range`: the successor date cannot be represented;
+ * - `custom-field.value-invalid`: on a patch, a field is absent, retired or outside the
+ *   resulting space, the value has the wrong type or designated sprint points are negative.
  */
 export type TaskRefusedResponse = Problem;
 
@@ -2719,6 +3270,11 @@ export type ChecklistItemRefusedResponse = Problem;
 export type VersionMismatchResponse = Problem;
 
 export type DependencyDirectionParameter = DependencyDirection;
+
+/**
+ * The strong task version ETag last returned on the task or approval state.
+ */
+export type ApprovalIfMatchParameter = string;
 
 /**
  * Keep the requests of this space, its lists and their tasks.
@@ -3039,6 +3595,17 @@ export type CountTaskGroupsInternalParams = {
   limit?: number;
 };
 
+export type ListTaskTimeEntriesInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
 export type ListTaskCommentsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: string;
@@ -3266,6 +3833,28 @@ export type ListSavedViewsInternalParams = {
 };
 
 export type ListFavoritesInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListSpaceCustomFieldsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListListCustomFieldsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: string;
   /**
