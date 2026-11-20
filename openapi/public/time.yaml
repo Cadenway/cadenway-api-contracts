@@ -331,8 +331,7 @@ components:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            { type: about:blank, title: Requête invalide, status: 400, code: request.invalid }
+          example: { type: about:blank, title: Bad Request, status: 400, code: request.invalid }
     Unauthenticated:
       description: '`auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.'
       content:
@@ -342,7 +341,7 @@ components:
           example:
             {
               type: about:blank,
-              title: Connexion requise,
+              title: Connectez-vous pour continuer.,
               status: 401,
               code: auth.session-required,
             }
@@ -354,7 +353,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: Droit de lecture manquant
+            title: Ce jeton n’a pas la portée nécessaire pour cette requête.
             status: 403
             code: auth.scope-missing
             details: { requiredScopes: ['tasks:read'] }
@@ -369,7 +368,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: Droit de modification manquant
+            title: Il faut le droit « Peut modifier » pour cette action.
             status: 403
             code: access.role-insufficient
             details: { role: view, requiredRole: edit }
@@ -397,7 +396,7 @@ components:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
-            { type: about:blank, title: Tâche introuvable, status: 404, code: task.not-found }
+            { type: about:blank, title: Tâche introuvable., status: 404, code: task.not-found }
     TimeEntryNotFound:
       description: |
         `time-entry.not-found` for an entry missing from the task. `task.not-found`, `task.trashed`
@@ -419,7 +418,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: Tâche archivée
+            title: 'Cette tâche est archivée : restaurez-la depuis les Archives pour la modifier.'
             status: 409
             code: task.archived
             details: { key: CAD-482 }
@@ -431,7 +430,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: Requête en cours
+            title: Conflict
             status: 409
             code: idempotency.request-in-progress
     IdempotencyKeyReused:
@@ -442,7 +441,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: Clé d’idempotence déjà utilisée
+            title: Unprocessable Content
             status: 422
             code: idempotency.key-reused
     RateLimited:
@@ -456,7 +455,12 @@ components:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
-            { type: about:blank, title: Trop de requêtes, status: 429, code: rate-limit.exceeded }
+            {
+              type: about:blank,
+              title: 'Trop de requêtes : réessayez dans un instant.',
+              status: 429,
+              code: rate-limit.exceeded,
+            }
     Unavailable:
       description: |
         `upstream.unavailable`, `upstream.unreachable`, `upstream.timeout`,
@@ -468,7 +472,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: Service indisponible
+            title: Service Unavailable
             status: 503
             code: upstream.unavailable
             details: { service: task-service }

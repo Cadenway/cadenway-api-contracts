@@ -1522,7 +1522,7 @@ components:
             manageForbidden:
               value:
                 type: about:blank
-                title: Vous ne pouvez pas gérer les champs personnalisés de cet espace.
+                title: Seuls le propriétaire de l’espace et les administrateurs le partagent et le suppriment.
                 status: 403
                 code: space.manage-forbidden
             scopeMissing:

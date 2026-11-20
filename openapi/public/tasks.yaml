@@ -3435,7 +3435,7 @@ components:
             prefixTaken:
               value:
                 type: about:blank
-                title: Préfixe déjà utilisé.
+                title: Ce préfixe est déjà utilisé par un autre espace.
                 status: 409
                 code: space.prefix-taken
                 details:
@@ -3443,7 +3443,7 @@ components:
             requestInProgress:
               value:
                 type: about:blank
-                title: Requête en cours.
+                title: Conflict
                 status: 409
                 code: idempotency.request-in-progress
     OnboardingWriteForbidden:
@@ -3460,7 +3460,7 @@ components:
             roleForbidden:
               value:
                 type: about:blank
-                title: Création d’espace non autorisée.
+                title: Votre rôle ne permet pas cette action.
                 status: 403
                 code: organization.role-forbidden
             scopeMissing:
@@ -4146,7 +4146,7 @@ components:
             alreadySpawned:
               value:
                 type: about:blank
-                title: 'La prochaine occurrence a déjà été créée.'
+                title: Cette récurrence a déjà créé une occurrence.
                 status: 409
                 code: recurrence.already-spawned
     ApprovalReviewersRefused:
