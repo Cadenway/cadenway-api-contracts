@@ -116,7 +116,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: 'Requête invalide.'
+            title: Bad Request
             status: 400
             code: request.invalid
     Unauthenticated:
@@ -142,7 +142,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: 'Ce jeton d’API ne permet pas cette action.'
+            title: 'Ce jeton n’a pas la portée nécessaire pour cette requête.'
             status: 403
             code: auth.scope-missing
             details:
@@ -174,7 +174,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: 'Trop de demandes. Réessayez plus tard.'
+            title: 'Trop de requêtes : réessayez dans un instant.'
             status: 429
             code: rate-limit.exceeded
     Unavailable:
