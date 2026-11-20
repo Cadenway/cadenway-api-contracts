@@ -5,7 +5,9 @@
 import type { Problem } from './problem';
 
 /**
- * `document.unavailable`, `upstream.failed`, `upstream.unauthorized`, `upstream.unreachable`
- * or `upstream.timeout` when the request cannot be completed within the gateway budget.
+ * `document.unavailable`, `upstream.failed`, `upstream.unauthorized`, `upstream.unreachable`,
+ * `upstream.timeout`, `upstream.unavailable`, `upstream.circuit-open` or
+ * `upstream.deadline-exceeded` when Document or session verification is unavailable or the
+ * request cannot be completed within the gateway budget.
  */
 export type UnavailableResponse = Problem;
