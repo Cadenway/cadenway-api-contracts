@@ -335,6 +335,296 @@ export const DuplicateListResponse = zod.object({
 
 
 /**
+ * Reads a sprint the caller can see ("Rapport du Sprint 14"). Each contribution requires
+ * current task visibility as well as access to the sprint. Only ordinary root tasks that
+ * were in the sprint and eligible at the evaluated instant contribute. Milestones and
+ * cancelled, archived or trashed tasks are excluded at that instant. A purged task leaves
+ * the report history.
+ * The designated numeric custom field supplies points, with zero as a valid value. In its
+ * absence, an estimate of up to 60, 180, 360 or 600 minutes is worth 1, 2, 3 or 5 points
+ * respectively. Larger estimates are worth 8 points and an unset estimate is worth 1.
+ *
+ * Opening commitment uses the sprint's first local midnight. Delivered and remaining
+ * points and task counts use the earliest of the server observation, the end of the
+ * requested local date and sprint close. Sprint close is the end of its last local day.
+ * Later scope changes can change that total. Historical days use their own end-of-day
+ * cutoff. The current partial day uses the report observation and future dates have no
+ * actual value.
+ *
+ * The burndown pages dates from the first to the last sprint day, oldest first. The cursor
+ * binds the sprint, caller, requested date, time zone and server observation instant.
+ * A missing baseline or gap yields a null value for any metric it makes unavailable.
+ * Ideal points fall evenly from the known opening commitment to zero at close.
+ * Projected values require an open sprint and a positive burn rate established by at
+ * least two covered end-of-day observations. Velocity contains up to the four most recent
+ * readable, completed sprints of the same space whose closing date precedes this sprint's
+ * start. It orders them by closing date and ID, oldest first, with unavailable historical
+ * values left null. Scope `tasks:read` for a personal API token.
+ * @summary Read the points, burndown and velocity of a sprint
+ */
+export const GetSprintReportParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const getSprintReportQueryTodayRegExp = new RegExp('^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$');
+
+export const getSprintReportQueryLimitDefault = 50;
+export const getSprintReportQueryLimitMax = 100;
+
+
+
+export const GetSprintReportQueryParams = zod.object({
+  "today": zod.iso.date().regex(getSprintReportQueryTodayRegExp).describe('Requested local date for the report observation, interpreted in timeZone.'),
+  "timeZone": zod.string().min(1).describe('IANA time zone used for the report\'s calendar-day boundaries.'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(getSprintReportQueryLimitMax).default(getSprintReportQueryLimitDefault).describe('Page size.')
+})
+
+export const getSprintReportResponseOpeningPointsOneMin = 0;
+
+export const getSprintReportResponseDeliveredOnePointsMin = 0;
+
+export const getSprintReportResponseDeliveredOneTaskCountMin = 0;
+
+export const getSprintReportResponseDeliveredOneItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getSprintReportResponseDeliveredOneItemsItemPointsMin = 0;
+
+export const getSprintReportResponseRemainingOnePointsMin = 0;
+
+export const getSprintReportResponseRemainingOneTaskCountMin = 0;
+
+export const getSprintReportResponseRemainingOneItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getSprintReportResponseRemainingOneItemsItemPointsMin = 0;
+
+export const getSprintReportResponseProjectedRemainingPointsOneMin = 0;
+
+export const getSprintReportResponseItemsItemActualRemainingPointsOneMin = 0;
+
+export const getSprintReportResponseItemsItemIdealRemainingPointsOneMin = 0;
+
+export const getSprintReportResponseItemsItemProjectedRemainingPointsOneMin = 0;
+
+export const getSprintReportResponseVelocityItemOpeningPointsOneMin = 0;
+
+export const getSprintReportResponseVelocityItemDeliveredPointsOneMin = 0;
+
+export const getSprintReportResponseVelocityMax = 4;
+
+
+
+export const GetSprintReportResponse = zod.object({
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "startDate": zod.iso.date(),
+  "endDate": zod.iso.date(),
+  "observedAt": zod.iso.datetime({"offset":true}).describe('Observation cutoff in UTC. It is the earliest of server time, the end of the\nrequested local date in timeZone, and sprint close.\n'),
+  "coverageStartedAt": zod.iso.datetime({"offset":true}).nullable().describe('Start of reliable history in UTC, or null if it is unavailable.'),
+  "openingPoints": zod.number().min(getSprintReportResponseOpeningPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Commitment at sprint opening, or null if the opening cannot be reconstructed.'),
+  "delivered": zod.union([zod.object({
+  "points": zod.number().min(getSprintReportResponseDeliveredOnePointsMin).describe('Nonnegative points before presentation rounding.'),
+  "taskCount": zod.int().min(getSprintReportResponseDeliveredOneTaskCountMin).describe('Total tasks in this part of the caller-visible scope.'),
+  "items": zod.array(zod.object({
+  "taskKey": zod.string().regex(getSprintReportResponseDeliveredOneItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "points": zod.number().min(getSprintReportResponseDeliveredOneItemsItemPointsMin).describe('Nonnegative points before presentation rounding.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
+}).describe('A task included in the observed sprint scope that is still readable by the caller.')).describe('Up to the first six tasks in task-key order for the drill-down preview.')
+}),zod.null()]).describe('Done tasks at the observation or sprint close, or null if that scope is unavailable.'),
+  "remaining": zod.union([zod.object({
+  "points": zod.number().min(getSprintReportResponseRemainingOnePointsMin).describe('Nonnegative points before presentation rounding.'),
+  "taskCount": zod.int().min(getSprintReportResponseRemainingOneTaskCountMin).describe('Total tasks in this part of the caller-visible scope.'),
+  "items": zod.array(zod.object({
+  "taskKey": zod.string().regex(getSprintReportResponseRemainingOneItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "points": zod.number().min(getSprintReportResponseRemainingOneItemsItemPointsMin).describe('Nonnegative points before presentation rounding.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
+}).describe('A task included in the observed sprint scope that is still readable by the caller.')).describe('Up to the first six tasks in task-key order for the drill-down preview.')
+}),zod.null()]).describe('Remaining tasks at that same observation, or null if that scope is unavailable.'),
+  "projectedRemainingPoints": zod.number().min(getSprintReportResponseProjectedRemainingPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Forecast at the sprint end, or null until enough covered observations establish a rate.'),
+  "items": zod.array(zod.object({
+  "date": zod.iso.date().describe('Calendar date in the requested time zone.'),
+  "actualRemainingPoints": zod.number().min(getSprintReportResponseItemsItemActualRemainingPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Actual points remaining at the end of a covered day, or at observedAt for a day\nstill in progress at that cutoff. Null for an uncovered day or a day after the cutoff.\n'),
+  "idealRemainingPoints": zod.number().min(getSprintReportResponseItemsItemIdealRemainingPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Ideal remaining points from the opening commitment, or null if it is unavailable.'),
+  "projectedRemainingPoints": zod.number().min(getSprintReportResponseItemsItemProjectedRemainingPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Forecast points remaining for this date, or null without a supported forecast.')
+})).describe('Days in chronological order, including uncovered dates with null actuals.'),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "velocity": zod.array(zod.object({
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "startDate": zod.iso.date(),
+  "endDate": zod.iso.date(),
+  "openingPoints": zod.number().min(getSprintReportResponseVelocityItemOpeningPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Opening commitment for this prior sprint, or null without coverage.'),
+  "deliveredPoints": zod.number().min(getSprintReportResponseVelocityItemDeliveredPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Points delivered at the previous sprint\'s close, or null without coverage.')
+}).describe('Scope and observed points of a real, readable, earlier sprint in the same space.')).max(getSprintReportResponseVelocityMax).describe('Up to four earlier readable completed sprints in the same space, ordered chronologically.')
+}).describe('Visible ordinary root tasks contribute only while eligible for the evaluated observation.\nThe report also checks current task visibility and excludes purged tasks entirely.\nArchived, trashed, cancelled and milestone tasks are excluded at observations when they\nare ineligible. Scope changes can make delivered and remaining points differ in sum\nfrom the opening commitment.\nThe designated numeric points field contributes its stored value, including zero.\nOtherwise estimate bands up to 60, 180, 360 and 600 minutes yield 1, 2, 3 and 5 points.\nEstimates above 600 yield 8 points. An unset estimate yields one point.\n')
+
+
+/**
+ * Reads the filtered live tasks the caller can see in a readable list ("Charge"). Tasks
+ * require a due date and a positive estimate. Cancelled, archived and trashed tasks are
+ * excluded. With no start date the interval begins on the due date. Allocate each estimate
+ * across all Monday–Friday dates in its inclusive interval, then across its assignees for
+ * each day.
+ * A weekend-only interval uses the preceding working day. A task with no assignee uses
+ * the separate unassigned bucket. Whole-minute remainders go to earlier dates and then
+ * lower account IDs in ascending order. That allocation preserves the full estimate.
+ *
+ * Return only the 14 days starting at `weekStart` after allocating the whole interval.
+ * Include rows with positive allocated minutes in that window. Capacity is 360 minutes
+ * per person per weekday and zero on weekends. Totals cover every matching row, across
+ * pages. Each page orders rows by assignee account ID (unassigned last) and task key.
+ * The opaque cursor binds the caller, list, week and filters. Scope `tasks:read` for a
+ * personal API token. Reassignment follows the existing task assignment routes.
+ * @summary Read scheduled work for two calendar weeks
+ */
+export const GetListWorkloadParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const getListWorkloadQueryWeekStartRegExp = new RegExp('^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$');
+export const getListWorkloadQueryStatusMax = 10;
+
+export const getListWorkloadQueryPriorityMax = 4;
+
+export const getListWorkloadQueryAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const getListWorkloadQueryAssigneeMax = 20;
+
+export const getListWorkloadQueryLabelItemMax = 32;
+
+export const getListWorkloadQueryLabelMax = 20;
+
+export const getListWorkloadQuerySearchMax = 100;
+
+export const getListWorkloadQueryLevelDefault = `roots`;
+export const getListWorkloadQueryLimitDefault = 50;
+export const getListWorkloadQueryLimitMax = 100;
+
+
+
+export const GetListWorkloadQueryParams = zod.object({
+  "weekStart": zod.iso.date().regex(getListWorkloadQueryWeekStartRegExp).describe('Monday of the requested reporting window, as a calendar date.'),
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(getListWorkloadQueryStatusMax).optional().describe('Statuses to keep, separated by commas.'),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(getListWorkloadQueryPriorityMax).optional().describe('Priorities to keep, separated by commas.'),
+  "assignee": zod.array(zod.string().regex(getListWorkloadQueryAssigneeItemRegExp)).min(1).max(getListWorkloadQueryAssigneeMax).optional().describe('Assignees to keep, separated by commas: account ids, `me` for the caller, `none` for the\ntasks nobody is assigned.\n'),
+  "label": zod.array(zod.string().min(1).max(getListWorkloadQueryLabelItemMax)).min(1).max(getListWorkloadQueryLabelMax).optional().describe('Labels to keep, separated by commas, without regard to case.'),
+  "search": zod.string().min(1).max(getListWorkloadQuerySearchMax).optional().describe('Text to find, without regard to case or accents.'),
+  "dueFrom": zod.iso.date().optional().describe('Keep the tasks due on or after this date.'),
+  "dueTo": zod.iso.date().optional().describe('Keep the tasks due on or before this date.'),
+  "level": zod.enum(['roots', 'all']).default(getListWorkloadQueryLevelDefault).describe('`roots` for the top-level tasks only, `all` for the subtasks too.'),
+  "milestone": zod.preprocess((value) => value === 'true' ? true : value === 'false' ? false : value, zod.boolean()).optional().describe('Keep only milestones when true, or only ordinary tasks when false; absent leaves both.'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(getListWorkloadQueryLimitMax).default(getListWorkloadQueryLimitDefault).describe('Page size.')
+})
+
+export const getListWorkloadResponseDaysItemOneTotalMinutesMin = 0;
+
+export const getListWorkloadResponseDaysMin = 14;
+export const getListWorkloadResponseDaysMax = 14;
+
+export const getListWorkloadResponseTotalMinutesMin = 0;
+
+export const getListWorkloadResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getListWorkloadResponseItemsItemMinutesByDayItemMin = 0;
+
+export const getListWorkloadResponseItemsItemMinutesByDayMin = 14;
+export const getListWorkloadResponseItemsItemMinutesByDayMax = 14;
+
+export const getListWorkloadResponseItemsItemTotalMinutesMin = 0;
+
+
+
+export const GetListWorkloadResponse = zod.object({
+  "listId": zod.uuid(),
+  "weekStart": zod.iso.date().describe('Monday of the first week.'),
+  "days": zod.array(zod.object({
+  "date": zod.iso.date().describe('Date in the returned reporting window.'),
+  "totalMinutes": zod.int().min(getListWorkloadResponseDaysItemOneTotalMinutesMin).describe('Sum across all visible rows for this date, independent of pagination.')
+}).and(zod.object({
+  "dailyCapacityMinutes": zod.union([zod.literal(0),zod.literal(360)]).describe('Per-person capacity of 360 minutes on weekdays and zero on weekends.')
+}))).min(getListWorkloadResponseDaysMin).max(getListWorkloadResponseDaysMax).describe('All fourteen calendar days in order, including weekends with zero capacity.'),
+  "totalMinutes": zod.int().min(getListWorkloadResponseTotalMinutesMin).describe('Allocated minutes in the visible window across all rows.'),
+  "items": zod.array(zod.object({
+  "assignee": zod.union([zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n'),zod.null()]).describe('Assignee account, or null for the unassigned bucket.'),
+  "taskKey": zod.string().regex(getListWorkloadResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "minutesByDay": zod.array(zod.int().min(getListWorkloadResponseItemsItemMinutesByDayItemMin)).min(getListWorkloadResponseItemsItemMinutesByDayMin).max(getListWorkloadResponseItemsItemMinutesByDayMax).describe('Whole minutes per date aligned with the days of the page.'),
+  "totalMinutes": zod.int().min(getListWorkloadResponseItemsItemTotalMinutesMin).describe('Sum of this row\'s allocations within the returned window.')
+}).describe('One task\'s allocation to an assignee or the unassigned bucket in this window.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('Workload for the filtered live list over two calendar weeks. Only noncancelled tasks\nwith a due date and a positive estimate contribute. Split each estimate over the\nweekdays of its full task interval then across its assignees. If only the due date is\nset it defines the interval. If the interval contains only weekend dates, use the\npreceding working day. Allocate all estimated minutes with stable remainder handling\nbefore selecting the requested date window and page.\n')
+
+
+/**
+ * Exports the filtered rows the caller can see in the list ("Exporter CSV"). It uses the
+ * same filters, stable order and root or subtask selection as `GET /v1/lists/{listId}/tasks`.
+ * It includes the entire logical result across API pages. An optional Feuille sort
+ * chooses a published presentation column or an active custom field ID in this list's
+ * space. Its direction defaults to ascending and the ordinary task sort breaks ties.
+ * A direction without a column or a custom field unavailable in this space yields
+ * `400 request.invalid`.
+ *
+ * The `people` column sorts on the first assignee's directory name using French collation.
+ * Rows without a name for that assignee sort last in either direction. The `client`
+ * column sorts on the first active text field named Client, matching the field name
+ * case-insensitively in definition order. Rows without a value sort last. If no such
+ * field is defined, the ordinary task sort applies. Use the field ID to sort another
+ * custom field explicitly.
+ *
+ * The UTF-8 file has semicolon-delimited, quoted fields with embedded quotes doubled.
+ * The headers are "Identifiant", "Nom", "Statut", "Priorité", "Assignés", "Échéance"
+ * and "Étiquettes", followed by active custom field names in definition order.
+ * The "Assignés" cell lists known directory names in assignment order, separated by a comma
+ * and a space. Status and priority use their French labels. Formula-like untrusted text, including
+ * custom header names, is rendered literally when opened in a spreadsheet. The producer
+ * checks the 10,000-row limit before sending any export data. The gateway serves the file
+ * with the producer's safe filename. An unavailable assignee directory yields `503`
+ * before any CSV bytes are sent. Scope `tasks:read` for a personal API token.
+ * @summary Download the visible list tasks as CSV
+ */
+export const ExportListTasksParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const exportListTasksQueryStatusMax = 10;
+
+export const exportListTasksQueryPriorityMax = 4;
+
+export const exportListTasksQueryAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const exportListTasksQueryAssigneeMax = 20;
+
+export const exportListTasksQueryLabelItemMax = 32;
+
+export const exportListTasksQueryLabelMax = 20;
+
+export const exportListTasksQuerySearchMax = 100;
+
+export const exportListTasksQueryLevelDefault = `roots`;
+export const exportListTasksQuerySortDefault = `manual`;
+export const exportListTasksQuerySheetSortColumnTwoRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+
+
+export const ExportListTasksQueryParams = zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(exportListTasksQueryStatusMax).optional().describe('Statuses to keep, separated by commas.'),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(exportListTasksQueryPriorityMax).optional().describe('Priorities to keep, separated by commas.'),
+  "assignee": zod.array(zod.string().regex(exportListTasksQueryAssigneeItemRegExp)).min(1).max(exportListTasksQueryAssigneeMax).optional().describe('Assignees to keep, separated by commas: account ids, `me` for the caller, `none` for the\ntasks nobody is assigned.\n'),
+  "label": zod.array(zod.string().min(1).max(exportListTasksQueryLabelItemMax)).min(1).max(exportListTasksQueryLabelMax).optional().describe('Labels to keep, separated by commas, without regard to case.'),
+  "search": zod.string().min(1).max(exportListTasksQuerySearchMax).optional().describe('Text to find, without regard to case or accents.'),
+  "dueFrom": zod.iso.date().optional().describe('Keep the tasks due on or after this date.'),
+  "dueTo": zod.iso.date().optional().describe('Keep the tasks due on or before this date.'),
+  "level": zod.enum(['roots', 'all']).default(exportListTasksQueryLevelDefault).describe('`roots` for the top-level tasks only, `all` for the subtasks too.'),
+  "milestone": zod.preprocess((value) => value === 'true' ? true : value === 'false' ? false : value, zod.boolean()).optional().describe('Keep only milestones when true, or only ordinary tasks when false; absent leaves both.'),
+  "sort": zod.enum(['manual', '-manual', 'dueDate', '-dueDate', 'priority', '-priority', 'name', '-name', 'createdAt', '-createdAt']).default(exportListTasksQuerySortDefault).describe('Order of the tasks; a leading `-` reverses it.'),
+  "sheetSortColumn": zod.union([zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.'),zod.uuid().regex(exportListTasksQuerySheetSortColumnTwoRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.')]).optional().describe('Feuille column key or an active custom field ID for this list\'s space.'),
+  "sheetSortDirection": zod.enum(['asc', 'desc']).optional().describe('Sheet export sort direction, ascending when omitted. Requires sheetSortColumn.')
+})
+
+export const ExportListTasksResponse = zod.string()
+
+
+/**
  * Returns a list with the counts of its top-level tasks, for its header ("Sprint du 3 – 17
  * nov. · 98 tâches · 25 % terminé") and the progress of a sprint. `today` is the date of the
  * caller, for the late tasks.

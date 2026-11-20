@@ -1,0 +1,228 @@
+# The caller-visible team dashboard served by the API gateway through task-service.
+openapi: 3.1.0
+info:
+  title: Cadenway team reports
+  version: 1.0.0
+  description: |
+    The team dashboard reports the readable work of the current organization. The gateway
+    relays one request to task-service. The caller supplies a calendar day and time zone,
+    and task-service returns its observation instant together with totals and drill-downs.
+
+    Authentication, scopes, problem format and rate limiting follow `openapi/public/tasks.yaml`.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Relays the routes to openapi/internal/task-service.yaml through its generated client.
+    - repository: cadenway-webapp
+      uses: Calls the routes through @cadenway/api-client for Tableaux de bord.
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging.
+tags:
+  - name: team-reports
+    description: Reports over the caller's visible team work.
+paths:
+  /v1/reports/team-dashboard:
+    get:
+      operationId: getTeamDashboard
+      summary: Read the dashboard of visible team work
+      description: |
+        Computes the dashboard in one read of the caller's visible live tasks in readable live lists.
+        Open statuses have category `open` or `active`. Late tasks are open and due before `today`.
+        The blocked counter uses exactly `blocked`, and the status distribution covers every visible
+        live task. The overdue preview keeps the first ten tasks by due date and key. The workload
+        counts each open task against each of its current visible assignees, with a six-task threshold.
+
+        The selected 8 or 12 calendar weeks start on Monday in `timeZone` and include the week of `today`.
+        Each bucket counts a visible live task once if a durable activity entry records its transition to
+        `done` during the covered week. A task currently reopened still counts for its recorded completion.
+        Every bucket stops at `observedAt` at the latest. The current week also stops at the end of
+        `today` in `timeZone`. The total completed count is the sum of the week counts. Historical
+        occurrences of tasks that the caller cannot currently read are absent from every counter
+        and drill-down.
+      tags: [team-reports]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/Today'
+        - $ref: '#/components/parameters/TeamDashboardTimeZone'
+        - $ref: '#/components/parameters/TeamDashboardWeeks'
+      responses:
+        '200':
+          description: Dashboard counts, completion buckets and overdue preview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamDashboard'
+              examples:
+                atelierNord:
+                  $ref: '#/components/examples/AtelierNordDashboard'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: Opaque session held by the caller's browser.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: Personal API token with the operation's required task scope.
+  parameters:
+    TeamDashboardTimeZone:
+      name: timeZone
+      in: query
+      required: true
+      description: IANA time-zone identifier used to bucket completion activity.
+      schema:
+        $ref: '../../components/dashboard.yaml#/components/schemas/TeamDashboardTimeZone'
+    TeamDashboardWeeks:
+      name: weeks
+      in: query
+      description: Number of weeks including the week of today.
+      schema:
+        $ref: '../../components/dashboard.yaml#/components/schemas/TeamDashboardWeeks'
+        default: 8
+    Today:
+      $ref: '../../components/task.yaml#/components/parameters/Today'
+  responses:
+    BadRequest:
+      description: |
+        `request.invalid`: the request does not match the contract. `details.issues` identifies
+        invalid parameters or body fields.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Requête invalide.'
+            status: 400
+            code: request.invalid
+    Unauthenticated:
+      description: |
+        `auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Connectez-vous pour continuer.'
+            status: 401
+            code: auth.session-required
+    TasksReadForbidden:
+      description: |
+        - `auth.scope-missing`: the personal token lacks `tasks:read`.
+        - `organization.not-selected`: the session has no current organization.
+        - `organization.mfa-required`: the organization requires two-step verification for the caller.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ce jeton d’API ne permet pas cette action.'
+            status: 403
+            code: auth.scope-missing
+            details:
+              requiredScopes: [tasks:read]
+    OrganizationNotFound:
+      description: |
+        `organization.not-found`: task-service does not recognize a current membership for the caller.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Organisation introuvable.'
+            status: 404
+            code: organization.not-found
+    RateLimited:
+      description: |
+        `rate-limit.exceeded`: the request exceeds the gateway's limit for the caller.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Trop de demandes. Réessayez plus tard.'
+            status: 429
+            code: rate-limit.exceeded
+    Unavailable:
+      description: |
+        task-service cannot answer. `details.service` identifies it. Possible codes are
+        `upstream.unavailable`, `upstream.unreachable`, `upstream.timeout`, `upstream.circuit-open`,
+        `upstream.failed`, `upstream.unauthorized` and `upstream.deadline-exceeded`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Service Unavailable'
+            status: 503
+            code: upstream.unavailable
+            details:
+              service: task-service
+  schemas:
+    TeamDashboard:
+      $ref: '../../components/dashboard.yaml#/components/schemas/TeamDashboard'
+  examples:
+    AtelierNordDashboard:
+      summary: Atelier Nord dashboard
+      value:
+        today: '2026-11-08'
+        timeZone: Europe/Paris
+        weeks: 8
+        observedAt: '2026-11-08T11:00:00Z'
+        openCount: 9
+        lateCount: 0
+        blockedCount: 2
+        completedCount: 49
+        byStatus:
+          - { status: todo, count: 3 }
+          - { status: progress, count: 4 }
+          - { status: blocked, count: 2 }
+          - { status: done, count: 4 }
+        overdueTasks: []
+        assigneeThreshold: 6
+        assignees:
+          - { userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30, openCount: 5 }
+        completions:
+          - { startsOn: '2026-09-14', completedCount: 4 }
+          - { startsOn: '2026-09-21', completedCount: 6 }
+          - { startsOn: '2026-09-28', completedCount: 8 }
+          - { startsOn: '2026-10-05', completedCount: 5 }
+          - { startsOn: '2026-10-12', completedCount: 8 }
+          - { startsOn: '2026-10-19', completedCount: 6 }
+          - { startsOn: '2026-10-26', completedCount: 9 }
+          - { startsOn: '2026-11-02', completedCount: 3 }

@@ -23,7 +23,10 @@ import type {
 import type {
   ActivityPage,
   CustomFieldDefinitionPage,
+  ExportListTasksParams,
   GetListCountsParams,
+  GetListWorkloadParams,
+  GetSprintReportParams,
   ListCreation,
   ListDuplicate,
   ListDuplication,
@@ -33,11 +36,13 @@ import type {
   ListPatch,
   ListSavedViewsParams,
   ListSummary,
+  ListWorkloadPage,
   SavedView,
   SavedViewCreation,
   SavedViewDuplicate,
   SavedViewPage,
   SavedViewPatch,
+  SprintReport,
   TaskList,
   TaskListPage
 } from '../model';
@@ -457,6 +462,190 @@ export class ListsService {
         observe: 'body',
       }
     );
+  }
+/**
+ * Reads a sprint the caller can see ("Rapport du Sprint 14"). Each contribution requires
+ * current task visibility as well as access to the sprint. Only ordinary root tasks that
+ * were in the sprint and eligible at the evaluated instant contribute. Milestones and
+ * cancelled, archived or trashed tasks are excluded at that instant. A purged task leaves
+ * the report history.
+ * The designated numeric custom field supplies points, with zero as a valid value. In its
+ * absence, an estimate of up to 60, 180, 360 or 600 minutes is worth 1, 2, 3 or 5 points
+ * respectively. Larger estimates are worth 8 points and an unset estimate is worth 1.
+ *
+ * Opening commitment uses the sprint's first local midnight. Delivered and remaining
+ * points and task counts use the earliest of the server observation, the end of the
+ * requested local date and sprint close. Sprint close is the end of its last local day.
+ * Later scope changes can change that total. Historical days use their own end-of-day
+ * cutoff. The current partial day uses the report observation and future dates have no
+ * actual value.
+ *
+ * The burndown pages dates from the first to the last sprint day, oldest first. The cursor
+ * binds the sprint, caller, requested date, time zone and server observation instant.
+ * A missing baseline or gap yields a null value for any metric it makes unavailable.
+ * Ideal points fall evenly from the known opening commitment to zero at close.
+ * Projected values require an open sprint and a positive burn rate established by at
+ * least two covered end-of-day observations. Velocity contains up to the four most recent
+ * readable, completed sprints of the same space whose closing date precedes this sprint's
+ * start. It orders them by closing date and ID, oldest first, with unavailable historical
+ * values left null. Scope `tasks:read` for a personal API token.
+ * @summary Read the points, burndown and velocity of a sprint
+ */
+ getSprintReport<TData = SprintReport>(listId: string,
+    params: GetSprintReportParams, options?: HttpClientBodyOptions): Observable<TData>;
+ getSprintReport<TData = SprintReport>(listId: string,
+    params: GetSprintReportParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getSprintReport<TData = SprintReport>(listId: string,
+    params: GetSprintReportParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getSprintReport<TData = SprintReport>(
+    listId: string,
+    params: GetSprintReportParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/sprint-report`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/sprint-report`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/lists/${listId}/sprint-report`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * Reads the filtered live tasks the caller can see in a readable list ("Charge"). Tasks
+ * require a due date and a positive estimate. Cancelled, archived and trashed tasks are
+ * excluded. With no start date the interval begins on the due date. Allocate each estimate
+ * across all Monday–Friday dates in its inclusive interval, then across its assignees for
+ * each day.
+ * A weekend-only interval uses the preceding working day. A task with no assignee uses
+ * the separate unassigned bucket. Whole-minute remainders go to earlier dates and then
+ * lower account IDs in ascending order. That allocation preserves the full estimate.
+ *
+ * Return only the 14 days starting at `weekStart` after allocating the whole interval.
+ * Include rows with positive allocated minutes in that window. Capacity is 360 minutes
+ * per person per weekday and zero on weekends. Totals cover every matching row, across
+ * pages. Each page orders rows by assignee account ID (unassigned last) and task key.
+ * The opaque cursor binds the caller, list, week and filters. Scope `tasks:read` for a
+ * personal API token. Reassignment follows the existing task assignment routes.
+ * @summary Read scheduled work for two calendar weeks
+ */
+ getListWorkload<TData = ListWorkloadPage>(listId: string,
+    params: GetListWorkloadParams, options?: HttpClientBodyOptions): Observable<TData>;
+ getListWorkload<TData = ListWorkloadPage>(listId: string,
+    params: GetListWorkloadParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getListWorkload<TData = ListWorkloadPage>(listId: string,
+    params: GetListWorkloadParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getListWorkload<TData = ListWorkloadPage>(
+    listId: string,
+    params: GetListWorkloadParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/workload`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/workload`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/lists/${listId}/workload`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * Exports the filtered rows the caller can see in the list ("Exporter CSV"). It uses the
+ * same filters, stable order and root or subtask selection as `GET /v1/lists/{listId}/tasks`.
+ * It includes the entire logical result across API pages. An optional Feuille sort
+ * chooses a published presentation column or an active custom field ID in this list's
+ * space. Its direction defaults to ascending and the ordinary task sort breaks ties.
+ * A direction without a column or a custom field unavailable in this space yields
+ * `400 request.invalid`.
+ *
+ * The `people` column sorts on the first assignee's directory name using French collation.
+ * Rows without a name for that assignee sort last in either direction. The `client`
+ * column sorts on the first active text field named Client, matching the field name
+ * case-insensitively in definition order. Rows without a value sort last. If no such
+ * field is defined, the ordinary task sort applies. Use the field ID to sort another
+ * custom field explicitly.
+ *
+ * The UTF-8 file has semicolon-delimited, quoted fields with embedded quotes doubled.
+ * The headers are "Identifiant", "Nom", "Statut", "Priorité", "Assignés", "Échéance"
+ * and "Étiquettes", followed by active custom field names in definition order.
+ * The "Assignés" cell lists known directory names in assignment order, separated by a comma
+ * and a space. Status and priority use their French labels. Formula-like untrusted text, including
+ * custom header names, is rendered literally when opened in a spreadsheet. The producer
+ * checks the 10,000-row limit before sending any export data. The gateway serves the file
+ * with the producer's safe filename. An unavailable assignee directory yields `503`
+ * before any CSV bytes are sent. Scope `tasks:read` for a personal API token.
+ * @summary Download the visible list tasks as CSV
+ */
+ exportListTasks(listId: string,
+    params?: ExportListTasksParams, options?: HttpClientBodyOptions): Observable<string>;
+ exportListTasks(listId: string,
+    params?: ExportListTasksParams, options?: HttpClientEventOptions): Observable<HttpEvent<string>>;
+ exportListTasks(listId: string,
+    params?: ExportListTasksParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<string>>;
+  exportListTasks(
+    listId: string,
+    params?: ExportListTasksParams, options?: HttpClientObserveOptions): Observable<string | HttpEvent<string> | AngularHttpResponse<string>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get(
+      `/v1/lists/${listId}/tasks/export`,{
+        responseType: 'text',
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    ) as Observable<HttpEvent<string>>;
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get(
+      `/v1/lists/${listId}/tasks/export`,{
+        responseType: 'text',
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    ) as Observable<AngularHttpResponse<string>>;
+    }
+
+    return this.http.get(
+      `/v1/lists/${listId}/tasks/export`,{
+        responseType: 'text',
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    ) as Observable<string>;
   }
 /**
  * Returns a list with the counts of its top-level tasks, for its header ("Sprint du 3 – 17
@@ -903,6 +1092,9 @@ export type GetListClientResult = NonNullable<TaskList>
 export type UpdateListClientResult = NonNullable<TaskList>
 export type DeleteListClientResult = NonNullable<void>
 export type DuplicateListClientResult = NonNullable<ListDuplication>
+export type GetSprintReportClientResult = NonNullable<SprintReport>
+export type GetListWorkloadClientResult = NonNullable<ListWorkloadPage>
+export type ExportListTasksClientResult = NonNullable<string>
 export type GetListCountsClientResult = NonNullable<ListSummary>
 export type ListListActivityClientResult = NonNullable<ActivityPage>
 export type ListSavedViewsClientResult = NonNullable<SavedViewPage>

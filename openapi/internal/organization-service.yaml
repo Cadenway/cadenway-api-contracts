@@ -1,14 +1,14 @@
-# Internal routes of organization-service, called by cadenway-api-gateway: the organizations of
-# openapi/public/organizations.yaml (but the choice of the current organization, which belongs to
-# identity-service), and the members and invitations of openapi/public/members.yaml.
+# Internal routes of organization-service, called by the API gateway for organizations,
+# members, invitations and the member name lookup for list CSV export.
 openapi: 3.1.0
 info:
   title: organization-service internal routes
   version: 1.0.0
   description: |
     What organization-service exposes to the API gateway for organizations, members and
-    invitations. The service has no public route: the gateway serves
-    `openapi/public/organizations.yaml` and `openapi/public/members.yaml` and calls these routes.
+    invitations, and the member name lookup it uses for CSV export. The service has no
+    public route: the gateway serves `openapi/public/organizations.yaml` and
+    `openapi/public/members.yaml` and calls the corresponding internal routes.
 
     | Public route | Internal call |
     | --- | --- |
@@ -81,7 +81,9 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Calls every route through its generated client, for openapi/public/organizations.yaml and openapi/public/members.yaml.
+      uses: >-
+        Relays the organization and member routes exposed in openapi/public/organizations.yaml
+        and openapi/public/members.yaml, and looks up assignee names for list CSV export.
 servers:
   - url: http://organization-service:3011
     description: organization-service on the internal network of each environment (`ORGANIZATION_SERVICE_URL`).
@@ -334,6 +336,50 @@ paths:
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
           $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/member-names/lookup:
+    post:
+      operationId: lookupMemberNamesInternal
+      summary: Resolve member names for list CSV export
+      description: |
+        Returns the directory names of requested accounts that currently belong to the
+        organization of the token. All current members, including guests, can be the acting user.
+        Read the actor's membership and the requested names in one tenant snapshot. Omit accounts
+        outside the organization, departed members and accounts without a directory name.
+        Case-equivalent UUIDs and repeated identifiers resolve to at most one result per account.
+        Result order is unspecified. The gateway supplies only assignees from the result of
+        `GET /internal/v1/lists/{listId}/tasks/export` for the same actor and organization.
+
+        Internal token: issuer `api-gateway` only, actor `user` and organization required.
+      tags: [members]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberNameLookup'
+            example:
+              userIds: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30, 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+      responses:
+        '200':
+          description: The resolved account identifiers and names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberNameLookupResult'
+              example:
+                items:
+                  - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    name: Camille Martin
+                  - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    name: Inès Robert
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
   /internal/v1/members/{memberId}:
@@ -1359,6 +1405,37 @@ components:
             $ref: '#/components/schemas/MyOrganization'
         nextCursor:
           $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    MemberNameLookup:
+      type: object
+      required: [userIds]
+      additionalProperties: false
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items:
+            type: string
+            format: uuid
+    MemberNameLookupResult:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          maxItems: 5000
+          items:
+            type: object
+            required: [userId, name]
+            additionalProperties: false
+            properties:
+              userId:
+                type: string
+                format: uuid
+              name:
+                type: string
+                description: Full name from the organization-service user directory.
     Member:
       type: object
       required: [id, userId, name, email, role, joinedAt, version]

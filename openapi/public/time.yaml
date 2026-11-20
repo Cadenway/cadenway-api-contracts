@@ -1,10 +1,10 @@
-# Task time tracking is served by the API gateway and stored by task-service.
+# Task time tracking and list timesheets are served by the API gateway and stored by task-service.
 openapi: 3.1.0
 info:
   title: Cadenway task time
   version: 1.0.0
   description: |
-    Work logs and status durations of the current organization's tasks. Task keys and
+    Work logs, list timesheets and status durations of the current organization's tasks. Task keys and
     permissions follow `openapi/public/tasks.yaml`. The task-service routes in
     `openapi/internal/task-service.yaml` own the data and enforce list access.
 
@@ -22,7 +22,7 @@ info:
     - repository: cadenway-api-gateway
       uses: Serves these routes, checks task scopes and relays them to task-service.
     - repository: cadenway-webapp
-      uses: Reads the task detail time and status panels and records manual or stopped stopwatch entries through @cadenway/api-client.
+      uses: Reads list timesheets and the task detail time and status panels and records manual or stopped stopwatch entries through @cadenway/api-client.
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -30,6 +30,77 @@ tags:
   - name: task-time
     description: Recorded work and elapsed time in task statuses.
 paths:
+  /v1/lists/{listId}/timesheet:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: getListTimesheet
+      summary: Read recorded work for one calendar week of a list
+      description: |
+        Summarizes the same time entries as task detail for currently visible live tasks in a
+        readable list ("Feuille de temps"). The window begins on `weekStart` and includes
+        Monday through Sunday, according to each entry's stored work date.
+        Entries follow their task across a move and are omitted while the task is archived
+        or trashed. Removing an entry removes its minutes from the next read.
+
+        Each flat row summarizes one author and task by date. A former member's entries retain
+        their author account reference and use the existing user display fallback.
+        Totals cover every matching row, across pages. Rows are ordered by author account ID
+        and task key. The opaque cursor binds the caller, list and requested week. Scope
+        `tasks:read` for a personal API token.
+      tags: [task-time]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/reporting.yaml#/components/parameters/ReportWeekStart'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Weekly totals and one page of task and author rows.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/reporting.yaml#/components/schemas/ListTimesheetPage'
+              example:
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                weekStart: '2026-11-02'
+                days:
+                  - { date: '2026-11-02', totalMinutes: 0 }
+                  - { date: '2026-11-03', totalMinutes: 0 }
+                  - { date: '2026-11-04', totalMinutes: 0 }
+                  - { date: '2026-11-05', totalMinutes: 0 }
+                  - { date: '2026-11-06', totalMinutes: 0 }
+                  - { date: '2026-11-07', totalMinutes: 245 }
+                  - { date: '2026-11-08', totalMinutes: 45 }
+                totalMinutes: 290
+                items:
+                  - author: { userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+                    taskKey: CAD-482
+                    name: Refondre l’écran de connexion SSO
+                    status: progress
+                    minutesByDay: [0, 0, 0, 0, 0, 150, 45]
+                    totalMinutes: 195
+                  - author: { userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b31 }
+                    taskKey: CAD-482
+                    name: Refondre l’écran de connexion SSO
+                    status: progress
+                    minutesByDay: [0, 0, 0, 0, 0, 95, 0]
+                    totalMinutes: 95
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TimeReadForbidden'
+        '404':
+          $ref: '#/components/responses/TimesheetListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /v1/tasks/{taskKey}/time-entries:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
@@ -307,6 +378,15 @@ components:
       scheme: bearer
       description: Personal API token with the operation's required task scope.
   parameters:
+    ListId:
+      name: listId
+      in: path
+      required: true
+      description: ID of the list.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12]
     TaskKey:
       name: taskKey
       in: path
@@ -325,6 +405,19 @@ components:
         maxLength: 255
         examples: [5d0c6f1e-2a3b-4c5d-8e9f-0a1b2c3d4e5f]
   responses:
+    TimesheetListNotFound:
+      description: |
+        `list.not-found` for an unknown, unreadable or deleted list, or
+        `organization.not-found` for a missing membership.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Liste introuvable.
+            status: 404
+            code: list.not-found
     BadRequest:
       description: '`request.invalid`: the request is invalid. `details.issues` identifies the invalid parameters or fields.'
       content:

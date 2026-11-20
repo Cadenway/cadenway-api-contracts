@@ -1,0 +1,131 @@
+# The team dashboard projection is shared by the gateway and task-service.
+openapi: 3.1.0
+info:
+  title: Cadenway shared team dashboard components
+  version: 1.0.0
+  description: The caller-visible task distribution, overdue work and completion history.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    TeamDashboardTimeZone:
+      type: string
+      minLength: 1
+      description: IANA time zone used to assign completion instants to local calendar days.
+      examples: [Europe/Paris]
+    TeamDashboardWeeks:
+      type: integer
+      enum: [8, 12]
+      description: Number of calendar weeks, including the observation week.
+    TeamDashboardStatusCount:
+      type: object
+      required: [status, count]
+      properties:
+        status: { $ref: './task.yaml#/components/schemas/StatusKey' }
+        count: { type: integer, minimum: 1 }
+    TeamDashboardAssigneeCount:
+      type: object
+      required: [userId, openCount]
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: Account of an assignee present in the visible task population.
+        openCount:
+          type: integer
+          minimum: 0
+          description: Open tasks assigned to this user, counted once per task.
+    TeamDashboardCompletionWeek:
+      type: object
+      required: [startsOn, completedCount]
+      properties:
+        startsOn:
+          type: string
+          format: date
+          description: Monday of this week in the requested time zone.
+          examples: ['2026-11-02']
+        completedCount:
+          type: integer
+          minimum: 0
+          description: |
+            Eligible tasks that transitioned to `done` during this week, counted once
+            per task even if a task was reopened and completed again in the same week.
+    TeamDashboard:
+      type: object
+      description: One team dashboard restricted to the caller's visible active task population.
+      required:
+        [
+          today,
+          timeZone,
+          weeks,
+          observedAt,
+          openCount,
+          lateCount,
+          blockedCount,
+          completedCount,
+          byStatus,
+          overdueTasks,
+          assigneeThreshold,
+          assignees,
+          completions,
+        ]
+      properties:
+        today:
+          type: string
+          format: date
+          description: Calendar observation date supplied by the caller in the requested time zone.
+          examples: ['2026-11-06']
+        timeZone: { $ref: '#/components/schemas/TeamDashboardTimeZone' }
+        weeks:
+          $ref: '#/components/schemas/TeamDashboardWeeks'
+        observedAt:
+          type: string
+          format: date-time
+          description: Server observation instant in UTC.
+        openCount:
+          type: integer
+          minimum: 0
+          description: Visible tasks whose current status category is not closed.
+        lateCount:
+          type: integer
+          minimum: 0
+          description: Visible open tasks whose due date is earlier than today.
+        blockedCount:
+          type: integer
+          minimum: 0
+          description: Visible tasks whose current status key is exactly `blocked`.
+        completedCount:
+          type: integer
+          minimum: 0
+          description: Sum of the completion counts for the returned weeks.
+        byStatus:
+          type: array
+          description: One row per represented status, in canonical status order.
+          items: { $ref: '#/components/schemas/TeamDashboardStatusCount' }
+        overdueTasks:
+          type: array
+          maxItems: 10
+          description: First ten overdue tasks, ordered by due date and then by task key.
+          items: { $ref: './task.yaml#/components/schemas/TaskSummary' }
+        assigneeThreshold:
+          type: integer
+          minimum: 1
+          description: Open task count used as the workload reference, six tasks in this delivery.
+          examples: [6]
+        assignees:
+          type: array
+          description: Open task counts for assignees in the visible task population.
+          items: { $ref: '#/components/schemas/TeamDashboardAssigneeCount' }
+        completions:
+          type: array
+          minItems: 8
+          maxItems: 12
+          description: |
+            Exactly the selected number of consecutive weeks in chronological order,
+            including empty weeks. The observation week ends on the caller's date and
+            counts only completion instants already observed by the server.
+          items: { $ref: '#/components/schemas/TeamDashboardCompletionWeek' }

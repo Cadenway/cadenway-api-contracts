@@ -864,6 +864,112 @@ export interface Problem {
   details?: ProblemDetails;
 }
 
+/**
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type TimeEntryId = string;
+
+/**
+ * Whole minutes recorded in this entry.
+ * @minimum 1
+ * @maximum 1440
+ */
+export type WorkLogMinutes = number;
+
+/**
+ * Work date in the caller's time zone from 0001-01-01 to 9999-12-31, independent of the UTC creation instant.
+ * @pattern ^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$
+ */
+export type TaskWorkDate = string;
+
+export interface TaskTimeEntryCreation {
+  minutes: WorkLogMinutes;
+  workDate: TaskWorkDate;
+  /**
+     * Plain text. Surrounding whitespace is removed. An empty note is stored as null.
+     * @maxLength 500
+     */
+  note?: string;
+}
+
+export interface TaskTimeEntry {
+  id: TimeEntryId;
+  taskKey: TaskKey;
+  /** Stable ID of the verified author, including after the author leaves the organization. */
+  authorUserId: string;
+  minutes: WorkLogMinutes;
+  workDate: TaskWorkDate;
+  /**
+     * The normalized note, or null when absent.
+     * @nullable
+     */
+  note: string | null;
+  /** Server creation instant in UTC. */
+  createdAt: string;
+}
+
+export interface TaskTimeEntryPage {
+  items: TaskTimeEntry[];
+  nextCursor: NextCursor | null;
+  /**
+     * Number of entries on the task before pagination.
+     * @minimum 0
+     */
+  total: number;
+  /**
+     * Sum over all entries on the task before pagination. Subtasks are counted separately.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+/**
+ * "Estimation", in whole minutes ("8 h" is `480`); `null` for none.
+ * @minimum 1
+ * @maximum 60000
+ * @nullable
+ */
+export type EstimateMinutes = number | null;
+
+export interface TaskTimeSummary {
+  /**
+     * Sum over all entries on the task. Subtasks are counted separately.
+     * @minimum 0
+     */
+  totalMinutes: number;
+  estimateMinutes: EstimateMinutes | null;
+}
+
+export interface TaskStatusDuration {
+  status: StatusKey;
+  /**
+     * Sum of elapsed milliseconds across the covered visits to this status.
+     * @minimum 0
+     */
+  durationMilliseconds: number;
+  /** True only for the current status when its category is open or active. */
+  active: boolean;
+}
+
+export interface TaskStatusDurationSummary {
+  /** One server observation instant in UTC used for all spans in this summary. */
+  observedAt: string;
+  /** Earliest reliable boundary of the covered suffix, or observedAt with no earlier boundary. */
+  coverageStartedAt: string;
+  /** True when the initial status and all transitions are known since task creation. */
+  complete: boolean;
+  /**
+     * One row per covered status, in order of first appearance in the covered suffix.
+     * The observed current status has a row even when its measured duration is zero.
+     */
+  durations: TaskStatusDuration[];
+}
+
+export interface TaskStatusDurationResult {
+  /** Null for a milestone. */
+  summary: TaskStatusDurationSummary | null;
+}
+
 export interface TaskTemplateCreation {
   sourceTaskKey: TaskKey;
   name?: SavedItemName;
@@ -1714,14 +1820,6 @@ export type TaskDescription = string | null;
 export type LabelName = string;
 
 /**
- * "Estimation", in whole minutes ("8 h" is `480`); `null` for none.
- * @minimum 1
- * @maximum 60000
- * @nullable
- */
-export type EstimateMinutes = number | null;
-
-/**
  * One item of a checklist ("Une checklist sert aux petites étapes sans statut ni assigné.").
  */
 export interface ChecklistItem {
@@ -2333,6 +2431,263 @@ export interface AccessRequestApproval {
 }
 
 /**
+ * Nonnegative points before presentation rounding.
+ * @minimum 0
+ */
+export type ReportPoints = number;
+
+/**
+ * Nonnegative points when the observation is available, or null when it is unavailable.
+ * @minimum 0
+ * @nullable
+ */
+export type ReportAvailablePoints = number | null;
+
+/**
+ * A task included in the observed sprint scope that is still readable by the caller.
+ */
+export interface SprintReportTask {
+  taskKey: TaskKey;
+  name: string;
+  points: ReportPoints;
+  status: StatusKey;
+}
+
+export interface SprintReportBreakdown {
+  points: ReportPoints;
+  /**
+     * Total tasks in this part of the caller-visible scope.
+     * @minimum 0
+     */
+  taskCount: number;
+  /** Up to the first six tasks in task-key order for the drill-down preview. */
+  items: SprintReportTask[];
+}
+
+export interface SprintBurndownDay {
+  /** Calendar date in the requested time zone. */
+  date: string;
+  /**
+     * Actual points remaining at the end of a covered day, or at observedAt for a day
+     * still in progress at that cutoff. Null for an uncovered day or a day after the cutoff.
+     */
+  actualRemainingPoints: (ReportAvailablePoints | null);
+  /** Ideal remaining points from the opening commitment, or null if it is unavailable. */
+  idealRemainingPoints: (ReportAvailablePoints | null);
+  /** Forecast points remaining for this date, or null without a supported forecast. */
+  projectedRemainingPoints: (ReportAvailablePoints | null);
+}
+
+/**
+ * Scope and observed points of a real, readable, earlier sprint in the same space.
+ */
+export interface SprintVelocityPoint {
+  listId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  /** Opening commitment for this prior sprint, or null without coverage. */
+  openingPoints: (ReportAvailablePoints | null);
+  /** Points delivered at the previous sprint's close, or null without coverage. */
+  deliveredPoints: (ReportAvailablePoints | null);
+}
+
+/**
+ * Visible ordinary root tasks contribute only while eligible for the evaluated observation.
+ * The report also checks current task visibility and excludes purged tasks entirely.
+ * Archived, trashed, cancelled and milestone tasks are excluded at observations when they
+ * are ineligible. Scope changes can make delivered and remaining points differ in sum
+ * from the opening commitment.
+ * The designated numeric points field contributes its stored value, including zero.
+ * Otherwise estimate bands up to 60, 180, 360 and 600 minutes yield 1, 2, 3 and 5 points.
+ * Estimates above 600 yield 8 points. An unset estimate yields one point.
+ */
+export interface SprintReport {
+  listId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  /**
+     * Observation cutoff in UTC. It is the earliest of server time, the end of the
+     * requested local date in timeZone, and sprint close.
+     */
+  observedAt: string;
+  /**
+     * Start of reliable history in UTC, or null if it is unavailable.
+     * @nullable
+     */
+  coverageStartedAt: string | null;
+  /** Commitment at sprint opening, or null if the opening cannot be reconstructed. */
+  openingPoints: (ReportAvailablePoints | null);
+  /** Done tasks at the observation or sprint close, or null if that scope is unavailable. */
+  delivered: SprintReportBreakdown | null;
+  /** Remaining tasks at that same observation, or null if that scope is unavailable. */
+  remaining: SprintReportBreakdown | null;
+  /** Forecast at the sprint end, or null until enough covered observations establish a rate. */
+  projectedRemainingPoints: (ReportAvailablePoints | null);
+  /** Days in chronological order, including uncovered dates with null actuals. */
+  items: SprintBurndownDay[];
+  nextCursor: NextCursor | null;
+  /**
+     * Up to four earlier readable completed sprints in the same space, ordered chronologically.
+     * @maxItems 4
+     */
+  velocity: SprintVelocityPoint[];
+}
+
+export interface ReportingDayMinutes {
+  /** Date in the returned reporting window. */
+  date: string;
+  /**
+     * Sum across all visible rows for this date, independent of pagination.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+/**
+ * Per-person capacity of 360 minutes on weekdays and zero on weekends.
+ */
+export type ListWorkloadDayDailyCapacityMinutes = typeof ListWorkloadDayDailyCapacityMinutes[keyof typeof ListWorkloadDayDailyCapacityMinutes];
+
+
+export const ListWorkloadDayDailyCapacityMinutes = {
+  NUMBER_0: 0,
+  NUMBER_360: 360,
+} as const;
+
+export type ListWorkloadDay = ReportingDayMinutes & {
+  /** Per-person capacity of 360 minutes on weekdays and zero on weekends. */
+  dailyCapacityMinutes: ListWorkloadDayDailyCapacityMinutes;
+};
+
+/**
+ * One task's allocation to an assignee or the unassigned bucket in this window.
+ */
+export interface ListWorkloadRow {
+  /** Assignee account, or null for the unassigned bucket. */
+  assignee: UserRef | null;
+  taskKey: TaskKey;
+  name: string;
+  status: StatusKey;
+  /**
+     * Whole minutes per date aligned with the days of the page.
+     * @minItems 14
+     * @maxItems 14
+     * @items.minimum 0
+     */
+  minutesByDay: number[];
+  /**
+     * Sum of this row's allocations within the returned window.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+/**
+ * Workload for the filtered live list over two calendar weeks. Only noncancelled tasks
+ * with a due date and a positive estimate contribute. Split each estimate over the
+ * weekdays of its full task interval then across its assignees. If only the due date is
+ * set it defines the interval. If the interval contains only weekend dates, use the
+ * preceding working day. Allocate all estimated minutes with stable remainder handling
+ * before selecting the requested date window and page.
+ */
+export interface ListWorkloadPage {
+  listId: string;
+  /** Monday of the first week. */
+  weekStart: string;
+  /**
+     * All fourteen calendar days in order, including weekends with zero capacity.
+     * @minItems 14
+     * @maxItems 14
+     */
+  days: ListWorkloadDay[];
+  /**
+     * Allocated minutes in the visible window across all rows.
+     * @minimum 0
+     */
+  totalMinutes: number;
+  items: ListWorkloadRow[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * One author's recorded minutes by work date for one currently visible live task.
+ */
+export interface ListTimesheetRow {
+  /** Stable account reference, including former members with the usual display fallback. */
+  author: UserRef;
+  taskKey: TaskKey;
+  name: string;
+  status: StatusKey;
+  /**
+     * Whole minutes aligned with the seven dates of the timesheet.
+     * @minItems 7
+     * @maxItems 7
+     * @items.minimum 0
+     */
+  minutesByDay: number[];
+  /**
+     * Sum of the author's recorded minutes for this task in the week.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+/**
+ * One Monday-to-Sunday timesheet over the task time entries for the selected list.
+ * Entries follow their task when it moves. Archived and trashed tasks contribute
+ * no entries while in those states. The reported day is the stored work date.
+ */
+export interface ListTimesheetPage {
+  listId: string;
+  /** Monday of the reported week. */
+  weekStart: string;
+  /**
+     * All seven calendar days in order, with totals across authors and tasks.
+     * @minItems 7
+     * @maxItems 7
+     */
+  days: ReportingDayMinutes[];
+  /**
+     * Recorded minutes across all visible tasks and authors in the week.
+     * @minimum 0
+     */
+  totalMinutes: number;
+  /** Rows ordered by author account and task key, including across page boundaries. */
+  items: ListTimesheetRow[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * Existing sheet column or stable ID of a custom field.
+ */
+export type SheetExportColumn = SavedViewSheetColumn | CustomFieldId;
+
+/**
+ * Order of the selected sheet column in the CSV export.
+ */
+export type SheetExportDirection = typeof SheetExportDirection[keyof typeof SheetExportDirection];
+
+
+export const SheetExportDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+/**
+ * `list.not-found` when the list is not a readable sprint. `organization.not-found`
+ * follows `ListNotFound`.
+ */
+export type SprintReportNotFoundResponse = Problem;
+
+/**
+ * `list.export-row-limit-reached` when more than 10,000 readable rows match.
+ * `details.maxRows` is the export limit and the response contains no CSV bytes.
+ */
+export type ExportRowLimitReachedResponse = Problem;
+
+/**
  * `saved-view.not-found`, `list.not-found`, `organization.not-found`.
  */
 export type SavedViewNotFoundResponse = Problem;
@@ -2436,11 +2791,15 @@ export type VersionMismatchResponse = Problem;
 export type RateLimitedResponse = Problem;
 
 /**
- * task-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+ * An upstream service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
  * `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
  * `upstream.deadline-exceeded`, with `details.service`.
  */
 export type UnavailableResponse = Problem;
+
+export type SheetExportColumnParameter = SheetExportColumn;
+
+export type SheetExportDirectionParameter = SheetExportDirection;
 
 /**
  * `"<version>"` the change was made from, as the `ETag` gave it.
@@ -2492,6 +2851,162 @@ export type ListListsParams = {
    */
   limit?: number;
 };
+
+export type GetSprintReportParams = {
+  /** Requested local date for the report observation, interpreted in timeZone. */
+  today: TaskWorkDate;
+  /**
+   * IANA time zone used for the report's calendar-day boundaries.
+   * @minLength 1
+   */
+  timeZone: string;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type GetListWorkloadParams = {
+  /** Monday of the requested reporting window, as a calendar date. */
+  weekStart: TaskWorkDate;
+  /**
+   * Statuses to keep, separated by commas.
+   * @minItems 1
+   * @maxItems 10
+   */
+  status?: StatusKey[];
+  /**
+   * Priorities to keep, separated by commas.
+   * @minItems 1
+   * @maxItems 4
+   */
+  priority?: PriorityKey[];
+  /**
+   * Assignees to keep, separated by commas: account ids, `me` for the caller, `none` for the
+   * tasks nobody is assigned.
+   * @minItems 1
+   * @maxItems 20
+   * @items.pattern ^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+   */
+  assignee?: string[];
+  /**
+   * Labels to keep, separated by commas, without regard to case.
+   * @minItems 1
+   * @maxItems 20
+   * @items.minLength 1
+   * @items.maxLength 32
+   */
+  label?: string[];
+  /**
+   * Text to find, without regard to case or accents.
+   * @minLength 1
+   * @maxLength 100
+   */
+  search?: string;
+  /** Keep the tasks due on or after this date. */
+  dueFrom?: string;
+  /** Keep the tasks due on or before this date. */
+  dueTo?: string;
+  /** `roots` for the top-level tasks only, `all` for the subtasks too. */
+  level?: GetListWorkloadLevel;
+  /** Keep only milestones when true, or only ordinary tasks when false; absent leaves both. */
+  milestone?: boolean;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type GetListWorkloadLevel = typeof GetListWorkloadLevel[keyof typeof GetListWorkloadLevel];
+
+
+export const GetListWorkloadLevel = {
+  roots: 'roots',
+  all: 'all',
+} as const;
+
+export type ExportListTasksParams = {
+  /**
+   * Statuses to keep, separated by commas.
+   * @minItems 1
+   * @maxItems 10
+   */
+  status?: StatusKey[];
+  /**
+   * Priorities to keep, separated by commas.
+   * @minItems 1
+   * @maxItems 4
+   */
+  priority?: PriorityKey[];
+  /**
+   * Assignees to keep, separated by commas: account ids, `me` for the caller, `none` for the
+   * tasks nobody is assigned.
+   * @minItems 1
+   * @maxItems 20
+   * @items.pattern ^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+   */
+  assignee?: string[];
+  /**
+   * Labels to keep, separated by commas, without regard to case.
+   * @minItems 1
+   * @maxItems 20
+   * @items.minLength 1
+   * @items.maxLength 32
+   */
+  label?: string[];
+  /**
+   * Text to find, without regard to case or accents.
+   * @minLength 1
+   * @maxLength 100
+   */
+  search?: string;
+  /** Keep the tasks due on or after this date. */
+  dueFrom?: string;
+  /** Keep the tasks due on or before this date. */
+  dueTo?: string;
+  /** `roots` for the top-level tasks only, `all` for the subtasks too. */
+  level?: ExportListTasksLevel;
+  /** Keep only milestones when true, or only ordinary tasks when false; absent leaves both. */
+  milestone?: boolean;
+  /** Order of the tasks; a leading `-` reverses it. */
+  sort?: ExportListTasksSort;
+  /** Existing sheet column or stable ID of a custom field. */
+  sheetSortColumn?: SheetExportColumnParameter;
+  /** Order of the selected sheet column in the CSV export. */
+  sheetSortDirection?: SheetExportDirectionParameter;
+};
+
+export type ExportListTasksLevel = typeof ExportListTasksLevel[keyof typeof ExportListTasksLevel];
+
+
+export const ExportListTasksLevel = {
+  roots: 'roots',
+  all: 'all',
+} as const;
+
+export type ExportListTasksSort = typeof ExportListTasksSort[keyof typeof ExportListTasksSort];
+
+
+export const ExportListTasksSort = {
+  manual: 'manual',
+  '-manual': '-manual',
+  dueDate: 'dueDate',
+  '-dueDate': '-dueDate',
+  priority: 'priority',
+  '-priority': '-priority',
+  name: 'name',
+  '-name': '-name',
+  createdAt: 'createdAt',
+  '-createdAt': '-createdAt',
+} as const;
 
 export type GetListCountsParams = {
   /**

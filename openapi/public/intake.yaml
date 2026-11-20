@@ -1,0 +1,589 @@
+# Public intake is served by api-gateway and stored by task-service.
+openapi: 3.1.0
+info:
+  title: Cadenway public intake
+  version: 1.0.0
+  description: |
+    List editors configure and publish an intake form. An opaque publication key allows anyone
+    with the public link to open that form and submit a request. The projected form only
+    contains the text and field settings intended for applicants.
+
+    Management uses the current organization of the session or personal API token and the
+    caller's current list role. Anonymous access uses only the publication key and ignores
+    cookies and personal API tokens. The key does not grant access to tasks or lists. Editors
+    choose what text they publish, and the default text contains no list or space metadata.
+
+    The gateway applies its trusted client IP limit before lookup on the anonymous routes,
+    including for unknown keys. The defaults are 30 form reads and 10 submissions per minute
+    per IP, in separate buckets. Public responses and responses containing the management
+    configuration or contact email use `Cache-Control: no-store`. The key and contact
+    email are redacted from request logs and tracing attributes. Problem instances use a
+    request reference without the key, and validation issues identify fields without values.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves these routes, checks task scopes for management, rate-limits anonymous requests and relays operations to task-service.
+    - repository: cadenway-webapp
+      uses: Configures list forms, serves the applicant page and displays contact email to task editors through @cadenway/api-client.
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging.
+tags:
+  - name: intake-management
+    description: List form settings and protected task contact information.
+  - name: public-intake
+    description: Published forms and submissions.
+paths:
+  /v1/lists/{listId}/intake-form:
+    parameters:
+      - $ref: '#/components/parameters/IntakeListId'
+    get:
+      operationId: getIntakeFormConfiguration
+      summary: Read the intake configuration of a list
+      description: |
+        Requires `edit` on the list and `tasks:read` for a personal API token. A list without
+        changes to its configuration starts with the default draft at version 1. Its publication
+        key is null. When initializing the draft, the service selects `triage` if available,
+        with `todo` as fallback, and leaves the assignee null. Later status changes can make
+        the saved default invalid. An editor can read settings while the list is archived.
+      tags: [intake-management]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          $ref: '#/components/responses/IntakeConfiguration'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/IntakeEditorReadForbidden'
+        '404':
+          $ref: '#/components/responses/IntakeListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateIntakeFormConfiguration
+      summary: Change intake settings
+      description: |
+        Applies a JSON Merge Patch to editable settings. Requires `edit` and the current strong
+        form `ETag` in `If-Match`. The status must be available for a normal task creation
+        with these settings, and a non-null assignee must still be eligible on the list. An
+        effective change increments the configuration version once. An empty patch keeps the
+        version. A published form keeps its key and exposes the new settings after commit.
+      tags: [intake-management]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIntakeIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/intake.yaml#/components/schemas/IntakeFormPatch'
+            example:
+              title: Déposer une demande
+              fields: { description: required, contactEmail: optional }
+              defaultStatus: triage
+              defaultAssigneeId: null
+      responses:
+        '200':
+          $ref: '#/components/responses/IntakeConfiguration'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/IntakeEditorWriteForbidden'
+        '404':
+          $ref: '#/components/responses/IntakeListNotFound'
+        '409':
+          $ref: '#/components/responses/IntakeListArchived'
+        '412':
+          $ref: '#/components/responses/IntakeVersionMismatch'
+        '422':
+          $ref: '#/components/responses/IntakeDefaultsInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/intake-form/publish:
+    parameters:
+      - $ref: '#/components/parameters/IntakeListId'
+    post:
+      operationId: publishIntakeForm
+      summary: Publish an intake form
+      description: |
+        Requires `edit` on an active list. Revalidates the task defaults under the same lock
+        as publication. Publishing a disabled form creates a new key and increments the
+        configuration version. Repeating publication with unchanged valid settings keeps the
+        current key and version. The returned key can be used to construct the applicant link.
+      tags: [intake-management]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IntakeIfMatch'
+      responses:
+        '200':
+          $ref: '#/components/responses/IntakeConfiguration'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/IntakeEditorWriteForbidden'
+        '404':
+          $ref: '#/components/responses/IntakeListNotFound'
+        '409':
+          $ref: '#/components/responses/IntakeListArchived'
+        '412':
+          $ref: '#/components/responses/IntakeVersionMismatch'
+        '422':
+          $ref: '#/components/responses/IntakeDefaultsInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/intake-form/publication:
+    parameters:
+      - $ref: '#/components/parameters/IntakeListId'
+    delete:
+      operationId: disableIntakeForm
+      summary: Disable a published intake form
+      description: |
+        Requires `edit` on the list. Revokes the key immediately and keeps the draft,
+        including when the list is archived. Any subsequent publication has a new key.
+        Repeating the action on an already disabled form keeps the version.
+      tags: [intake-management]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IntakeIfMatch'
+      responses:
+        '204':
+          description: The draft is unpublished.
+          headers:
+            ETag:
+              $ref: '#/components/headers/IntakeETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/IntakeEditorWriteForbidden'
+        '404':
+          $ref: '#/components/responses/IntakeListNotFound'
+        '412':
+          $ref: '#/components/responses/IntakeVersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/intake-contact:
+    parameters:
+      - $ref: '#/components/parameters/IntakeTaskKey'
+    get:
+      operationId: getTaskIntakeContact
+      summary: Read a requester's contact email
+      description: |
+        Requires `edit` on the task's current list and `tasks:read` for a personal API token.
+        Returns null for a task without a stored intake contact. Storage and retention follow
+        the task and its current placement. The contact is kept outside ordinary task reads,
+        task descriptions, logs, event payloads and receipts.
+      tags: [intake-management]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The independently stored contact, if any.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IntakeNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/intake.yaml#/components/schemas/TaskIntakeContact'
+              example:
+                contactEmail: prenom.nom@example.com
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/IntakeEditorReadForbidden'
+        '404':
+          $ref: '#/components/responses/IntakeTaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/intake-forms/{publicKey}:
+    parameters:
+      - $ref: '#/components/parameters/IntakePublicKey'
+    get:
+      operationId: getPublicIntakeForm
+      summary: Read the published applicant form
+      description: |
+        Returns the applicant projection of a valid publication on an active list. The
+        projection includes only the editor's public text and field settings. Invalidated,
+        unknown, disabled, stale, archived or removed forms all answer the same generic 404.
+        Archive suspends access to the publication. Deletion and explicit disable revoke the
+        key, which stays revoked after a list restore or a new publication.
+      tags: [public-intake]
+      security: []
+      responses:
+        '200':
+          description: The applicant's form.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IntakeNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/intake.yaml#/components/schemas/PublicIntakeForm'
+              example:
+                title: Déposer une demande
+                description: Décrivez votre besoin en quelques mots.
+                fields:
+                  description: optional
+                  priority: optional
+                  dueDate: optional
+                  contactEmail: required
+        '404':
+          $ref: '#/components/responses/PublicIntakeNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/intake-forms/{publicKey}/submissions:
+    parameters:
+      - $ref: '#/components/parameters/IntakePublicKey'
+    post:
+      operationId: submitPublicIntakeForm
+      summary: Submit a request through a published form
+      description: |
+        The publication supplies the organization, list, allowed fields and task defaults.
+        The request contract accepts only applicant-visible fields. The title is always
+        required. Missing required fields and supplied disabled fields are reported by field
+        in `details.issues`. An empty required text field is invalid after trimming.
+
+        The producer rechecks that the publication is active and its defaults are valid
+        before creating a normal task and saving the contact in the same transaction. A valid
+        form replays an identical request with the same idempotency key for 24 hours, with the
+        original receipt and no second task. The receipt is an acknowledgment without a
+        public task link or contact email.
+      tags: [public-intake]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IntakeIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/intake.yaml#/components/schemas/IntakeSubmission'
+            example:
+              title: Accès SSO pour Atelier Nord
+              description: Activer la connexion pour l’équipe du sprint 14.
+              contactEmail: prenom.nom@example.com
+      responses:
+        '200':
+          description: The submission is accepted and its task is committed. A matching replay returns the same acknowledgment.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IntakeNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/intake.yaml#/components/schemas/IntakeReceipt'
+              example:
+                receipt: T3Wf3e3VdFKPIsnP7t9m2kUuwtHTU2yXrP-Ekq11BRg
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/PublicIntakeNotFound'
+        '409':
+          $ref: '#/components/responses/IntakeSubmissionInProgress'
+        '422':
+          $ref: '#/components/responses/IntakeSubmissionRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: The current organization's session.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: Personal API token with the operation's required task scope.
+  parameters:
+    IntakeListId:
+      name: listId
+      in: path
+      required: true
+      description: List ID in the authenticated organization.
+      schema:
+        type: string
+        format: uuid
+        example: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+    IntakeTaskKey:
+      name: taskKey
+      in: path
+      required: true
+      description: Stable task key.
+      schema:
+        $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+    IntakePublicKey:
+      name: publicKey
+      in: path
+      required: true
+      description: |
+        Opaque key from the published link. A key with an invalid shape is handled as unknown.
+        It is separate from the authenticated management credentials.
+      schema:
+        type: string
+        example: F3Nq7tG2hu0TQvQqMCuBCgBl2R7dV7jvxrT3SRiYkTQ
+    IntakeIfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Expected form version. A stale version is refused.
+      schema:
+        type: string
+        examples: ['"2"']
+    RequiredIntakeIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Strong ETag of the current form settings.
+      schema:
+        type: string
+        examples: ['"1"']
+    IntakeIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Client-chosen key scoped to this publication, retained for 24 hours.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        examples: [5d0c6f1e-2a3b-4c5d-8e9f-0a1b2c3d4e5f]
+  headers:
+    IntakeETag:
+      description: Strong ETag of the returned or current form version.
+      schema:
+        type: string
+        examples: ['"2"']
+    IntakeNoStore:
+      description: Prevents storage by caches.
+      schema:
+        type: string
+        const: no-store
+  responses:
+    IntakeConfiguration:
+      description: Current list form configuration.
+      headers:
+        ETag:
+          $ref: '#/components/headers/IntakeETag'
+        Cache-Control:
+          $ref: '#/components/headers/IntakeNoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '../../components/intake.yaml#/components/schemas/IntakeFormConfiguration'
+          example:
+            title: Déposer une demande
+            description: Décrivez votre besoin en quelques mots.
+            fields:
+              description: optional
+              priority: optional
+              dueDate: optional
+              contactEmail: required
+            defaultStatus: triage
+            defaultAssigneeId: null
+            publicKey: F3Nq7tG2hu0TQvQqMCuBCgBl2R7dV7jvxrT3SRiYkTQ
+            version: 2
+    BadRequest:
+      description: '`request.invalid`: invalid headers, request shape or fields. `details.issues` identifies the invalid input.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            { type: about:blank, title: Requête invalide, status: 400, code: request.invalid }
+    Unauthenticated:
+      description: '`auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            {
+              type: about:blank,
+              title: Connexion requise,
+              status: 401,
+              code: auth.session-required,
+            }
+    IntakeEditorReadForbidden:
+      description: |
+        `access.role-insufficient`, `auth.scope-missing`, `organization.not-selected` or
+        `organization.mfa-required`. Insufficient role identifies the actual role and required
+        `edit` role in `details.role` and `details.requiredRole`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Droit de modification manquant
+            status: 403
+            code: access.role-insufficient
+            details: { role: view, requiredRole: edit }
+    IntakeEditorWriteForbidden:
+      description: 'The codes in `IntakeEditorReadForbidden` or `auth.csrf-rejected` for an untrusted session origin.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Droit de modification manquant
+            status: 403
+            code: access.role-insufficient
+            details: { role: view, requiredRole: edit }
+    IntakeListNotFound:
+      description: '`list.not-found` for an invisible, unknown or deleted list, or `organization.not-found` for missing membership.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            { type: about:blank, title: Liste introuvable, status: 404, code: list.not-found }
+    IntakeTaskNotFound:
+      description: |
+        `task.not-found` for an invisible or unknown task, `task.trashed` for authorized
+        restorers as in task detail, or `organization.not-found` for missing membership.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            { type: about:blank, title: Tâche introuvable, status: 404, code: task.not-found }
+    PublicIntakeNotFound:
+      description: '`intake-form.not-found`: the key does not resolve to a valid active publication. The response is generic.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IntakeNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Formulaire introuvable
+            status: 404
+            code: intake-form.not-found
+    IntakeListArchived:
+      description: '`intake-form.list-archived`: editing or publishing an archived list’s form is refused.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Liste archivée
+            status: 409
+            code: intake-form.list-archived
+    IntakeSubmissionInProgress:
+      description: '`idempotency.request-in-progress`: a request using this key and publication is already running.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Demande en cours
+            status: 409
+            code: idempotency.request-in-progress
+    IntakeVersionMismatch:
+      description: '`request.version-mismatch`: `If-Match` is stale. `details.version` is the current form version.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Le formulaire a changé
+            status: 412
+            code: request.version-mismatch
+            details: { version: 2 }
+    IntakeDefaultsInvalid:
+      description: '`intake-form.defaults-invalid`: the configured status or assignee is invalid for this list.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Valeurs par défaut invalides
+            status: 422
+            code: intake-form.defaults-invalid
+    IntakeSubmissionRefused:
+      description: '`idempotency.key-reused`: this key was already used with a different body on this publication.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Clé d’idempotence déjà utilisée
+            status: 422
+            code: idempotency.key-reused
+    RateLimited:
+      description: '`rate-limit.exceeded`: the gateway rate limit was reached.'
+      headers:
+        Retry-After:
+          description: Whole seconds before retrying.
+          schema: { type: integer, minimum: 0 }
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            { type: about:blank, title: Trop de requêtes, status: 429, code: rate-limit.exceeded }
+    Unavailable:
+      description: |
+        `upstream.unavailable`, `upstream.unreachable`, `upstream.timeout`,
+        `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+        `upstream.deadline-exceeded`. `details.service` identifies task-service.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service indisponible
+            status: 503
+            code: upstream.unavailable
+            details: { service: task-service }

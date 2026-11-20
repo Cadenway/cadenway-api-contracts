@@ -1,0 +1,311 @@
+# Shared contracts for sprint reporting, list workload, list timesheets and CSV sorting.
+openapi: 3.1.0
+info:
+  title: Cadenway shared reporting components
+  version: 1.0.0
+  description: Caller-visible reports over task, sprint and time-entry data.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  parameters:
+    ReportToday:
+      name: today
+      in: query
+      required: true
+      description: Requested local date for the report observation, interpreted in timeZone.
+      schema:
+        $ref: './time.yaml#/components/schemas/TaskWorkDate'
+    ReportWeekStart:
+      name: weekStart
+      in: query
+      required: true
+      description: Monday of the requested reporting window, as a calendar date.
+      schema:
+        $ref: './time.yaml#/components/schemas/TaskWorkDate'
+    ReportTimeZone:
+      name: timeZone
+      in: query
+      required: true
+      description: IANA time zone used for the report's calendar-day boundaries.
+      schema:
+        type: string
+        minLength: 1
+        examples: [Europe/Paris]
+  schemas:
+    ReportPoints:
+      type: number
+      minimum: 0
+      description: Nonnegative points before presentation rounding.
+    ReportAvailablePoints:
+      type: [number, 'null']
+      minimum: 0
+      description: Nonnegative points when the observation is available, or null when it is unavailable.
+    SprintReportTask:
+      type: object
+      description: A task included in the observed sprint scope that is still readable by the caller.
+      required: [taskKey, name, points, status]
+      properties:
+        taskKey: { $ref: './task.yaml#/components/schemas/TaskKey' }
+        name: { type: string }
+        points: { $ref: '#/components/schemas/ReportPoints' }
+        status: { $ref: './task.yaml#/components/schemas/StatusKey' }
+    SprintReportBreakdown:
+      type: object
+      required: [points, taskCount, items]
+      properties:
+        points: { $ref: '#/components/schemas/ReportPoints' }
+        taskCount:
+          type: integer
+          minimum: 0
+          description: Total tasks in this part of the caller-visible scope.
+        items:
+          type: array
+          description: Up to the first six tasks in task-key order for the drill-down preview.
+          items: { $ref: '#/components/schemas/SprintReportTask' }
+    SprintBurndownDay:
+      type: object
+      required: [date, actualRemainingPoints, idealRemainingPoints, projectedRemainingPoints]
+      properties:
+        date:
+          type: string
+          format: date
+          description: Calendar date in the requested time zone.
+        actualRemainingPoints:
+          description: |
+            Actual points remaining at the end of a covered day, or at observedAt for a day
+            still in progress at that cutoff. Null for an uncovered day or a day after the cutoff.
+          allOf:
+            - $ref: '#/components/schemas/ReportAvailablePoints'
+        idealRemainingPoints:
+          description: Ideal remaining points from the opening commitment, or null if it is unavailable.
+          allOf:
+            - $ref: '#/components/schemas/ReportAvailablePoints'
+        projectedRemainingPoints:
+          description: Forecast points remaining for this date, or null without a supported forecast.
+          allOf:
+            - $ref: '#/components/schemas/ReportAvailablePoints'
+    SprintVelocityPoint:
+      type: object
+      description: Scope and observed points of a real, readable, earlier sprint in the same space.
+      required: [listId, name, startDate, endDate, openingPoints, deliveredPoints]
+      properties:
+        listId: { type: string, format: uuid }
+        name: { type: string }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        openingPoints:
+          description: Opening commitment for this prior sprint, or null without coverage.
+          allOf:
+            - $ref: '#/components/schemas/ReportAvailablePoints'
+        deliveredPoints:
+          description: Points delivered at the previous sprint's close, or null without coverage.
+          allOf:
+            - $ref: '#/components/schemas/ReportAvailablePoints'
+    SprintReport:
+      type: object
+      description: |
+        Visible ordinary root tasks contribute only while eligible for the evaluated observation.
+        The report also checks current task visibility and excludes purged tasks entirely.
+        Archived, trashed, cancelled and milestone tasks are excluded at observations when they
+        are ineligible. Scope changes can make delivered and remaining points differ in sum
+        from the opening commitment.
+        The designated numeric points field contributes its stored value, including zero.
+        Otherwise estimate bands up to 60, 180, 360 and 600 minutes yield 1, 2, 3 and 5 points.
+        Estimates above 600 yield 8 points. An unset estimate yields one point.
+      required:
+        [
+          listId,
+          name,
+          startDate,
+          endDate,
+          observedAt,
+          coverageStartedAt,
+          openingPoints,
+          delivered,
+          remaining,
+          projectedRemainingPoints,
+          items,
+          nextCursor,
+          velocity,
+        ]
+      properties:
+        listId: { type: string, format: uuid }
+        name: { type: string }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        observedAt:
+          type: string
+          format: date-time
+          description: |
+            Observation cutoff in UTC. It is the earliest of server time, the end of the
+            requested local date in timeZone, and sprint close.
+        coverageStartedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Start of reliable history in UTC, or null if it is unavailable.
+        openingPoints:
+          description: Commitment at sprint opening, or null if the opening cannot be reconstructed.
+          allOf:
+            - $ref: '#/components/schemas/ReportAvailablePoints'
+        delivered:
+          description: Done tasks at the observation or sprint close, or null if that scope is unavailable.
+          oneOf:
+            - $ref: '#/components/schemas/SprintReportBreakdown'
+            - type: 'null'
+        remaining:
+          description: Remaining tasks at that same observation, or null if that scope is unavailable.
+          oneOf:
+            - $ref: '#/components/schemas/SprintReportBreakdown'
+            - type: 'null'
+        projectedRemainingPoints:
+          description: Forecast at the sprint end, or null until enough covered observations establish a rate.
+          allOf:
+            - $ref: '#/components/schemas/ReportAvailablePoints'
+        items:
+          type: array
+          description: Days in chronological order, including uncovered dates with null actuals.
+          items: { $ref: '#/components/schemas/SprintBurndownDay' }
+        nextCursor: { $ref: './http.yaml#/components/schemas/NextCursor' }
+        velocity:
+          type: array
+          maxItems: 4
+          description: Up to four earlier readable completed sprints in the same space, ordered chronologically.
+          items: { $ref: '#/components/schemas/SprintVelocityPoint' }
+    ReportingDayMinutes:
+      type: object
+      required: [date, totalMinutes]
+      properties:
+        date:
+          type: string
+          format: date
+          description: Date in the returned reporting window.
+        totalMinutes:
+          type: integer
+          minimum: 0
+          description: Sum across all visible rows for this date, independent of pagination.
+    ListWorkloadDay:
+      allOf:
+        - $ref: '#/components/schemas/ReportingDayMinutes'
+        - type: object
+          required: [dailyCapacityMinutes]
+          properties:
+            dailyCapacityMinutes:
+              type: integer
+              enum: [0, 360]
+              description: Per-person capacity of 360 minutes on weekdays and zero on weekends.
+    ListWorkloadRow:
+      type: object
+      description: One task's allocation to an assignee or the unassigned bucket in this window.
+      required: [assignee, taskKey, name, status, minutesByDay, totalMinutes]
+      properties:
+        assignee:
+          description: Assignee account, or null for the unassigned bucket.
+          oneOf:
+            - $ref: './task.yaml#/components/schemas/UserRef'
+            - type: 'null'
+        taskKey: { $ref: './task.yaml#/components/schemas/TaskKey' }
+        name: { type: string }
+        status: { $ref: './task.yaml#/components/schemas/StatusKey' }
+        minutesByDay:
+          type: array
+          minItems: 14
+          maxItems: 14
+          description: Whole minutes per date aligned with the days of the page.
+          items: { type: integer, minimum: 0 }
+        totalMinutes:
+          type: integer
+          minimum: 0
+          description: Sum of this row's allocations within the returned window.
+    ListWorkloadPage:
+      type: object
+      description: |
+        Workload for the filtered live list over two calendar weeks. Only noncancelled tasks
+        with a due date and a positive estimate contribute. Split each estimate over the
+        weekdays of its full task interval then across its assignees. If only the due date is
+        set it defines the interval. If the interval contains only weekend dates, use the
+        preceding working day. Allocate all estimated minutes with stable remainder handling
+        before selecting the requested date window and page.
+      required: [listId, weekStart, days, totalMinutes, items, nextCursor]
+      properties:
+        listId: { type: string, format: uuid }
+        weekStart:
+          type: string
+          format: date
+          description: Monday of the first week.
+        days:
+          type: array
+          minItems: 14
+          maxItems: 14
+          description: All fourteen calendar days in order, including weekends with zero capacity.
+          items: { $ref: '#/components/schemas/ListWorkloadDay' }
+        totalMinutes:
+          type: integer
+          minimum: 0
+          description: Allocated minutes in the visible window across all rows.
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ListWorkloadRow' }
+        nextCursor: { $ref: './http.yaml#/components/schemas/NextCursor' }
+    ListTimesheetRow:
+      type: object
+      description: One author's recorded minutes by work date for one currently visible live task.
+      required: [author, taskKey, name, status, minutesByDay, totalMinutes]
+      properties:
+        author:
+          description: Stable account reference, including former members with the usual display fallback.
+          allOf:
+            - $ref: './task.yaml#/components/schemas/UserRef'
+        taskKey: { $ref: './task.yaml#/components/schemas/TaskKey' }
+        name: { type: string }
+        status: { $ref: './task.yaml#/components/schemas/StatusKey' }
+        minutesByDay:
+          type: array
+          minItems: 7
+          maxItems: 7
+          description: Whole minutes aligned with the seven dates of the timesheet.
+          items: { type: integer, minimum: 0 }
+        totalMinutes:
+          type: integer
+          minimum: 0
+          description: Sum of the author's recorded minutes for this task in the week.
+    ListTimesheetPage:
+      type: object
+      description: |
+        One Monday-to-Sunday timesheet over the task time entries for the selected list.
+        Entries follow their task when it moves. Archived and trashed tasks contribute
+        no entries while in those states. The reported day is the stored work date.
+      required: [listId, weekStart, days, totalMinutes, items, nextCursor]
+      properties:
+        listId: { type: string, format: uuid }
+        weekStart:
+          type: string
+          format: date
+          description: Monday of the reported week.
+        days:
+          type: array
+          minItems: 7
+          maxItems: 7
+          description: All seven calendar days in order, with totals across authors and tasks.
+          items: { $ref: '#/components/schemas/ReportingDayMinutes' }
+        totalMinutes:
+          type: integer
+          minimum: 0
+          description: Recorded minutes across all visible tasks and authors in the week.
+        items:
+          type: array
+          description: Rows ordered by author account and task key, including across page boundaries.
+          items: { $ref: '#/components/schemas/ListTimesheetRow' }
+        nextCursor: { $ref: './http.yaml#/components/schemas/NextCursor' }
+    SheetExportColumn:
+      description: Existing sheet column or stable ID of a custom field.
+      anyOf:
+        - $ref: './task.yaml#/components/schemas/SavedViewSheetColumn'
+        - $ref: './task.yaml#/components/schemas/CustomFieldId'
+    SheetExportDirection:
+      type: string
+      enum: [asc, desc]
+      description: Order of the selected sheet column in the CSV export.

@@ -11,6 +11,26 @@
  * type of the same name, exported together.
  */
 
+// openapi/public/goals.yaml
+export {
+  GoalsService,
+  type CreateGoalClientResult,
+  type CreateGoalResultClientResult,
+  type DeleteGoalClientResult,
+  type DeleteGoalResultClientResult,
+  type GetGoalClientResult,
+  type GetGoalResultClientResult,
+  type ListGoalsClientResult,
+  type UpdateGoalClientResult,
+  type UpdateGoalResultClientResult,
+} from './generated/public/goals/goals/goals.service';
+
+// openapi/public/reports.yaml
+export {
+  TeamReportsService,
+  type GetTeamDashboardClientResult,
+} from './generated/public/reports/team-reports/team-reports.service';
+
 // openapi/public/auth.yaml
 export {
   AuthService,
@@ -448,8 +468,11 @@ export {
   type DeleteSavedViewClientResult,
   type DuplicateSavedViewClientResult,
   type DeleteListClientResult,
+  type ExportListTasksClientResult,
   type GetListClientResult,
   type GetListCountsClientResult,
+  type GetListWorkloadClientResult,
+  type GetSprintReportClientResult,
   type ListListActivityClientResult,
   type ListListCustomFieldsClientResult,
   type ListListsClientResult,
@@ -459,8 +482,21 @@ export type { ActivityKindParameter } from './generated/public/lists/model/activ
 export { ActivityKindParameterItem } from './generated/public/lists/model/activityKindParameterItem';
 export type { ActivityPage } from './generated/public/lists/model/activityPage';
 export type { ActorIdParameter } from './generated/public/lists/model/actorIdParameter';
+export type { ExportListTasksParams } from './generated/public/lists/model/exportListTasksParams';
 export type { GetListCountsParams } from './generated/public/lists/model/getListCountsParams';
+export type { GetListWorkloadParams } from './generated/public/lists/model/getListWorkloadParams';
+export type { GetSprintReportParams } from './generated/public/lists/model/getSprintReportParams';
 export type { ListListCustomFieldsParams } from './generated/public/lists/model/listListCustomFieldsParams';
+export type { ListWorkloadDay } from './generated/public/lists/model/listWorkloadDay';
+export type { ListWorkloadPage } from './generated/public/lists/model/listWorkloadPage';
+export type { ListWorkloadRow } from './generated/public/lists/model/listWorkloadRow';
+export type { SheetExportColumn } from './generated/public/lists/model/sheetExportColumn';
+export { SheetExportDirection } from './generated/public/lists/model/sheetExportDirection';
+export type { SprintBurndownDay } from './generated/public/lists/model/sprintBurndownDay';
+export type { SprintReport } from './generated/public/lists/model/sprintReport';
+export type { SprintReportBreakdown } from './generated/public/lists/model/sprintReportBreakdown';
+export type { SprintReportTask } from './generated/public/lists/model/sprintReportTask';
+export type { SprintVelocityPoint } from './generated/public/lists/model/sprintVelocityPoint';
 export type { SavedItemName } from './generated/public/lists/model/savedItemName';
 export type { SavedView } from './generated/public/lists/model/savedView';
 export type { SavedViewCustomFieldSort } from './generated/public/lists/model/savedViewCustomFieldSort';
@@ -729,12 +765,16 @@ export {
   TaskTimeService,
   type CreateTaskTimeEntryClientResult,
   type DeleteTaskTimeEntryClientResult,
+  type GetListTimesheetClientResult,
   type GetTaskStatusDurationsClientResult,
   type GetTaskTimeEntryClientResult,
   type GetTaskTimeSummaryClientResult,
   type ListTaskTimeEntriesClientResult,
 } from './generated/public/time/task-time/task-time.service';
+export type { GetListTimesheetParams } from './generated/public/time/model/getListTimesheetParams';
 export type { ListTaskTimeEntriesParams } from './generated/public/time/model/listTaskTimeEntriesParams';
+export type { ListTimesheetPage } from './generated/public/time/model/listTimesheetPage';
+export type { ListTimesheetRow } from './generated/public/time/model/listTimesheetRow';
 export type { TaskStatusDuration } from './generated/public/time/model/taskStatusDuration';
 export type { TaskStatusDurationResult } from './generated/public/time/model/taskStatusDurationResult';
 export type { TaskStatusDurationSummary } from './generated/public/time/model/taskStatusDurationSummary';
@@ -745,3 +785,28 @@ export type { TaskTimeSummary } from './generated/public/time/model/taskTimeSumm
 export type { TaskWorkDate } from './generated/public/time/model/taskWorkDate';
 export type { TimeEntryId } from './generated/public/time/model/timeEntryId';
 export type { WorkLogMinutes } from './generated/public/time/model/workLogMinutes';
+
+// openapi/public/intake.yaml
+export {
+  IntakeManagementService,
+  type DisableIntakeFormClientResult,
+  type GetIntakeFormConfigurationClientResult,
+  type GetTaskIntakeContactClientResult,
+  type PublishIntakeFormClientResult,
+  type UpdateIntakeFormConfigurationClientResult,
+} from './generated/public/intake/intake-management/intake-management.service';
+export {
+  PublicIntakeService,
+  type GetPublicIntakeFormClientResult,
+  type SubmitPublicIntakeFormClientResult,
+} from './generated/public/intake/public-intake/public-intake.service';
+export type { IntakeConfigurationResponse } from './generated/public/intake/model/intakeConfigurationResponse';
+export { IntakeFieldMode } from './generated/public/intake/model/intakeFieldMode';
+export type { IntakeFormConfiguration } from './generated/public/intake/model/intakeFormConfiguration';
+export type { IntakeFormFields } from './generated/public/intake/model/intakeFormFields';
+export type { IntakeFormFieldsPatch } from './generated/public/intake/model/intakeFormFieldsPatch';
+export type { IntakeFormPatch } from './generated/public/intake/model/intakeFormPatch';
+export type { IntakeReceipt } from './generated/public/intake/model/intakeReceipt';
+export type { IntakeSubmission } from './generated/public/intake/model/intakeSubmission';
+export type { PublicIntakeForm } from './generated/public/intake/model/publicIntakeForm';
+export type { TaskIntakeContact } from './generated/public/intake/model/taskIntakeContact';

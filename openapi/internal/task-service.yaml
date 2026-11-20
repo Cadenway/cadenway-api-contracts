@@ -2,19 +2,17 @@
 # openapi/public/spaces.yaml, the lists and sprints of openapi/public/lists.yaml, the tasks,
 # queries, "Mes tâches" and "Accueil" of openapi/public/tasks.yaml, the grants and access requests
 # of openapi/public/access.yaml, the archives of openapi/public/archives.yaml, the trash of
-# openapi/public/trash.yaml and the work logs and status durations of openapi/public/time.yaml;
-# and the access checks called by cadenway-realtime-gateway.
+# openapi/public/trash.yaml, the work logs, status durations and timesheets of openapi/public/time.yaml,
+# goals and reports, and the intake form. The realtime gateway calls the access checks.
 openapi: 3.1.0
 info:
   title: task-service internal routes
   version: 1.0.0
   description: |
     What task-service exposes to the API gateway for spaces, lists, sprints, tasks, access,
-    archives and the trash, and to the realtime gateway for its access checks. The service has no
-    public route: the gateway serves `openapi/public/spaces.yaml`, `openapi/public/lists.yaml`,
-    `openapi/public/tasks.yaml`, `openapi/public/access.yaml`, `openapi/public/archives.yaml`,
-    `openapi/public/trash.yaml` and `openapi/public/time.yaml` and calls these routes, with the
-    same bodies, the same answers and the same codes.
+    archives, trash, time, goals, reports and intake, and to the realtime gateway for its access
+    checks. The API gateway serves the public contracts for these features and calls the
+    corresponding internal routes.
 
     | Public route | Internal call |
     | --- | --- |
@@ -28,6 +26,10 @@ info:
     | `GET /v1/lists/{listId}` | `GET /internal/v1/lists/{listId}` |
     | `PATCH /v1/lists/{listId}` | `PATCH /internal/v1/lists/{listId}` |
     | `GET /v1/lists/{listId}/counts` | `GET /internal/v1/lists/{listId}/counts` |
+    | `GET /v1/lists/{listId}/sprint-report` | `GET /internal/v1/lists/{listId}/sprint-report` |
+    | `GET /v1/lists/{listId}/workload` | `GET /internal/v1/lists/{listId}/workload` |
+    | `GET /v1/lists/{listId}/timesheet` | `GET /internal/v1/lists/{listId}/timesheet` |
+    | `GET /v1/lists/{listId}/tasks/export` | `GET /internal/v1/lists/{listId}/tasks/export` |
     | `GET /v1/lists/{listId}/activity` | `GET /internal/v1/lists/{listId}/activity` |
     | `POST /v1/lists/{listId}/tasks` | `POST /internal/v1/lists/{listId}/tasks` |
     | `GET /v1/lists/{listId}/tasks` | `GET /internal/v1/lists/{listId}/tasks` |
@@ -79,18 +81,24 @@ info:
     | `DELETE /v1/trash/entries/{entryId}` | `DELETE /internal/v1/trash/entries/{entryId}` |
     | `POST /v1/trash/entries/{entryId}/restore` | `POST /internal/v1/trash/entries/{entryId}/restore` |
     | `POST /v1/trash/empty` | `POST /internal/v1/trash/empty` |
+    | `GET/PATCH /v1/lists/{listId}/intake-form` | `GET/PATCH /internal/v1/lists/{listId}/intake-form` |
+    | `POST /v1/lists/{listId}/intake-form/publish` | `POST /internal/v1/lists/{listId}/intake-form/publish` |
+    | `DELETE /v1/lists/{listId}/intake-form/publication` | `DELETE /internal/v1/lists/{listId}/intake-form/publication` |
+    | `GET /v1/tasks/{taskKey}/intake-contact` | `GET /internal/v1/tasks/{taskKey}/intake-contact` |
+    | `GET /v1/intake-forms/{publicKey}` | `GET /internal/v1/intake-forms/{publicKey}` |
+    | `POST /v1/intake-forms/{publicKey}/submissions` | `POST /internal/v1/intake-forms/{publicKey}/submissions` |
 
     The realtime gateway calls `GET /internal/v1/lists/{listId}/access` and
     `GET /internal/v1/tasks/{taskKey}/access`, which have no public route.
 
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
     (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `task-service`). Every route accepts the
-    issuer `api-gateway` and the actor `user` only, but for the two access checks, which accept the
-    issuer `realtime-gateway` only, with the actor `user`; every route requires an organization: it
-    acts on the organization of the token, the current organization of the session or the
-    organization of the personal API token, and runs in the tenant transaction of that
-    organization. The actor and the organization come from the token, never from a body or a path;
-    the `userId` of a path under `/internal/v1/users/` that is not the actor answers
+    issuer `api-gateway` and the actor `user` by default. The two access checks accept
+    `realtime-gateway` with the actor `user`. The applicant intake routes accept `api-gateway`
+    with the actor `system` and resolve the target exclusively from the publication key.
+    All other routes require an organization and run in the tenant transaction for the
+    organization's session or personal API token. They take the actor and organization from
+    the internal token. The `userId` of a path under `/internal/v1/users/` that is not the actor answers
     `404 user.not-found` (the `userId` of `/internal/v1/tasks/{taskKey}/assignees/{userId}` is the
     person assigned, that of `…/grants/{userId}` the person given access). The guard of the kit
     answers `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
@@ -98,6 +106,13 @@ info:
     `403 organization.not-selected` itself, before the call, when the session has no current
     organization. Later versions accept other issuers (the automation and Git integrations, with
     their actors).
+
+    **Applicant intake.** The gateway uses a system token without an organization for the two
+    applicant routes. A valid publication key is the only authority for resolving the list
+    and tenant. Task-service enters that tenant's transaction after lookup and rechecks the
+    publication, list and task defaults before a write. Its task and contact commit together.
+    Request payloads carry no actor, tenant or placement override. The normal task events use
+    the system actor and exclude the contact field and publication key.
 
     **Members.** task-service decides every rule from its own copy of the members of each
     organization and their roles, never from the `role` of the token. It builds the copy from
@@ -166,8 +181,9 @@ info:
       uses: >-
         Calls every route except the access checks through its generated client for
         openapi/public/spaces.yaml, openapi/public/lists.yaml, openapi/public/tasks.yaml,
-        openapi/public/access.yaml, openapi/public/archives.yaml, openapi/public/trash.yaml
-        and openapi/public/time.yaml. It also composes the task detail.
+        openapi/public/access.yaml, openapi/public/archives.yaml, openapi/public/trash.yaml,
+        openapi/public/time.yaml, openapi/public/goals.yaml, openapi/public/reports.yaml and
+        openapi/public/intake.yaml. It also composes the task detail.
     - repository: cadenway-realtime-gateway
       uses: Planned, the access checks of a list and a task, before a socket joins their room.
 servers:
@@ -176,6 +192,10 @@ servers:
 security:
   - internalToken: []
 tags:
+  - name: goals
+    description: Quarterly goals and key results of the current organization.
+  - name: team-reports
+    description: Reports over the caller's visible team work.
   - name: spaces
     description: Spaces of the organization of the token.
   - name: lists
@@ -194,6 +214,8 @@ tags:
     description: Archived lists and tasks.
   - name: trash
     description: The trash and its entries.
+  - name: intake
+    description: List form configuration, applicant routes and protected task contacts.
 paths:
   /internal/v1/spaces:
     post:
@@ -669,6 +691,175 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/ListDuplicateRefused'
+  /internal/v1/lists/{listId}/sprint-report:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: getSprintReportInternal
+      summary: Read the points, burndown and velocity of a sprint
+      description: |
+        Implements the visibility, historical eligibility, point calculation, cutoff and
+        pagination of `GET /v1/lists/{listId}/sprint-report`. It uses a current-state rollout
+        baseline and durable membership, eligibility, point inputs and status transitions
+        recorded with their task writes. The observation and the complete page use the same
+        view of the data. Internal token from api-gateway with a user actor and organization
+        required.
+      tags: [lists]
+      parameters:
+        - $ref: '../../components/reporting.yaml#/components/parameters/ReportToday'
+        - $ref: '../../components/reporting.yaml#/components/parameters/ReportTimeZone'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Sprint metrics and one page of burndown days.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/reporting.yaml#/components/schemas/SprintReport'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SprintReportNotFound'
+  /internal/v1/lists/{listId}/workload:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: getListWorkloadInternal
+      summary: Read scheduled work for two calendar weeks
+      description: |
+        Implements the visibility, filters, full-interval allocation and pagination of
+        `GET /v1/lists/{listId}/workload`. The window totals include all matching rows before
+        pagination. Internal token from api-gateway with a user actor and organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '../../components/reporting.yaml#/components/parameters/ReportWeekStart'
+        - $ref: '../../components/task.yaml#/components/parameters/StatusFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/PriorityFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/AssigneeFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/LabelFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/Search'
+        - $ref: '../../components/task.yaml#/components/parameters/DueFrom'
+        - $ref: '../../components/task.yaml#/components/parameters/DueTo'
+        - $ref: '../../components/task.yaml#/components/parameters/Level'
+        - $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Workload totals and one page of task and assignee rows.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/reporting.yaml#/components/schemas/ListWorkloadPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+  /internal/v1/lists/{listId}/timesheet:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: getListTimesheetInternal
+      summary: Read recorded work for one calendar week of a list
+      description: |
+        Implements the visibility, source entries, weekly aggregation and pagination of
+        `GET /v1/lists/{listId}/timesheet`. Internal token from api-gateway with a user actor
+        and organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '../../components/reporting.yaml#/components/parameters/ReportWeekStart'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Weekly totals and one page of task and author rows.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/reporting.yaml#/components/schemas/ListTimesheetPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+  /internal/v1/lists/{listId}/tasks/export:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: exportListTasksInternal
+      summary: Read the visible list task rows for CSV export
+      description: |
+        Implements the visibility, filters, row limit, sorting and literal spreadsheet encoding of
+        `GET /v1/lists/{listId}/tasks/export`. Select the rows and columns in a consistent tenant
+        snapshot. Reject more than 10,000 rows before returning any export data. Resolve `client`
+        against the first active text definition named Client, case-insensitively. For `people`,
+        return the rows in ordinary task order so that the gateway can use that order to break
+        ties when it sorts by assignee name.
+
+        The gateway looks up the returned assignee IDs in organization-service in batches of up
+        to 5,000 on behalf of the same actor and organization. It sorts by the first assignee's
+        name in French only for `people`, with missing names last in either direction. It joins
+        known names in assignment order with a comma and a space, protects the resulting text
+        from spreadsheet formulas and quotes it as a single CSV cell, doubling embedded quotes.
+        It inserts that cell between the supplied cell arrays, joins each row's cells with
+        semicolons and terminates the header and every row with CRLF. The supplied cells retain
+        their quotes, escaped quotes and any embedded line breaks. The gateway sends the
+        resulting UTF-8 CSV with an attachment header using the supplied basename. If the
+        directory lookup fails, it returns a problem response before sending any CSV bytes.
+
+        Internal token from api-gateway with a user actor and organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '../../components/task.yaml#/components/parameters/StatusFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/PriorityFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/AssigneeFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/LabelFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/Search'
+        - $ref: '../../components/task.yaml#/components/parameters/DueFrom'
+        - $ref: '../../components/task.yaml#/components/parameters/DueTo'
+        - $ref: '../../components/task.yaml#/components/parameters/Level'
+        - $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/TaskSort'
+        - $ref: '#/components/parameters/SheetExportColumn'
+        - $ref: '#/components/parameters/SheetExportDirection'
+      responses:
+        '200':
+          description: The encoded header and visible task rows, with IDs for the assignee cells.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTaskExport'
+              example:
+                filename: sprint-14.csv
+                header: '"Identifiant";"Nom";"Statut";"Priorité";"Assignés";"Échéance";"Étiquettes";"Points";"Client"'
+                rows:
+                  - beforeAssignees:
+                      ['"CAD-482"', '"Refondre l’écran de connexion SSO"', '"En cours"', '"Haute"']
+                    assigneeIds:
+                      [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30, 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+                    afterAssignees: ['"2026-11-12"', '"Auth, Front"', '"5"', '"Coopérative Lumen"']
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '422':
+          $ref: '#/components/responses/ExportRowLimitReached'
   /internal/v1/lists/{listId}/counts:
     parameters:
       - $ref: '#/components/parameters/ListId'
@@ -4611,6 +4802,607 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/ListNotFound'
+  /internal/v1/goals:
+    get:
+      operationId: listGoalsInternal
+      summary: List the visible goals for a quarter
+      description: |
+        Returns goals the caller can currently read, in `(createdAt, id)` descending order. The cursor belongs to
+        the caller, organization, quarter and `today` of the request. `summary` describes all readable goals of
+        that quarter before paging, using the same visible results as the returned goals.
+      tags: [goals]
+      parameters:
+        - $ref: '#/components/parameters/GoalQuarter'
+        - $ref: '#/components/parameters/GoalToday'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The page of visible goals and quarter summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+    post:
+      operationId: createGoalInternal
+      summary: Create a goal
+      description: |
+        Creates the goal and all supplied initial key results in a single write. `spaceId` sets the scope
+        and stays fixed. With `spaceId` omitted or `null`, an organization owner or admin creates an
+        organization goal. Otherwise the caller needs effective `edit` on the space itself. The owner
+        must be a current member eligible to read the selected scope. The due date falls within the
+        selected quarter. An optional idempotency key replays the original response for 24 hours.
+      tags: [goals]
+      parameters:
+        - $ref: '#/components/parameters/GoalToday'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoalCreation'
+            example:
+              name: Lancer le SSO pour les entreprises
+              ownerUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+              dueDate: '2026-12-31'
+              quarter: 2026-Q4
+              spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+              results:
+                - kind: list-progress
+                  label: Tâches du Sprint 14 terminées
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                - kind: number
+                  label: Organisations clientes connectées en SSO
+                  startValue: 0
+                  currentValue: 4
+                  targetValue: 10
+                - kind: checkbox
+                  label: Documentation SSO publiée
+                  checked: false
+                - kind: milestone
+                  label: Démo SSO aux clients
+                  taskKey: CAD-580
+      responses:
+        '201':
+          description: The goal exists.
+          headers:
+            Location:
+              $ref: '#/components/headers/GoalLocation'
+            ETag:
+              $ref: '#/components/headers/GoalETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Goal'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/GoalWriteForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/GoalCreationRefused'
+  /internal/v1/goals/{goalId}:
+    get:
+      operationId: getGoalInternal
+      summary: Read a goal and its visible results
+      description: |
+        Returns the goal and the results whose linked targets the caller can currently read. Progress and
+        health use exactly this visible result set. The version identifies the stored goal aggregate and
+        changes only after a write.
+      tags: [goals]
+      parameters:
+        - $ref: '#/components/parameters/GoalId'
+        - $ref: '#/components/parameters/GoalToday'
+      responses:
+        '200':
+          description: The readable goal.
+          headers:
+            ETag:
+              $ref: '#/components/headers/GoalETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Goal'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/GoalNotFound'
+    patch:
+      operationId: updateGoalInternal
+      summary: Update a goal
+      description: |
+        Applies a merge patch to the name, owner or due date, using the current goal's scope to authorize
+        the write. The owner must remain eligible to read that scope and the due date must fall in the
+        goal's immutable quarter. When provided, `If-Match` checks the version of the goal.
+      tags: [goals]
+      parameters:
+        - $ref: '#/components/parameters/GoalId'
+        - $ref: '#/components/parameters/GoalToday'
+        - $ref: '#/components/parameters/GoalIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoalPatch'
+            example:
+              dueDate: '2026-12-15'
+      responses:
+        '200':
+          description: The updated goal.
+          headers:
+            ETag:
+              $ref: '#/components/headers/GoalETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Goal'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/GoalWriteForbidden'
+        '404':
+          $ref: '#/components/responses/GoalNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/GoalChangeRefused'
+    delete:
+      operationId: deleteGoalInternal
+      summary: Delete a goal
+      description: |
+        Deletes the goal and its results in one write. Linked lists and milestone tasks stay available.
+        When provided, `If-Match` checks the version of the goal.
+      tags: [goals]
+      parameters:
+        - $ref: '#/components/parameters/GoalId'
+        - $ref: '#/components/parameters/GoalIfMatch'
+      responses:
+        '204':
+          description: The goal was deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/GoalWriteForbidden'
+        '404':
+          $ref: '#/components/responses/GoalNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/goals/{goalId}/results:
+    post:
+      operationId: createGoalResultInternal
+      summary: Add a result to a goal
+      description: |
+        Adds a result to a writable goal. A linked list or milestone task must be readable by the
+        caller in the same organization. Each goal holds at most 20 stored results. `If-Match`
+        checks the goal's version, and an optional idempotency key replays the original response for
+        24 hours.
+      tags: [goals]
+      parameters:
+        - $ref: '#/components/parameters/GoalId'
+        - $ref: '#/components/parameters/GoalIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoalResultCreation'
+            example:
+              kind: list-progress
+              label: Tâches du Sprint 14 terminées
+              listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+      responses:
+        '201':
+          description: The result exists.
+          headers:
+            Location:
+              $ref: '#/components/headers/GoalResultLocation'
+            ETag:
+              $ref: '#/components/headers/GoalETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/GoalWriteForbidden'
+        '404':
+          $ref: '#/components/responses/GoalNotFound'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/GoalResultCreationRefused'
+  /internal/v1/goals/{goalId}/results/{resultId}:
+    get:
+      operationId: getGoalResultInternal
+      summary: Read a goal result
+      description: |
+        Returns a result on a readable goal. A linked result is returned only while its current target
+        is readable. The ETag identifies the parent goal's stored version.
+      tags: [goals]
+      parameters:
+        - $ref: '#/components/parameters/GoalId'
+        - $ref: '#/components/parameters/ResultId'
+      responses:
+        '200':
+          description: The readable result.
+          headers:
+            ETag:
+              $ref: '#/components/headers/GoalETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/GoalResultNotFound'
+    patch:
+      operationId: updateGoalResultInternal
+      summary: Update a goal result
+      description: |
+        Applies a merge patch to a result the caller can read on a writable goal. Every kind accepts a
+        label. Only a number accepts `currentValue`, and only a checkbox accepts `checked`. The kind,
+        numeric endpoints and linked target are fixed. Use result deletion and creation to replace a
+        link. A linked target must stay readable through the write. `If-Match` checks the goal's
+        version.
+      tags: [goals]
+      parameters:
+        - $ref: '#/components/parameters/GoalId'
+        - $ref: '#/components/parameters/ResultId'
+        - $ref: '#/components/parameters/GoalIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoalResultPatch'
+            example:
+              label: Tâches SSO terminées
+      responses:
+        '200':
+          description: The updated result.
+          headers:
+            ETag:
+              $ref: '#/components/headers/GoalETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/GoalWriteForbidden'
+        '404':
+          $ref: '#/components/responses/GoalResultNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/GoalResultChangeRefused'
+    delete:
+      operationId: deleteGoalResultInternal
+      summary: Delete a goal result
+      description: |
+        Removes a readable result from a writable goal. A linked target must stay readable
+        through the write. `If-Match` checks the goal's version.
+      tags: [goals]
+      parameters:
+        - $ref: '#/components/parameters/GoalId'
+        - $ref: '#/components/parameters/ResultId'
+        - $ref: '#/components/parameters/GoalIfMatch'
+      responses:
+        '204':
+          description: The result was deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/GoalWriteForbidden'
+        '404':
+          $ref: '#/components/responses/GoalResultNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/reports/team-dashboard:
+    get:
+      operationId: getTeamDashboardInternal
+      summary: Read the dashboard of visible team work
+      description: |
+        Computes the dashboard in one read of the caller's visible live tasks in readable live lists.
+        Open statuses have category `open` or `active`. Late tasks are open and due before `today`.
+        The blocked counter uses exactly `blocked`, and the status distribution covers every visible
+        live task. The overdue preview keeps the first ten tasks by due date and key. The workload
+        counts each open task against each of its current visible assignees, with a six-task threshold.
+
+        The selected 8 or 12 calendar weeks start on Monday in `timeZone` and include the week of `today`.
+        Each bucket counts a visible live task once if a durable activity entry records its transition to
+        `done` during the covered week. A task currently reopened still counts for its recorded completion.
+        Every bucket stops at `observedAt` at the latest. The current week also stops at the end of
+        `today` in `timeZone`. The total completed count is the sum of the week counts. Historical
+        occurrences of tasks that the caller cannot currently read are absent from every counter
+        and drill-down.
+      tags: [team-reports]
+      parameters:
+        - $ref: '#/components/parameters/Today'
+        - $ref: '#/components/parameters/TeamDashboardTimeZone'
+        - $ref: '#/components/parameters/TeamDashboardWeeks'
+      responses:
+        '200':
+          description: Dashboard counts, completion buckets and overdue preview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamDashboard'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/lists/{listId}/intake-form:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: getIntakeFormConfigurationInternal
+      summary: Read the intake configuration of a list
+      description: |
+        Requires current list `edit`. Initializing the draft saves version 1, an unpublished
+        form, `triage` when available with `todo` as fallback, and no assignee.
+        Settings can be read during archive. Internal token: api-gateway, user and organization.
+      tags: [intake]
+      responses:
+        '200':
+          $ref: '#/components/responses/IntakeConfiguration'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+    patch:
+      operationId: updateIntakeFormConfigurationInternal
+      summary: Change intake settings
+      description: |
+        Requires current `edit` on an active list and the strong form `ETag` in `If-Match`.
+        Validate the status and assignee, and commit editable settings and version together.
+        An unchanged patch keeps the version and an active publication keeps its key.
+        Internal token: api-gateway, user and organization.
+      tags: [intake]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIntakeIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/intake.yaml#/components/schemas/IntakeFormPatch'
+            example:
+              title: Déposer une demande
+              fields: { description: required, contactEmail: optional }
+              defaultStatus: triage
+              defaultAssigneeId: null
+      responses:
+        '200':
+          $ref: '#/components/responses/IntakeConfiguration'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '409':
+          $ref: '#/components/responses/IntakeListArchived'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/IntakeDefaultsInvalid'
+  /internal/v1/lists/{listId}/intake-form/publish:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    post:
+      operationId: publishIntakeFormInternal
+      summary: Publish an intake form
+      description: |
+        Requires current `edit` on an active list. Validate the defaults under the publication
+        lock. Publish a fresh key when disabled. A repeat with unchanged valid settings
+        preserves the current key and version. Internal token: api-gateway, user and organization.
+      tags: [intake]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          $ref: '#/components/responses/IntakeConfiguration'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '409':
+          $ref: '#/components/responses/IntakeListArchived'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/IntakeDefaultsInvalid'
+  /internal/v1/lists/{listId}/intake-form/publication:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    delete:
+      operationId: disableIntakeFormInternal
+      summary: Disable a published intake form
+      description: |
+        Requires current list `edit`, including on archived lists. Revoke the key in the
+        same transaction as the version change and retain the settings. An already disabled
+        form keeps its version. Internal token: api-gateway, user and organization.
+      tags: [intake]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The draft is unpublished.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/tasks/{taskKey}/intake-contact:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: getTaskIntakeContactInternal
+      summary: Read a requester's contact email
+      description: |
+        Requires current `edit` on the task's list. Read the contact separately from the
+        task projection and return null when absent. Internal token: api-gateway, user
+        and organization.
+      tags: [intake]
+      responses:
+        '200':
+          description: The independently stored contact, if any.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/intake.yaml#/components/schemas/TaskIntakeContact'
+              example:
+                contactEmail: prenom.nom@example.com
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/intake-forms/{publicKey}:
+    parameters:
+      - $ref: '#/components/parameters/IntakePublicKey'
+    get:
+      operationId: getPublicIntakeFormInternal
+      summary: Read the published applicant form
+      description: |
+        The key resolves the tenant and list. Verify that the publication and defaults
+        remain valid on an active list and return only the applicant projection.
+        Archive suspends the publication. Deletion and disable revoke its key.
+        Internal token: api-gateway and actor system, without an organization.
+      tags: [intake]
+      responses:
+        '200':
+          description: The applicant's form.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/intake.yaml#/components/schemas/PublicIntakeForm'
+              example:
+                title: Déposer une demande
+                description: Décrivez votre besoin en quelques mots.
+                fields:
+                  description: optional
+                  priority: optional
+                  dueDate: optional
+                  contactEmail: required
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/IntakeApplicantAccessRefused'
+        '404':
+          $ref: '#/components/responses/PublicIntakeNotFound'
+  /internal/v1/intake-forms/{publicKey}/submissions:
+    parameters:
+      - $ref: '#/components/parameters/IntakePublicKey'
+    post:
+      operationId: submitPublicIntakeFormInternal
+      summary: Submit a request through a published form
+      description: |
+        Internal token: api-gateway and actor system, without an organization. Resolve the
+        tenant and list by key. Recheck the publication, list, status and assignee under the
+        write locks before applying the form's fields and normal task creation rules.
+        Store contact separately in the same transaction as the task and its ordinary
+        outbox events. Idempotency is scoped to the publication and returns the original
+        opaque receipt on a matching replay within 24 hours while the publication stays valid.
+      tags: [intake]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/intake.yaml#/components/schemas/IntakeSubmission'
+            example:
+              title: Accès SSO pour Atelier Nord
+              description: Activer la connexion pour l’équipe du sprint 14.
+              contactEmail: prenom.nom@example.com
+      responses:
+        '200':
+          description: The submission is accepted and its task is committed.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/intake.yaml#/components/schemas/IntakeReceipt'
+              example:
+                receipt: T3Wf3e3VdFKPIsnP7t9m2kUuwtHTU2yXrP-Ekq11BRg
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/IntakeApplicantAccessRefused'
+        '404':
+          $ref: '#/components/responses/PublicIntakeNotFound'
+        '409':
+          $ref: '#/components/responses/IntakeSubmissionInProgress'
+        '422':
+          $ref: '#/components/responses/IntakeSubmissionRefused'
 components:
   securitySchemes:
     internalToken:
@@ -4621,12 +5413,85 @@ components:
         Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` = `task-service`,
         issuer `api-gateway`, or `realtime-gateway` for the access checks.
   parameters:
+    SheetExportColumn:
+      name: sheetSortColumn
+      in: query
+      required: false
+      description: Feuille column key or an active custom field ID for this list's space.
+      schema:
+        $ref: '../../components/reporting.yaml#/components/schemas/SheetExportColumn'
+    SheetExportDirection:
+      name: sheetSortDirection
+      in: query
+      required: false
+      description: Sheet export sort direction, ascending when omitted. Requires sheetSortColumn.
+      schema:
+        $ref: '../../components/reporting.yaml#/components/schemas/SheetExportDirection'
     CustomFieldId:
       name: fieldId
       in: path
       required: true
       schema:
         $ref: '../../components/task.yaml#/components/schemas/CustomFieldId'
+    GoalToday:
+      name: today
+      in: query
+      required: true
+      description: |
+        The caller's calendar day. Expected goal progress is
+        `100 * clamp((today - quarterStart) / (quarterEnd - quarterStart), 0, 1)`,
+        using calendar days. Compare expected and actual percentages before display rounding.
+      schema:
+        type: string
+        format: date
+        examples: ['2026-11-08']
+    GoalIfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Strong ETag of the goal aggregate underlying the change.
+      schema:
+        type: string
+        examples: ['"12"']
+    GoalQuarter:
+      name: quarter
+      in: query
+      required: true
+      description: Calendar quarter whose goals are requested.
+      schema:
+        $ref: '../../components/goals.yaml#/components/schemas/GoalQuarter'
+    GoalId:
+      name: goalId
+      in: path
+      required: true
+      description: UUID of the goal.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7008-8b9c-7d0e-8f1a-2b3c4d5e6f01]
+    ResultId:
+      name: resultId
+      in: path
+      required: true
+      description: UUID of the key result within the goal.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7008-8b9c-7d0e-8f1a-2b3c4d5e6f02]
+    TeamDashboardTimeZone:
+      name: timeZone
+      in: query
+      required: true
+      description: IANA time-zone identifier used to bucket completion activity.
+      schema:
+        $ref: '../../components/dashboard.yaml#/components/schemas/TeamDashboardTimeZone'
+    TeamDashboardWeeks:
+      name: weeks
+      in: query
+      description: Number of weeks including the week of today.
+      schema:
+        $ref: '../../components/dashboard.yaml#/components/schemas/TeamDashboardWeeks'
+        default: 8
     TemplateId:
       name: templateId
       in: path
@@ -4808,6 +5673,22 @@ components:
       description: '`"<version>"` the change was made from.'
       schema:
         type: string
+    RequiredIntakeIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Strong ETag of the current form settings.
+      schema:
+        type: string
+        examples: ['"1"']
+    IntakePublicKey:
+      name: publicKey
+      in: path
+      required: true
+      description: Opaque publication key. A key with an invalid shape is handled as unknown.
+      schema:
+        type: string
+        example: F3Nq7tG2hu0TQvQqMCuBCgBl2R7dV7jvxrT3SRiYkTQ
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -4850,6 +5731,26 @@ components:
       description: Version of the caller's onboarding state, `"<version>"`.
       schema:
         type: string
+    GoalETag:
+      description: Strong validator of the goal aggregate, including its results.
+      schema:
+        type: string
+        examples: ['"1"']
+    GoalLocation:
+      description: Public URI reference for the new goal, including the creation request's today value.
+      schema:
+        type: string
+        format: uri-reference
+        examples: ['/v1/goals/019a7008-8b9c-7d0e-8f1a-2b3c4d5e6f01?today=2026-11-08']
+    GoalResultLocation:
+      description: Public URI reference for the new key result.
+      schema:
+        type: string
+        format: uri-reference
+        examples:
+          [
+            /v1/goals/019a7008-8b9c-7d0e-8f1a-2b3c4d5e6f01/results/019a7008-8b9c-7d0e-8f1a-2b3c4d5e6f02,
+          ]
     ETag:
       description: Version of the space, the list or the task, `"<version>"`.
       schema:
@@ -4931,6 +5832,116 @@ components:
         status: 422
         code: idempotency.key-reused
   responses:
+    SprintReportNotFound:
+      description: |
+        `list.not-found` when the list is not a readable sprint. `organization.not-found`
+        follows `ListNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Sprint not found.
+            status: 404
+            code: list.not-found
+    ExportRowLimitReached:
+      description: |
+        `list.export-row-limit-reached` when more than 10,000 readable rows match.
+        `details.maxRows` is the export limit and the response contains no CSV bytes.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: List export row limit reached.
+            status: 422
+            code: list.export-row-limit-reached
+            details: { maxRows: 10000 }
+    IntakeConfiguration:
+      description: Current list form configuration.
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+      content:
+        application/json:
+          schema:
+            $ref: '../../components/intake.yaml#/components/schemas/IntakeFormConfiguration'
+          example:
+            title: Déposer une demande
+            description: Décrivez votre besoin en quelques mots.
+            fields:
+              description: optional
+              priority: optional
+              dueDate: optional
+              contactEmail: required
+            defaultStatus: triage
+            defaultAssigneeId: null
+            publicKey: F3Nq7tG2hu0TQvQqMCuBCgBl2R7dV7jvxrT3SRiYkTQ
+            version: 2
+    IntakeApplicantAccessRefused:
+      description: '`auth.issuer-not-allowed` or `auth.actor-not-allowed` for an applicant call.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            issuerNotAllowed:
+              $ref: '#/components/examples/IssuerNotAllowed'
+            actorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+    PublicIntakeNotFound:
+      description: '`intake-form.not-found`: generic response for a key without a valid active publication.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: intake-form.not-found
+    IntakeListArchived:
+      description: '`intake-form.list-archived`: editing or publishing an archived list’s form is refused.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            code: intake-form.list-archived
+    IntakeDefaultsInvalid:
+      description: '`intake-form.defaults-invalid`: the configured status or assignee is invalid for this list.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: intake-form.defaults-invalid
+    IntakeSubmissionInProgress:
+      description: '`idempotency.request-in-progress`: a request with this key on this publication still runs.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            requestInProgress:
+              $ref: '#/components/examples/RequestInProgress'
+    IntakeSubmissionRefused:
+      description: '`idempotency.key-reused`: this key was used before with another body on the same publication.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
     TimeEntryDeleteForbidden:
       description: |
         `time-entry.author-required` when an editor tries to delete another actor's entry.
@@ -5099,6 +6110,131 @@ components:
                   prefix: CAD
             requestInProgress:
               $ref: '#/components/examples/RequestInProgress'
+    GoalWriteForbidden:
+      description: |
+        - `organization.role-forbidden`: only an owner or admin writes organization goals.
+        - `access.role-insufficient`: the caller sees the space without `edit`.
+          `details.role` and `details.requiredRole` describe the effective and required roles.
+        - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`:
+          see the internal token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationRoleForbidden:
+              value:
+                type: about:blank
+                title: 'Forbidden'
+                status: 403
+                code: organization.role-forbidden
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
+    GoalNotFound:
+      description: |
+        - `goal.not-found`: the goal is unknown or hidden in the current organization.
+        - `organization.not-found`: the organization is unknown or the caller is no longer a member.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            goalNotFound:
+              value:
+                type: about:blank
+                title: 'Not Found'
+                status: 404
+                code: goal.not-found
+    GoalResultNotFound:
+      description: |
+        - `goal.not-found`: the parent goal is unknown or hidden.
+        - `goal.result-not-found`: the result is unknown, belongs to another goal or links an unavailable target.
+        - `organization.not-found`: the organization is unknown or the caller is no longer a member.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            resultNotFound:
+              value:
+                type: about:blank
+                title: 'Not Found'
+                status: 404
+                code: goal.result-not-found
+    GoalCreationRefused:
+      description: |
+        - `goal.owner-ineligible`: the selected owner cannot read the goal's scope.
+        - `goal.due-date-outside-quarter`: the due date falls outside the quarter.
+        - `goal.result-target-invalid`: an initial target is unavailable or unsuitable.
+        - `idempotency.key-reused`: the key was used with another request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            ownerIneligible:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: goal.owner-ineligible
+            dueDate:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: goal.due-date-outside-quarter
+    GoalChangeRefused:
+      description: |
+        - `goal.owner-ineligible`: the selected owner cannot read the goal's scope.
+        - `goal.due-date-outside-quarter`: the due date falls outside the quarter.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            dueDate:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: goal.due-date-outside-quarter
+    GoalResultCreationRefused:
+      description: |
+        - `goal.result-target-invalid`: the supplied target is unknown, unavailable or unsuitable.
+        - `goal.result-limit-reached`: the goal already has 20 stored results.
+        - `idempotency.key-reused`: the key was used with another request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            targetInvalid:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: goal.result-target-invalid
+            resultLimit:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: goal.result-limit-reached
+    GoalResultChangeRefused:
+      description: |
+        `goal.result-patch-invalid`: the merge patch writes a member unsupported by the current kind.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            patchInvalid:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: goal.result-patch-invalid
     TemplateNotFound:
       description: '`template.not-found`, `space.not-found`, `organization.not-found`.'
       content:
@@ -6500,6 +7636,49 @@ components:
             details:
               version: 13
   schemas:
+    ListTaskExport:
+      type: object
+      required: [filename, header, rows]
+      additionalProperties: false
+      properties:
+        filename:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{1,124}[.]csv$'
+          description: Safe attachment basename to use in the public Content-Disposition header.
+        header:
+          type: string
+          description: The complete encoded CSV header, with semicolon separators and without a trailing CRLF.
+        rows:
+          type: array
+          maxItems: 10000
+          description: Ordered rows with the same columns as the header.
+          items:
+            type: object
+            required: [beforeAssignees, assigneeIds, afterAssignees]
+            additionalProperties: false
+            properties:
+              beforeAssignees:
+                type: array
+                minItems: 4
+                maxItems: 4
+                description: Encoded identifier, name, status and priority cells in column order.
+                items:
+                  type: string
+              assigneeIds:
+                type: array
+                maxItems: 20
+                uniqueItems: true
+                description: Assignee account IDs in assignment order.
+                items:
+                  type: string
+                  format: uuid
+              afterAssignees:
+                type: array
+                minItems: 2
+                maxItems: 32
+                description: Encoded due date, labels and active custom field cells in column order.
+                items:
+                  type: string
     CustomFieldDefinition:
       $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinition'
     CustomFieldDefinitionPage:
@@ -6508,6 +7687,22 @@ components:
       $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinitionCreation'
     CustomFieldDefinitionPatch:
       $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinitionPatch'
+    Goal:
+      $ref: '../../components/goals.yaml#/components/schemas/Goal'
+    GoalPage:
+      $ref: '../../components/goals.yaml#/components/schemas/GoalPage'
+    GoalCreation:
+      $ref: '../../components/goals.yaml#/components/schemas/GoalCreation'
+    GoalPatch:
+      $ref: '../../components/goals.yaml#/components/schemas/GoalPatch'
+    GoalResult:
+      $ref: '../../components/goals.yaml#/components/schemas/GoalResult'
+    GoalResultCreation:
+      $ref: '../../components/goals.yaml#/components/schemas/GoalResultCreation'
+    GoalResultPatch:
+      $ref: '../../components/goals.yaml#/components/schemas/GoalResultPatch'
+    TeamDashboard:
+      $ref: '../../components/dashboard.yaml#/components/schemas/TeamDashboard'
     Favorite:
       $ref: '../../components/task.yaml#/components/schemas/Favorite'
     FavoriteCreation:

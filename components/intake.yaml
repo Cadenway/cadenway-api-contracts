@@ -1,0 +1,174 @@
+# Shared models of the list intake administration and anonymous form routes.
+openapi: 3.1.0
+info:
+  title: Cadenway shared intake components
+  version: 1.0.0
+  description: List form settings, public projections and submission receipts.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    IntakeFormTitle:
+      type: string
+      minLength: 1
+      maxLength: 300
+      description: Form heading supplied by a list editor. The service trims surrounding whitespace.
+      examples: [Déposer une demande]
+    IntakeFormDescription:
+      type: [string, 'null']
+      maxLength: 500
+      description: Introductory plain text supplied by a list editor, or null when absent.
+    IntakeFieldMode:
+      type: string
+      enum: [disabled, optional, required]
+      description: Whether the submission accepts this field and requires a value.
+    IntakeFormFields:
+      type: object
+      additionalProperties: false
+      required: [description, priority, dueDate, contactEmail]
+      description: Policy for the configurable fields. The title is required for every submission.
+      properties:
+        description:
+          $ref: '#/components/schemas/IntakeFieldMode'
+        priority:
+          $ref: '#/components/schemas/IntakeFieldMode'
+        dueDate:
+          $ref: '#/components/schemas/IntakeFieldMode'
+        contactEmail:
+          $ref: '#/components/schemas/IntakeFieldMode'
+    IntakeFormFieldsPatch:
+      type: object
+      additionalProperties: false
+      description: Partial changes to the configurable fields. Omitted modes retain their values.
+      properties:
+        description:
+          $ref: '#/components/schemas/IntakeFieldMode'
+        priority:
+          $ref: '#/components/schemas/IntakeFieldMode'
+        dueDate:
+          $ref: '#/components/schemas/IntakeFieldMode'
+        contactEmail:
+          $ref: '#/components/schemas/IntakeFieldMode'
+    IntakeDefaultAssigneeId:
+      type: [string, 'null']
+      format: uuid
+      description: UUID of the eligible account assigned to new tasks, or null for no assignment.
+    IntakeFormConfiguration:
+      type: object
+      additionalProperties: false
+      required: [title, description, fields, defaultStatus, defaultAssigneeId, publicKey, version]
+      description: Current form settings visible to an editor of the owning list.
+      properties:
+        title:
+          $ref: '#/components/schemas/IntakeFormTitle'
+        description:
+          $ref: '#/components/schemas/IntakeFormDescription'
+        fields:
+          $ref: '#/components/schemas/IntakeFormFields'
+        defaultStatus:
+          $ref: './task.yaml#/components/schemas/StatusKey'
+        defaultAssigneeId:
+          $ref: '#/components/schemas/IntakeDefaultAssigneeId'
+        publicKey:
+          type: [string, 'null']
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Opaque key of the current publication, or null when the form is disabled.
+        version:
+          type: integer
+          minimum: 1
+          description: Configuration version used for conditional changes.
+      examples:
+        - title: Déposer une demande
+          description: Décrivez votre demande pour notre équipe.
+          fields:
+            { description: optional, priority: optional, dueDate: optional, contactEmail: required }
+          defaultStatus: triage
+          defaultAssigneeId: null
+          publicKey: null
+          version: 1
+    IntakeFormPatch:
+      type: object
+      additionalProperties: false
+      description: Merge patch of the editable settings. Null clears the introduction or default assignee.
+      properties:
+        title:
+          $ref: '#/components/schemas/IntakeFormTitle'
+        description:
+          $ref: '#/components/schemas/IntakeFormDescription'
+        fields:
+          $ref: '#/components/schemas/IntakeFormFieldsPatch'
+        defaultStatus:
+          $ref: './task.yaml#/components/schemas/StatusKey'
+        defaultAssigneeId:
+          $ref: '#/components/schemas/IntakeDefaultAssigneeId'
+    PublicIntakeForm:
+      type: object
+      additionalProperties: false
+      required: [title, description, fields]
+      description: Public projection of the settings deliberately provided for display.
+      properties:
+        title:
+          $ref: '#/components/schemas/IntakeFormTitle'
+        description:
+          $ref: '#/components/schemas/IntakeFormDescription'
+        fields:
+          $ref: '#/components/schemas/IntakeFormFields'
+      examples:
+        - title: Déposer une demande
+          description: Décrivez votre demande pour notre équipe.
+          fields:
+            { description: optional, priority: optional, dueDate: optional, contactEmail: required }
+    IntakeContactEmail:
+      type: string
+      format: email
+      maxLength: 254
+      description: Address submitted by the applicant and stored separately from the task.
+    IntakeSubmission:
+      type: object
+      additionalProperties: false
+      required: [title]
+      description: |
+        The service validates configurable fields against the current publication after resolving
+        the form key. Disabled fields must be omitted. Required fields must contain a value.
+      properties:
+        title:
+          $ref: './task.yaml#/components/schemas/TaskName'
+        description:
+          $ref: './task.yaml#/components/schemas/TaskDescription'
+        priority:
+          $ref: './task.yaml#/components/schemas/PriorityKey'
+        dueDate:
+          type: string
+          format: date
+          description: Requested due date in calendar days.
+        contactEmail:
+          $ref: '#/components/schemas/IntakeContactEmail'
+      examples:
+        - title: Refondre l’écran de connexion SSO
+          description: Clarifier les étapes de connexion.
+          contactEmail: demandeur@example.test
+    IntakeReceipt:
+      type: object
+      additionalProperties: false
+      required: [receipt]
+      description: Acknowledgement returned after committing the submission.
+      properties:
+        receipt:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Opaque identifier of this acknowledgement.
+    TaskIntakeContact:
+      type: object
+      additionalProperties: false
+      required: [contactEmail]
+      description: Contact data visible to a current list editor for this task.
+      properties:
+        contactEmail:
+          oneOf:
+            - $ref: '#/components/schemas/IntakeContactEmail'
+            - type: 'null'
+          description: Address supplied with the intake submission, or null when absent.

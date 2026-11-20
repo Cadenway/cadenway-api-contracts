@@ -239,6 +239,38 @@ export const ListMembersInternalResponse = zod.object({
 
 
 /**
+ * Returns the directory names of requested accounts that currently belong to the
+ * organization of the token. All current members, including guests, can be the acting user.
+ * Read the actor's membership and the requested names in one tenant snapshot. Omit accounts
+ * outside the organization, departed members and accounts without a directory name.
+ * Case-equivalent UUIDs and repeated identifiers resolve to at most one result per account.
+ * Result order is unspecified. The gateway supplies only assignees from the result of
+ * `GET /internal/v1/lists/{listId}/tasks/export` for the same actor and organization.
+ *
+ * Internal token: issuer `api-gateway` only, actor `user` and organization required.
+ * @summary Resolve member names for list CSV export
+ */
+export const lookupMemberNamesInternalBodyUserIdsMax = 5000;
+
+
+
+export const LookupMemberNamesInternalBody = zod.object({
+  "userIds": zod.array(zod.uuid()).min(1).max(lookupMemberNamesInternalBodyUserIdsMax)
+})
+
+export const lookupMemberNamesInternalResponseItemsMax = 5000;
+
+
+
+export const LookupMemberNamesInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "name": zod.string().describe('Full name from the organization-service user directory.')
+})).max(lookupMemberNamesInternalResponseItemsMax)
+})
+
+
+/**
  * Returns a member of the organization of the token; any other id answers
  * `404 member.not-found`. A guest gets `403 organization.role-forbidden`. Internal token:
  * actor `user`, organization required.
