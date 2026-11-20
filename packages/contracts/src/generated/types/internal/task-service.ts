@@ -3937,6 +3937,26 @@ export type WriteForbiddenResponse = Problem;
 export type AccessCheckRefusedResponse = Problem;
 
 /**
+ * `access.role-insufficient` when the actor sees the task but has no `edit` role on its
+ * current list in `write` mode. The details report the effective `role` and
+ * `requiredRole: edit`. Also answers `auth.issuer-not-allowed`, `auth.actor-not-allowed`
+ * or `auth.organization-required` for a refused verified token.
+ */
+export type AttachmentAccessForbiddenResponse = Problem;
+
+/**
+ * `task.not-found` when the task is unknown, invisible, trashed or erased, including when
+ * its list or space was deleted. `organization.not-found` for an inactive membership.
+ */
+export type AttachmentTaskNotFoundResponse = Problem;
+
+/**
+ * `task.archived` in `write` mode when the task or its current list is archived.
+ * `details.key` names the target task.
+ */
+export type AttachmentTaskArchivedResponse = Problem;
+
+/**
  * `organization.not-found`: task-service does not hold the actor as a member of the
  * organization of the token, removed or not yet learnt.
  */
@@ -4875,6 +4895,19 @@ export type RestoreTrashEntryInternalParams = {
   /** Report an otherwise restorable entry whose list deletion is still batching. */
   reportNotReady?: boolean;
 };
+
+export type CheckTaskAttachmentAccessInternalParams = {
+  /** `read` for list, metadata and download. `write` for reserve, complete and delete. */
+  mode: CheckTaskAttachmentAccessInternalMode;
+};
+
+export type CheckTaskAttachmentAccessInternalMode = typeof CheckTaskAttachmentAccessInternalMode[keyof typeof CheckTaskAttachmentAccessInternalMode];
+
+
+export const CheckTaskAttachmentAccessInternalMode = {
+  read: 'read',
+  write: 'write',
+} as const;
 
 export type ListTaskTemplatesInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */

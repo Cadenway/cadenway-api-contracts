@@ -29,6 +29,11 @@ rules:
 apis:
   public-intake:
     root: openapi/public/intake.yaml
+  shared-attachments:
+    root: components/attachments.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
   shared-task-approval:
     root: components/approval.yaml
     rules:

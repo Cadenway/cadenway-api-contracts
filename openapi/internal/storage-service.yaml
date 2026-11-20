@@ -1,0 +1,462 @@
+openapi: 3.1.0
+info:
+  title: storage-service internal routes
+  version: 1.0.0
+  description: |
+    Attachment resources owned by storage-service. The API gateway is the only HTTP caller.
+    Every request uses a verified `api-gateway` token with actor `user` and an organization.
+    Before relaying each task attachment request, the gateway requires a successful decision
+    from `checkTaskAttachmentAccessInternal`. Task-service reads current placement, visibility,
+    role and archive state in one snapshot. The gateway uses `read` for list, metadata and
+    download, and `write` for reserve, complete and delete. Mutations require `edit` on the
+    current list and an active task and list. Storage
+    bounds each operation by the verified organization and the authorized task key, and binds a
+    pending upload to the verified uploader. A task key remains stable through moves. A purge
+    permanently revokes the task key for attachments and schedules removal of pending and ready
+    objects. Temporary URL cleanup covers expired reservations and leftover staged objects.
+    Signed URLs are sensitive and must be omitted from logs and traces.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Authorizes task access and relays attachment operations using the generated internal client.
+servers:
+  - url: http://storage-service:3015
+    description: Internal service endpoint.
+security:
+  - internalToken: []
+tags:
+  - name: attachments
+    description: Signed upload and download, attachment metadata and cleanup.
+paths:
+  /internal/v1/tasks/{taskKey}/attachments:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskAttachmentsInternal
+      summary: List task attachments
+      description: |
+        Lists ready attachments in descending `(uploadedAt,id)` order. The opaque cursor is
+        bound to the caller's organization, task and ordering. The caller must be able to read
+        the task. Readable archived tasks remain accessible. Pending or deleted attachments
+        are excluded.
+      tags: [attachments]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of ready attachments.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/attachments.yaml#/components/schemas/AttachmentPage'
+              example:
+                items:
+                  - id: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                    taskKey: CAD-482
+                    fileName: maquette-sso.png
+                    contentType: image/png
+                    sizeBytes: 248320
+                    authorUserId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    uploadedAt: '2026-11-08T08:05:00Z'
+                    version: 1
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: startTaskAttachmentUploadInternal
+      summary: Reserve a signed task attachment upload
+      description: |
+        Reserves one upload for the verified editor of the active task. The file-size limit is
+        26,214,400 bytes (25 MiB). A larger declared size answers `422 attachment.file-too-large`
+        before a URL is issued. The media type must match the registered type of the final file
+        extension, ignoring case. The response authorizes a five-minute multipart POST to a temporary
+        object, restricted to that object, the declared media type and 1 to 26,214,400 file bytes.
+        Append all returned form fields unchanged to FormData, then append the file as its final
+        part named `file`. Complete the upload before the expiry instant.
+        Keep the URL and form fields out of logs. While authorization still holds, an equivalent
+        request with the same Idempotency-Key replays the original response and Location for 24 hours,
+        with the original URL expiry. Use a fresh key for a new reservation.
+      tags: [attachments]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/attachments.yaml#/components/schemas/StartAttachmentUpload'
+            example: { fileName: maquette-sso.png, contentType: image/png, sizeBytes: 248320 }
+      responses:
+        '201':
+          description: The reserved attachment and temporary upload capability.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/attachments.yaml#/components/schemas/AttachmentUpload'
+              example:
+                id: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                method: POST
+                url: https://files.example.com/fixtures/sso-upload
+                fields: { Content-Type: image/png }
+                expiresAt: '2026-11-08T08:10:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/AttachmentNotFound'
+        '409':
+          $ref: '#/components/responses/UploadReservationConflict'
+        '422':
+          $ref: '#/components/responses/UploadStartRefused'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/tasks/{taskKey}/attachments/{attachmentId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/AttachmentId'
+    get:
+      operationId: getTaskAttachmentInternal
+      summary: Read a ready attachment
+      description: |
+        Returns metadata for a ready attachment of a readable task, including an archived one.
+        An attachment pending upload, erased, or associated with another task answers
+        `404 attachment.not-found`.
+      tags: [attachments]
+      responses:
+        '200':
+          description: Metadata of the ready attachment.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/attachments.yaml#/components/schemas/TaskAttachment'
+              example:
+                id: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                taskKey: CAD-482
+                fileName: maquette-sso.png
+                contentType: image/png
+                sizeBytes: 248320
+                authorUserId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                uploadedAt: '2026-11-08T08:05:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/AttachmentNotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteTaskAttachmentInternal
+      summary: Delete a task attachment
+      description: |
+        Deletes a ready attachment from an active task the caller may edit. An optional strong ETag
+        checks its current version. The deletion makes the attachment unavailable, records
+        `file.deleted.v1` and persists the cleanup request together. Object cleanup is asynchronous.
+        Previously issued download URLs can remain valid until expiration or object cleanup.
+      tags: [attachments]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The attachment is unavailable and cleanup is scheduled.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/AttachmentNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/tasks/{taskKey}/attachments/{attachmentId}/completion:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/AttachmentId'
+    post:
+      operationId: completeTaskAttachmentUploadInternal
+      summary: Complete a task attachment upload
+      description: |
+        Completes the reservation of the verified uploader, who must still be able to edit the active
+        task. The service checks the staged object length and media type against the reservation,
+        and checks its type using the first 4 KiB of bytes. Plain-text files, including logs, require
+        a valid UTF-8 prefix without NUL bytes and without a conflicting detected binary type.
+        Other types require a matching file signature. The checks apply to the finalized bytes.
+        The finalized object is independent of the upload capability, so a repeated POST to the
+        upload URL cannot replace it. The first successful completion publishes the attachment
+        and records `file.uploaded.v1` together. Repeating successful completion returns the same
+        metadata without a second fact. A staged object that is missing before expiry answers
+        `409 attachment.upload-not-ready`. Expired pending reservations cannot be completed.
+      tags: [attachments]
+      responses:
+        '200':
+          description: The ready attachment and its strong ETag.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/attachments.yaml#/components/schemas/TaskAttachment'
+              example:
+                id: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                taskKey: CAD-482
+                fileName: maquette-sso.png
+                contentType: image/png
+                sizeBytes: 248320
+                authorUserId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                uploadedAt: '2026-11-08T08:05:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/AttachmentNotFound'
+        '409':
+          $ref: '#/components/responses/UploadStateConflict'
+        '422':
+          $ref: '#/components/responses/UploadContentRefused'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/tasks/{taskKey}/attachments/{attachmentId}/download:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/AttachmentId'
+    get:
+      operationId: getTaskAttachmentDownloadInternal
+      summary: Sign a task attachment download
+      description: |
+        Signs a temporary GET for a ready attachment of a readable task. The signed URL is a capability
+        on the cookie-free object-storage origin. Clients do not send application credentials to that origin.
+        The signed download always uses `Content-Disposition: attachment` with a safely encoded filename.
+        The application can provide its own safe preview for supported media. It never renders HTML or SVG
+        inline. This operation does not change attachment state.
+      tags: [attachments]
+      responses:
+        '200':
+          description: The signed GET URL and its expiry.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/attachments.yaml#/components/schemas/AttachmentDownload'
+              example:
+                url: https://files.example.com/fixtures/sso-download
+                expiresAt: '2026-11-08T08:10:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/AttachmentNotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/attachments/largest:
+    get:
+      operationId: listLargestAttachmentsInternal
+      summary: List the organization's largest ready attachments
+      description: |
+        Lists ready task attachments of the verified organization in descending `(sizeBytes,id)`
+        order for storage usage analysis. The opaque cursor binds the tenant and ordering. The gateway
+        checks current organization owner or admin membership through `getOrganizationInternal` before
+        calling. This internal result is a quota input. A public presentation must also enforce
+        current task visibility before disclosing file names or task keys.
+      tags: [attachments]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of ready attachment metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/attachments.yaml#/components/schemas/AttachmentPage'
+              example:
+                items:
+                  - id: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                    taskKey: CAD-482
+                    fileName: maquette-sso.png
+                    contentType: image/png
+                    sizeBytes: 248320
+                    authorUserId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                    uploadedAt: '2026-11-08T08:05:00Z'
+                    version: 1
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Signed internal token with issuer api-gateway, audience storage-service, actor user and a verified organization.
+  parameters:
+    TaskKey:
+      name: taskKey
+      in: path
+      required: true
+      description: Stable key of the target task.
+      schema:
+        $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+    AttachmentId:
+      name: attachmentId
+      in: path
+      required: true
+      description: UUID allocated by the upload request.
+      schema:
+        $ref: '../../components/attachments.yaml#/components/schemas/AttachmentId'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Client-chosen key for an upload reservation.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Strong ETag of the attachment version when a conditional deletion is needed.
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]*"$'
+        examples: ['"1"']
+  headers:
+    Location:
+      required: true
+      description: Path of the reserved attachment. Its metadata becomes readable when the upload is complete.
+      schema:
+        type: string
+        examples: ['/internal/v1/tasks/CAD-482/attachments/019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15']
+    NoStore:
+      required: true
+      description: Prevents HTTP caches from storing a response that carries a signed URL.
+      schema:
+        type: string
+        const: no-store
+    ETag:
+      required: true
+      description: Strong entity tag of the attachment version.
+      schema:
+        type: string
+        examples: ['"1"']
+  responses:
+    BadRequest:
+      description: |
+        `request.invalid` with `details.issues`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    InternalTokenRefused:
+      description: |
+        `auth.token-missing` or `auth.token-invalid`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    InternalAccessRefused:
+      description: |
+        `auth.issuer-not-allowed`, `auth.actor-not-allowed` or `auth.organization-required`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    AttachmentNotFound:
+      description: |
+        `attachment.not-found` for an unknown, unavailable or unrelated attachment, a pending reservation of another uploader, or a target already permanently purged.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    UploadReservationConflict:
+      description: |
+        `idempotency.request-in-progress` while the equivalent upload reservation is running.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    UploadStateConflict:
+      description: |
+        `attachment.upload-expired` for an expired pending reservation or `attachment.upload-not-ready` when the temporary object has not arrived.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    UploadStartRefused:
+      description: |
+        `attachment.file-too-large` above 26,214,400 bytes, `attachment.upload-metadata-mismatch`
+        for a missing or unknown extension or one that disagrees with the declared media type,
+        or `idempotency.key-reused` for a key previously used with a different request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    UploadContentRefused:
+      description: |
+        `attachment.file-too-large` when the stored object exceeds the limit, or
+        `attachment.upload-metadata-mismatch` when its length, declared media type or detected type
+        is inconsistent with the reservation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    VersionMismatch:
+      description: |
+        `request.version-mismatch` when the supplied attachment ETag is stale.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unavailable:
+      description: |
+        `storage.unavailable` when object storage or the durable attachment state cannot be reached.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'

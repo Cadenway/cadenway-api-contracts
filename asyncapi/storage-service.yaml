@@ -1,0 +1,206 @@
+# Events of storage-service for task attachments.
+asyncapi: 3.0.0
+info:
+  title: storage-service events
+  version: 1.0.0
+  description: |
+    Storage-service owns attachment metadata and the object lifecycle. It appends each fact
+    to the outbox in the same tenant transaction as the recorded change. After commit the
+    relay publishes at least once to `EVENTS`. These facts carry the identifiers and byte
+    count for projections. They carry no filename, object key, signed URL or contact data.
+
+    Consumers deduplicate by event `id`. Projections retain the highest `version` per
+    `(organizationId, fileId)`, including a tombstone after deletion. A deletion that arrives
+    before the upload leaves no ready file. A later delivery of the older upload does not
+    restore it. Billing derives usage from ready files, so replay and out-of-order delivery
+    do not apply a byte delta twice.
+
+    Storage-service consumes [`task.purged.v1`](./task-service.yaml#/components/messages/taskPurgedV1)
+    using the task-service payload. It records the purge for the event's organization and
+    stable task key and schedules the attachment cleanup idempotently. The purge prevents
+    pending uploads from becoming ready. Cleanup removes ready attachments and discards
+    pending uploads for that same task, in bounded batches when necessary.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  tags:
+    - name: files
+      description: Task attachments and their stored byte counts.
+  x-consumers:
+    - repository: cadenway-task-service
+      uses: Planned in P4, file.uploaded.v1 and file.deleted.v1 for attachment references on tasks.
+    - repository: cadenway-billing-service
+      uses: Planned in P5, file.uploaded.v1 and file.deleted.v1 for organization storage usage.
+    - repository: cadenway-search-service
+      uses: Planned in P5, file.uploaded.v1 and file.deleted.v1 to update the affected task projection.
+servers:
+  nats:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream of each environment, on its internal network.
+defaultContentType: application/json
+channels:
+  fileUploadedV1:
+    address: evt.file.uploaded.v1
+    description: |
+      A task attachment has become ready. Emitted by storage-service. Planned consumers:
+      cadenway-task-service, cadenway-billing-service and cadenway-search-service.
+    messages:
+      fileUploadedV1:
+        $ref: '#/components/messages/fileUploadedV1'
+  fileDeletedV1:
+    address: evt.file.deleted.v1
+    description: |
+      A ready task attachment has been removed. Emitted by storage-service. Planned consumers:
+      cadenway-task-service, cadenway-billing-service and cadenway-search-service.
+    messages:
+      fileDeletedV1:
+        $ref: '#/components/messages/fileDeletedV1'
+operations:
+  publishFileUploadedV1:
+    action: send
+    summary: storage-service publishes that an attachment is ready.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/fileUploadedV1'
+    messages:
+      - $ref: '#/channels/fileUploadedV1/messages/fileUploadedV1'
+  publishFileDeletedV1:
+    action: send
+    summary: storage-service publishes that an attachment has been removed.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/fileDeletedV1'
+    messages:
+      - $ref: '#/channels/fileDeletedV1/messages/fileDeletedV1'
+components:
+  schemas:
+    EventHeaders:
+      type: object
+      properties:
+        traceparent:
+          type: string
+          description: W3C Trace Context of the request or event that caused the change.
+    AttachmentTaskKey:
+      type: string
+      pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+      description: Stable key of the owning task, including after a move.
+    AttachmentSizeBytes:
+      type: integer
+      minimum: 1
+      maximum: 26214400
+      description: Verified object size in bytes, up to 25 MiB.
+  messages:
+    fileUploadedV1:
+      name: file.uploaded.v1
+      title: File uploaded
+      summary: A verified task attachment became ready.
+      description: |
+        Appended once, when finalization verifies the uploaded object against its reserved size
+        and media type and commits its ready metadata. The actor is the verified account that
+        finalized the upload, or the system when a verified anonymous intake attachment is bound.
+        Issuing an upload URL or transferring bytes alone emits no fact.
+        A successful retry of finalization does not append a second fact for the same file.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, fileId, taskKey, sizeBytes]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the ready metadata was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the attachment after it becomes ready.
+          fileId:
+            type: string
+            format: uuid
+            description: Id of the ready attachment.
+          taskKey:
+            $ref: '#/components/schemas/AttachmentTaskKey'
+          sizeBytes:
+            $ref: '#/components/schemas/AttachmentSizeBytes'
+      examples:
+        - name: cad482Upload
+          summary: A file for CAD-482 becomes ready after finalization.
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d30
+            occurredAt: '2026-11-20T14:02:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+            version: 1
+            fileId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e03
+            taskKey: CAD-482
+            sizeBytes: 84216
+    fileDeletedV1:
+      name: file.deleted.v1
+      title: File deleted
+      summary: A ready attachment became unavailable and its object cleanup was scheduled.
+      description: |
+        Appended once per ready attachment when authorized removal or task purge commits the
+        attachment tombstone and the durable work to erase its object. An authorized removal
+        carries the removing actor. A purge carries the actor from `task.purged.v1`.
+        Repeated deletion, retrying object cleanup and expiry of a pending upload do not append
+        a new fact. The verified byte count is the last ready size.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, fileId, taskKey, sizeBytes]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the removal and cleanup request were committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Version of the deleted attachment, greater than the ready version.
+          fileId:
+            type: string
+            format: uuid
+            description: Id of the removed attachment.
+          taskKey:
+            $ref: '#/components/schemas/AttachmentTaskKey'
+          sizeBytes:
+            $ref: '#/components/schemas/AttachmentSizeBytes'
+      examples:
+        - name: cad482Purge
+          summary: Attachment cleanup is scheduled when CAD-482 is purged.
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d31
+            occurredAt: '2026-12-20T03:00:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: task-service
+            version: 2
+            fileId: 019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e03
+            taskKey: CAD-482
+            sizeBytes: 84216

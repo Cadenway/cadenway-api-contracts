@@ -1,0 +1,93 @@
+openapi: 3.1.0
+info:
+  title: Cadenway shared attachment components
+  version: 1.0.0
+  description: File declarations, verified task attachment metadata and signed transfers.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    AttachmentId:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      examples: [019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+    AttachmentFileName:
+      type: string
+      minLength: 1
+      maxLength: 255
+      pattern: '^(?=[\s\S]*\S)(?!\s*\.{1,2}\s*$)(?:[^/\\\x00-\x1F\x7F-\x9F\uD800-\uDFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF])+$'
+      description: Original Unicode basename without path separators, control characters or whitespace-padded dot segments.
+      examples: [capture-login.png]
+    AttachmentContentType:
+      type: string
+      minLength: 1
+      maxLength: 127
+      pattern: '^(?!\*/)[!#$%&''*+\-.^_\x60|~0-9A-Za-z]+/(?!\*$)[!#$%&''*+\-.^_\x60|~0-9A-Za-z]+$'
+      description: Concrete media type and subtype without wildcards or parameters.
+      examples: [image/png]
+    StartAttachmentUpload:
+      type: object
+      additionalProperties: false
+      required: [fileName, contentType, sizeBytes]
+      properties:
+        fileName: { $ref: '#/components/schemas/AttachmentFileName' }
+        contentType: { $ref: '#/components/schemas/AttachmentContentType' }
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Declared length in bytes. The storage service refuses values above 25 MiB.
+          examples: [184320]
+    AttachmentUpload:
+      type: object
+      required: [id, method, url, fields, expiresAt]
+      properties:
+        id: { $ref: '#/components/schemas/AttachmentId' }
+        method: { const: POST }
+        url:
+          type: string
+          format: uri
+          description: Signed multipart upload destination, valid for five minutes.
+        fields:
+          type: object
+          minProperties: 1
+          additionalProperties: { type: string }
+          description: Signed form fields to append unchanged before the file part.
+        expiresAt: { type: string, format: date-time }
+    TaskAttachment:
+      type: object
+      required: [id, taskKey, fileName, contentType, sizeBytes, authorUserId, uploadedAt, version]
+      properties:
+        id: { $ref: '#/components/schemas/AttachmentId' }
+        taskKey: { $ref: './task.yaml#/components/schemas/TaskKey' }
+        fileName: { $ref: '#/components/schemas/AttachmentFileName' }
+        contentType: { $ref: '#/components/schemas/AttachmentContentType' }
+        sizeBytes: { type: integer, minimum: 1, maximum: 26214400 }
+        authorUserId:
+          type: [string, 'null']
+          format: uuid
+          description: Account that attached the file. An attachment from a public intake submission has no account author.
+        uploadedAt: { type: string, format: date-time }
+        version: { type: integer, minimum: 1 }
+    AttachmentPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TaskAttachment' }
+        nextCursor: { $ref: './http.yaml#/components/schemas/NextCursor' }
+    AttachmentDownload:
+      type: object
+      required: [url, expiresAt]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Short-lived signed URL for a download served as an attachment.
+        expiresAt: { type: string, format: date-time }

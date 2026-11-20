@@ -7,6 +7,8 @@ import { ROOTS, listYaml } from './lib/roots.mjs';
 const customFieldSchemas = dereference('components/task.yaml', process.cwd()).components.schemas;
 const customFieldIdPattern = customFieldSchemas.CustomFieldId.pattern;
 const customFieldPatch = customFieldSchemas.TaskCustomFieldValuesPatch;
+const attachmentSchemas = dereference('components/attachments.yaml', process.cwd()).components
+  .schemas;
 
 for (const root of ROOTS) {
   for (const spec of listYaml(root.openapi)) {
@@ -354,6 +356,50 @@ for (const root of ROOTS) {
           `.refine((value) => Array.from(value).length <= ${name}, { message: 'At most 80 Unicode code points' })`,
         );
       }
+    }
+    if (root.name === 'contracts' && spec === 'internal/task-service') {
+      const query = 'export const CheckTaskAttachmentAccessInternalQueryParams = zod.object({';
+      if (!generated.includes(query)) throw new Error(`${source}: missing attachment access query`);
+      generated = generated.replace(query, query.replace('zod.object', 'zod.strictObject'));
+    }
+    if (
+      root.name === 'contracts' &&
+      (spec === 'public/attachments' || spec === 'internal/storage-service')
+    ) {
+      const suffix = spec === 'public/attachments' ? '' : 'Internal';
+      const body = `export const StartTaskAttachmentUpload${suffix}Body = zod.object({`;
+      if (!generated.includes(body)) throw new Error(`${source}: missing upload body validator`);
+      generated = generated.replace(body, body.replace('zod.object', 'zod.strictObject'));
+
+      const response = `export const StartTaskAttachmentUpload${suffix}Response = `;
+      const start = generated.indexOf(response);
+      const end = generated.indexOf('\nexport const ', start + response.length);
+      if (start < 0 || end < 0) throw new Error(`${source}: missing upload response validator`);
+      const fields = '"fields": zod.record(zod.string(), zod.string())';
+      const uploadResponse = generated.slice(start, end);
+      if (!uploadResponse.includes(fields)) throw new Error(`${source}: missing upload fields`);
+      const minFields = attachmentSchemas.AttachmentUpload.properties.fields.minProperties;
+      generated =
+        generated.slice(0, start) +
+        uploadResponse.replace(
+          fields,
+          `${fields}.refine((value) => Object.keys(value).length >= ${minFields}, { message: 'At least ${minFields} signed form field' })`,
+        ) +
+        generated.slice(end);
+
+      const maxName = attachmentSchemas.AttachmentFileName.maxLength;
+      const names = [...generated.matchAll(/\.max\(([A-Za-z][A-Za-z0-9]*FileNameMax)\)/g)];
+      if (names.length === 0) throw new Error(`${source}: missing file name validators`);
+      for (const [, limit] of names) {
+        generated = generated.replaceAll(
+          `.max(${limit})`,
+          `.refine((value) => Array.from(value).length <= ${limit}, { message: 'At most ${maxName} Unicode code points' })`,
+        );
+      }
+
+      // Orval adds a trailing blank line to these otherwise newly generated type files.
+      const types = `${root.contracts}/types/${spec}.ts`;
+      writeFileSync(types, `${readFileSync(types, 'utf8').replace(/\n+$/, '')}\n`);
     }
     writeFileSync(target, generated);
   }
