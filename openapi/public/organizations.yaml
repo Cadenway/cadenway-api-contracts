@@ -66,7 +66,9 @@ info:
     `openapi/public/auth.yaml`: `title` is French text the web application may show as is for the
     codes it shows to the person, the English reason phrase of the status otherwise.
 
-    **Later versions** add, without changing what is here: the logo (object storage), the plan,
+    The logo is managed through `/v1/organization/logo` in `profile-media.yaml`.
+
+    **Later versions** add, without changing what is here: the plan,
     seats and quotas (billing; `plan` is `free` until then), verified domains, the reusable
     invitation link and auto-join, the transfer of ownership, the deletion of an organization, and,
     in the authentication policy, single sign-on and the allowed sign-in methods.
@@ -1015,6 +1017,10 @@ components:
         website:
           type: [string, 'null']
           description: Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.
+        logoId:
+          type: [string, 'null']
+          format: uuid
+          description: Current opaque logo reference or null. Read the image with GET /v1/organization/logo.
         defaultLanguage:
           type: string
           description: BCP 47 tag; `fr`, `en` or `de` today, more later (`x-extensible-enum`).

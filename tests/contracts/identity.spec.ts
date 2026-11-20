@@ -8,6 +8,8 @@ import {
   eventSchemas,
   type OneTimeCodeIssuedV1,
   type PasswordResetLinkIssuedV1,
+  type UserAvatarChangedV1,
+  type UserAvatarUploadAbandonedV1,
   type UserPasswordChangedV1,
   type UserSignedUpV1,
   type UserTwoStepVerificationChangedV1,
@@ -236,7 +238,10 @@ describe('events of identity-service', () => {
       'one-time-code.issued.v1',
       'password-reset-link.issued.v1',
       'session.opened-on-new-device.v1',
+      'session.organization-changed.v1',
       'session.revoked.v1',
+      'user.avatar-changed.v1',
+      'user.avatar-upload-abandoned.v1',
       'user.deleted.v1',
       'user.deletion-cancelled.v1',
       'user.deletion-scheduled.v1',
@@ -247,6 +252,44 @@ describe('events of identity-service', () => {
       'user.signed-up.v1',
       'user.two-step-verification-changed.v1',
     ]);
+  });
+
+  it('keeps avatar changes and terminal reservations scoped to the account', () => {
+    const changed: UserAvatarChangedV1 = {
+      id: '019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a12',
+      occurredAt: '2026-11-20T09:10:00Z',
+      organizationId: null,
+      actor: { type: 'user', id: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30' },
+      userId: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30',
+      version: 3,
+      assetId: null,
+      oldAssetId: '019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a14',
+    };
+    const abandoned: UserAvatarUploadAbandonedV1 = {
+      id: '019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a13',
+      occurredAt: '2026-11-20T10:00:00Z',
+      organizationId: null,
+      actor: { type: 'system', id: 'identity-service' },
+      userId: changed.userId,
+      version: 1,
+      uploadId: '019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a16',
+    };
+    expect(eventSchemas['user.avatar-changed.v1'].parse(changed)).toEqual(changed);
+    expect(eventSchemas['user.avatar-upload-abandoned.v1'].parse(abandoned)).toEqual(abandoned);
+    expect(
+      eventSchemas['user.avatar-changed.v1'].safeParse({
+        ...changed,
+        organizationId: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f',
+      }).success,
+    ).toBe(false);
+    expect(
+      eventSchemas['user.avatar-upload-abandoned.v1'].safeParse({ ...abandoned, version: 2 })
+        .success,
+    ).toBe(false);
+    expect(
+      eventSchemas['user.avatar-changed.v1'].safeParse({ ...changed, downloadUrl: '/private' })
+        .success,
+    ).toBe(false);
   });
 
   it('tells the security email and the directory what changed in two-step verification, without a secret', () => {

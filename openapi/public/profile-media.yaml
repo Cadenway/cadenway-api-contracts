@@ -1,0 +1,631 @@
+openapi: 3.1.0
+info:
+  title: Cadenway avatars and organization logos
+  version: 1.0.0
+  description: |
+    Identity owns the avatar of the account. Organization owns the logo of the current organization.
+    Storage verifies uploaded images and keeps private, immutable PNG derivatives. The API gateway
+    coordinates the owner and storage calls using the actor and, where needed, the organization of
+    the verified session. Profile and organization documents keep the opaque reference as a display
+    hint. Knowing it grants no access. Image requests resolve the current reference and authorization
+    before streaming. Missing or removed media display as initials in the web application.
+    Every response to a matched image GET carries `Cache-Control: private, no-store`, including
+    errors produced by the gateway before the route handler runs.
+
+    Uploads go directly to the temporary object via a signed multipart POST for at most five minutes.
+    Append every form field unchanged before the final part named `file`. Up to 5 MiB (5,242,880
+    bytes) per source is allowed. The fully decoded source must be one square still image with
+    dimensions at most 4,096 pixels per side and no more than 16,777,216 pixels. Avatars require at
+    least 256 pixels per side and accept PNG, JPEG or WebP. Organization logos accept PNG or SVG.
+    A 512 pixel logo is recommended. An SVG must be static and renderable without external resources.
+    Storage re-encodes the verified result as PNG, strips source metadata and caps it at 512 pixels
+    per side without upscaling. Source bytes and signed upload details are excluded from published
+    facts and application logs.
+
+    A reservation belongs to the actor and the current image generation. A replacement or explicit
+    removal fences older pending uploads. A signed upload is temporary and can never publish the
+    image by itself. The owner checks the same conditions again when it commits the reference.
+
+    Cookie mutations require an allowed Origin and, for POST or PUT, application/json. Only the
+    directory image read accepts a personal API token with `members:read`. The standard gateway
+    rate limit applies. A bearer token authenticates the request independently of any session
+    cookie. An account avatar needs no selected organization.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves the image routes and relays current owner and authorized Storage requests.
+    - repository: cadenway-webapp
+      uses: Uploads and displays avatars in account and member views and logos in organization settings and the sidebar.
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+tags:
+  - name: profile-media
+    description: Signed uploads and access-controlled reads of profile images.
+paths:
+  /v1/me/avatar/uploads:
+    post:
+      operationId: startAvatarUpload
+      summary: Reserve an avatar upload
+      description: |
+        Reserves one temporary upload for the account of the session, including without an organization.
+        While the caller remains authorized, the same Idempotency-Key and body replay the original
+        response and Location for 24 hours, with the original upload expiry. Use a fresh key for a
+        new reservation.
+      tags: [profile-media]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/profile-media.yaml#/components/schemas/StartAvatarUpload'
+            example: { contentType: image/jpeg, sizeBytes: 183264 }
+      responses:
+        '201':
+          description: The reservation and its short-lived upload capability.
+          headers:
+            Location:
+              required: true
+              description: Identifier of the upload reservation.
+              schema:
+                type: string
+                examples: [/v1/me/avatar/uploads/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+            Cache-Control:
+              $ref: '#/components/headers/UploadNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaUpload'
+              example:
+                uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                method: POST
+                url: https://files.example.com/fixtures/profile-media
+                fields: { Content-Type: image/jpeg }
+                expiresAt: '2026-11-08T08:10:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AccountWriteForbidden'
+        '404':
+          $ref: '#/components/responses/AccountMediaNotFound'
+        '409':
+          $ref: '#/components/responses/UploadStartConflict'
+        '422':
+          $ref: '#/components/responses/UploadStartRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/avatar:
+    get:
+      operationId: getAvatar
+      summary: Read the current account avatar
+      description: |
+        Reads the current avatar of the session account, including without a selected organization.
+      tags: [profile-media]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ProfileMediaImage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AccountReadForbidden'
+        '404':
+          $ref: '#/components/responses/AccountMediaNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    put:
+      operationId: setAvatar
+      summary: Publish a verified account avatar
+      description: |
+        Verifies and publishes a reservation owned by the account. The previous avatar remains visible
+        until the new image is committed. An equivalent retry of a committed reservation adds no change
+        and returns the current account ETag. The retry never restores an avatar removed or superseded
+        after that commit. The account can be read separately with GET /v1/me.
+      tags: [profile-media]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/profile-media.yaml#/components/schemas/SetProfileMedia'
+            example: { uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01 }
+      responses:
+        '204':
+          description: The avatar was set or the reservation was already committed.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AccountWriteForbidden'
+        '404':
+          $ref: '#/components/responses/AccountMediaNotFound'
+        '409':
+          $ref: '#/components/responses/UploadStateConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/UploadContentRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteAvatar
+      summary: Remove the current account avatar
+      description: |
+        Clears the avatar and invalidates older pending reservations. Removing an absent avatar leaves
+        the account version unchanged and emits no avatar change.
+      tags: [profile-media]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The account no longer has an avatar.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AccountWriteForbidden'
+        '404':
+          $ref: '#/components/responses/AccountMediaNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/organization/logo/uploads:
+    post:
+      operationId: startOrganizationLogoUpload
+      summary: Reserve an organization logo upload
+      description: |
+        Reserves one temporary upload for the current organization. The organization service checks
+        the caller's current owner or admin role. While the caller remains authorized, the same
+        Idempotency-Key and body replay the original response and Location for 24 hours, with the
+        original upload expiry. Use a fresh key for a new reservation.
+      tags: [profile-media]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/profile-media.yaml#/components/schemas/StartOrganizationLogoUpload'
+            example: { contentType: image/svg+xml, sizeBytes: 6120 }
+      responses:
+        '201':
+          description: The reservation and its short-lived upload capability.
+          headers:
+            Location:
+              required: true
+              description: Identifier of the upload reservation.
+              schema:
+                type: string
+                examples: [/v1/organization/logo/uploads/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+            Cache-Control:
+              $ref: '#/components/headers/UploadNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaUpload'
+              example:
+                uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                method: POST
+                url: https://files.example.com/fixtures/profile-media
+                fields: { Content-Type: image/svg+xml }
+                expiresAt: '2026-11-08T08:10:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationMediaNotFound'
+        '409':
+          $ref: '#/components/responses/UploadStartConflict'
+        '422':
+          $ref: '#/components/responses/UploadStartRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/organization/logo:
+    get:
+      operationId: getOrganizationLogo
+      summary: Read the current organization logo
+      description: |
+        Reads the current organization's logo with the same live access as GET /v1/organization.
+        The bytes are PNG even when the original upload was SVG.
+      tags: [profile-media]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ProfileMediaImage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationMediaNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    put:
+      operationId: setOrganizationLogo
+      summary: Publish a verified organization logo
+      description: |
+        Verifies and publishes the caller's reservation in the current organization. The organization
+        service rechecks the current owner or admin role in the transaction that updates the reference.
+        The old logo remains visible until the update commits. An authorized retry of a committed
+        reservation returns the current organization ETag without reinstating an old logo. Read the
+        organization separately with GET /v1/organization.
+      tags: [profile-media]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/profile-media.yaml#/components/schemas/SetProfileMedia'
+            example: { uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01 }
+      responses:
+        '204':
+          description: The logo was set or the reservation was already committed.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationMediaNotFound'
+        '409':
+          $ref: '#/components/responses/UploadStateConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/UploadContentRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteOrganizationLogo
+      summary: Remove the current organization logo
+      description: |
+        The owner or an admin can clear the logo and invalidate older pending reservations. Removing
+        an absent logo leaves the organization version unchanged and emits no logo change.
+      tags: [profile-media]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The organization no longer has a logo.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationMediaNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/members/{memberId}/avatar:
+    parameters:
+      - name: memberId
+        in: path
+        required: true
+        description: Membership id in the current organization.
+        schema:
+          type: string
+          format: uuid
+          examples: [019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e42]
+    get:
+      operationId: getMemberAvatar
+      summary: Read a current member avatar
+      description: |
+        Uses the current access rules of GET /v1/members/{memberId}. Only the owner, admins and members
+        can use the member directory. The target must still be a member of the current organization.
+        The gateway uses the user id from that verified member lookup to request the current account
+        reference from identity-service. Cached projected references never authorize an image read.
+      tags: [profile-media]
+      security:
+        - sessionCookie: []
+        - apiToken: [members:read]
+      responses:
+        '200':
+          $ref: '#/components/responses/ProfileMediaImage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/MemberReadForbidden'
+        '404':
+          $ref: '#/components/responses/MemberMediaNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: Session cookie of the signed-in account.
+    apiToken:
+      type: http
+      scheme: bearer
+      bearerFormat: API token
+      description: Personal API token with members:read for the member avatar read.
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Optional key scoped to the verified actor and image owner.
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Strong ETag of the current account or organization.
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]*"$'
+        examples: ['"7"']
+  headers:
+    ETag:
+      required: true
+      description: Strong ETag of the current account or organization.
+      schema: { type: string, examples: ['"8"'] }
+    UploadNoStore:
+      required: true
+      schema: { type: string, const: no-store }
+    PrivateMediaNoStore:
+      required: true
+      description: Prevents storage of both images and private image failures in caches.
+      schema: { type: string, const: 'private, no-store' }
+  responses:
+    ProfileMediaImage:
+      description: The current verified PNG derivative. This response is never a redirect.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateMediaNoStore'
+        X-Content-Type-Options:
+          required: true
+          schema: { type: string, const: nosniff }
+      content:
+        image/png: {}
+    BadRequest:
+      description: |
+        `request.invalid` with `details.issues` for malformed request input.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateMediaNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    Unauthenticated:
+      description: |
+        `auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateMediaNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    AccountReadForbidden:
+      description: |
+        `auth.api-token-not-accepted`.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateMediaNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    AccountWriteForbidden:
+      description: |
+        `auth.api-token-not-accepted` or `auth.csrf-rejected`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    OrganizationReadForbidden:
+      description: |
+        `auth.api-token-not-accepted`, `organization.not-selected` or `organization.mfa-required`.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateMediaNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    OrganizationWriteForbidden:
+      description: |
+        `auth.api-token-not-accepted`, `auth.csrf-rejected`, `organization.not-selected`,
+        `organization.mfa-required` or `organization.role-forbidden`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    MemberReadForbidden:
+      description: |
+        `auth.scope-missing`, `organization.not-selected`, `organization.mfa-required` or `organization.role-forbidden`.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateMediaNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    AccountMediaNotFound:
+      description: |
+        `user.not-found` when the account is unavailable, or `media.not-found` for an absent image or an unrelated reservation.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateMediaNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    OrganizationMediaNotFound:
+      description: |
+        `organization.not-found` for a membership that is no longer active, or `media.not-found`
+        for an absent image or a reservation outside this organization or actor.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateMediaNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    MemberMediaNotFound:
+      description: |
+        `organization.not-found` when the caller no longer belongs to the organization,
+        `member.not-found` for a missing or unrelated membership, or `media.not-found` for an absent image.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateMediaNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    UploadStartConflict:
+      description: |
+        `idempotency.request-in-progress` while this reservation request is in progress, or
+        `media.upload-expired` if its original expiry passed before the transfer could be signed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    UploadStartRefused:
+      description: |
+        `media.file-too-large`, `media.unsupported-type` or `idempotency.key-reused` for a different body.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    UploadStateConflict:
+      description: |
+        `media.upload-expired` when the reservation has expired, `media.upload-not-ready` before the
+        upload is available, or `media.upload-superseded` when a different image change has fenced it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    VersionMismatch:
+      description: |
+        `request.version-mismatch` when the optional ETag is stale.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    UploadContentRefused:
+      description: |
+        `media.file-too-large` for an oversized source, `media.unsupported-type` for a disallowed format,
+        or `media.invalid-image` for inconsistent metadata, decoding, shape, dimension or safety failures.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    RateLimited:
+      description: '`rate-limit.exceeded` when the gateway rate limit is reached.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateMediaNoStore'
+        Retry-After:
+          schema: { type: integer, minimum: 0 }
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unavailable:
+      description: |
+        `storage.unavailable` or a gateway problem with an `upstream.*` code.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateMediaNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'

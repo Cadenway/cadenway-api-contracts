@@ -88,8 +88,47 @@ export const fileUploadedV1Schema = zod.object({
   sizeBytes: zod.int().min(1).max(26214400),
 }) satisfies zod.ZodType<FileUploadedV1>;
 
+/** Name of the event `intake.attachment-verified.v1`. Storage pinned the verified object for the exact intake reservation. */
+export const INTAKE_ATTACHMENT_VERIFIED_V1 = 'intake.attachment-verified.v1';
+
+/** Payload of the event `intake.attachment-verified.v1`. */
+export interface IntakeAttachmentVerifiedV1 {
+  /** Stable event ID, the delivery deduplication key. */
+  id: string;
+  /** UTC instant when verification was recorded. */
+  occurredAt: string;
+  /** Organization of the intake reservation. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the immutable Storage verification record. */
+  version: number;
+  /** Internal UUID of a single publication, independent of its public capability key. */
+  publicationId: string;
+  attachmentId: string;
+}
+
+/** Validator of the payload of the event `intake.attachment-verified.v1`. */
+export const intakeAttachmentVerifiedV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1).max(1),
+  publicationId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  attachmentId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+}) satisfies zod.ZodType<IntakeAttachmentVerifiedV1>;
+
 /** Names of the events of this document. */
-export const EVENT_NAMES = [FILE_DELETED_V1, FILE_UPLOADED_V1] as const;
+export const EVENT_NAMES = [FILE_DELETED_V1, FILE_UPLOADED_V1, INTAKE_ATTACHMENT_VERIFIED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -108,10 +147,12 @@ export type RestrictedEventName = (typeof RESTRICTED_EVENT_NAMES)[number];
 export interface EventPayloads {
   'file.deleted.v1': FileDeletedV1;
   'file.uploaded.v1': FileUploadedV1;
+  'intake.attachment-verified.v1': IntakeAttachmentVerifiedV1;
 }
 
 /** Payload validator of each event of this document, by event name. */
 export const eventSchemas = {
   'file.deleted.v1': fileDeletedV1Schema,
   'file.uploaded.v1': fileUploadedV1Schema,
+  'intake.attachment-verified.v1': intakeAttachmentVerifiedV1Schema,
 } as const satisfies { readonly [Name in EventName]: zod.ZodType<EventPayloads[Name]> };

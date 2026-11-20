@@ -12,4 +12,5 @@ export interface IntakeFormFields {
   priority: IntakeFieldMode;
   dueDate: IntakeFieldMode;
   contactEmail: IntakeFieldMode;
+  attachments?: IntakeFieldMode;
 }

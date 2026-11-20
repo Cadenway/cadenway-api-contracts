@@ -12,6 +12,8 @@ import {
   eventSchemas,
   type InvitationIssuedV1,
   type MemberJoinedV1,
+  type OrganizationLogoChangedV1,
+  type OrganizationLogoUploadAbandonedV1,
 } from '../../packages/contracts/src/generated/events/organization-service';
 import { Role as IdentityRole } from '../../packages/contracts/src/generated/types/internal/identity-service';
 import { Role as InternalOrganizationRole } from '../../packages/contracts/src/generated/types/internal/organization-service';
@@ -152,16 +154,52 @@ const profileUpdated: UserProfileUpdatedV1 = {
 };
 
 describe('events of organization-service', () => {
-  it('names the six events and restricts none of them', () => {
+  it('names the organization events and restricts none of them', () => {
     expect(EVENT_NAMES).toEqual([
       'invitation.issued.v1',
       'member.joined.v1',
       'member.removed.v1',
       'member.role-changed.v1',
       'organization.created.v1',
+      'organization.logo-changed.v1',
+      'organization.logo-upload-abandoned.v1',
       'organization.updated.v1',
     ]);
     expect(RESTRICTED_EVENT_NAMES).toEqual([]);
+  });
+
+  it('keeps logo changes and terminal reservations scoped to the organization', () => {
+    const changed: OrganizationLogoChangedV1 = {
+      id: '019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a22',
+      occurredAt: '2026-11-20T09:10:00Z',
+      organizationId: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f',
+      actor: { type: 'user', id: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30' },
+      version: 3,
+      assetId: null,
+      oldAssetId: '019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a24',
+    };
+    const abandoned: OrganizationLogoUploadAbandonedV1 = {
+      id: '019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a23',
+      occurredAt: '2026-11-20T10:00:00Z',
+      organizationId: changed.organizationId,
+      actor: { type: 'system', id: 'organization-service' },
+      version: 1,
+      uploadId: '019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a26',
+    };
+    expect(eventSchemas['organization.logo-changed.v1'].parse(changed)).toEqual(changed);
+    expect(eventSchemas['organization.logo-upload-abandoned.v1'].parse(abandoned)).toEqual(
+      abandoned,
+    );
+    expect(
+      eventSchemas['organization.logo-changed.v1'].safeParse({ ...changed, organizationId: null })
+        .success,
+    ).toBe(false);
+    expect(
+      eventSchemas['organization.logo-upload-abandoned.v1'].safeParse({
+        ...abandoned,
+        storageKey: 'private',
+      }).success,
+    ).toBe(false);
   });
 
   it('carries what the invitation email shows, and never proposes the owner role', () => {

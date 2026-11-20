@@ -16,6 +16,10 @@ info:
     | `GET /v1/organizations` | `GET /internal/v1/organizations` |
     | `GET /v1/organization` | `GET /internal/v1/organization` |
     | `PATCH /v1/organization` | `PATCH /internal/v1/organization` |
+    | `POST /v1/organization/logo/uploads` | `POST /internal/v1/organization/logo/uploads` before Storage signs the transfer |
+    | `PUT /v1/organization/logo` | Check `GET /internal/v1/organization/logo/uploads/{uploadId}`, prepare pending assets through Storage, then `PUT /internal/v1/organization/logo` |
+    | `DELETE /v1/organization/logo` | `DELETE /internal/v1/organization/logo` |
+    | `GET /v1/organization/logo` | `GET /internal/v1/organization` for current membership and logo reference before Storage reads it |
     | `PUT /v1/session/organization` | `PUT /internal/v1/sessions/{sessionId}/organization` of identity-service |
     | `GET /v1/members` | `GET /internal/v1/members` |
     | `GET /v1/members/{memberId}` | `GET /internal/v1/members/{memberId}` |
@@ -65,6 +69,11 @@ info:
     account like the other parts, `false` until an event says otherwise, for the column "Deux
     étapes" of the member list.
 
+    The directory keeps avatar hints from `user.avatar-changed.v1` using a separate avatar version.
+    Ordinary account events do not write that hint. Account deletion clears it and fences later
+    deliveries. Member image reads still check live membership and resolve Identity's current
+    reference before accessing Storage.
+
     **Errors.** The gateway forwards the `code` and the `details` and answers the French `title`
     of the public spec; the titles here are English. The internal client does not carry the
     headers of a problem: on a `429` the gateway derives `Retry-After` from `details`
@@ -82,9 +91,8 @@ info:
   x-consumers:
     - repository: cadenway-api-gateway
       uses: >-
-        Relays the organization and member routes exposed in openapi/public/organizations.yaml
-        and openapi/public/members.yaml, and looks up names for list CSV export and authorized
-        notification actors.
+        Relays the organization, member and logo routes exposed in the public specs, and looks
+        up names for list CSV export and authorized notification actors.
 servers:
   - url: http://organization-service:3011
     description: organization-service on the internal network of each environment (`ORGANIZATION_SERVICE_URL`).
@@ -272,6 +280,190 @@ paths:
           $ref: '#/components/responses/OrganizationNotFound'
         '409':
           $ref: '#/components/responses/SlugTaken'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/organization/logo/uploads:
+    post:
+      operationId: reserveOrganizationLogoUploadInternal
+      summary: Reserve an organization logo upload
+      description: |
+        Allocates a pending reservation for the actor and the current logo generation before the
+        gateway obtains a signed Storage transfer. Stores the bound declaration and expiry. While
+        authorization still holds, an equivalent Idempotency-Key replays the original reservation
+        and expiry. Internal token issuer api-gateway, actor user with an organization. Organization requires
+        the current owner or admin role from its own membership state.
+      tags: [organizations]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Key scoped to the verified actor and image owner.
+          schema: { type: string, minLength: 1, maxLength: 255 }
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/profile-media.yaml#/components/schemas/StartOrganizationLogoUpload'
+            example: { contentType: image/svg+xml, sizeBytes: 6120 }
+      responses:
+        '201':
+          description: The current owner reservation.
+          headers:
+            Location:
+              required: true
+              description: Path of the owner reservation.
+              schema:
+                type: string
+                examples:
+                  [/internal/v1/organization/logo/uploads/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaReservation'
+              example:
+                {
+                  uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01,
+                  expiresAt: '2026-11-08T08:10:00Z',
+                }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/OrganizationLogoWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/ProfileMediaReservationConflict'
+        '422':
+          $ref: '#/components/responses/ProfileMediaReservationRefused'
+  /internal/v1/organization/logo/uploads/{uploadId}:
+    parameters:
+      - name: uploadId
+        in: path
+        required: true
+        description: Opaque id allocated by the owning service.
+        schema:
+          $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaId'
+    get:
+      operationId: getOrganizationLogoUploadStateInternal
+      summary: Read organization logo upload state
+      description: |
+        Verifies the uploader and organization of the reservation, then reports whether it is pending
+        or committed. An expired or superseded pending upload is refused. The gateway checks this
+        before asking Storage to prepare a pending upload. A committed replay skips preparation.
+        Internal token issuer api-gateway, actor user with an organization. Organization requires
+        the current owner or admin role from its own membership state.
+      tags: [organizations]
+      responses:
+        '200':
+          description: State of the caller’s reservation.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/profile-media.yaml#/components/schemas/ProfileMediaReservationState'
+              example:
+                {
+                  uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01,
+                  state: pending,
+                  expiresAt: '2026-11-08T08:10:00Z',
+                }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/OrganizationLogoWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationLogoOwnerOrUploadNotFound'
+        '409':
+          $ref: '#/components/responses/ProfileMediaUploadStateConflict'
+  /internal/v1/organization/logo:
+    put:
+      operationId: setOrganizationLogoInternal
+      summary: Publish the prepared logo
+      description: |
+        The gateway calls for a pending reservation only after Storage confirms preparation for the
+        same id, organization and actor. Organization locks the relevant membership, organization and
+        reservation, rechecks current role, generation and expiry, and persists the reference and
+        `organization.logo-changed.v1` in the same transaction. An authorized committed retry returns
+        the current ETag without changing the image. A stale optional If-Match on first publication
+        is refused. Internal token issuer api-gateway, actor user with an organization. Organization requires
+        the current owner or admin role from its own membership state.
+      tags: [organizations]
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: Strong ETag of the current account or organization.
+          schema:
+            type: string
+            pattern: '^"[1-9][0-9]*"$'
+            examples: ['"7"']
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/profile-media.yaml#/components/schemas/SetProfileMedia'
+            example: { uploadId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01 }
+      responses:
+        '204':
+          description: The logo was set or the reservation was already committed.
+          headers:
+            ETag:
+              required: true
+              description: Strong ETag of the current account or organization.
+              schema: { type: string, examples: ['"8"'] }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/OrganizationLogoWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationLogoOwnerOrUploadNotFound'
+        '409':
+          $ref: '#/components/responses/ProfileMediaUploadStateConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+    delete:
+      operationId: deleteOrganizationLogoInternal
+      summary: Clear the organization logo
+      description: |
+        Clears the reference and invalidates older pending uploads under the same lock as
+        publication. An actual logo change commits with `organization.logo-changed.v1`. An absent
+        image leaves the organization version unchanged and emits no logo change. Internal token issuer api-gateway, actor user with an organization. Organization requires
+        the current owner or admin role from its own membership state.
+      tags: [organizations]
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: Strong ETag of the current account or organization.
+          schema:
+            type: string
+            pattern: '^"[1-9][0-9]*"$'
+            examples: ['"7"']
+      responses:
+        '204':
+          description: The organization no longer has a logo.
+          headers:
+            ETag:
+              required: true
+              description: Strong ETag of the current account or organization.
+              schema: { type: string, examples: ['"8"'] }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/OrganizationLogoWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
         '412':
           $ref: '#/components/responses/VersionMismatch'
   /internal/v1/members:
@@ -930,6 +1122,44 @@ components:
           remaining: 2
           nextAvailableAt: '2026-11-07T09:12:00Z'
   responses:
+    ProfileMediaReservationConflict:
+      description: |
+        `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    ProfileMediaReservationRefused:
+      description: |
+        `media.file-too-large` above 5,242,880 declared bytes, `media.unsupported-type` for a
+        disallowed image encoding, or `idempotency.key-reused` for a conflicting reservation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    ProfileMediaUploadStateConflict:
+      description: |
+        `media.upload-expired` for expiration, `media.upload-not-ready` for an upload that has not
+        arrived, or `media.upload-superseded` for an invalidated prior generation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    OrganizationLogoOwnerOrUploadNotFound:
+      description: |
+        `organization.not-found` for a missing or inactive membership, or `media.not-found` for an absent or unrelated upload.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    OrganizationLogoWriteForbidden:
+      description: |
+        `organization.role-forbidden` for roles other than owner or admin, or `auth.issuer-not-allowed`,
+        `auth.actor-not-allowed` or `auth.organization-required` for an invalid caller.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     BadRequest:
       description: '`request.invalid`: the request does not match the schema; one `details.issues` entry per issue.'
       content:
@@ -1335,6 +1565,10 @@ components:
         website:
           type: [string, 'null']
           description: Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.
+        logoId:
+          type: [string, 'null']
+          format: uuid
+          description: Current opaque logo reference or null.
         defaultLanguage:
           type: string
           x-extensible-enum: [fr, en, de]
@@ -1450,6 +1684,10 @@ components:
         userId:
           type: string
           format: uuid
+        avatarId:
+          type: [string, 'null']
+          format: uuid
+          description: Last observed directory avatar reference or null. It does not grant image access.
         name:
           type: string
           description: Full name, from the user directory.

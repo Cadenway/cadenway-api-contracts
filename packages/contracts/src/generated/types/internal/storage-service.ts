@@ -3,40 +3,231 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
- * Cursor of the next page; `null` on the last page.
+ * Form heading supplied by a list editor. The service trims surrounding whitespace.
+ * @minLength 1
+ * @maxLength 300
+ */
+export type IntakeFormTitle = string;
+
+/**
+ * Introductory plain text supplied by a list editor, or null when absent.
+ * @maxLength 500
  * @nullable
  */
-export type NextCursor = string | null;
+export type IntakeFormDescription = string | null;
 
 /**
- * Members specific to the code, for example the fields that failed validation.
+ * Whether the submission accepts this field and requires a value.
  */
-export type ProblemDetails = { [key: string]: unknown };
+export type IntakeFieldMode = typeof IntakeFieldMode[keyof typeof IntakeFieldMode];
+
+
+export const IntakeFieldMode = {
+  disabled: 'disabled',
+  optional: 'optional',
+  required: 'required',
+} as const;
 
 /**
- * RFC 9457 problem with the Cadenway extensions `code` and `details`.
+ * Policy for the configurable fields. The title is required for every submission.
  */
-export interface Problem {
-  /** URI reference that identifies the problem type. */
-  type: string;
-  /** Short summary of the problem type, the same for every occurrence. */
-  title: string;
-  /** HTTP status of the response. */
-  status: number;
-  /** Explanation specific to this occurrence. */
-  detail?: string;
-  /** URI reference that identifies this occurrence. */
-  instance?: string;
-  /** Stable machine code, `<domain>.<reason>`. */
-  code: string;
-  /** Members specific to the code, for example the fields that failed validation. */
-  details?: ProblemDetails;
+export interface IntakeFormFields {
+  description: IntakeFieldMode;
+  priority: IntakeFieldMode;
+  dueDate: IntakeFieldMode;
+  contactEmail: IntakeFieldMode;
+  attachments?: IntakeFieldMode;
 }
+
+/**
+ * Partial changes to the configurable fields. Omitted modes retain their values.
+ */
+export interface IntakeFormFieldsPatch {
+  description?: IntakeFieldMode;
+  priority?: IntakeFieldMode;
+  dueDate?: IntakeFieldMode;
+  contactEmail?: IntakeFieldMode;
+  attachments?: IntakeFieldMode;
+}
+
+/**
+ * UUID of the eligible account assigned to new tasks, or null for no assignment.
+ * @nullable
+ */
+export type IntakeDefaultAssigneeId = string | null;
+
+/**
+ * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
+ * planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
+ * ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
+ * `cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a
+ * status, it never adds or removes a key.
+ */
+export type StatusKey = typeof StatusKey[keyof typeof StatusKey];
+
+
+export const StatusKey = {
+  triage: 'triage',
+  backlog: 'backlog',
+  todo: 'todo',
+  progress: 'progress',
+  review: 'review',
+  testing: 'testing',
+  waiting: 'waiting',
+  blocked: 'blocked',
+  done: 'done',
+  cancelled: 'cancelled',
+} as const;
+
+/**
+ * Current form settings visible to an editor of the owning list.
+ */
+export interface IntakeFormConfiguration {
+  title: IntakeFormTitle;
+  description: IntakeFormDescription | null;
+  fields: IntakeFormFields;
+  defaultStatus: StatusKey;
+  defaultAssigneeId: IntakeDefaultAssigneeId | null;
+  /**
+     * Opaque key of the current publication, or null when the form is disabled.
+     * @nullable
+     * @pattern ^[A-Za-z0-9_-]{43}$
+     */
+  publicKey: string | null;
+  /**
+     * Configuration version used for conditional changes.
+     * @minimum 1
+     */
+  version: number;
+}
+
+/**
+ * Merge patch of the editable settings. Null clears the introduction or default assignee.
+ */
+export interface IntakeFormPatch {
+  title?: IntakeFormTitle;
+  description?: IntakeFormDescription | null;
+  fields?: IntakeFormFieldsPatch;
+  defaultStatus?: StatusKey;
+  defaultAssigneeId?: IntakeDefaultAssigneeId | null;
+}
+
+/**
+ * Public projection of the settings deliberately provided for display.
+ */
+export interface PublicIntakeForm {
+  title: IntakeFormTitle;
+  description: IntakeFormDescription | null;
+  fields: IntakeFormFields;
+}
+
+/**
+ * Address submitted by the applicant and stored separately from the task.
+ * @maxLength 254
+ */
+export type IntakeContactEmail = string;
+
+/**
+ * "Nom de la tâche", as typed; surrounding spaces are removed, and a name made only of spaces
+ * is refused with `400 request.invalid`.
+ * @minLength 1
+ * @maxLength 300
+ */
+export type TaskName = string;
+
+/**
+ * "Description", Markdown; `null` when there is none.
+ * @maxLength 50000
+ * @nullable
+ */
+export type TaskDescription = string | null;
+
+/**
+ * Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`
+ * ("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of
+ * `@cadenway/contracts`. A closed set: another priority would be a breaking change.
+ */
+export type PriorityKey = typeof PriorityKey[keyof typeof PriorityKey];
+
+
+export const PriorityKey = {
+  urgente: 'urgente',
+  haute: 'haute',
+  moyenne: 'moyenne',
+  basse: 'basse',
+} as const;
 
 /**
  * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
  */
 export type AttachmentId = string;
+
+/**
+ * The service validates configurable fields against the current publication after resolving
+ * the form key. Disabled fields must be omitted. Required fields must contain a value.
+ */
+export interface IntakeSubmission {
+  title: TaskName;
+  description?: TaskDescription | null;
+  priority?: PriorityKey;
+  /** Requested due date in calendar days. */
+  dueDate?: string;
+  contactEmail?: IntakeContactEmail;
+  /**
+     * Verified files from the same live publication and draft, each at most 25 MiB.
+     * Identifiers must be unique regardless of case. The order is immaterial.
+     * Omit this field when there are no attachments.
+     * @minItems 1
+     * @maxItems 5
+     */
+  attachmentIds?: AttachmentId[];
+}
+
+/**
+ * Acknowledgement returned after committing the submission.
+ */
+export interface IntakeReceipt {
+  /**
+     * Opaque identifier of this acknowledgement.
+     * @pattern ^[A-Za-z0-9_-]{43}$
+     */
+  receipt: string;
+}
+
+/**
+ * Contact data visible to a current list editor for this task.
+ */
+export interface TaskIntakeContact {
+  /** Address supplied with the intake submission, or null when absent. */
+  contactEmail: IntakeContactEmail | null;
+}
+
+/**
+ * Opaque capability generated by the applicant from 32 cryptographically random bytes,
+ * encoded as unpadded base64url. It grants access only to the draft under the current
+ * publication. The service stores a digest and keeps the key out of responses, events,
+ * logs and traces.
+ * @pattern ^[A-Za-z0-9_-]{43}$
+ */
+export type IntakeDraftKey = string;
+
+/**
+ * Internal UUID of a single publication, independent of its public capability key.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type IntakePublicationId = string;
+
+/**
+ * Trusted receipt issued by Task for a file reserved in a draft under a live publication.
+ */
+export interface IntakeAttachmentAllocation {
+  /** Organization resolved from the current publication by Task. */
+  organizationId: string;
+  publicationId: IntakePublicationId;
+  attachmentId: AttachmentId;
+  /** Absolute draft lease cutoff, at most 30 minutes after the draft was opened. */
+  expiresAt: string;
+}
 
 /**
  * Original Unicode basename without path separators, control characters or whitespace-padded dot segments.
@@ -54,30 +245,28 @@ export type AttachmentFileName = string;
  */
 export type AttachmentContentType = string;
 
-export interface StartAttachmentUpload {
+/**
+ * Trusted Task allocation and previously validated file declaration relayed by the gateway.
+ */
+export interface IntakeAttachmentUploadStart {
+  attachmentId: AttachmentId;
+  /** Task's exclusive draft lease cutoff. The signed upload expires at or before it. */
+  expiresAt: string;
   fileName: AttachmentFileName;
   contentType: AttachmentContentType;
   /**
-     * Declared length in bytes. The storage service refuses values above 25 MiB.
+     * Validated file length in bytes, capped at 25 MiB.
      * @minimum 1
-     * @maximum 9007199254740991
+     * @maximum 26214400
      */
   sizeBytes: number;
 }
 
 /**
- * Signed form fields to append unchanged before the file part.
+ * Acknowledges verification for the identified reservation without exposing file data.
  */
-export type AttachmentUploadFields = {[key: string]: string};
-
-export interface AttachmentUpload {
+export interface IntakeAttachmentCompletion {
   id: AttachmentId;
-  method: 'POST';
-  /** Signed multipart upload destination, valid for five minutes. */
-  url: string;
-  /** Signed form fields to append unchanged before the file part. */
-  fields: AttachmentUploadFields;
-  expiresAt: string;
 }
 
 /**
@@ -87,37 +276,6 @@ export interface AttachmentUpload {
  * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
  */
 export type TaskKey = string;
-
-export interface TaskAttachment {
-  id: AttachmentId;
-  taskKey: TaskKey;
-  fileName: AttachmentFileName;
-  contentType: AttachmentContentType;
-  /**
-     * @minimum 1
-     * @maximum 26214400
-     */
-  sizeBytes: number;
-  /**
-     * Account that attached the file. An attachment from a public intake submission has no account author.
-     * @nullable
-     */
-  authorUserId: string | null;
-  uploadedAt: string;
-  /** @minimum 1 */
-  version: number;
-}
-
-export interface AttachmentPage {
-  items: TaskAttachment[];
-  nextCursor: NextCursor | null;
-}
-
-export interface AttachmentDownload {
-  /** Short-lived signed URL for a download served as an attachment. */
-  url: string;
-  expiresAt: string;
-}
 
 /**
  * A nonblank saved view or template name, at most 80 characters.
@@ -131,21 +289,6 @@ export interface TaskTemplateCreation {
   sourceTaskKey: TaskKey;
   name?: SavedItemName;
 }
-
-/**
- * Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`
- * ("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of
- * `@cadenway/contracts`. A closed set: another priority would be a breaking change.
- */
-export type PriorityKey = typeof PriorityKey[keyof typeof PriorityKey];
-
-
-export const PriorityKey = {
-  urgente: 'urgente',
-  haute: 'haute',
-  moyenne: 'moyenne',
-  basse: 'basse',
-} as const;
 
 /**
  * A space-shared snapshot of task ingredients. Checklist texts and direct live child names
@@ -174,6 +317,12 @@ export interface TaskTemplate {
   /** @minimum 1 */
   version: number;
 }
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
 
 /**
  * Space templates ordered by creation time and ID.
@@ -262,29 +411,6 @@ export interface SavedViewCustomFieldSort {
   fieldId: CustomFieldId;
   direction: SavedViewCustomFieldSortDirection;
 }
-
-/**
- * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
- * planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
- * ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
- * `cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a
- * status, it never adds or removes a key.
- */
-export type StatusKey = typeof StatusKey[keyof typeof StatusKey];
-
-
-export const StatusKey = {
-  triage: 'triage',
-  backlog: 'backlog',
-  todo: 'todo',
-  progress: 'progress',
-  review: 'review',
-  testing: 'testing',
-  waiting: 'waiting',
-  blocked: 'blocked',
-  done: 'done',
-  cancelled: 'cancelled',
-} as const;
 
 /**
  * Existing task-query filters. `me` is resolved for the person applying the view, not its
@@ -1640,21 +1766,6 @@ export interface ListPatch {
 }
 
 /**
- * "Nom de la tâche", as typed; surrounding spaces are removed, and a name made only of spaces
- * is refused with `400 request.invalid`.
- * @minLength 1
- * @maxLength 300
- */
-export type TaskName = string;
-
-/**
- * "Description", Markdown; `null` when there is none.
- * @maxLength 50000
- * @nullable
- */
-export type TaskDescription = string | null;
-
-/**
  * A label ("Étiquette"), trimmed; two labels that differ only by case are the same label.
  * @minLength 1
  * @maxLength 32
@@ -2395,6 +2506,269 @@ export interface AccessRequestApproval {
 }
 
 /**
+ * Members specific to the code, for example the fields that failed validation.
+ */
+export type ProblemDetails = { [key: string]: unknown };
+
+/**
+ * RFC 9457 problem with the Cadenway extensions `code` and `details`.
+ */
+export interface Problem {
+  /** URI reference that identifies the problem type. */
+  type: string;
+  /** Short summary of the problem type, the same for every occurrence. */
+  title: string;
+  /** HTTP status of the response. */
+  status: number;
+  /** Explanation specific to this occurrence. */
+  detail?: string;
+  /** URI reference that identifies this occurrence. */
+  instance?: string;
+  /** Stable machine code, `<domain>.<reason>`. */
+  code: string;
+  /** Members specific to the code, for example the fields that failed validation. */
+  details?: ProblemDetails;
+}
+
+export interface StartAttachmentUpload {
+  fileName: AttachmentFileName;
+  contentType: AttachmentContentType;
+  /**
+     * Declared length in bytes. The storage service refuses values above 25 MiB.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  sizeBytes: number;
+}
+
+/**
+ * Signed form fields to append unchanged before the file part.
+ */
+export type AttachmentUploadFields = {[key: string]: string};
+
+export interface AttachmentUpload {
+  id: AttachmentId;
+  method: 'POST';
+  /** Signed multipart upload destination, valid for five minutes. */
+  url: string;
+  /** Signed form fields to append unchanged before the file part. */
+  fields: AttachmentUploadFields;
+  expiresAt: string;
+}
+
+export interface TaskAttachment {
+  id: AttachmentId;
+  taskKey: TaskKey;
+  fileName: AttachmentFileName;
+  contentType: AttachmentContentType;
+  /**
+     * @minimum 1
+     * @maximum 26214400
+     */
+  sizeBytes: number;
+  /**
+     * Account that attached the file. An attachment from a public intake submission has no account author.
+     * @nullable
+     */
+  authorUserId: string | null;
+  uploadedAt: string;
+  /** @minimum 1 */
+  version: number;
+}
+
+export interface AttachmentPage {
+  items: TaskAttachment[];
+  nextCursor: NextCursor | null;
+}
+
+export interface AttachmentDownload {
+  /** Short-lived signed URL for a download served as an attachment. */
+  url: string;
+  expiresAt: string;
+}
+
+/**
+ * Opaque reservation identifier, reused for the verified immutable asset.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type ProfileMediaId = string;
+
+/**
+ * Kind of owner and the policy used to verify its image.
+ */
+export type ProfileMediaKind = typeof ProfileMediaKind[keyof typeof ProfileMediaKind];
+
+
+export const ProfileMediaKind = {
+  avatar: 'avatar',
+  'organization-logo': 'organization-logo',
+} as const;
+
+/**
+ * An avatar source is a square PNG, JPEG or WebP image at least 256 pixels on each side.
+ */
+export type AvatarUploadContentType = typeof AvatarUploadContentType[keyof typeof AvatarUploadContentType];
+
+
+export const AvatarUploadContentType = {
+  'image/png': 'image/png',
+  'image/jpeg': 'image/jpeg',
+  'image/webp': 'image/webp',
+} as const;
+
+/**
+ * A logo source is a square PNG or SVG image. A 512-pixel image is recommended.
+ */
+export type OrganizationLogoUploadContentType = typeof OrganizationLogoUploadContentType[keyof typeof OrganizationLogoUploadContentType];
+
+
+export const OrganizationLogoUploadContentType = {
+  'image/png': 'image/png',
+  'image/svg+xml': 'image/svg+xml',
+} as const;
+
+/**
+ * Image size in bytes, up to 5 MiB.
+ * @minimum 1
+ * @maximum 5242880
+ */
+export type ProfileMediaSizeBytes = number;
+
+export interface StartAvatarUpload {
+  contentType: AvatarUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+}
+
+export interface StartOrganizationLogoUpload {
+  contentType: OrganizationLogoUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+}
+
+/**
+ * Signed form fields to append unchanged before the file part.
+ */
+export type ProfileMediaUploadFields = {[key: string]: string};
+
+export interface ProfileMediaUpload {
+  uploadId: ProfileMediaId;
+  method: 'POST';
+  /** Signed multipart destination, valid for at most five minutes and never beyond the reservation expiry. */
+  url: string;
+  /** Signed form fields to append unchanged before the file part. */
+  fields: ProfileMediaUploadFields;
+  /** Exclusive expiry of the signed transfer. */
+  expiresAt: string;
+}
+
+export interface SetProfileMedia {
+  uploadId: ProfileMediaId;
+}
+
+export interface ProfileMediaReservation {
+  uploadId: ProfileMediaId;
+  /** Exclusive owner reservation expiry. Replays preserve this instant. */
+  expiresAt: string;
+}
+
+/**
+ * Pending permits preparation within the lease. Committed identifies the same owner receipt on replay.
+ */
+export type ProfileMediaReservationStateState = typeof ProfileMediaReservationStateState[keyof typeof ProfileMediaReservationStateState];
+
+
+export const ProfileMediaReservationStateState = {
+  pending: 'pending',
+  committed: 'committed',
+} as const;
+
+export interface ProfileMediaReservationState {
+  uploadId: ProfileMediaId;
+  /** Pending permits preparation within the lease. Committed identifies the same owner receipt on replay. */
+  state: ProfileMediaReservationStateState;
+  /** Exclusive owner reservation expiry. Replays preserve this instant. */
+  expiresAt: string;
+}
+
+export interface CurrentAvatarReference {
+  /** The current avatar, or null when the account has no avatar. */
+  assetId: ProfileMediaId | null;
+}
+
+export interface PrepareProfileMedia {
+  kind: ProfileMediaKind;
+}
+
+/**
+ * The media declaration and exclusive expiry already authorized by the owner service.
+ */
+export type SignProfileMediaTransfer = {
+  kind: 'avatar';
+  expiresAt: string;
+  contentType: AvatarUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+} | {
+  kind: 'organization-logo';
+  expiresAt: string;
+  contentType: OrganizationLogoUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+};
+
+/**
+ * The width or height of the square prepared PNG in pixels.
+ * @minimum 1
+ * @maximum 512
+ */
+export type ProfileMediaRasterDimension = number;
+
+/**
+ * Verified PNG metadata for the immutable upload. Storage verifies the same source bytes it
+ * prepares, limits each decoded dimension to 4096 pixels and the decoded image to 4096²
+ * pixels, and produces a square PNG of at most 512 pixels per side without source metadata.
+ * A supported static SVG logo is rasterized with limits on resources and no external access.
+ */
+export interface ProfileMediaPreparation {
+  uploadId: ProfileMediaId;
+  contentType: 'image/png';
+  width: ProfileMediaRasterDimension;
+  height: ProfileMediaRasterDimension;
+  sizeBytes: ProfileMediaSizeBytes;
+}
+
+/**
+ * `media.not-found` for an unknown, unavailable or unrelated image or reservation.
+ */
+export type ProfileMediaNotFoundResponse = Problem;
+
+/**
+ * `idempotency.request-in-progress` when equivalent signing is running, or
+ * `media.upload-expired` when an unsigned transfer passed its original expiry.
+ */
+export type ProfileMediaReservationConflictResponse = Problem;
+
+/**
+ * `media.file-too-large` above 5,242,880 declared bytes, `media.unsupported-type` for a
+ * disallowed image encoding, or `idempotency.key-reused` for a conflicting reservation.
+ */
+export type ProfileMediaReservationRefusedResponse = Problem;
+
+/**
+ * `media.upload-expired` for expiration, `media.upload-not-ready` for an upload that has not
+ * arrived, or `media.upload-superseded` for an invalidated prior generation.
+ */
+export type ProfileMediaUploadStateConflictResponse = Problem;
+
+/**
+ * `media.file-too-large`, `media.unsupported-type`, or `media.invalid-image` for metadata,
+ * decoding, shape, dimension or safety failures.
+ */
+export type ProfileMediaUploadRefusedResponse = Problem;
+
+/**
+ * `storage.unavailable` when the dependency or durable media state is unavailable.
+ */
+export type ProfileMediaUnavailableResponse = Problem;
+
+/**
  * `request.invalid` with `details.issues`.
  */
 export type BadRequestResponse = Problem;
@@ -2415,6 +2789,12 @@ export type InternalAccessRefusedResponse = Problem;
 export type AttachmentNotFoundResponse = Problem;
 
 /**
+ * `attachment.not-found` for a missing, unavailable or unrelated reservation, an
+ * allocation with an expired draft, or a recorded terminal claim or release.
+ */
+export type IntakeAttachmentNotFoundResponse = Problem;
+
+/**
  * `idempotency.request-in-progress` while the equivalent upload reservation is running.
  */
 export type UploadReservationConflictResponse = Problem;
@@ -2430,6 +2810,13 @@ export type UploadStateConflictResponse = Problem;
  * or `idempotency.key-reused` for a key previously used with a different request.
  */
 export type UploadStartRefusedResponse = Problem;
+
+/**
+ * `attachment.upload-metadata-mismatch` for an unsupported or inconsistent file
+ * declaration, or `idempotency.key-reused` for a different declaration of the same
+ * allocated reservation.
+ */
+export type IntakeAttachmentStartRefusedResponse = Problem;
 
 /**
  * `attachment.file-too-large` when the stored object exceeds the limit, or
@@ -2467,6 +2854,11 @@ export type ListTaskAttachmentsInternalParams = {
    * @maximum 100
    */
   limit?: number;
+};
+
+export type GetAvatarImageInternalParams = {
+  /** Account id for the authorized reference. */
+  ownerUserId: string;
 };
 
 export type ListLargestAttachmentsInternalParams = {

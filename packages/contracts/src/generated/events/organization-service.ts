@@ -276,6 +276,83 @@ export const organizationCreatedV1Schema = zod.object({
   primaryUse: zod.string(),
 }) satisfies zod.ZodType<OrganizationCreatedV1>;
 
+/** Name of the event `organization.logo-changed.v1`. The logo reference was set, replaced or removed. */
+export const ORGANIZATION_LOGO_CHANGED_V1 = 'organization.logo-changed.v1';
+
+/** Payload of the event `organization.logo-changed.v1`. */
+export interface OrganizationLogoChangedV1 {
+  /** Event ID, the deduplication key. */
+  id: string;
+  /** UTC instant of the recorded reference change. */
+  occurredAt: string;
+  /** Organization that owns the logo and the reservation. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Monotonic logo generation after this change, separate from the profile version. */
+  version: number;
+  /** Current immutable asset ID. Null after removal. */
+  assetId: string | null;
+  /** Retired immutable asset ID. Null on first activation. */
+  oldAssetId: string | null;
+}
+
+/** Validator of the payload of the event `organization.logo-changed.v1`. */
+export const organizationLogoChangedV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1).max(9007199254740991),
+  assetId: zod.uuid().nullable(),
+  oldAssetId: zod.uuid().nullable(),
+}) satisfies zod.ZodType<OrganizationLogoChangedV1>;
+
+/** Name of the event `organization.logo-upload-abandoned.v1`. The owner ended an unused logo reservation. */
+export const ORGANIZATION_LOGO_UPLOAD_ABANDONED_V1 = 'organization.logo-upload-abandoned.v1';
+
+/** Payload of the event `organization.logo-upload-abandoned.v1`. */
+export interface OrganizationLogoUploadAbandonedV1 {
+  /** Event ID, the deduplication key. */
+  id: string;
+  /** UTC instant of the recorded abandonment. */
+  occurredAt: string;
+  /** Organization that owns the logo and the reservation. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** The terminal version of this reservation. */
+  version: 1;
+  /** Owner-allocated ID of the permanently abandoned reservation. */
+  uploadId: string;
+}
+
+/** Validator of the payload of the event `organization.logo-upload-abandoned.v1`. */
+export const organizationLogoUploadAbandonedV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.literal(1),
+  uploadId: zod.uuid(),
+}) satisfies zod.ZodType<OrganizationLogoUploadAbandonedV1>;
+
 /** Name of the event `organization.updated.v1`. The profile of an organization changed. */
 export const ORGANIZATION_UPDATED_V1 = 'organization.updated.v1';
 
@@ -327,7 +404,7 @@ export const organizationUpdatedV1Schema = zod.object({
 }) satisfies zod.ZodType<OrganizationUpdatedV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [INVITATION_ISSUED_V1, MEMBER_JOINED_V1, MEMBER_REMOVED_V1, MEMBER_ROLE_CHANGED_V1, ORGANIZATION_CREATED_V1, ORGANIZATION_UPDATED_V1] as const;
+export const EVENT_NAMES = [INVITATION_ISSUED_V1, MEMBER_JOINED_V1, MEMBER_REMOVED_V1, MEMBER_ROLE_CHANGED_V1, ORGANIZATION_CREATED_V1, ORGANIZATION_LOGO_CHANGED_V1, ORGANIZATION_LOGO_UPLOAD_ABANDONED_V1, ORGANIZATION_UPDATED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -349,6 +426,8 @@ export interface EventPayloads {
   'member.removed.v1': MemberRemovedV1;
   'member.role-changed.v1': MemberRoleChangedV1;
   'organization.created.v1': OrganizationCreatedV1;
+  'organization.logo-changed.v1': OrganizationLogoChangedV1;
+  'organization.logo-upload-abandoned.v1': OrganizationLogoUploadAbandonedV1;
   'organization.updated.v1': OrganizationUpdatedV1;
 }
 
@@ -359,5 +438,7 @@ export const eventSchemas = {
   'member.removed.v1': memberRemovedV1Schema,
   'member.role-changed.v1': memberRoleChangedV1Schema,
   'organization.created.v1': organizationCreatedV1Schema,
+  'organization.logo-changed.v1': organizationLogoChangedV1Schema,
+  'organization.logo-upload-abandoned.v1': organizationLogoUploadAbandonedV1Schema,
   'organization.updated.v1': organizationUpdatedV1Schema,
 } as const satisfies { readonly [Name in EventName]: zod.ZodType<EventPayloads[Name]> };

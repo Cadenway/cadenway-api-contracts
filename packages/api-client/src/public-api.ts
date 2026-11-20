@@ -11,6 +11,17 @@
  * type of the same name, exported together.
  */
 
+// openapi/public/realtime.yaml
+export {
+  RealtimeService,
+  type IssueRealtimeTicketClientResult,
+} from './generated/public/realtime/realtime/realtime.service';
+export type {
+  RealtimeTicket,
+  RealtimeTicketRequest,
+  RealtimeTicketToken,
+} from './generated/public/realtime/model';
+
 // openapi/public/goals.yaml
 export {
   GoalsService,
@@ -56,6 +67,35 @@ export type { UploadCompletionConflictResponse } from './generated/public/attach
 export type { UploadContentRefusedResponse } from './generated/public/attachments/model/uploadContentRefusedResponse';
 export type { UploadStartConflictResponse } from './generated/public/attachments/model/uploadStartConflictResponse';
 export type { UploadStartRefusedResponse } from './generated/public/attachments/model/uploadStartRefusedResponse';
+
+// openapi/public/profile-media.yaml
+export {
+  ProfileMediaService,
+  type DeleteAvatarClientResult,
+  type DeleteOrganizationLogoClientResult,
+  type GetAvatarClientResult,
+  type GetMemberAvatarClientResult,
+  type GetOrganizationLogoClientResult,
+  type SetAvatarClientResult,
+  type SetOrganizationLogoClientResult,
+  type StartAvatarUploadClientResult,
+  type StartOrganizationLogoUploadClientResult,
+} from './generated/public/profile-media/profile-media/profile-media.service';
+export { AvatarUploadContentType } from './generated/public/profile-media/model/avatarUploadContentType';
+export { OrganizationLogoUploadContentType } from './generated/public/profile-media/model/organizationLogoUploadContentType';
+export type { AccountMediaNotFoundResponse } from './generated/public/profile-media/model/accountMediaNotFoundResponse';
+export type { MemberMediaNotFoundResponse } from './generated/public/profile-media/model/memberMediaNotFoundResponse';
+export type { MemberReadForbiddenResponse } from './generated/public/profile-media/model/memberReadForbiddenResponse';
+export type { OrganizationMediaNotFoundResponse } from './generated/public/profile-media/model/organizationMediaNotFoundResponse';
+export type { ProfileMediaId } from './generated/public/profile-media/model/profileMediaId';
+export type { ProfileMediaImageResponse } from './generated/public/profile-media/model/profileMediaImageResponse';
+export type { ProfileMediaSizeBytes } from './generated/public/profile-media/model/profileMediaSizeBytes';
+export type { ProfileMediaUpload } from './generated/public/profile-media/model/profileMediaUpload';
+export type { ProfileMediaUploadFields } from './generated/public/profile-media/model/profileMediaUploadFields';
+export type { SetProfileMedia } from './generated/public/profile-media/model/setProfileMedia';
+export type { StartAvatarUpload } from './generated/public/profile-media/model/startAvatarUpload';
+export type { StartOrganizationLogoUpload } from './generated/public/profile-media/model/startOrganizationLogoUpload';
+export type { UploadStateConflictResponse } from './generated/public/profile-media/model/uploadStateConflictResponse';
 
 // openapi/public/inbox.yaml
 export {
@@ -882,10 +922,17 @@ export {
 } from './generated/public/intake/intake-management/intake-management.service';
 export {
   PublicIntakeService,
+  type AbandonPublicIntakeAttachmentUploadClientResult,
+  type CompletePublicIntakeAttachmentUploadClientResult,
   type GetPublicIntakeFormClientResult,
+  type StartPublicIntakeAttachmentUploadClientResult,
   type SubmitPublicIntakeFormClientResult,
 } from './generated/public/intake/public-intake/public-intake.service';
+export type { IntakeAttachmentCompletion } from './generated/public/intake/model/intakeAttachmentCompletion';
+export type { IntakeAttachmentIdempotencyKeyParameter } from './generated/public/intake/model/intakeAttachmentIdempotencyKeyParameter';
 export type { IntakeConfigurationResponse } from './generated/public/intake/model/intakeConfigurationResponse';
+export type { IntakeDraftKey } from './generated/public/intake/model/intakeDraftKey';
+export type { IntakeDraftKeyParameter } from './generated/public/intake/model/intakeDraftKeyParameter';
 export { IntakeFieldMode } from './generated/public/intake/model/intakeFieldMode';
 export type { IntakeFormConfiguration } from './generated/public/intake/model/intakeFormConfiguration';
 export type { IntakeFormFields } from './generated/public/intake/model/intakeFormFields';
@@ -894,4 +941,5 @@ export type { IntakeFormPatch } from './generated/public/intake/model/intakeForm
 export type { IntakeReceipt } from './generated/public/intake/model/intakeReceipt';
 export type { IntakeSubmission } from './generated/public/intake/model/intakeSubmission';
 export type { PublicIntakeForm } from './generated/public/intake/model/publicIntakeForm';
+export type { RequiredIntakeDraftKeyParameter } from './generated/public/intake/model/requiredIntakeDraftKeyParameter';
 export type { TaskIntakeContact } from './generated/public/intake/model/taskIntakeContact';

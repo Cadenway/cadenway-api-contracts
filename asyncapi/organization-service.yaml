@@ -12,6 +12,9 @@ info:
     Every event belongs to an organization: `organizationId` is never `null`, and the event is
     appended in the tenant transaction of that organization.
 
+    Logo events track the image generation or the terminal upload reservation version
+    independently of the organization profile version.
+
     **Memberships.** organization-service owns the members. identity-service keeps a copy of the
     memberships from `member.joined.v1`, `member.role-changed.v1` and `member.removed.v1`, to check
     the choice of an organization and to fill the introspections, and task-service keeps one to
@@ -50,6 +53,8 @@ info:
       uses: member.joined.v1, member.role-changed.v1 and member.removed.v1, through the consumers task-service__project-member-joined, task-service__project-member-role-changed and task-service__project-member-removed, for its copy of the members and their roles (who sees and changes spaces, lists and tasks, who can be assigned), to unassign a removed member and to give the private spaces they owned to the owner of the organization.
     - repository: cadenway-search-service
       uses: Planned, member events, to filter results by membership.
+    - repository: cadenway-storage-service
+      uses: Planned in P4, organization.logo-changed.v1 and organization.logo-upload-abandoned.v1 to reconcile private image assets.
 servers:
   nats:
     host: nats:4222
@@ -72,6 +77,22 @@ channels:
     messages:
       organizationUpdatedV1:
         $ref: '#/components/messages/organizationUpdatedV1'
+  organizationLogoChangedV1:
+    address: evt.organization.logo-changed.v1
+    description: |
+      A logo reference was set, replaced or removed. Emitted by organization-service. Planned consumers:
+      cadenway-storage-service.
+    messages:
+      organizationLogoChangedV1:
+        $ref: '#/components/messages/organizationLogoChangedV1'
+  organizationLogoUploadAbandonedV1:
+    address: evt.organization.logo-upload-abandoned.v1
+    description: |
+      An unused logo reservation was ended. Emitted by organization-service. Planned consumer:
+      cadenway-storage-service.
+    messages:
+      organizationLogoUploadAbandonedV1:
+        $ref: '#/components/messages/organizationLogoUploadAbandonedV1'
   memberJoinedV1:
     address: evt.member.joined.v1
     description: |
@@ -123,6 +144,22 @@ operations:
       $ref: '#/channels/organizationUpdatedV1'
     messages:
       - $ref: '#/channels/organizationUpdatedV1/messages/organizationUpdatedV1'
+  publishOrganizationLogoChangedV1:
+    action: send
+    summary: organization-service publishes a committed logo reference change.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/organizationLogoChangedV1'
+    messages:
+      - $ref: '#/channels/organizationLogoChangedV1/messages/organizationLogoChangedV1'
+  publishOrganizationLogoUploadAbandonedV1:
+    action: send
+    summary: organization-service publishes the terminal decision on an unused logo reservation.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/organizationLogoUploadAbandonedV1'
+    messages:
+      - $ref: '#/channels/organizationLogoUploadAbandonedV1/messages/organizationLogoUploadAbandonedV1'
   publishMemberJoinedV1:
     action: send
     summary: organization-service publishes a new member.
@@ -337,6 +374,130 @@ components:
               ignores.
             items:
               type: string
+    organizationLogoChangedV1:
+      name: organization.logo-changed.v1
+      title: Logo changed
+      summary: The logo reference was set, replaced or removed.
+      description: |
+        Emitted after Organization commits a new logo, a replacement or a removal. The actor
+        is the current owner or an admin authorized to make the change. An unchanged reference
+        emits no event. The active `assetId` and retired `oldAssetId` describe the transition.
+        A successful adoption keeps the upload ID as the asset ID. References convey no
+        permission to read the asset.
+
+        Storage deduplicates by event ID and applies the active reference by image generation.
+        It also retires each explicitly replaced asset by ID, including from an older event
+        delivered out of order. An older delivery cannot replace the latest active reference
+        or revive a retired asset.
+
+        Personal data is limited to the opaque identifiers. No image bytes, object key or URL.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required: [id, occurredAt, organizationId, actor, version, assetId, oldAssetId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC instant of the recorded reference change.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization that owns the logo and the reservation.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+            description: Monotonic logo generation after this change, separate from the profile version.
+          assetId:
+            type: [string, 'null']
+            format: uuid
+            description: Current immutable asset ID. Null after removal.
+          oldAssetId:
+            type: [string, 'null']
+            format: uuid
+            description: Retired immutable asset ID. Null on first activation.
+      examples:
+        - name: replaced
+          payload:
+            id: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a21
+            occurredAt: '2026-11-20T09:05:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 2
+            assetId: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a24
+            oldAssetId: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a25
+        - name: removed
+          payload:
+            id: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a22
+            occurredAt: '2026-11-20T09:10:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 3
+            assetId: null
+            oldAssetId: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a24
+    organizationLogoUploadAbandonedV1:
+      name: organization.logo-upload-abandoned.v1
+      title: Logo upload abandoned
+      summary: The owner ended an unused logo reservation.
+      description: |
+        Organization emits this fact in the same tenant transaction as its terminal decision that
+        the reservation can never be adopted. The system actor is organization-service. The
+        reservation is locked against concurrent adoption before the decision. It can expire or
+        be superseded, including while Storage is still preparing its bytes.
+
+        Storage retains a prepared candidate until an authoritative owner decision. On this fact
+        it records the terminal reservation by organization and upload ID, even if no Storage
+        record exists yet. It then reclaims the associated bytes and prevents delayed preparation
+        from reviving the upload. Repeated deliveries have the same effect as one delivery.
+
+        Personal data is limited to the opaque identifiers. No image bytes, object key or URL.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required: [id, occurredAt, organizationId, actor, version, uploadId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC instant of the recorded abandonment.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization that owns the logo and the reservation.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            const: 1
+            description: The terminal version of this reservation.
+          uploadId:
+            type: string
+            format: uuid
+            description: Owner-allocated ID of the permanently abandoned reservation.
+      examples:
+        - name: abandoned
+          payload:
+            id: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a23
+            occurredAt: '2026-11-20T10:00:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: system, id: organization-service }
+            version: 1
+            uploadId: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a26
     memberJoinedV1:
       name: member.joined.v1
       title: Member joined

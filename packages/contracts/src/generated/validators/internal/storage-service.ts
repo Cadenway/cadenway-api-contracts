@@ -5,6 +5,91 @@
 import * as zod from 'zod';
 
 /**
+ * Internal token: api-gateway, actor system, with the organization returned by
+ * task-service for this reservation. The gateway must first obtain the same tenant,
+ * publication, attachment ID and draft expiry from the Task allocation operation.
+ * The body supplies the trusted allocated ID, expiry and file declaration.
+ *
+ * Issue one multipart upload capability for the same tenant, publication and allocated
+ * ID. Only the first declaration for that binding can be reserved. The staging
+ * destination exposed in the signed form is opaque and contains no organization,
+ * list or publication identifiers. The capability is valid for at most five minutes
+ * and never after the supplied draft expiry. A retry of the same reservation replays
+ * the original signed response and expiry. A terminal release already recorded for
+ * the allocation prevents issuance.
+ * @summary Sign an upload previously allocated by task-service
+ */
+export const startIntakeAttachmentUploadInternalPathPublicationIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const StartIntakeAttachmentUploadInternalParams = zod.object({
+  "publicationId": zod.uuid().regex(startIntakeAttachmentUploadInternalPathPublicationIdRegExp).describe('Internal publication ID provided by task-service for this reservation.')
+})
+
+export const startIntakeAttachmentUploadInternalBodyAttachmentIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const startIntakeAttachmentUploadInternalBodyFileNameMax = 255;
+
+
+export const startIntakeAttachmentUploadInternalBodyFileNameRegExp = new RegExp('^(?=[\\s\\S]*\\S)(?!\\s*\\.{1,2}\\s*$)(?:[^/\\\\\\x00-\\x1F\\x7F-\\x9F\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])+$');
+export const startIntakeAttachmentUploadInternalBodyContentTypeMax = 127;
+
+
+export const startIntakeAttachmentUploadInternalBodyContentTypeRegExp = new RegExp('^(?!\\*/)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+/(?!\\*$)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+$');
+export const startIntakeAttachmentUploadInternalBodySizeBytesMax = 26214400;
+
+
+
+export const StartIntakeAttachmentUploadInternalBody = zod.strictObject({
+  "attachmentId": zod.uuid().regex(startIntakeAttachmentUploadInternalBodyAttachmentIdRegExp),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('Task\'s exclusive draft lease cutoff. The signed upload expires at or before it.'),
+  "fileName": zod.string().min(1).refine((value) => Array.from(value).length <= startIntakeAttachmentUploadInternalBodyFileNameMax, { message: 'At most 255 Unicode code points' }).regex(startIntakeAttachmentUploadInternalBodyFileNameRegExp).describe('Original Unicode basename without path separators, control characters or whitespace-padded dot segments.'),
+  "contentType": zod.string().min(1).max(startIntakeAttachmentUploadInternalBodyContentTypeMax).regex(startIntakeAttachmentUploadInternalBodyContentTypeRegExp).describe('Concrete media type and subtype without wildcards or parameters.'),
+  "sizeBytes": zod.int().min(1).max(startIntakeAttachmentUploadInternalBodySizeBytesMax).describe('Validated file length in bytes, capped at 25 MiB.')
+}).describe('Trusted Task allocation and previously validated file declaration relayed by the gateway.')
+
+export const startIntakeAttachmentUploadInternalResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const StartIntakeAttachmentUploadInternalResponse = zod.object({
+  "id": zod.uuid().regex(startIntakeAttachmentUploadInternalResponseIdRegExp),
+  "method": zod.literal("POST"),
+  "url": zod.url().describe('Signed multipart upload destination, valid for five minutes.'),
+  "fields": zod.record(zod.string(), zod.string()).refine((value) => Object.keys(value).length >= 1, { message: 'At least 1 signed form field' }).describe('Signed form fields to append unchanged before the file part.'),
+  "expiresAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
+ * Internal token: api-gateway, actor system, with the organization returned by
+ * task-service for this reservation. The gateway must first authorize completion
+ * with task-service for the current publication and draft.
+ *
+ * Verify the same immutable bytes that will be retained, and commit election of the
+ * candidate together with the verification event. A successful retry returns the
+ * same acknowledgement without another verification fact. No task attachment
+ * metadata or ordinary file facts are published by this operation. Keep the elected
+ * candidate until the Task claim or release is applied, including past the draft
+ * expiry if event delivery is delayed.
+ * @summary Verify the applicant object and pin its elected copy
+ */
+export const completeIntakeAttachmentUploadInternalPathPublicationIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const completeIntakeAttachmentUploadInternalPathAttachmentIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const CompleteIntakeAttachmentUploadInternalParams = zod.object({
+  "publicationId": zod.uuid().regex(completeIntakeAttachmentUploadInternalPathPublicationIdRegExp).describe('Internal publication ID provided by task-service for this reservation.'),
+  "attachmentId": zod.uuid().regex(completeIntakeAttachmentUploadInternalPathAttachmentIdRegExp).describe('UUID allocated by the upload request.')
+})
+
+export const completeIntakeAttachmentUploadInternalResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const CompleteIntakeAttachmentUploadInternalResponse = zod.strictObject({
+  "id": zod.uuid().regex(completeIntakeAttachmentUploadInternalResponseIdRegExp)
+}).describe('Acknowledges verification for the identified reservation without exposing file data.')
+
+
+/**
  * Lists ready attachments in descending `(uploadedAt,id)` order. The opaque cursor is
  * bound to the caller's organization, task and ordering. The caller must be able to read
  * the task. Readable archived tasks remain accessible. Pending or deleted attachments
@@ -254,6 +339,143 @@ export const GetTaskAttachmentDownloadInternalResponse = zod.object({
   "url": zod.url().describe('Short-lived signed URL for a download served as an attachment.'),
   "expiresAt": zod.iso.datetime({"offset":true})
 })
+
+
+/**
+ * The gateway calls only after the owning service allocated this id for the verified actor,
+ * scope, declaration and expiry. The signed multipart POST is restricted to one staging key,
+ * an exact media type and a size range up to 5,242,880 bytes. The capability expires at the
+ * owner's original expiry, at most five minutes after reservation. An authorized repeat for
+ * the same reservation and declaration returns the original signed response, never a renewed
+ * capability. If there is no signed response and the reserved expiry has passed, the
+ * operation refuses to sign it. Do not log the destination or form fields. The issuer is api-gateway with actor
+ * user. An avatar uses the account id with no organization scope, while a logo uses the
+ * organization in the token and the id of the verified uploader.
+ * @summary Sign a reserved profile image transfer
+ */
+export const signProfileMediaTransferInternalPathUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const SignProfileMediaTransferInternalParams = zod.object({
+  "uploadId": zod.uuid().regex(signProfileMediaTransferInternalPathUploadIdRegExp).describe('Opaque id allocated by the owning service.')
+})
+
+export const signProfileMediaTransferInternalBodyOneSizeBytesMax = 5242880;
+
+export const signProfileMediaTransferInternalBodyTwoSizeBytesMax = 5242880;
+
+
+
+export const SignProfileMediaTransferInternalBody = zod.union([zod.strictObject({
+  "kind": zod.literal("avatar"),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/webp']).describe('An avatar source is a square PNG, JPEG or WebP image at least 256 pixels on each side.'),
+  "sizeBytes": zod.int().min(1).max(signProfileMediaTransferInternalBodyOneSizeBytesMax).describe('Image size in bytes, up to 5 MiB.')
+}),zod.strictObject({
+  "kind": zod.literal("organization-logo"),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "contentType": zod.enum(['image/png', 'image/svg+xml']).describe('A logo source is a square PNG or SVG image. A 512-pixel image is recommended.'),
+  "sizeBytes": zod.int().min(1).max(signProfileMediaTransferInternalBodyTwoSizeBytesMax).describe('Image size in bytes, up to 5 MiB.')
+})]).describe('The media declaration and exclusive expiry already authorized by the owner service.')
+
+export const signProfileMediaTransferInternalResponseUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const SignProfileMediaTransferInternalResponse = zod.object({
+  "uploadId": zod.uuid().regex(signProfileMediaTransferInternalResponseUploadIdRegExp).describe('Opaque reservation identifier, reused for the verified immutable asset.'),
+  "method": zod.literal("POST"),
+  "url": zod.url().describe('Signed multipart destination, valid for at most five minutes and never beyond the reservation expiry.'),
+  "fields": zod.record(zod.string(), zod.string()).refine((value) => Object.keys(value).length >= 1, { message: 'At least 1 signed form field' }).describe('Signed form fields to append unchanged before the file part.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('Exclusive expiry of the signed transfer.')
+})
+
+
+/**
+ * The gateway calls only for a pending reservation verified by its owner. The actor and
+ * scope must match the transfer. Storage verifies the reserved declaration and uploaded
+ * bytes of one pinned generation. It decodes one static square image with a declared
+ * allowed encoding, at most 4,096 pixels per side and at most 16,777,216 pixels, then
+ * encodes a metadata-free PNG at most 512 pixels per side without upscaling. Avatar input
+ * is PNG, JPEG or WebP at least 256 pixels per side. Logo input is PNG or SVG. SVG input
+ * must be self-contained and static with no external resource access. The decode and
+ * rasterization run within byte, pixel, memory and time limits.
+ *
+ * The immutable derivative uses the upload id as asset id. Repeated preparation returns
+ * the same accepted preparation. Storage retains this candidate until an authoritative
+ * owner decision. An abandoned reservation fences late preparation and cleanup of the
+ * staging object accounts for the original signed expiry. This action alone never changes
+ * the published reference. Issuer api-gateway only, verified actor user.
+ * @summary Verify and prepare a profile image
+ */
+export const prepareProfileMediaInternalPathUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const PrepareProfileMediaInternalParams = zod.object({
+  "uploadId": zod.uuid().regex(prepareProfileMediaInternalPathUploadIdRegExp).describe('Opaque id allocated by the owning service.')
+})
+
+export const PrepareProfileMediaInternalBody = zod.strictObject({
+  "kind": zod.enum(['avatar', 'organization-logo']).describe('Kind of owner and the policy used to verify its image.')
+})
+
+export const prepareProfileMediaInternalResponseUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const prepareProfileMediaInternalResponseWidthMax = 512;
+
+export const prepareProfileMediaInternalResponseHeightMax = 512;
+
+export const prepareProfileMediaInternalResponseSizeBytesMax = 5242880;
+
+
+
+export const PrepareProfileMediaInternalResponse = zod.object({
+  "uploadId": zod.uuid().regex(prepareProfileMediaInternalResponseUploadIdRegExp).describe('Opaque reservation identifier, reused for the verified immutable asset.'),
+  "contentType": zod.literal("image/png"),
+  "width": zod.int().min(1).max(prepareProfileMediaInternalResponseWidthMax).describe('The width or height of the square prepared PNG in pixels.'),
+  "height": zod.int().min(1).max(prepareProfileMediaInternalResponseHeightMax).describe('The width or height of the square prepared PNG in pixels.'),
+  "sizeBytes": zod.int().min(1).max(prepareProfileMediaInternalResponseSizeBytesMax).describe('Image size in bytes, up to 5 MiB.')
+}).describe('Verified PNG metadata for the immutable upload. Storage verifies the same source bytes it\nprepares, limits each decoded dimension to 4096 pixels and the decoded image to 4096²\npixels, and produces a square PNG of at most 512 pixels per side without source metadata.\nA supported static SVG logo is rasterized with limits on resources and no external access.\n')
+
+
+/**
+ * The gateway calls only after the current avatar reference and authorization were
+ * resolved. ownerUserId is the verified actor's own account or the user id returned by
+ * the live organization member lookup. Storage requires the exact avatar asset and that
+ * account id. Any organization in the token is not part of avatar ownership. A different
+ * ownerUserId requires the token organization used by the gateway for the directory check.
+ * Issuer api-gateway and actor user only. The owner-referenced candidate is readable while
+ * the durable adoption fact is in transit. Retired or rejected objects are unavailable.
+ * @summary Read an authorized PNG avatar derivative
+ */
+export const getAvatarImageInternalPathAssetIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetAvatarImageInternalParams = zod.object({
+  "assetId": zod.uuid().regex(getAvatarImageInternalPathAssetIdRegExp).describe('Opaque id of the immutable PNG derivative.')
+})
+
+export const GetAvatarImageInternalQueryParams = zod.object({
+  "ownerUserId": zod.uuid().describe('Account id for the authorized reference.')
+})
+
+export const GetAvatarImageInternalResponse = zod.unknown()
+
+
+/**
+ * The gateway calls only after checking current membership and resolving the current
+ * logo reference in the same organization-service read. Storage requires the exact logo
+ * asset in the verified organization. Issuer api-gateway, actor user and organization
+ * required. The owner-referenced candidate is readable while the durable adoption fact
+ * is in transit. Retired or rejected objects are unavailable.
+ * @summary Read an authorized PNG logo derivative
+ */
+export const getOrganizationLogoImageInternalPathAssetIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetOrganizationLogoImageInternalParams = zod.object({
+  "assetId": zod.uuid().regex(getOrganizationLogoImageInternalPathAssetIdRegExp).describe('Opaque id of the immutable PNG derivative.')
+})
+
+export const GetOrganizationLogoImageInternalResponse = zod.unknown()
 
 
 /**
