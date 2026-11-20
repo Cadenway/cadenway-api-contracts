@@ -1,0 +1,176 @@
+openapi: 3.1.0
+info:
+  title: Cadenway search
+  version: 1.0.0
+  description: |
+    Searches visible tasks and lists for the command palette in the selected organization.
+    The gateway verifies the browser session and applies the standard rate limit and request
+    budget. The selected organization and user come from the verified session. Palette shortcuts
+    and recent items shown before a query are handled separately by the application.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Relays palette search to search-service via the generated internal client.
+    - repository: cadenway-webapp
+      uses: Looks up tasks and lists from the command palette via the generated Angular client.
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging.
+tags:
+  - name: search
+    description: Task and list lookup in the selected organization.
+paths:
+  /v1/search:
+    get:
+      operationId: search
+      summary: Search visible tasks and lists
+      description: |
+        Matches a literal substring of a task name joined to its key by a space, or of a list
+        name, ignoring case.
+        Tasks precede lists, ordered within each kind by ascending task key or list ID.
+        Visibility is checked on every request. Only visible matches count towards the page
+        limit. A list's parent space name is included only after confirming current direct
+        access to that space.
+
+        The opaque cursor contains 1 to 1,024 characters and is bound to the verified user,
+        selected organization, normalized query and sort order. It is anchored at the last
+        returned match and is present only when another visible match is confirmed. When no
+        visible matches exist, the page has
+        an empty `items` array and a null `nextCursor`. If the service cannot establish the
+        complete page and its continuation within the request budget, it returns 503.
+      tags: [search]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/search-query.yaml#/components/parameters/SearchQuery'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of currently visible task and list matches.
+          headers:
+            Cache-Control:
+              $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/search-query.yaml#/components/schemas/SearchPage'
+              examples:
+                task:
+                  summary: Result for the query SSO
+                  value:
+                    items:
+                      - kind: task
+                        taskKey: CAD-482
+                        name: Refondre l’écran de connexion SSO
+                        status: progress
+                    nextCursor: null
+                list:
+                  summary: Result for the query Sprint 14
+                  value:
+                    items:
+                      - kind: list
+                        listId: 019a6f99-3ec0-7c2a-8e4a-2b8d41c98e01
+                        name: Sprint 14
+                        spaceName: Produit
+                    nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: Browser session with a selected organization.
+  responses:
+    BadRequest:
+      description: |
+        `request.invalid` with `details.issues` for a missing, blank or malformed query,
+        an unknown parameter, an invalid page size or a cursor that does not belong to this request.
+        `request.body-too-large` applies when an incoming body exceeds the gateway size limit.
+      headers:
+        Cache-Control:
+          $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unauthenticated:
+      description: |
+        `auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.
+      headers:
+        Cache-Control:
+          $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Forbidden:
+      description: |
+        `auth.api-token-not-accepted`, `organization.not-selected` or `organization.mfa-required`.
+      headers:
+        Cache-Control:
+          $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    OrganizationNotFound:
+      description: '`organization.not-found` for an inactive membership of the selected organization.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    RateLimited:
+      description: '`rate-limit.exceeded` when the gateway limit applies.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+        Retry-After:
+          description: Delay in seconds before trying again.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unavailable:
+      description: |
+        `search.unavailable`, `upstream.failed`, `upstream.unauthorized`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.unavailable`, `upstream.circuit-open` or
+        `upstream.deadline-exceeded` when search or session verification is unavailable or the
+        request cannot be completed within the gateway budget.
+      headers:
+        Cache-Control:
+          $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'

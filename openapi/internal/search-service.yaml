@@ -1,0 +1,141 @@
+openapi: 3.1.0
+info:
+  title: search-service internal routes
+  version: 1.0.0
+  description: |
+    Internal palette requests carry a signed `api-gateway` token with the verified user and
+    selected organization and `search-service` as audience. Search derives its actor and tenant
+    from those claims. The index supplies candidates. Organization and Task own the current
+    membership, accessibility, versions and placement used to verify them.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Calls the search route via its generated internal client.
+servers:
+  - url: http://search-service:3019
+    description: Search service on the internal network.
+security:
+  - internalToken: []
+tags:
+  - name: search
+    description: Authorized task and list lookup for the command palette.
+paths:
+  /internal/v1/search:
+    get:
+      operationId: searchInternal
+      summary: Search visible tasks and lists
+      description: |
+        Restricts candidates to tasks and lists in the signed organization. The query matches a
+        literal substring of a task name joined to its key by a space, or of a list name, ignoring
+        case. Tasks precede lists, ordered within each kind by ascending task key or list ID.
+
+        Resolve the current membership in Organization even for an empty candidate set. Task
+        validates the same membership stamp and supplies current visibility, version and placement
+        evidence for candidates in bounded batches. Match each disclosed result to that evidence
+        before using indexed fields. A candidate omitted from valid evidence contributes no item.
+        Include the parent space name only with current direct access to that space and a
+        matching version. Recheck membership and the evidence for the selected results and
+        continuation before returning the page. If the evidence changes, establish the complete
+        page again within the request budget or return `503 search.unavailable`.
+
+        An opaque cursor contains 1 to 1,024 characters. Bind it to the verified user, selected
+        organization, normalized query and sort order. Check visibility again on every page,
+        including the match that justifies a continuation. Anchor a continuation at the last
+        returned match and issue it only after
+        confirming another visible match. Return 503 for incomplete or malformed evidence, an
+        unavailable index or dependencies, or a scan that cannot establish the complete page
+        before the deadline. Logs, traces and problems carry operation metadata with query,
+        cursor and indexed contents redacted.
+      tags: [search]
+      parameters:
+        - $ref: '../../components/search-query.yaml#/components/parameters/SearchQuery'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of currently visible task and list matches.
+          headers:
+            Cache-Control:
+              $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/search-query.yaml#/components/schemas/SearchPage'
+              example:
+                items:
+                  - kind: task
+                    taskKey: CAD-482
+                    name: Refondre l’écran de connexion SSO
+                    status: progress
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Signed API gateway token with a user actor, organization and search-service audience.
+  responses:
+    BadRequest:
+      description: |
+        `request.invalid` with `details.issues` for a missing, blank or malformed query,
+        an unknown parameter, an invalid page size or a cursor that does not belong to this request.
+        `request.body-too-large` applies when an incoming body exceeds the service size limit.
+      headers:
+        Cache-Control:
+          $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unauthenticated:
+      description: The internal token is missing (`auth.token-missing`) or refused (`auth.token-invalid`).
+      headers:
+        Cache-Control:
+          $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Forbidden:
+      description: '`auth.issuer-not-allowed`, `auth.actor-not-allowed` or `auth.organization-required`.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    OrganizationNotFound:
+      description: '`organization.not-found` for an inactive membership of the selected organization.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unavailable:
+      description: '`search.unavailable` when Search cannot confirm a complete, authorized page.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/search-query.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
