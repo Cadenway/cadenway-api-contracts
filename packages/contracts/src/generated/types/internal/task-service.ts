@@ -2783,6 +2783,75 @@ export interface AccessCheck {
   taskKey: TaskKey | null;
 }
 
+export interface NotificationTaskIdSubjectRef {
+  kind: 'task-id';
+  taskId: string;
+}
+
+export interface NotificationTaskKeySubjectRef {
+  kind: 'task-key';
+  taskKey: TaskKey;
+}
+
+/**
+ * Stable resource reference for an authorized internal notification lookup.
+ */
+export type NotificationSubjectRef = NotificationTaskIdSubjectRef | NotificationTaskKeySubjectRef | {
+  kind: 'list';
+  listId: string;
+} | {
+  kind: 'space';
+  spaceId: string;
+};
+
+export type NotificationSubjectLookupSubjectsItem = {
+  subject: NotificationSubjectRef;
+} | {
+  subject: NotificationTaskIdSubjectRef | NotificationTaskKeySubjectRef;
+  /** Requests the task identity and name for display for a visible task. */
+  display: {
+  /** Requests a bounded excerpt from this comment on the resolved task. */
+  commentId?: string;
+};
+};
+
+export interface NotificationSubjectLookup {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  subjects: NotificationSubjectLookupSubjectsItem[];
+}
+
+export type NotificationSubjectLookupResultResultsItem = {
+  visible: false;
+} | {
+  visible: true;
+  /** Returned when the API gateway requested display data for this visible task. */
+  display?: {
+  taskId: string;
+  taskKey: TaskKey;
+  taskName: string;
+  /**
+     * Returned only when a comment was requested. A plain-text preview of at
+     * most 200 Unicode code points, or null if the comment is missing, belongs
+     * to another task, was deleted or is hidden.
+     * @maxLength 200
+     * @nullable
+     */
+  commentExcerpt?: string | null;
+};
+};
+
+export interface NotificationSubjectLookupResult {
+  /**
+     * Position-aligned outcomes, one for each submitted subject.
+     * @minItems 1
+     * @maxItems 100
+     */
+  results: NotificationSubjectLookupResultResultsItem[];
+}
+
 export interface GrantPage {
   items: Grant[];
   nextCursor: NextCursor | null;
@@ -3561,6 +3630,212 @@ export interface TaskIntakeContact {
 }
 
 /**
+ * The associated account, or null when the notification has no visible person.
+ */
+export type InboxNotificationActor = {
+  userId: string;
+  name: string;
+} | null;
+
+/**
+ * The task summary, or null when the notification has no visible task.
+ */
+export type InboxNotificationTask = {
+  taskKey: TaskKey;
+  name: string;
+} | null;
+
+export interface InboxNotification {
+  /** UUID v7 of the inbox item. */
+  id: string;
+  /** Notification category. Clients can display unknown categories as generic notifications. */
+  kind: string;
+  /** The associated account, or null when the notification has no visible person. */
+  actor: InboxNotificationActor;
+  /** The task summary, or null when the notification has no visible task. */
+  task: InboxNotificationTask;
+  /**
+     * Preview text when available.
+     * @nullable
+     */
+  excerpt: string | null;
+  /** Task status represented by the notification, when applicable. */
+  status: StatusKey | null;
+  createdAt: string;
+  /**
+     * When the recipient marked the notification read, or null while unread.
+     * @nullable
+     */
+  readAt: string | null;
+  /**
+     * When the recipient archived the notification, or null while in the inbox.
+     * @nullable
+     */
+  archivedAt: string | null;
+  /**
+     * The version carried by the notification ETag.
+     * @minimum 1
+     */
+  version: number;
+}
+
+export interface InboxPage {
+  /** @maxItems 100 */
+  items: InboxNotification[];
+  nextCursor: NextCursor | null;
+  /**
+     * Unread notifications in the recipient's inbox, across all pages.
+     * @minimum 0
+     */
+  unreadCount: number;
+}
+
+export interface InboxUnreadCount {
+  /** @minimum 0 */
+  unreadCount: number;
+}
+
+export interface InboxReadAllResult {
+  /**
+     * Number of notifications marked read by this request.
+     * @minimum 0
+     */
+  markedRead: number;
+  /**
+     * Remaining unread notifications at the end of the operation.
+     * @minimum 0
+     */
+  unreadCount: number;
+}
+
+export interface NotificationChannelSettings {
+  inApp: boolean;
+  email: boolean;
+  mobile: boolean;
+}
+
+/**
+ * Only supplied channels change.
+ */
+export interface NotificationChannelSettingsPatch {
+  inApp?: boolean;
+  email?: boolean;
+  mobile?: boolean;
+}
+
+/**
+ * Email cadence for notification categories with email enabled.
+ */
+export type NotificationDigest = typeof NotificationDigest[keyof typeof NotificationDigest];
+
+
+export const NotificationDigest = {
+  each: 'each',
+  daily: 'daily',
+  weekly: 'weekly',
+  never: 'never',
+} as const;
+
+export type NotificationPreferencesChannels = {
+  mention: NotificationChannelSettings;
+  assignment: NotificationChannelSettings;
+  comment: NotificationChannelSettings;
+  statusChange: NotificationChannelSettings;
+  dueDate: NotificationChannelSettings;
+  access: NotificationChannelSettings;
+  billing: NotificationChannelSettings;
+};
+
+export interface NotificationPreferences {
+  channels: NotificationPreferencesChannels;
+  digest: NotificationDigest;
+  /** Whether quiet hours apply to mobile notifications. Urgent mentions can still be delivered. */
+  doNotDisturb: boolean;
+  /**
+     * The version carried by the preferences ETag.
+     * @minimum 1
+     */
+  version: number;
+}
+
+export type NotificationPreferencesPatchChannels = {
+  mention?: NotificationChannelSettingsPatch;
+  assignment?: NotificationChannelSettingsPatch;
+  comment?: NotificationChannelSettingsPatch;
+  statusChange?: NotificationChannelSettingsPatch;
+  dueDate?: NotificationChannelSettingsPatch;
+  access?: NotificationChannelSettingsPatch;
+  billing?: NotificationChannelSettingsPatch;
+};
+
+/**
+ * Only supplied preferences and channel flags change.
+ */
+export interface NotificationPreferencesPatch {
+  channels?: NotificationPreferencesPatchChannels;
+  digest?: NotificationDigest;
+  doNotDisturb?: boolean;
+}
+
+/**
+ * A private note for the reminder. Null clears the note.
+ * @maxLength 500
+ * @nullable
+ */
+export type ReminderNote = string | null;
+
+export interface Reminder {
+  /** UUID v7 of the personal reminder. */
+  id: string;
+  taskKey: TaskKey;
+  taskName: string;
+  /** Absolute instant scheduled for this reminder. */
+  remindAt: string;
+  note: ReminderNote | null;
+  /**
+     * When the current schedule fired, or null while it is pending delivery.
+     * @nullable
+     */
+  firedAt: string | null;
+  /**
+     * When the caller completed the reminder, or null while it is open.
+     * @nullable
+     */
+  completedAt: string | null;
+  /**
+     * The version carried by the reminder ETag.
+     * @minimum 1
+     */
+  version: number;
+}
+
+export interface ReminderPage {
+  /** @maxItems 100 */
+  items: Reminder[];
+  nextCursor: NextCursor | null;
+  /**
+     * Open reminders across all pages, including reminders already due.
+     * @minimum 0
+     */
+  pendingCount: number;
+}
+
+export interface TaskReminderSchedule {
+  /** Absolute instant for the reminder, after resolving any preset in the caller's time zone. */
+  remindAt: string;
+  note?: ReminderNote | null;
+}
+
+export interface ReminderNotePatch {
+  note: ReminderNote | null;
+}
+
+export interface ReminderSnooze {
+  /** Absolute instant for the next delivery of this reminder. */
+  remindAt: string;
+}
+
+/**
  * `list.not-found` when the list is not a readable sprint. `organization.not-found`
  * follows `ListNotFound`.
  */
@@ -3961,6 +4236,11 @@ export type AttachmentTaskArchivedResponse = Problem;
  * organization of the token, removed or not yet learnt.
  */
 export type OrganizationNotFoundResponse = Problem;
+
+/**
+ * `task.notification-visibility-unavailable`: Task could not establish a current visibility snapshot.
+ */
+export type NotificationSubjectLookupUnavailableResponse = Problem;
 
 /**
  * - `user.not-found`: the `userId` of the path is not the actor;

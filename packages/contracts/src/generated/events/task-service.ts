@@ -2202,6 +2202,49 @@ export const taskDescriptionMentionsChangedV1Schema = zod.object({
   removedMentionUserIds: zod.array(zod.uuid()),
 }) satisfies zod.ZodType<TaskDescriptionMentionsChangedV1>;
 
+/** Name of the event `task.notification-delivery-authorized.v1`. Task decided whether to permit a single pending delivery attempt. */
+export const TASK_NOTIFICATION_DELIVERY_AUTHORIZED_V1 = 'task.notification-delivery-authorized.v1';
+
+/** Payload of the event `task.notification-delivery-authorized.v1`. */
+export interface TaskNotificationDeliveryAuthorizedV1 {
+  /** Stable event ID, the deduplication key. */
+  id: string;
+  /** UTC instant of the canonical Task decision, or of an expiry denial. */
+  occurredAt: string;
+  /** The organization of the matched authorization request. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the immutable decision. It does not track the task version. */
+  version: number;
+  /** Opaque UUID from the matching Notification attempt. */
+  authorizationRequestId: string;
+  /** The generic outcome for that intended recipient and task. */
+  decision: 'permit' | 'deny';
+  /** Exclusive UTC deadline for accepting this decision. */
+  validUntil: string;
+}
+
+/** Validator of the payload of the event `task.notification-delivery-authorized.v1`. */
+export const taskNotificationDeliveryAuthorizedV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1).max(1),
+  authorizationRequestId: zod.uuid(),
+  decision: zod.enum(['permit', 'deny']),
+  validUntil: zod.iso.datetime(),
+}) satisfies zod.ZodType<TaskNotificationDeliveryAuthorizedV1>;
+
 /** Name of the event `task.occurrence-created.v1`. A recurring task created its successor. */
 export const TASK_OCCURRENCE_CREATED_V1 = 'task.occurrence-created.v1';
 
@@ -2768,7 +2811,7 @@ export const taskWatcherChangedV1Schema = zod.object({
 }) satisfies zod.ZodType<TaskWatcherChangedV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [APPROVAL_DECIDED_V1, APPROVAL_REQUESTED_V1, COMMENT_CREATED_V1, COMMENT_DELETED_V1, COMMENT_UPDATED_V1, LIST_ACCESS_CHANGED_V1, LIST_ACCESS_REQUEST_DECIDED_V1, LIST_ACCESS_REQUESTED_V1, LIST_ARCHIVED_V1, LIST_CREATED_V1, LIST_DELETED_V1, LIST_RESTORED_V1, LIST_SAVED_VIEW_CHANGED_V1, LIST_UNARCHIVED_V1, LIST_UPDATED_V1, MILESTONE_REACHED_V1, SPACE_ACCESS_CHANGED_V1, SPACE_ACCESS_REPUBLISHED_V1, SPACE_ACCESS_REQUEST_DECIDED_V1, SPACE_ACCESS_REQUESTED_V1, SPACE_CREATED_V1, SPACE_DELETED_V1, SPACE_RESTORED_V1, SPACE_TASK_TEMPLATE_CHANGED_V1, SPACE_UPDATED_V1, TASK_ACCESS_REQUEST_DECIDED_V1, TASK_ACCESS_REQUESTED_V1, TASK_ARCHIVED_V1, TASK_ASSIGNED_V1, TASK_CREATED_V1, TASK_DEPENDENCY_ADDED_V1, TASK_DEPENDENCY_REMOVED_V1, TASK_DESCRIPTION_MENTIONS_CHANGED_V1, TASK_OCCURRENCE_CREATED_V1, TASK_PURGED_V1, TASK_RESTORED_V1, TASK_STATUS_CHANGED_V1, TASK_TRASHED_V1, TASK_UNARCHIVED_V1, TASK_UPDATED_V1, TASK_WATCHER_CHANGED_V1] as const;
+export const EVENT_NAMES = [APPROVAL_DECIDED_V1, APPROVAL_REQUESTED_V1, COMMENT_CREATED_V1, COMMENT_DELETED_V1, COMMENT_UPDATED_V1, LIST_ACCESS_CHANGED_V1, LIST_ACCESS_REQUEST_DECIDED_V1, LIST_ACCESS_REQUESTED_V1, LIST_ARCHIVED_V1, LIST_CREATED_V1, LIST_DELETED_V1, LIST_RESTORED_V1, LIST_SAVED_VIEW_CHANGED_V1, LIST_UNARCHIVED_V1, LIST_UPDATED_V1, MILESTONE_REACHED_V1, SPACE_ACCESS_CHANGED_V1, SPACE_ACCESS_REPUBLISHED_V1, SPACE_ACCESS_REQUEST_DECIDED_V1, SPACE_ACCESS_REQUESTED_V1, SPACE_CREATED_V1, SPACE_DELETED_V1, SPACE_RESTORED_V1, SPACE_TASK_TEMPLATE_CHANGED_V1, SPACE_UPDATED_V1, TASK_ACCESS_REQUEST_DECIDED_V1, TASK_ACCESS_REQUESTED_V1, TASK_ARCHIVED_V1, TASK_ASSIGNED_V1, TASK_CREATED_V1, TASK_DEPENDENCY_ADDED_V1, TASK_DEPENDENCY_REMOVED_V1, TASK_DESCRIPTION_MENTIONS_CHANGED_V1, TASK_NOTIFICATION_DELIVERY_AUTHORIZED_V1, TASK_OCCURRENCE_CREATED_V1, TASK_PURGED_V1, TASK_RESTORED_V1, TASK_STATUS_CHANGED_V1, TASK_TRASHED_V1, TASK_UNARCHIVED_V1, TASK_UPDATED_V1, TASK_WATCHER_CHANGED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -2818,6 +2861,7 @@ export interface EventPayloads {
   'task.dependency-added.v1': TaskDependencyAddedV1;
   'task.dependency-removed.v1': TaskDependencyRemovedV1;
   'task.description-mentions-changed.v1': TaskDescriptionMentionsChangedV1;
+  'task.notification-delivery-authorized.v1': TaskNotificationDeliveryAuthorizedV1;
   'task.occurrence-created.v1': TaskOccurrenceCreatedV1;
   'task.purged.v1': TaskPurgedV1;
   'task.restored.v1': TaskRestoredV1;
@@ -2863,6 +2907,7 @@ export const eventSchemas = {
   'task.dependency-added.v1': taskDependencyAddedV1Schema,
   'task.dependency-removed.v1': taskDependencyRemovedV1Schema,
   'task.description-mentions-changed.v1': taskDescriptionMentionsChangedV1Schema,
+  'task.notification-delivery-authorized.v1': taskNotificationDeliveryAuthorizedV1Schema,
   'task.occurrence-created.v1': taskOccurrenceCreatedV1Schema,
   'task.purged.v1': taskPurgedV1Schema,
   'task.restored.v1': taskRestoredV1Schema,

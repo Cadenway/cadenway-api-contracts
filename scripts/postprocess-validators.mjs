@@ -486,8 +486,18 @@ for (const root of ROOTS) {
           `.refine((value) => Array.from(value).length <= ${limit}, { message: 'At most ${maxName} Unicode code points' })`,
         );
       }
-
-      // Orval adds a trailing blank line to these otherwise newly generated type files.
+    }
+    if (
+      root.name === 'contracts' &&
+      [
+        'public/attachments',
+        'internal/storage-service',
+        'public/inbox',
+        'public/reminders',
+        'internal/notification-service',
+      ].includes(spec)
+    ) {
+      // Keep a single final newline in the generated capability type files.
       const types = `${root.contracts}/types/${spec}.ts`;
       writeFileSync(types, `${readFileSync(types, 'utf8').replace(/\n+$/, '')}\n`);
     }

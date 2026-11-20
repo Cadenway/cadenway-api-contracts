@@ -321,7 +321,10 @@ components:
             format: uuid
             description: Account whose current Task visibility must be checked in this organization.
           subject:
-            $ref: '../components/notification.yaml#/components/schemas/NotificationSubjectRef'
+            description: Task whose current visibility must be checked, identified by ID or key.
+            oneOf:
+              - $ref: '../components/notification.yaml#/components/schemas/NotificationTaskIdSubjectRef'
+              - $ref: '../components/notification.yaml#/components/schemas/NotificationTaskKeySubjectRef'
           expiresAt:
             type: string
             format: date-time

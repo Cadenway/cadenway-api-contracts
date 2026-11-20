@@ -6149,6 +6149,82 @@ export const CheckTaskAttachmentAccessInternalResponse = zod.void()
 
 
 /**
+ * Checks up to 100 references in one read-only tenant snapshot. Task applies its canonical
+ * active-membership and read-access rules to each subject and its current placement. Archived
+ * resources remain visible when the ordinary read policy allows them. Missing, hidden,
+ * deleted and trashed subjects all return `visible: false`, with no resource details.
+ * Every input position has exactly one result at the same position, including repeated
+ * selectors. A missing active membership answers `404 organization.not-found`.
+ *
+ * Internal token: issuer `api-gateway` or `realtime-gateway`, actor `user` and organization
+ * required. The API gateway can request display data for a visible task. An optional comment
+ * excerpt requires a currently readable comment belonging to that same resolved task. The
+ * realtime gateway can request visibility only. An enrichment request from it answers
+ * `403 auth.issuer-not-allowed` before any subject is resolved.
+ *
+ * The decision belongs to this snapshot and this actor. Each later disclosure needs a
+ * fresh decision. If Task cannot establish the snapshot it returns an error for the whole
+ * batch. This lookup writes nothing and emits no events.
+ * @summary Resolve current visibility for notification subjects
+ */
+export const resolveNotificationSubjectsInternalBodySubjectsItemOneSubjectTwoTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const resolveNotificationSubjectsInternalBodySubjectsItemTwoSubjectTwoTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const resolveNotificationSubjectsInternalBodySubjectsMax = 100;
+
+
+
+export const ResolveNotificationSubjectsInternalBody = zod.strictObject({
+  "subjects": zod.array(zod.union([zod.strictObject({
+  "subject": zod.union([zod.strictObject({
+  "kind": zod.literal("task-id"),
+  "taskId": zod.uuid()
+}),zod.strictObject({
+  "kind": zod.literal("task-key"),
+  "taskKey": zod.string().regex(resolveNotificationSubjectsInternalBodySubjectsItemOneSubjectTwoTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n')
+}),zod.strictObject({
+  "kind": zod.literal("list"),
+  "listId": zod.uuid()
+}),zod.strictObject({
+  "kind": zod.literal("space"),
+  "spaceId": zod.uuid()
+})]).describe('Stable resource reference for an authorized internal notification lookup.')
+}),zod.strictObject({
+  "subject": zod.union([zod.strictObject({
+  "kind": zod.literal("task-id"),
+  "taskId": zod.uuid()
+}),zod.strictObject({
+  "kind": zod.literal("task-key"),
+  "taskKey": zod.string().regex(resolveNotificationSubjectsInternalBodySubjectsItemTwoSubjectTwoTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n')
+})]),
+  "display": zod.strictObject({
+  "commentId": zod.uuid().optional().describe('Requests a bounded excerpt from this comment on the resolved task.')
+}).describe('Requests the task identity and name for display for a visible task.')
+})])).min(1).max(resolveNotificationSubjectsInternalBodySubjectsMax)
+})
+
+export const resolveNotificationSubjectsInternalResponseResultsItemTwoDisplayTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const resolveNotificationSubjectsInternalResponseResultsItemTwoDisplayCommentExcerptMax = 200;
+
+export const resolveNotificationSubjectsInternalResponseResultsMax = 100;
+
+
+
+export const ResolveNotificationSubjectsInternalResponse = zod.object({
+  "results": zod.array(zod.union([zod.object({
+  "visible": zod.literal(false)
+}),zod.object({
+  "visible": zod.literal(true),
+  "display": zod.object({
+  "taskId": zod.uuid(),
+  "taskKey": zod.string().regex(resolveNotificationSubjectsInternalResponseResultsItemTwoDisplayTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "taskName": zod.string(),
+  "commentExcerpt": zod.string().refine((value) => Array.from(value).length <= resolveNotificationSubjectsInternalResponseResultsItemTwoDisplayCommentExcerptMax, { message: 'At most 200 Unicode code points' }).nullish().describe('Returned only when a comment was requested. A plain-text preview of at\nmost 200 Unicode code points, or null if the comment is missing, belongs\nto another task, was deleted or is hidden.\n')
+}).optional().describe('Returned when the API gateway requested display data for this visible task.')
+})])).min(1).max(resolveNotificationSubjectsInternalResponseResultsMax).describe('Position-aligned outcomes, one for each submitted subject.')
+})
+
+
+/**
  * The library is shared within the space and requires an actual space role; a grant only on
  * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
  * is enforced in the owning transaction. Built-in presets are client-side.

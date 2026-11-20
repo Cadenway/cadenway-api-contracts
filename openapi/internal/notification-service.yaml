@@ -467,11 +467,22 @@ paths:
       summary: Scan pending reminder candidates
       description: |-
         Scans the caller's incomplete reminders, including overdue reminders, in (remindAt, id)
-        ascending order. The cursor belongs to the caller and organization. The gateway checks
-        every candidate task needed for the page and counts permitted reminder IDs once across
-        all candidates independently of the requested continuation. It seeks one permitted reminder
-        beyond the page and uses the cursor after the last consumed candidate for continuation.
-        It requests the private notes of the permitted page through the reminder record batch.
+        ascending order. The first page samples the current generation of this organization and
+        recipient. Every candidate and next-page cursor is bound to that owner and generation.
+        Each page checks the cursor's generation and reads its candidates in one Notification
+        snapshot. A changed generation invalidates the cursor.
+
+        Every change to a pending reminder or to the pending set advances the owner generation in
+        the same transaction. This includes creation, rescheduling, snoozing, completion, deletion,
+        changes to notes, and changes to the firing state. No-op writes leave it unchanged.
+
+        The gateway scans from the beginning and uses current Task decisions to count permitted
+        reminder IDs across the whole scan. It selects the permitted page and a permitted lookahead
+        by comparing candidate positions with the public continuation position, if supplied.
+        It then verifies the generation and fetches the selected notes through the reminder record
+        batch, even for an empty page. A generation conflict restarts the full scan and Task
+        checks within a bounded budget while keeping the public continuation position. An
+        incomplete result or exhausted budget produces 503 at the gateway.
 
         Internal token: issuer `api-gateway`, actor `user`, organization required.
       tags:
@@ -481,15 +492,17 @@ paths:
         - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: One owner-scoped candidate page.
+          description: One owner-scoped candidate page and its generation.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReminderCandidatePage'
               example:
+                generation: '18'
                 items:
                   - id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
                     taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+                    remindAt: '2026-11-08T14:00:00Z'
                     cursorAfter: YmVmb3JlLWxvb2thaGVhZA
                 nextCursor: null
         '400':
@@ -500,6 +513,8 @@ paths:
           $ref: '#/components/responses/OrganizationForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/ReminderGenerationChanged'
         '503':
           $ref: '#/components/responses/Unavailable'
   /internal/v1/reminders/visible:
@@ -508,10 +523,15 @@ paths:
       summary: Fetch the authorized records for a reminder page
       description: |-
         Returns the caller's still-pending reminders whose identifiers and stored task identifiers
-        exactly match the pairs checked by the gateway. Results preserve the request order.
-        Missing, completed, foreign and mismatched pairs are omitted. If a selected record has
-        disappeared, the gateway retries the page and count within its budget. This read leaves
-        reminders unchanged.
+        exactly match the pairs checked by the gateway. Notification verifies the submitted scan
+        generation and reads the records in the same snapshot. An empty selection verifies the
+        generation for an empty public page. Results preserve the request order. Missing,
+        completed, foreign and mismatched pairs are omitted.
+
+        The gateway returns its page and count only after this generation check and verification
+        that all selected pairs were returned. A conflict or missing selected record restarts
+        the full scan and Task checks within the bounded budget. This read leaves reminders
+        unchanged.
 
         Internal token: issuer `api-gateway`, actor `user`, organization required.
       tags:
@@ -523,6 +543,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ReminderRecordSelection'
             example:
+              snapshotGeneration: '18'
               items:
                 - id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
                   taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
@@ -541,6 +562,8 @@ paths:
           $ref: '#/components/responses/OrganizationForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/ReminderGenerationChanged'
         '503':
           $ref: '#/components/responses/Unavailable'
   /internal/v1/tasks/{taskId}/reminder:
@@ -1093,6 +1116,17 @@ components:
             title: La boîte de réception a changé.
             status: 409
             code: notification.inbox-generation-changed
+    ReminderGenerationChanged:
+      description: '`reminder.generation-changed`: the owner generation changed during the scan or before the record batch.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: La liste des rappels a changé.
+            status: 409
+            code: reminder.generation-changed
     AlreadyCompleted:
       description: '`reminder.already-completed`: a completed reminder cannot be edited or snoozed.'
       content:
@@ -1378,18 +1412,24 @@ components:
         taskId:
           type: string
           format: uuid
+    ReminderGeneration:
+      type: string
+      pattern: '^(0|[1-9][0-9]{0,18})$'
+      description: Nonnegative reminder generation of the organization and recipient in decimal string form.
     ReminderCandidatePage:
       type: object
       additionalProperties: false
-      required: [items, nextCursor]
+      required: [generation, items, nextCursor]
       properties:
+        generation:
+          $ref: '#/components/schemas/ReminderGeneration'
         items:
           type: array
           maxItems: 100
           items:
             type: object
             additionalProperties: false
-            required: [id, taskId, cursorAfter]
+            required: [id, taskId, remindAt, cursorAfter]
             properties:
               id:
                 type: string
@@ -1397,6 +1437,10 @@ components:
               taskId:
                 type: string
                 format: uuid
+              remindAt:
+                type: string
+                format: date-time
+                description: Candidate sort timestamp in this snapshot.
               cursorAfter:
                 $ref: '#/components/schemas/CandidateCursor'
         nextCursor:
@@ -1404,13 +1448,16 @@ components:
     ReminderRecordSelection:
       type: object
       additionalProperties: false
-      required: [items]
+      required: [snapshotGeneration, items]
       properties:
+        snapshotGeneration:
+          $ref: '#/components/schemas/ReminderGeneration'
+          description: Generation of the complete candidate scan used to select these records.
         items:
           type: array
-          minItems: 1
           maxItems: 100
           uniqueItems: true
+          description: Selected pairs in page order. May be empty for a generation check alone.
           items:
             $ref: '#/components/schemas/ReminderCandidateReference'
     ReminderRecordBatch:

@@ -40,9 +40,12 @@ paths:
       summary: List pending task reminders
       description: |-
         Returns the caller’s incomplete reminders, including overdue reminders, in (remindAt, id)
-        ascending order. The opaque cursor belongs to the caller and organization. `pendingCount`
-        counts accessible pending reminders across all pages. Reminders on inaccessible tasks are
-        omitted.
+        ascending order. The opaque cursor belongs to the caller and organization and resumes
+        after the previous page's last returned position in the current collection. The page and
+        `pendingCount` use the same reminder snapshot for this request. The count includes
+        accessible pending reminders across all pages. Reminders on inaccessible tasks are
+        omitted. If the complete result cannot be verified within the request budget, the
+        response is 503.
 
         Session only. The current organization is required.
       tags:

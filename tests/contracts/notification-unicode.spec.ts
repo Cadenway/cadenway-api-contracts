@@ -24,16 +24,101 @@ import {
   UpdateReminderNoteResponse,
 } from '../../packages/contracts/src/generated/validators/public/reminders';
 
+/**
+ * Interface ReminderValidators
+ *
+ * @description
+ * Generated reminder validators and fixtures for one side of the HTTP boundary.
+ */
 interface ReminderValidators {
+  // #region Properties
+  /**
+   * Property side
+   *
+   * @description
+   * Name of the contract boundary.
+   *
+   * @type {string}
+   * @readonly
+   */
   readonly side: string;
+
+  /**
+   * Property create
+   *
+   * @description
+   * Creation request validator.
+   *
+   * @type {ZodType}
+   * @readonly
+   */
   readonly create: ZodType;
+
+  /**
+   * Property update
+   *
+   * @description
+   * Note update request validator.
+   *
+   * @type {ZodType}
+   * @readonly
+   */
   readonly update: ZodType;
+
+  /**
+   * Property page
+   *
+   * @description
+   * Reminder collection response validator.
+   *
+   * @type {ZodType}
+   * @readonly
+   */
   readonly page: ZodType;
+
+  /**
+   * Property responses
+   *
+   * @description
+   * Individual reminder response validators.
+   *
+   * @type {readonly ZodType[]}
+   * @readonly
+   */
   readonly responses: readonly ZodType[];
+
+  /**
+   * Property task
+   *
+   * @description
+   * Task fields presented on this side of the boundary.
+   *
+   * @type {Readonly<Record<string, string>>}
+   * @readonly
+   */
   readonly task: Readonly<Record<string, string>>;
+
+  /**
+   * Property pageMetadata
+   *
+   * @description
+   * Collection metadata for a response with one reminder.
+   *
+   * @type {Readonly<Record<string, unknown>>}
+   * @readonly
+   */
   readonly pageMetadata: Readonly<Record<string, unknown>>;
+  // #endregion
 }
 
+/**
+ * Constant cases
+ *
+ * @description
+ * Public and internal validators for the same reminder note boundaries.
+ *
+ * @type {readonly ReminderValidators[]}
+ */
 const cases: readonly ReminderValidators[] = [
   {
     side: 'public',
