@@ -3,16 +3,17 @@
 # queries, "Mes tâches" and "Accueil" of openapi/public/tasks.yaml, the grants and access requests
 # of openapi/public/access.yaml, the archives of openapi/public/archives.yaml, the trash of
 # openapi/public/trash.yaml, the work logs, status durations and timesheets of openapi/public/time.yaml,
-# goals and reports, and the intake form. The realtime gateway calls the access checks.
+# goals and reports, the intake form and attachment access. The realtime gateway calls its access
+# checks.
 openapi: 3.1.0
 info:
   title: task-service internal routes
   version: 1.0.0
   description: |
     What task-service exposes to the API gateway for spaces, lists, sprints, tasks, access,
-    archives, trash, time, goals, reports and intake, and to the realtime gateway for its access
-    checks. The API gateway serves the public contracts for these features and calls the
-    corresponding internal routes.
+    archives, trash, time, goals, reports, intake and attachment access, and to the realtime gateway
+    for its access checks. The API gateway serves the public contracts for these features and calls
+    the corresponding internal routes.
 
     | Public route | Internal call |
     | --- | --- |
@@ -179,11 +180,12 @@ info:
   x-consumers:
     - repository: cadenway-api-gateway
       uses: >-
-        Calls every route except the access checks through its generated client for
+        Calls every route except the realtime gateway's access checks through its generated client for
         openapi/public/spaces.yaml, openapi/public/lists.yaml, openapi/public/tasks.yaml,
         openapi/public/access.yaml, openapi/public/archives.yaml, openapi/public/trash.yaml,
         openapi/public/time.yaml, openapi/public/goals.yaml, openapi/public/reports.yaml and
-        openapi/public/intake.yaml. It also composes the task detail.
+        openapi/public/intake.yaml. It checks access for openapi/public/attachments.yaml before
+        relaying to storage-service and also composes the task detail.
     - repository: cadenway-realtime-gateway
       uses: Planned, the access checks of a list and a task, before a socket joins their room.
 servers:
@@ -207,7 +209,7 @@ tags:
   - name: users
     description: '"Mes tâches" and "Accueil" of the actor.'
   - name: access
-    description: The grants of spaces and lists, and the access checks of the realtime gateway.
+    description: The grants of spaces and lists, attachment access and realtime room access.
   - name: access-requests
     description: The requests for access and their answers.
   - name: archives
@@ -3887,6 +3889,51 @@ paths:
           $ref: '#/components/responses/AccessCheckRefused'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/tasks/{taskKey}/attachment-access:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: checkTaskAttachmentAccessInternal
+      summary: Check access for a task attachment operation
+      description: |
+        Authorizes one request to the task's attachments. Reads the membership, live task
+        placement, effective list role and archive state in one read-only snapshot. The task
+        must belong to a visible list and space in the organization of the token. A missing,
+        invisible, trashed or erased target answers `404 task.not-found` without trash details.
+
+        The `read` mode requires any effective list role and accepts archived tasks and lists.
+        The `write` mode requires at least `edit` on the current list. After verifying that role,
+        it refuses an archived task or list with `409 task.archived`. The gateway checks each
+        request before relaying to storage-service. The decision describes the snapshot and
+        cannot be reused for another request. This check writes nothing and emits no event.
+
+        Internal token: issuer `api-gateway` only, actor `user`, organization required.
+      tags: [access]
+      parameters:
+        - name: mode
+          in: query
+          required: true
+          description: '`read` for list, metadata and download. `write` for reserve, complete and delete.'
+          schema:
+            type: string
+            enum: [read, write]
+          example: write
+      responses:
+        '204':
+          description: The actor may perform the requested attachment operation.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/AttachmentAccessNoStore'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/AttachmentAccessForbidden'
+        '404':
+          $ref: '#/components/responses/AttachmentTaskNotFound'
+        '409':
+          $ref: '#/components/responses/AttachmentTaskArchived'
   /internal/v1/spaces/{spaceId}/task-templates:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -5778,6 +5825,12 @@ components:
     ActorId:
       $ref: '../../components/task.yaml#/components/parameters/ActorId'
   headers:
+    AttachmentAccessNoStore:
+      required: true
+      description: Prevents caches from storing the access decision.
+      schema:
+        type: string
+        const: no-store
     OnboardingETag:
       description: Version of the caller's onboarding state, `"<version>"`.
       schema:
@@ -7147,6 +7200,60 @@ components:
               $ref: '#/components/examples/IssuerNotAllowed'
             organizationRequired:
               $ref: '#/components/examples/OrganizationRequired'
+    AttachmentAccessForbidden:
+      description: |
+        `access.role-insufficient` when the actor sees the task but has no `edit` role on its
+        current list in `write` mode. The details report the effective `role` and
+        `requiredRole: edit`. Also answers `auth.issuer-not-allowed`, `auth.actor-not-allowed`
+        or `auth.organization-required` for a refused verified token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
+            issuerNotAllowed:
+              $ref: '#/components/examples/IssuerNotAllowed'
+            actorNotAllowed:
+              $ref: '#/components/examples/ActorNotAllowed'
+            organizationRequired:
+              $ref: '#/components/examples/OrganizationRequired'
+    AttachmentTaskNotFound:
+      description: |
+        `task.not-found` when the task is unknown, invisible, trashed or erased, including when
+        its list or space was deleted. `organization.not-found` for an inactive membership.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/AttachmentAccessNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskNotFound:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: task.not-found
+            organizationNotFound:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: organization.not-found
+    AttachmentTaskArchived:
+      description: |
+        `task.archived` in `write` mode when the task or its current list is archived.
+        `details.key` names the target task.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskArchived:
+              $ref: '#/components/examples/TaskArchived'
     OrganizationNotFound:
       description: |
         `organization.not-found`: task-service does not hold the actor as a member of the

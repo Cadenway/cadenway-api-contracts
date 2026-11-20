@@ -6120,6 +6120,35 @@ export const CheckTaskAccessInternalResponse = zod.object({
 
 
 /**
+ * Authorizes one request to the task's attachments. Reads the membership, live task
+ * placement, effective list role and archive state in one read-only snapshot. The task
+ * must belong to a visible list and space in the organization of the token. A missing,
+ * invisible, trashed or erased target answers `404 task.not-found` without trash details.
+ *
+ * The `read` mode requires any effective list role and accepts archived tasks and lists.
+ * The `write` mode requires at least `edit` on the current list. After verifying that role,
+ * it refuses an archived task or list with `409 task.archived`. The gateway checks each
+ * request before relaying to storage-service. The decision describes the snapshot and
+ * cannot be reused for another request. This check writes nothing and emits no event.
+ *
+ * Internal token: issuer `api-gateway` only, actor `user`, organization required.
+ * @summary Check access for a task attachment operation
+ */
+export const checkTaskAttachmentAccessInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const CheckTaskAttachmentAccessInternalParams = zod.object({
+  "taskKey": zod.string().regex(checkTaskAttachmentAccessInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const CheckTaskAttachmentAccessInternalQueryParams = zod.strictObject({
+  "mode": zod.enum(['read', 'write']).describe('`read` for list, metadata and download. `write` for reserve, complete and delete.')
+})
+
+export const CheckTaskAttachmentAccessInternalResponse = zod.void()
+
+
+/**
  * The library is shared within the space and requires an actual space role; a grant only on
  * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
  * is enforced in the owning transaction. Built-in presets are client-side.

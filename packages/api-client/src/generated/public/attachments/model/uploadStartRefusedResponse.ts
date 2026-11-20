@@ -6,7 +6,7 @@ import type { Problem } from './problem';
 
 /**
  * `attachment.file-too-large` above 26,214,400 bytes, `attachment.upload-metadata-mismatch`
- * for a file extension and media type that disagree, or `idempotency.key-reused` for a key
- * previously used with a different request.
+ * for a missing or unknown extension or one that disagrees with the declared media type,
+ * or `idempotency.key-reused` for a key previously used with a different request.
  */
 export type UploadStartRefusedResponse = Problem;

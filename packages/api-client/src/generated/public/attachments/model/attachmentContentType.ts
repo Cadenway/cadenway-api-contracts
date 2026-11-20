@@ -4,9 +4,9 @@
  */
 
 /**
- * Media type and subtype without parameters.
+ * Concrete media type and subtype without wildcards or parameters.
  * @minLength 1
  * @maxLength 127
- * @pattern ^[!#$%&'*+\-.^_\x60|~0-9A-Za-z]+/[!#$%&'*+\-.^_\x60|~0-9A-Za-z]+$
+ * @pattern ^(?!\*\/)[!#$%&'*+\-.^_\x60|~0-9A-Za-z]+/(?!\*$)[!#$%&'*+\-.^_\x60|~0-9A-Za-z]+$
  */
 export type AttachmentContentType = string;

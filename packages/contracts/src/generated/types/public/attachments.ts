@@ -39,18 +39,18 @@ export interface Problem {
 export type AttachmentId = string;
 
 /**
- * Original basename without path separators, control characters or dot segments.
+ * Original Unicode basename without path separators, control characters or whitespace-padded dot segments.
  * @minLength 1
  * @maxLength 255
- * @pattern ^(?=.*\S)(?!\.{1,2}$)[^/\\\x00-\x1F\x7F]+$
+ * @pattern ^(?=[\s\S]*\S)(?!\s*\.{1,2}\s*$)(?:[^/\\\x00-\x1F\x7F-\x9F\uD800-\uDFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF])+$
  */
 export type AttachmentFileName = string;
 
 /**
- * Media type and subtype without parameters.
+ * Concrete media type and subtype without wildcards or parameters.
  * @minLength 1
  * @maxLength 127
- * @pattern ^[!#$%&'*+\-.^_\x60|~0-9A-Za-z]+/[!#$%&'*+\-.^_\x60|~0-9A-Za-z]+$
+ * @pattern ^(?!\*\/)[!#$%&'*+\-.^_\x60|~0-9A-Za-z]+/(?!\*$)[!#$%&'*+\-.^_\x60|~0-9A-Za-z]+$
  */
 export type AttachmentContentType = string;
 
@@ -2444,8 +2444,8 @@ export type UploadCompletionConflictResponse = Problem;
 
 /**
  * `attachment.file-too-large` above 26,214,400 bytes, `attachment.upload-metadata-mismatch`
- * for a file extension and media type that disagree, or `idempotency.key-reused` for a key
- * previously used with a different request.
+ * for a missing or unknown extension or one that disagrees with the declared media type,
+ * or `idempotency.key-reused` for a key previously used with a different request.
  */
 export type UploadStartRefusedResponse = Problem;
 
@@ -2493,4 +2493,3 @@ export type ListTaskAttachmentsParams = {
    */
   limit?: number;
 };
-

@@ -5,9 +5,11 @@ info:
   description: |
     Attachment resources owned by storage-service. The API gateway is the only HTTP caller.
     Every request uses a verified `api-gateway` token with actor `user` and an organization.
-    The gateway establishes current task access before relaying. It uses the published
-    `getTaskInternal` and `getListInternal` operations of task-service to authorize the task and
-    its list. Mutations require `edit` on the current list and an active task and list. Storage
+    Before relaying each task attachment request, the gateway requires a successful decision
+    from `checkTaskAttachmentAccessInternal`. Task-service reads current placement, visibility,
+    role and archive state in one snapshot. The gateway uses `read` for list, metadata and
+    download, and `write` for reserve, complete and delete. Mutations require `edit` on the
+    current list and an active task and list. Storage
     bounds each operation by the verified organization and the authorized task key, and binds a
     pending upload to the verified uploader. A task key remains stable through moves. A purge
     permanently revokes the task key for attachments and schedules removal of pending and ready
@@ -78,7 +80,8 @@ paths:
       description: |
         Reserves one upload for the verified editor of the active task. The file-size limit is
         26,214,400 bytes (25 MiB). A larger declared size answers `422 attachment.file-too-large`
-        before a URL is issued. The response authorizes a five-minute multipart POST to a temporary
+        before a URL is issued. The media type must match the registered type of the final file
+        extension, ignoring case. The response authorizes a five-minute multipart POST to a temporary
         object, restricted to that object, the declared media type and 1 to 26,214,400 file bytes.
         Append all returned form fields unchanged to FormData, then append the file as its final
         part named `file`. Complete the upload before the expiry instant.
@@ -204,7 +207,9 @@ paths:
       description: |
         Completes the reservation of the verified uploader, who must still be able to edit the active
         task. The service checks the staged object length and media type against the reservation,
-        and checks its type using the first 4 KiB of bytes. The checks apply to the finalized bytes.
+        and checks its type using the first 4 KiB of bytes. Plain-text files, including logs, require
+        a valid UTF-8 prefix without NUL bytes and without a conflicting detected binary type.
+        Other types require a matching file signature. The checks apply to the finalized bytes.
         The finalized object is independent of the upload capability, so a repeated POST to the
         upload URL cannot replace it. The first successful completion publishes the attachment
         and records `file.uploaded.v1` together. Repeating successful completion returns the same
@@ -426,8 +431,8 @@ components:
     UploadStartRefused:
       description: |
         `attachment.file-too-large` above 26,214,400 bytes, `attachment.upload-metadata-mismatch`
-        for a file extension and media type that disagree, or `idempotency.key-reused` for a key
-        previously used with a different request.
+        for a missing or unknown extension or one that disagrees with the declared media type,
+        or `idempotency.key-reused` for a key previously used with a different request.
       content:
         application/problem+json:
           schema:

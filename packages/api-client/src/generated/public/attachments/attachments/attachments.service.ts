@@ -199,7 +199,8 @@ export class AttachmentsService {
 /**
  * Reserves one upload for the verified editor of the active task. The file-size limit is
  * 26,214,400 bytes (25 MiB). A larger declared size answers `422 attachment.file-too-large`
- * before a URL is issued. The response authorizes a five-minute multipart POST to a temporary
+ * before a URL is issued. The media type must match the registered type of the final file
+ * extension, ignoring case. The response authorizes a five-minute multipart POST to a temporary
  * object, restricted to that object, the declared media type and 1 to 26,214,400 file bytes.
  * Append all returned form fields unchanged to FormData, then append the file as its final
  * part named `file`. Complete the upload before the expiry instant.
@@ -329,7 +330,9 @@ export class AttachmentsService {
 /**
  * Completes the reservation of the verified uploader, who must still be able to edit the active
  * task. The service checks the staged object length and media type against the reservation,
- * and checks its type using the first 4 KiB of bytes. The checks apply to the finalized bytes.
+ * and checks its type using the first 4 KiB of bytes. Plain-text files, including logs, require
+ * a valid UTF-8 prefix without NUL bytes and without a conflicting detected binary type.
+ * Other types require a matching file signature. The checks apply to the finalized bytes.
  * The finalized object is independent of the upload capability, so a repeated POST to the
  * upload URL cannot replace it. The first successful completion publishes the attachment
  * and records `file.uploaded.v1` together. Repeating successful completion returns the same

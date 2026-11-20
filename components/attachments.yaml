@@ -20,15 +20,15 @@ components:
       type: string
       minLength: 1
       maxLength: 255
-      pattern: '^(?=.*\S)(?!\.{1,2}$)[^/\\\x00-\x1F\x7F]+$'
-      description: Original basename without path separators, control characters or dot segments.
+      pattern: '^(?=[\s\S]*\S)(?!\s*\.{1,2}\s*$)(?:[^/\\\x00-\x1F\x7F-\x9F\uD800-\uDFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF])+$'
+      description: Original Unicode basename without path separators, control characters or whitespace-padded dot segments.
       examples: [capture-login.png]
     AttachmentContentType:
       type: string
       minLength: 1
       maxLength: 127
-      pattern: '^[!#$%&''*+\-.^_\x60|~0-9A-Za-z]+/[!#$%&''*+\-.^_\x60|~0-9A-Za-z]+$'
-      description: Media type and subtype without parameters.
+      pattern: '^(?!\*/)[!#$%&''*+\-.^_\x60|~0-9A-Za-z]+/(?!\*$)[!#$%&''*+\-.^_\x60|~0-9A-Za-z]+$'
+      description: Concrete media type and subtype without wildcards or parameters.
       examples: [image/png]
     StartAttachmentUpload:
       type: object

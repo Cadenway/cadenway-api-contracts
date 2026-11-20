@@ -4,8 +4,8 @@ info:
   version: 1.0.0
   description: |
     Attachments of tasks the caller may read or edit in the verified organization. The API
-    gateway checks current task access with task-service and relays the operation to
-    storage-service. A task that is unreadable, in the trash, erased or in another organization
+    gateway checks current task access in one task-service decision before relaying each request
+    to storage-service. A task that is unreadable, in the trash, erased or in another organization
     answers `404 task.not-found`. A readable archived task remains available for reads. Edits
     require the `edit` list role and an active task and list. The signed object-storage URL has
     its own expiration and carries no application credentials.
@@ -81,7 +81,8 @@ paths:
       description: |
         Reserves one upload for the verified editor of the active task. The file-size limit is
         26,214,400 bytes (25 MiB). A larger declared size answers `422 attachment.file-too-large`
-        before a URL is issued. The response authorizes a five-minute multipart POST to a temporary
+        before a URL is issued. The media type must match the registered type of the final file
+        extension, ignoring case. The response authorizes a five-minute multipart POST to a temporary
         object, restricted to that object, the declared media type and 1 to 26,214,400 file bytes.
         Append all returned form fields unchanged to FormData, then append the file as its final
         part named `file`. Complete the upload before the expiry instant.
@@ -224,7 +225,9 @@ paths:
       description: |
         Completes the reservation of the verified uploader, who must still be able to edit the active
         task. The service checks the staged object length and media type against the reservation,
-        and checks its type using the first 4 KiB of bytes. The checks apply to the finalized bytes.
+        and checks its type using the first 4 KiB of bytes. Plain-text files, including logs, require
+        a valid UTF-8 prefix without NUL bytes and without a conflicting detected binary type.
+        Other types require a matching file signature. The checks apply to the finalized bytes.
         The finalized object is independent of the upload capability, so a repeated POST to the
         upload URL cannot replace it. The first successful completion publishes the attachment
         and records `file.uploaded.v1` together. Repeating successful completion returns the same
@@ -444,8 +447,8 @@ components:
     UploadStartRefused:
       description: |
         `attachment.file-too-large` above 26,214,400 bytes, `attachment.upload-metadata-mismatch`
-        for a file extension and media type that disagree, or `idempotency.key-reused` for a key
-        previously used with a different request.
+        for a missing or unknown extension or one that disagrees with the declared media type,
+        or `idempotency.key-reused` for a key previously used with a different request.
       content:
         application/problem+json:
           schema:

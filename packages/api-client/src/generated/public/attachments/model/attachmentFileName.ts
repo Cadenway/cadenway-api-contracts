@@ -4,9 +4,9 @@
  */
 
 /**
- * Original basename without path separators, control characters or dot segments.
+ * Original Unicode basename without path separators, control characters or whitespace-padded dot segments.
  * @minLength 1
  * @maxLength 255
- * @pattern ^(?=.*\S)(?!\.{1,2}$)[^/\\\x00-\x1F\x7F]+$
+ * @pattern ^(?=[\s\S]*\S)(?!\s*\.{1,2}\s*$)(?:[^/\\\x00-\x1F\x7F-\x9F\uD800-\uDFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF])+$
  */
 export type AttachmentFileName = string;

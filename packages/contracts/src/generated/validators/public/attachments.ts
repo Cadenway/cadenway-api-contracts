@@ -33,11 +33,11 @@ export const listTaskAttachmentsResponseItemsItemTaskKeyRegExp = new RegExp('^[A
 export const listTaskAttachmentsResponseItemsItemFileNameMax = 255;
 
 
-export const listTaskAttachmentsResponseItemsItemFileNameRegExp = new RegExp('^(?=.*\\S)(?!\\.{1,2}$)[^/\\\\\\x00-\\x1F\\x7F]+$');
+export const listTaskAttachmentsResponseItemsItemFileNameRegExp = new RegExp('^(?=[\\s\\S]*\\S)(?!\\s*\\.{1,2}\\s*$)(?:[^/\\\\\\x00-\\x1F\\x7F-\\x9F\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])+$');
 export const listTaskAttachmentsResponseItemsItemContentTypeMax = 127;
 
 
-export const listTaskAttachmentsResponseItemsItemContentTypeRegExp = new RegExp('^[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+/[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+$');
+export const listTaskAttachmentsResponseItemsItemContentTypeRegExp = new RegExp('^(?!\\*/)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+/(?!\\*$)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+$');
 export const listTaskAttachmentsResponseItemsItemSizeBytesMax = 26214400;
 
 
@@ -47,8 +47,8 @@ export const ListTaskAttachmentsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.uuid().regex(listTaskAttachmentsResponseItemsItemIdRegExp),
   "taskKey": zod.string().regex(listTaskAttachmentsResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
-  "fileName": zod.string().min(1).max(listTaskAttachmentsResponseItemsItemFileNameMax).regex(listTaskAttachmentsResponseItemsItemFileNameRegExp).describe('Original basename without path separators, control characters or dot segments.'),
-  "contentType": zod.string().min(1).max(listTaskAttachmentsResponseItemsItemContentTypeMax).regex(listTaskAttachmentsResponseItemsItemContentTypeRegExp).describe('Media type and subtype without parameters.'),
+  "fileName": zod.string().min(1).refine((value) => Array.from(value).length <= listTaskAttachmentsResponseItemsItemFileNameMax, { message: 'At most 255 Unicode code points' }).regex(listTaskAttachmentsResponseItemsItemFileNameRegExp).describe('Original Unicode basename without path separators, control characters or whitespace-padded dot segments.'),
+  "contentType": zod.string().min(1).max(listTaskAttachmentsResponseItemsItemContentTypeMax).regex(listTaskAttachmentsResponseItemsItemContentTypeRegExp).describe('Concrete media type and subtype without wildcards or parameters.'),
   "sizeBytes": zod.int().min(1).max(listTaskAttachmentsResponseItemsItemSizeBytesMax),
   "authorUserId": zod.uuid().nullable().describe('Account that attached the file. An attachment from a public intake submission has no account author.'),
   "uploadedAt": zod.iso.datetime({"offset":true}),
@@ -61,7 +61,8 @@ export const ListTaskAttachmentsResponse = zod.object({
 /**
  * Reserves one upload for the verified editor of the active task. The file-size limit is
  * 26,214,400 bytes (25 MiB). A larger declared size answers `422 attachment.file-too-large`
- * before a URL is issued. The response authorizes a five-minute multipart POST to a temporary
+ * before a URL is issued. The media type must match the registered type of the final file
+ * extension, ignoring case. The response authorizes a five-minute multipart POST to a temporary
  * object, restricted to that object, the declared media type and 1 to 26,214,400 file bytes.
  * Append all returned form fields unchanged to FormData, then append the file as its final
  * part named `file`. Complete the upload before the expiry instant.
@@ -88,18 +89,18 @@ export const StartTaskAttachmentUploadHeader = zod.object({
 export const startTaskAttachmentUploadBodyFileNameMax = 255;
 
 
-export const startTaskAttachmentUploadBodyFileNameRegExp = new RegExp('^(?=.*\\S)(?!\\.{1,2}$)[^/\\\\\\x00-\\x1F\\x7F]+$');
+export const startTaskAttachmentUploadBodyFileNameRegExp = new RegExp('^(?=[\\s\\S]*\\S)(?!\\s*\\.{1,2}\\s*$)(?:[^/\\\\\\x00-\\x1F\\x7F-\\x9F\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])+$');
 export const startTaskAttachmentUploadBodyContentTypeMax = 127;
 
 
-export const startTaskAttachmentUploadBodyContentTypeRegExp = new RegExp('^[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+/[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+$');
+export const startTaskAttachmentUploadBodyContentTypeRegExp = new RegExp('^(?!\\*/)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+/(?!\\*$)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+$');
 export const startTaskAttachmentUploadBodySizeBytesMax = 9007199254740991;
 
 
 
-export const StartTaskAttachmentUploadBody = zod.object({
-  "fileName": zod.string().min(1).max(startTaskAttachmentUploadBodyFileNameMax).regex(startTaskAttachmentUploadBodyFileNameRegExp).describe('Original basename without path separators, control characters or dot segments.'),
-  "contentType": zod.string().min(1).max(startTaskAttachmentUploadBodyContentTypeMax).regex(startTaskAttachmentUploadBodyContentTypeRegExp).describe('Media type and subtype without parameters.'),
+export const StartTaskAttachmentUploadBody = zod.strictObject({
+  "fileName": zod.string().min(1).refine((value) => Array.from(value).length <= startTaskAttachmentUploadBodyFileNameMax, { message: 'At most 255 Unicode code points' }).regex(startTaskAttachmentUploadBodyFileNameRegExp).describe('Original Unicode basename without path separators, control characters or whitespace-padded dot segments.'),
+  "contentType": zod.string().min(1).max(startTaskAttachmentUploadBodyContentTypeMax).regex(startTaskAttachmentUploadBodyContentTypeRegExp).describe('Concrete media type and subtype without wildcards or parameters.'),
   "sizeBytes": zod.int().min(1).max(startTaskAttachmentUploadBodySizeBytesMax).describe('Declared length in bytes. The storage service refuses values above 25 MiB.')
 })
 
@@ -110,7 +111,7 @@ export const StartTaskAttachmentUploadResponse = zod.object({
   "id": zod.uuid().regex(startTaskAttachmentUploadResponseIdRegExp),
   "method": zod.literal("POST"),
   "url": zod.url().describe('Signed multipart upload destination, valid for five minutes.'),
-  "fields": zod.record(zod.string(), zod.string()).describe('Signed form fields to append unchanged before the file part.'),
+  "fields": zod.record(zod.string(), zod.string()).refine((value) => Object.keys(value).length >= 1, { message: 'At least 1 signed form field' }).describe('Signed form fields to append unchanged before the file part.'),
   "expiresAt": zod.iso.datetime({"offset":true})
 })
 
@@ -135,11 +136,11 @@ export const getTaskAttachmentResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1
 export const getTaskAttachmentResponseFileNameMax = 255;
 
 
-export const getTaskAttachmentResponseFileNameRegExp = new RegExp('^(?=.*\\S)(?!\\.{1,2}$)[^/\\\\\\x00-\\x1F\\x7F]+$');
+export const getTaskAttachmentResponseFileNameRegExp = new RegExp('^(?=[\\s\\S]*\\S)(?!\\s*\\.{1,2}\\s*$)(?:[^/\\\\\\x00-\\x1F\\x7F-\\x9F\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])+$');
 export const getTaskAttachmentResponseContentTypeMax = 127;
 
 
-export const getTaskAttachmentResponseContentTypeRegExp = new RegExp('^[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+/[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+$');
+export const getTaskAttachmentResponseContentTypeRegExp = new RegExp('^(?!\\*/)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+/(?!\\*$)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+$');
 export const getTaskAttachmentResponseSizeBytesMax = 26214400;
 
 
@@ -148,8 +149,8 @@ export const getTaskAttachmentResponseSizeBytesMax = 26214400;
 export const GetTaskAttachmentResponse = zod.object({
   "id": zod.uuid().regex(getTaskAttachmentResponseIdRegExp),
   "taskKey": zod.string().regex(getTaskAttachmentResponseTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
-  "fileName": zod.string().min(1).max(getTaskAttachmentResponseFileNameMax).regex(getTaskAttachmentResponseFileNameRegExp).describe('Original basename without path separators, control characters or dot segments.'),
-  "contentType": zod.string().min(1).max(getTaskAttachmentResponseContentTypeMax).regex(getTaskAttachmentResponseContentTypeRegExp).describe('Media type and subtype without parameters.'),
+  "fileName": zod.string().min(1).refine((value) => Array.from(value).length <= getTaskAttachmentResponseFileNameMax, { message: 'At most 255 Unicode code points' }).regex(getTaskAttachmentResponseFileNameRegExp).describe('Original Unicode basename without path separators, control characters or whitespace-padded dot segments.'),
+  "contentType": zod.string().min(1).max(getTaskAttachmentResponseContentTypeMax).regex(getTaskAttachmentResponseContentTypeRegExp).describe('Concrete media type and subtype without wildcards or parameters.'),
   "sizeBytes": zod.int().min(1).max(getTaskAttachmentResponseSizeBytesMax),
   "authorUserId": zod.uuid().nullable().describe('Account that attached the file. An attachment from a public intake submission has no account author.'),
   "uploadedAt": zod.iso.datetime({"offset":true}),
@@ -186,7 +187,9 @@ export const DeleteTaskAttachmentResponse = zod.void()
 /**
  * Completes the reservation of the verified uploader, who must still be able to edit the active
  * task. The service checks the staged object length and media type against the reservation,
- * and checks its type using the first 4 KiB of bytes. The checks apply to the finalized bytes.
+ * and checks its type using the first 4 KiB of bytes. Plain-text files, including logs, require
+ * a valid UTF-8 prefix without NUL bytes and without a conflicting detected binary type.
+ * Other types require a matching file signature. The checks apply to the finalized bytes.
  * The finalized object is independent of the upload capability, so a repeated POST to the
  * upload URL cannot replace it. The first successful completion publishes the attachment
  * and records `file.uploaded.v1` together. Repeating successful completion returns the same
@@ -208,11 +211,11 @@ export const completeTaskAttachmentUploadResponseTaskKeyRegExp = new RegExp('^[A
 export const completeTaskAttachmentUploadResponseFileNameMax = 255;
 
 
-export const completeTaskAttachmentUploadResponseFileNameRegExp = new RegExp('^(?=.*\\S)(?!\\.{1,2}$)[^/\\\\\\x00-\\x1F\\x7F]+$');
+export const completeTaskAttachmentUploadResponseFileNameRegExp = new RegExp('^(?=[\\s\\S]*\\S)(?!\\s*\\.{1,2}\\s*$)(?:[^/\\\\\\x00-\\x1F\\x7F-\\x9F\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])+$');
 export const completeTaskAttachmentUploadResponseContentTypeMax = 127;
 
 
-export const completeTaskAttachmentUploadResponseContentTypeRegExp = new RegExp('^[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+/[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+$');
+export const completeTaskAttachmentUploadResponseContentTypeRegExp = new RegExp('^(?!\\*/)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+/(?!\\*$)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+$');
 export const completeTaskAttachmentUploadResponseSizeBytesMax = 26214400;
 
 
@@ -221,8 +224,8 @@ export const completeTaskAttachmentUploadResponseSizeBytesMax = 26214400;
 export const CompleteTaskAttachmentUploadResponse = zod.object({
   "id": zod.uuid().regex(completeTaskAttachmentUploadResponseIdRegExp),
   "taskKey": zod.string().regex(completeTaskAttachmentUploadResponseTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
-  "fileName": zod.string().min(1).max(completeTaskAttachmentUploadResponseFileNameMax).regex(completeTaskAttachmentUploadResponseFileNameRegExp).describe('Original basename without path separators, control characters or dot segments.'),
-  "contentType": zod.string().min(1).max(completeTaskAttachmentUploadResponseContentTypeMax).regex(completeTaskAttachmentUploadResponseContentTypeRegExp).describe('Media type and subtype without parameters.'),
+  "fileName": zod.string().min(1).refine((value) => Array.from(value).length <= completeTaskAttachmentUploadResponseFileNameMax, { message: 'At most 255 Unicode code points' }).regex(completeTaskAttachmentUploadResponseFileNameRegExp).describe('Original Unicode basename without path separators, control characters or whitespace-padded dot segments.'),
+  "contentType": zod.string().min(1).max(completeTaskAttachmentUploadResponseContentTypeMax).regex(completeTaskAttachmentUploadResponseContentTypeRegExp).describe('Concrete media type and subtype without wildcards or parameters.'),
   "sizeBytes": zod.int().min(1).max(completeTaskAttachmentUploadResponseSizeBytesMax),
   "authorUserId": zod.uuid().nullable().describe('Account that attached the file. An attachment from a public intake submission has no account author.'),
   "uploadedAt": zod.iso.datetime({"offset":true}),
