@@ -7,6 +7,7 @@ import {
   eventExamples,
 } from '../../scripts/lib/event-compatibility.mjs';
 import { renderEventsModule } from '../../scripts/lib/events-module.mjs';
+import { dereference } from '../../scripts/lib/dereference.mjs';
 
 const name = 'task.updated.v1';
 const string = { type: 'string' };
@@ -53,6 +54,26 @@ describe('event compatibility across rollout directions', () => {
     expect(
       compareEventExamples(await generatedSamples(before), await generatedSamples(after)),
     ).toEqual([]);
+  });
+
+  it('permits new documented values in an extensible event vocabulary', () => {
+    const before = document(
+      payload({
+        properties: {
+          id: string,
+          action: { type: 'string', 'x-extensible-enum': ['created', 'deleted'] },
+        },
+      }),
+    );
+    const after = document(
+      payload({
+        properties: {
+          id: string,
+          action: { type: 'string', 'x-extensible-enum': ['created', 'deleted', 'renamed'] },
+        },
+      }),
+    );
+    expect(compareEvents(before, after)).toEqual([]);
   });
 
   it('requires a new version for an optional addition to a closed schema', async () => {
@@ -130,5 +151,32 @@ describe('event compatibility across rollout directions', () => {
     );
 
     expect(compareEvents(before, after)).toEqual([]);
+  });
+});
+
+describe('task collaboration event examples', () => {
+  it('validates and preserves the authored examples for each new fact', async () => {
+    const names = [
+      'comment.created.v1',
+      'comment.updated.v1',
+      'comment.deleted.v1',
+      'task.description-mentions-changed.v1',
+      'task.watcher-changed.v1',
+      'task.dependency-added.v1',
+      'task.dependency-removed.v1',
+      'milestone.reached.v1',
+      'task.occurrence-created.v1',
+      'space.task-template-changed.v1',
+      'list.saved-view-changed.v1',
+      'space.access-republished.v1',
+    ];
+    const document = dereference('asyncapi/task-service.yaml', process.cwd());
+    const { validators, examples } = await generatedSamples(document);
+    for (const name of names) {
+      const samples = examples.filter((example) => example.name === name);
+      expect(samples.length, name).toBeGreaterThan(0);
+      for (const sample of samples)
+        expect(validators[name].parse(sample.payload), name).toEqual(sample.payload);
+    }
   });
 });

@@ -13,9 +13,20 @@ import { AccessRole as AccessAccessRole } from '../../packages/contracts/src/gen
 import { AccessRole as SpacesAccessRole } from '../../packages/contracts/src/generated/types/public/spaces';
 import {
   CheckTaskAccessInternalResponse,
+  RestoreTrashEntryInternalBody,
+  RestoreTrashEntryInternalQueryParams,
+  AssignTaskInternalBody,
+  ArchiveListInternalBody,
+  UnarchiveListInternalBody,
+  ArchiveTaskInternalBody,
+  UnarchiveTaskInternalBody,
+  TrashTaskInternalBody,
+  EmptyTrashInternalBody,
+  RefuseAccessRequestInternalBody,
   CreateAccessRequestInternalResponse,
 } from '../../packages/contracts/src/generated/validators/internal/task-service';
 import {
+  RefuseAccessRequestBody,
   ApproveAccessRequestBody,
   CreateAccessRequestBody,
   CreateAccessRequestResponse,
@@ -25,6 +36,10 @@ import {
   SetSpaceGrantParams,
 } from '../../packages/contracts/src/generated/validators/public/access';
 import {
+  ArchiveListBody,
+  UnarchiveListBody,
+  ArchiveTaskBody,
+  UnarchiveTaskBody,
   ArchiveTaskResponse,
   ListArchivedTasksResponse,
 } from '../../packages/contracts/src/generated/validators/public/archives';
@@ -34,9 +49,16 @@ import {
   UpdateListBody,
 } from '../../packages/contracts/src/generated/validators/public/lists';
 import { GetSpaceResponse } from '../../packages/contracts/src/generated/validators/public/spaces';
-import { GetTaskResponse } from '../../packages/contracts/src/generated/validators/public/tasks';
+import {
+  AssignTaskBody,
+  GetTaskResponse,
+} from '../../packages/contracts/src/generated/validators/public/tasks';
 import {
   EmptyTrashResponse,
+  RestoreTrashEntryBody,
+  RestoreTrashEntryQueryParams,
+  TrashTaskBody,
+  EmptyTrashBody,
   ListTrashResponse,
   PurgeTrashEntryResponse,
   TrashTaskResponse,
@@ -418,6 +440,40 @@ describe('members added to existing resources', () => {
 });
 
 describe('archives and trash', () => {
+  it('retains published empty-body stripping on public and internal operations', () => {
+    for (const schema of [
+      AssignTaskBody,
+      ArchiveListBody,
+      UnarchiveListBody,
+      ArchiveTaskBody,
+      UnarchiveTaskBody,
+      TrashTaskBody,
+      EmptyTrashBody,
+      RestoreTrashEntryBody,
+      RefuseAccessRequestBody,
+      AssignTaskInternalBody,
+      ArchiveListInternalBody,
+      UnarchiveListInternalBody,
+      ArchiveTaskInternalBody,
+      UnarchiveTaskInternalBody,
+      TrashTaskInternalBody,
+      EmptyTrashInternalBody,
+      RestoreTrashEntryInternalBody,
+      RefuseAccessRequestInternalBody,
+    ]) {
+      expect(schema.parse({ unexpected: true })).toEqual({});
+    }
+  });
+
+  it('parses restore readiness boolean query strings on both boundaries', () => {
+    for (const schema of [RestoreTrashEntryQueryParams, RestoreTrashEntryInternalQueryParams]) {
+      expect(schema.parse({ reportNotReady: 'true' }).reportNotReady).toBe(true);
+      expect(schema.parse({ reportNotReady: 'false' }).reportNotReady).toBe(false);
+      expect(schema.parse({}).reportNotReady).toBe(false);
+      expect(schema.safeParse({ reportNotReady: 'yes' }).success).toBe(false);
+    }
+  });
+
   it('keep the ten statuses closed: archived and trashed are states of their own', () => {
     expect(TrashTaskResponse.parse(TRASH_ENTRY)).toEqual(TRASH_ENTRY);
     expect(
@@ -446,7 +502,7 @@ describe('archives and trash', () => {
 describe('events of access, archives and trash', () => {
   it('stay inside the families the NATS user task publishes, none restricted', () => {
     for (const name of EVENT_NAMES) {
-      expect(name).toMatch(/^(space|list|task)\.[a-z-]+\.v1$/);
+      expect(name).toMatch(/^(space|list|task|comment|milestone)\.[a-z-]+\.v1$/);
     }
     expect(EVENT_NAMES).toEqual(
       expect.arrayContaining([
@@ -471,7 +527,22 @@ describe('events of access, archives and trash', () => {
         'task.purged.v1',
       ]),
     );
-    expect(EVENT_NAMES).toHaveLength(27);
+    expect(EVENT_NAMES).toEqual(
+      expect.arrayContaining([
+        'comment.created.v1',
+        'comment.updated.v1',
+        'comment.deleted.v1',
+        'task.description-mentions-changed.v1',
+        'task.watcher-changed.v1',
+        'task.dependency-added.v1',
+        'task.dependency-removed.v1',
+        'milestone.reached.v1',
+        'task.occurrence-created.v1',
+        'space.task-template-changed.v1',
+        'list.saved-view-changed.v1',
+      ]),
+    );
+    expect(EVENT_NAMES).toHaveLength(39);
     expect(RESTRICTED_EVENT_NAMES).toEqual([]);
   });
 
@@ -484,10 +555,34 @@ describe('events of access, archives and trash', () => {
       schema.safeParse({ ...listAccessChanged, grants: [{ userId: NADIA_ID, role: 'approve' }] })
         .success,
     ).toBe(true);
-    expect(schema.safeParse({ ...listAccessChanged, changedUserIds: [] }).success).toBe(true);
+    expect(
+      schema.parse({ ...listAccessChanged, changed: ['organizationAccess'], changedUserIds: [] })
+        .changedUserIds,
+    ).toEqual([]);
+    expect(
+      schema.parse({ ...listAccessChanged, changed: ['grants'], changedUserIds: [] })
+        .changedUserIds,
+    ).toEqual([]);
+    const withoutChangedUsers: Partial<ListAccessChangedV1> = { ...listAccessChanged };
+    delete withoutChangedUsers.changedUserIds;
+    expect(schema.safeParse(withoutChangedUsers).success).toBe(false);
     const withoutSwitch: Partial<ListAccessChangedV1> = { ...listAccessChanged };
     delete withoutSwitch.organizationAccess;
     expect(schema.safeParse(withoutSwitch).success).toBe(false);
+  });
+
+  it('accepts an empty access snapshot when a space is restored', () => {
+    const snapshot: Record<string, unknown> = {
+      id: '019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d10',
+      occurredAt: '2026-11-08T10:40:00Z',
+      organizationId: ORGANIZATION_ID,
+      actor: { type: 'user', id: CAMILLE_ID },
+      version: 8,
+      spaceId: SPACE_ID,
+      grants: [],
+      changedUserIds: [],
+    };
+    expect(eventSchemas['space.access-republished.v1'].parse(snapshot)).toEqual(snapshot);
   });
 
   it('name the trash entry and its root of every task moved to the trash', () => {

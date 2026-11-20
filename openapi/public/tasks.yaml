@@ -21,8 +21,9 @@ info:
     `openapi/public/spaces.yaml`); a task the caller does not see answers `404 task.not-found`, as
     an unknown key does, and is left out of every collection and every count. Who has `edit` on
     the list creates and changes its tasks; anyone else who sees it reads them and gets
-    `403 access.role-insufficient` for a change. A guest sees the tasks of the lists shared with
-    them.
+    `403 access.role-insufficient` for those changes. A caller with `comment` may also create
+    comments, edit or delete their own comments and change their own watcher override. A guest
+    sees the tasks of the lists shared with them.
 
     **Archives.** Archiving a task archives its subtree, its subtasks at every level, whatever
     their status (`openapi/public/archives.yaml`). An archived task (`archivedAt`) is left out of
@@ -64,7 +65,7 @@ info:
     removes them. The checklist is not in the activity log.
 
     **Activity log.** task-service records the creation of a task and the changes of its status,
-    priority, due date and assignees, with who made them. Changes of the due date or the priority
+    priority, due date, assignees and comments, with who made them. Changes of the due date or the priority
     of a task by the same actor within 60 seconds merge into one entry, which disappears when the
     value is back to where it was. The name, the description, the labels, the estimate, the list,
     the parent and the checklist are not recorded, nor are archives, the trash and sharing.
@@ -87,8 +88,7 @@ info:
     `tasks:read` and `tasks:write`, 600 requests per minute, French titles for the codes the web
     application shows.
 
-    **Later versions** add, without changing what is here: comments and mentions, watchers,
-    dependencies, milestones, recurrence, duplication, templates, bulk changes, time tracking,
+    **Later versions** add, without changing what is here: templates, time tracking,
     custom fields, attachments and development links; the detail gains their parts, named in
     `partial` when they cannot be read.
   contact:
@@ -142,6 +142,10 @@ paths:
         Records a creation in the activity log of each task created. Emits `task.created.v1` for
         each task created, and `task.assigned.v1` for each of their assignees. Scope `tasks:write`
         for a personal API token.
+        Optional checklist entries are created unchecked in order with fresh IDs. Structured
+        description mentions, milestone constraints and recurrence follow TaskCreation; ineligible
+        mentions return `422 mention.recipient-invalid`, invalid milestones return
+        `422 milestone.status-invalid` or `422 milestone.dates-invalid`.
       tags: [tasks]
       security:
         - sessionCookie: []
@@ -250,11 +254,14 @@ paths:
         the group added to the filters.
 
         Scope `tasks:read` for a personal API token.
+        The optional milestone filter is part of the cursor fingerprint and grouped counts;
+        omitting it preserves the existing filter. It does not change unfiltered totals.
       tags: [task-queries]
       security:
         - sessionCookie: []
         - apiToken: [tasks:read]
       parameters:
+        - $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter'
         - $ref: '#/components/parameters/StatusFilter'
         - $ref: '#/components/parameters/PriorityFilter'
         - $ref: '#/components/parameters/AssigneeFilter'
@@ -329,11 +336,14 @@ paths:
           two assignees counts in both groups.
 
         Scope `tasks:read` for a personal API token.
+        The optional milestone filter is part of the cursor fingerprint and grouped counts;
+        omitting it preserves the existing filter. It does not change unfiltered totals.
       tags: [task-queries]
       security:
         - sessionCookie: []
         - apiToken: [tasks:read]
       parameters:
+        - $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter'
         - $ref: '#/components/parameters/GroupBy'
         - $ref: '#/components/parameters/StatusFilter'
         - $ref: '#/components/parameters/PriorityFilter'
@@ -369,6 +379,76 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/bulk-actions:
+    post:
+      operationId: executeBulkTaskAction
+      summary: Apply an atomic bulk task action
+      description: |
+        Applies one explicit action to 1–50 distinct selected keys in a single tenant transaction.
+        Resolve and authorize all keys and optional per-key expected versions, lock and recheck in
+        stable order, then apply the action and write activity and outbox. A stale selected version
+        answers `412 request.version-mismatch`; duplicate or ambiguous selections and more than 50
+        keys answer `400 request.invalid`. The expansion limit is 1,000 affected task rows including
+        subtrees, successors and copies (`422 bulk.expansion-limit-reached`). On any deterministic
+        error nothing changes or emits; `details.key` identifies only an authorized visible task.
+        Status, priority and explicit assign or unassign affect selected tasks, even selected
+        descendants. Move and trash collapse selections already covered by selected ancestors;
+        move carries the live subtree with immutable keys, detaching a moved subtask from its old
+        parent and retaining statuses. Duplicate applies the single-task copy rule per selection.
+        Existing task status, cancellation, milestone, recurrence, archive, tree and role rules
+        apply. A destination that is invisible answers `404 list.not-found`, a visible but
+        uneditable destination `403 access.role-insufficient`. The optional Idempotency-Key replays
+        the recorded response for 24 hours, and conflicting or concurrent reuse has the standard
+        `422 idempotency.key-reused` or `409 idempotency.request-in-progress` problem. Normal task
+        creation, change and lifecycle facts are emitted, never partial facts.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkTaskAction'
+            example:
+              selection:
+                - { taskKey: CAD-482, version: 12 }
+                - { taskKey: CAD-483, version: 3 }
+              action: { type: status, status: done }
+      responses:
+        '200':
+          description: The action committed for all selected tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkTaskResult'
+              example:
+                results:
+                  - { taskKey: CAD-482, version: 13 }
+                  - { taskKey: CAD-483, version: 4 }
+                affectedCount: 2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/BulkTargetNotFound'
+        '409':
+          $ref: '#/components/responses/BulkConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/BulkRefused'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -457,6 +537,21 @@ paths:
         `task.status-changed.v1` for a new status; a move emits `task.updated.v1` for each subtask
         that moves too. A patch that changes nothing answers `200` with the same version and emits
         nothing. Scope `tasks:write` for a personal API token.
+        Description mentions require If-Match, including spans-only changes. Replacing text clears
+        old spans unless replacements are supplied. Milestone conversion and recurrence follow
+        the shared TaskPatch rules. Entering done with a due date creates at most one root successor
+        in the same list, atomically with resetting recurrence to none, the link and the outbox.
+        Cancellation, an undated completion, a repeated done, creation in done and restore create
+        none. A source that has already spawned cannot be rearmed (`409 recurrence.already-spawned`).
+        Unrepresentable dates answer `422 recurrence.date-out-of-range`. A successor copies the
+        title, Markdown, priority, labels, eligible assignees, ordinary estimate, milestone and
+        unchecked checklist, with a fresh key and todo status. It excludes children, parent,
+        mentions, comments, watcher overrides, dependencies and completion metadata. Start dates
+        move by the due-date delta and milestones retain date alignment. Monthly cadence retains
+        the original day across short months. Fresh watcher defaults apply. A live existing task
+        entering done as a milestone emits milestone.reached.v1, including when the same patch
+        adds the flag. Creation in done, restore, cancellation, repeated done and adding the flag
+        to an already-done task do not; a later genuine transition into done can emit it again.
       tags: [tasks]
       security:
         - sessionCookie: []
@@ -510,11 +605,80 @@ paths:
         '404':
           $ref: '#/components/responses/TaskNotFound'
         '409':
-          $ref: '#/components/responses/TaskArchived'
+          $ref: '#/components/responses/TaskRecurrenceConflict'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/TaskChangeRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/duplicate:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: duplicateTask
+      x-cadenway-strict-empty: true
+      summary: Duplicate a task
+      description: |
+        Duplicates one live task in its own list with ` (copie)` appended, truncating the source
+        portion to fit the existing name limit. It allocates a fresh task key and timestamps and
+        fresh checklist IDs, preserving checklist ticks, milestone, supported status and valid
+        cancellation reason and note. It keeps a live parent when tree depth and capacity permit;
+        a full parent answers `422 task.subtask-limit-reached`. It copies currently assignable
+        users and Markdown as text, without mention spans, children, comments, watcher overrides,
+        dependencies, recurrence, files, time or approvals. A copy in done gets its own completedAt.
+        Requires edit on the list; an archived task refuses changes. If-Match checks the source
+        task version. An optional Idempotency-Key replays the original 201 and Location for 24
+        hours; changed payload and concurrent replay use the standard idempotency problems. Emits
+        the ordinary task creation and assignment facts in the creation transaction.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskDuplicate'
+            example: {}
+      responses:
+        '201':
+          description: The copy was created.
+          headers:
+            Location:
+              description: Path of the new task.
+              schema:
+                type: string
+                examples: ['/v1/tasks/CAD-495']
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskDuplicateConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/TaskDuplicateRefused'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -531,13 +695,14 @@ paths:
         SSO") and its direct subtasks ("Sous-tâches 3"), those archived or in the trash left out
         but for an archived task, whose detail shows the subtasks archived with it, and `list`
         carries the role of the caller (`callerRole`). The gateway composes it; `partial` names
-        the parts it could not read, so that the web application shows the rest. In this version
-        task-service is its only source: `partial` is always empty, and the detail fails as a whole
-        when task-service cannot answer ("Impossible de charger la tâche"). Later versions add
-        parts (comments, attachments, development links), each named in `partial` when its source
-        does not answer.
+        the parts it could not read, so that the web application shows the rest. A failure of the
+        base task read fails the detail as a whole. Later versions may add parts for attachments
+        and development links.
 
         `ETag` is the version of the task. Scope `tasks:read` for a personal API token.
+        The gateway also reads the first comment page from task-service. A comments-only upstream
+        failure omits `comments` and adds `comments` to `partial`; a visibility denial fails closed.
+        A base failure retains the existing whole-detail error.
       tags: [tasks]
       security:
         - sessionCookie: []
@@ -666,6 +831,866 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/comments:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskComments
+      summary: List task comments
+      description: |
+        Lists live comments oldest first by `(createdAt,id)`, with a total excluding deleted comments.
+        The cursor is opaque and bound to the task and ordering. Anyone who sees the task may read.
+        Scope `tasks:read` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The requested resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: createTaskComment
+      summary: Create a task comment
+      description: |
+        Check the caller's comment or edit role before validating recipients; a caller below the
+        required role receives `403 access.role-insufficient` before `422 mention.recipient-invalid`.
+        A current member, including a guest, with read access to the list is eligible. Mention spans
+        are Unicode code-point offsets into unchanged Markdown and are validated for range,
+        overlap and a displayed token beginning with `@`; invalid spans answer `400 request.invalid`.
+        Unmarked text is not a mention.
+        Ineligible recipients answer `422 mention.recipient-invalid` without identifying them.
+        A `comment` or `edit` role may post. A reply must name a live comment on the same task;
+        otherwise `404 comment.not-found`. Replies are flat. The optional Idempotency-Key records
+        the response and Location for 24 hours; replay has no second effect. The comment and task
+        version, activity and outbox change in the same transaction.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreation'
+            example:
+              body: '@Camille Martin, la maquette est prête.'
+              mentions:
+                - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  start: 0
+                  end: 15
+      responses:
+        '201':
+          description: Created comment.
+          headers:
+            ETag:
+              description: The comment version.
+              schema:
+                type: string
+            Location:
+              description: The public path of the created comment.
+              schema:
+                type: string
+                examples: ['/v1/tasks/CAD-482/comments/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01']
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+              example:
+                id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                taskKey: CAD-482
+                actor: { type: user, id: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31 }
+                body: '@Camille Martin, la maquette est prête.'
+                createdAt: '2026-11-08T10:40:00Z'
+                editedAt: null
+                version: 1
+                mentions:
+                  - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    start: 0
+                    end: 15
+                replyToCommentId: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/CollabCommentNotFound'
+        '409':
+          $ref: '#/components/responses/CollabCreateConflict'
+        '422':
+          $ref: '#/components/responses/CollabCreateRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/comments/{commentId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/CommentId'
+    get:
+      operationId: getTaskComment
+      summary: Get a task comment
+      description: |
+        Reads a live comment on a visible task. A deleted, missing or unrelated comment answers
+        `404 comment.not-found`; a deleted reply target leaves only its ID, never quoted content.
+        Scope `tasks:read` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The requested resource or page.
+          headers:
+            ETag:
+              description: The comment version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+              example:
+                id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                taskKey: CAD-482
+                actor: { type: user, id: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31 }
+                body: La maquette est prête.
+                createdAt: '2026-11-08T10:40:00Z'
+                editedAt: null
+                version: 1
+                mentions: []
+                replyToCommentId: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/CollabCommentNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateTaskComment
+      summary: Edit a task comment
+      description: |
+        Check the caller's comment or edit role and comment authorship before validating recipients;
+        a caller below the required role receives `403 access.role-insufficient` before
+        `422 mention.recipient-invalid`.
+        A current member, including a guest, with read access to the list is eligible. Mention spans
+        are Unicode code-point offsets into unchanged Markdown and are validated for range,
+        overlap and a displayed token beginning with `@`; invalid spans answer `400 request.invalid`.
+        Unmarked text is not a mention.
+        Ineligible recipients answer `422 mention.recipient-invalid` without identifying them.
+        Requires `comment` or `edit` and the human author; another editor gets
+        `403 comment.author-required`. If-Match is required even for spans alone and uses the
+        comment version. Replacing text clears spans unless replacements are supplied. The task
+        version, activity and outbox change once in the same transaction.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          description: The comment version as returned in its ETag.
+          schema:
+            type: string
+            examples: ['"1"']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentPatch'
+      responses:
+        '200':
+          description: The requested resource or page.
+          headers:
+            ETag:
+              description: The comment version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+              example:
+                id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                taskKey: CAD-482
+                actor: { type: user, id: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31 }
+                body: La maquette est prête.
+                createdAt: '2026-11-08T10:40:00Z'
+                editedAt: '2026-11-08T11:00:00Z'
+                version: 2
+                mentions: []
+                replyToCommentId: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CollabAuthor'
+        '404':
+          $ref: '#/components/responses/CollabCommentNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/CommentVersionMismatch'
+        '422':
+          $ref: '#/components/responses/CollabMention'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteTaskComment
+      summary: Delete a task comment
+      description: |
+        Requires `comment` or `edit` and the human author; another editor gets
+        `403 comment.author-required`. If-Match is optional and uses the comment version. Removes
+        text and spans, leaves a content-free tombstone for replies until task purge, and excludes
+        it from pages and counts. The task version, activity and outbox change atomically.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: The comment version as returned in its ETag.
+          schema:
+            type: string
+            examples: ['"1"']
+      responses:
+        '204':
+          description: Override or deletion applied.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CollabAuthor'
+        '404':
+          $ref: '#/components/responses/CollabCommentNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/CommentVersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/participants:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskParticipants
+      summary: List eligible task participants
+      description: |
+        Lists current members, including guests, with read access to this task, ordered by user ID.
+        Only `userId` and `memberId` are returned. Requires `comment` or `edit`; a viewer receives
+        `403 access.role-insufficient`. The opaque cursor is bound to the task and ordering.
+        Scope `tasks:read` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The requested resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskParticipantPage'
+              example:
+                items:
+                  - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    memberId: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e40
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/watchers:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskWatchers
+      summary: List task watchers
+      description: |
+        Lists effective eligible watchers by user ID. The human creator and current eligible
+        assignees are defaults, deduplicated; system and automation creators add no account.
+        Per-user follow and unfollow overrides preserve opt-outs across reassignment. Membership
+        and list visibility are checked on each read and event audience snapshot. A cursor is bound
+        to the task and ordering; total and callerFollows are present on every page.
+        Scope `tasks:read` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The requested resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatcherPage'
+              example:
+                items:
+                  - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                nextCursor: null
+                total: 2
+                callerFollows: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/watchers/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/WatcherUserId'
+    put:
+      operationId: followTaskWatcher
+      x-cadenway-strict-empty: true
+      summary: Follow a task
+      description: |
+        Check the caller's role and whether the subject is the caller before recipient validation;
+        a caller without the required role receives `403 access.role-insufficient` before
+        `422 watcher.recipient-invalid`.
+        Sets an explicit follow override for this account. `comment` or `edit` may change their own
+        override; only `edit` may change another account. The target must be a current member with
+        task read access; ineligible targets return `422 watcher.recipient-invalid` without details.
+        At most 100 explicit overrides are stored per task, plus defaults; a new override beyond
+        that bound returns `422 watcher.limit-reached`. Repeating the override is a no-op. If-Match
+        and the returned ETag use the task version; a committed change bumps it once.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The requested resource or page.
+          headers:
+            ETag:
+              description: The task version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Watcher'
+              example:
+                userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/CollabWatcherRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: unfollowTaskWatcher
+      summary: Unfollow a task
+      description: |
+        Check the caller's role and whether the subject is the caller before recipient validation;
+        a caller without the required role receives `403 access.role-insufficient` before
+        `422 watcher.recipient-invalid`.
+        Sets an explicit unfollow override, including for an account without a default subscription.
+        `comment` or `edit` may change their own override; only `edit` may change another account.
+        The target must be eligible, otherwise `422 watcher.recipient-invalid`. A new override over
+        100 returns `422 watcher.limit-reached`; repeating one is a no-op. If-Match and the returned
+        ETag use the task version; a committed change bumps it once.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Override or deletion applied.
+          headers:
+            ETag:
+              description: The task version.
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/CollabWatcherRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/dependencies:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskDependencies
+      summary: List task dependencies
+      description: |
+        Lists edges by creation time and ID. Both endpoints must be readable; edges to an invisible,
+        trashed or archived counterpart and their counts and warnings are hidden. Edges are retained
+        through archive and trash, can reappear on restoration, and are erased on endpoint purge.
+        An archived anchor remains readable and may show visible live counterparts. Dates are
+        advisory: comparing an open blocker's due date with the blocked task's dates never changes
+        either status. The opaque cursor is task-bound.
+        Scope `tasks:read` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The requested dependency or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyPage'
+              example:
+                items:
+                  - id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                    blocker:
+                      key: CAD-482
+                      name: Refondre l’écran de connexion SSO
+                      status: progress
+                      cancelReason: null
+                      priority: haute
+                      assignees:
+                        - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                        - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                      dueDate: '2026-11-12'
+                      startDate: '2026-11-11'
+                      estimateMinutes: 480
+                      labels:
+                        - Auth
+                        - Front
+                      parentKey: null
+                      listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      subtaskCounts:
+                        total: 3
+                        closed: 1
+                      checklistCounts:
+                        total: 3
+                        done: 3
+                      completedAt: null
+                      createdAt: '2026-11-03T09:00:00Z'
+                      version: 12
+                    blocked:
+                      key: CAD-483
+                      name: Messages d’erreur et verrouillage
+                      status: progress
+                      cancelReason: null
+                      priority: haute
+                      assignees:
+                        - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                      dueDate: '2026-11-11'
+                      startDate: '2026-11-11'
+                      estimateMinutes: 480
+                      labels:
+                        - Auth
+                        - Front
+                      parentKey: CAD-482
+                      listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      subtaskCounts:
+                        total: 3
+                        closed: 1
+                      checklistCounts:
+                        total: 3
+                        done: 3
+                      completedAt: null
+                      createdAt: '2026-11-03T09:00:00Z'
+                      version: 3
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: createTaskDependency
+      summary: Create a task dependency
+      description: |
+        Creates a directed blocker-to-blocked edge between tasks in the same organization, including
+        across lists and spaces. Requires edit on both live tasks; an invisible other task answers
+        `404 task.not-found`. Duplicate edges answer `409 dependency.already-exists`; self, direct
+        and transitive cycles answer `422 dependency.cycle`, without disclosing a path. Graph writes
+        are serialized and rechecked under locks, including retained edges; 100 incident edges per
+        task including retained edges are allowed (`422 dependency.limit-reached`). If-Match is the
+        anchor task version. The optional Idempotency-Key replays the creation and Location for 24
+        hours. Each changed task version and its outbox facts commit with the edge.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DependencyCreation'
+            example:
+              otherTaskKey: CAD-483
+              direction: blocks
+      responses:
+        '201':
+          description: The dependency was created.
+          headers:
+            ETag:
+              description: Version of the anchor task.
+              schema:
+                type: string
+            Location:
+              description: Public path of the edge under the anchor task.
+              schema:
+                type: string
+                examples: ['/v1/tasks/CAD-482/dependencies/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01']
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dependency'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                blocker:
+                  key: CAD-482
+                  name: Refondre l’écran de connexion SSO
+                  status: progress
+                  cancelReason: null
+                  priority: haute
+                  assignees:
+                    - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                  dueDate: '2026-11-12'
+                  startDate: '2026-11-11'
+                  estimateMinutes: 480
+                  labels:
+                    - Auth
+                    - Front
+                  parentKey: null
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  subtaskCounts:
+                    total: 3
+                    closed: 1
+                  checklistCounts:
+                    total: 3
+                    done: 3
+                  completedAt: null
+                  createdAt: '2026-11-03T09:00:00Z'
+                  version: 12
+                blocked:
+                  key: CAD-483
+                  name: Messages d’erreur et verrouillage
+                  status: progress
+                  cancelReason: null
+                  priority: haute
+                  assignees:
+                    - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                  dueDate: '2026-11-11'
+                  startDate: '2026-11-11'
+                  estimateMinutes: 480
+                  labels:
+                    - Auth
+                    - Front
+                  parentKey: CAD-482
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  subtaskCounts:
+                    total: 3
+                    closed: 1
+                  checklistCounts:
+                    total: 3
+                    done: 3
+                  completedAt: null
+                  createdAt: '2026-11-03T09:00:00Z'
+                  version: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/DependencyConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/DependencyRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/dependencies/{dependencyId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/DependencyId'
+    get:
+      operationId: getTaskDependency
+      summary: Get a task dependency
+      description: |
+        Reads an edge only when both endpoints are visible and the counterpart is live; otherwise
+        `404 dependency.not-found`. Dates are advisory and never change task status.
+        Scope `tasks:read` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: The requested dependency or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dependency'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                blocker:
+                  key: CAD-482
+                  name: Refondre l’écran de connexion SSO
+                  status: progress
+                  cancelReason: null
+                  priority: haute
+                  assignees:
+                    - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                  dueDate: '2026-11-12'
+                  startDate: '2026-11-11'
+                  estimateMinutes: 480
+                  labels:
+                    - Auth
+                    - Front
+                  parentKey: null
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  subtaskCounts:
+                    total: 3
+                    closed: 1
+                  checklistCounts:
+                    total: 3
+                    done: 3
+                  completedAt: null
+                  createdAt: '2026-11-03T09:00:00Z'
+                  version: 12
+                blocked:
+                  key: CAD-483
+                  name: Messages d’erreur et verrouillage
+                  status: progress
+                  cancelReason: null
+                  priority: haute
+                  assignees:
+                    - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                  dueDate: '2026-11-11'
+                  startDate: '2026-11-11'
+                  estimateMinutes: 480
+                  labels:
+                    - Auth
+                    - Front
+                  parentKey: CAD-482
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  subtaskCounts:
+                    total: 3
+                    closed: 1
+                  checklistCounts:
+                    total: 3
+                    done: 3
+                  completedAt: null
+                  createdAt: '2026-11-03T09:00:00Z'
+                  version: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/DependencyNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteTaskDependency
+      summary: Remove a task dependency
+      description: |
+        Removes an edge from either anchor. Requires edit on both live endpoints. Invisible or
+        absent edges answer `404 dependency.not-found`. If-Match and the returned ETag refer to the
+        anchor task; each changed task version and its outbox facts commit with the removal.
+        Scope `tasks:write` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The dependency was removed.
+          headers:
+            ETag:
+              description: Version of the anchor task.
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/DependencyNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/dependency-candidates:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listDependencyCandidates
+      summary: List dependency candidates
+      description: |
+        Lists editable candidates for the requested direction, same list first, then name and key.
+        Requires edit on the anchor and candidates. Search uses the existing task search; unsuitable
+        known endpoints are excluded. The write remains authoritative under concurrency. The opaque
+        cursor is bound to the task, direction, search and order.
+        Scope `tasks:read` for a personal API token.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+        - $ref: '#/components/parameters/DependencyDirection'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: The requested dependency or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSummaryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CollabRole'
         '404':
           $ref: '#/components/responses/TaskNotFound'
         '429':
@@ -1514,6 +2539,40 @@ components:
         `Authorization: Bearer`. It acts with the rights of its user in the organization it was
         created in, within the scopes each operation lists.
   parameters:
+    DependencyId:
+      name: dependencyId
+      in: path
+      required: true
+      description: ID of a directed dependency edge.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+    DependencyDirection:
+      name: direction
+      in: query
+      required: true
+      description: Direction of the edge relative to the anchor task.
+      schema:
+        $ref: '#/components/schemas/DependencyDirection'
+    WatcherUserId:
+      name: userId
+      in: path
+      required: true
+      description: Account whose watcher override is changed.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+    CommentId:
+      name: commentId
+      in: path
+      required: true
+      description: ID of the comment on this task.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
     ListId:
       name: listId
       in: path
@@ -1613,6 +2672,34 @@ components:
         type: integer
         minimum: 1
   examples:
+    MentionRecipientInvalid:
+      summary: Le destinataire de la mention est indisponible.
+      value:
+        type: about:blank
+        title: Le destinataire de la mention est indisponible.
+        status: 422
+        code: mention.recipient-invalid
+    MilestoneStatusInvalid:
+      summary: Ce statut ne convient pas au jalon.
+      value:
+        type: about:blank
+        title: Ce statut ne convient pas au jalon.
+        status: 422
+        code: milestone.status-invalid
+    MilestoneDatesInvalid:
+      summary: Les dates du jalon sont invalides.
+      value:
+        type: about:blank
+        title: Les dates du jalon sont invalides.
+        status: 422
+        code: milestone.dates-invalid
+    RecurrenceDateOutOfRange:
+      summary: La date de la prochaine occurrence est invalide.
+      value:
+        type: about:blank
+        title: La date de la prochaine occurrence est invalide.
+        status: 422
+        code: recurrence.date-out-of-range
     Cad482:
       summary: CAD-482 of Sprint 14
       value:
@@ -1802,6 +2889,449 @@ components:
         status: 429
         code: rate-limit.exceeded
   responses:
+    TaskDuplicateConflict:
+      description: '`task.archived` or `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            archived:
+              value:
+                type: about:blank
+                title: 'Cette tâche est archivée : restaurez-la depuis les Archives pour la modifier.'
+                status: 409
+                code: task.archived
+            requestInProgress:
+              value:
+                type: about:blank
+                title: 'Conflict'
+                status: 409
+                code: idempotency.request-in-progress
+    BulkConflict:
+      description: |
+        `task.archived`, `recurrence.already-spawned`, `idempotency.request-in-progress`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: 'Cette tâche est archivée : restaurez-la depuis les Archives pour la modifier.'
+                status: 409
+                code: task.archived
+            problem2:
+              value:
+                type: about:blank
+                title: Cette récurrence a déjà créé une occurrence.
+                status: 409
+                code: recurrence.already-spawned
+            problem3:
+              value:
+                type: about:blank
+                title: 'Conflict'
+                status: 409
+                code: idempotency.request-in-progress
+    BulkTargetNotFound:
+      description: |
+        `task.not-found`, `task.trashed`, `list.not-found`, `organization.not-found`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Tâche introuvable.
+                status: 404
+                code: task.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: 'Cette tâche a été supprimée'
+                status: 404
+                code: task.trashed
+            problem3:
+              value:
+                type: about:blank
+                title: Liste introuvable.
+                status: 404
+                code: list.not-found
+            problem4:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    BulkRefused:
+      description: |
+        `bulk.expansion-limit-reached`, `idempotency.key-reused`, `task.status-hidden`, `task.cancel-reason-required`, `task.cancel-reason-unexpected`, `task.assignee-invalid`, `task.assignee-limit-reached`, `task.subtask-limit-reached`, `task.subtask-depth-exceeded`, `task.start-date-invalid`, `milestone.status-invalid`, `milestone.dates-invalid`, `recurrence.date-out-of-range`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: La limite de tâches est atteinte.
+                status: 422
+                code: bulk.expansion-limit-reached
+            problem2:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: idempotency.key-reused
+            problem3:
+              value:
+                type: about:blank
+                title: 'Ce statut n’est plus utilisé dans cet espace.'
+                status: 422
+                code: task.status-hidden
+            problem4:
+              value:
+                type: about:blank
+                title: 'Indiquez pourquoi : le motif reste visible sur la tâche et dans les rapports.'
+                status: 422
+                code: task.cancel-reason-required
+            problem5:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: task.cancel-reason-unexpected
+            problem6:
+              value:
+                type: about:blank
+                title: 'Seuls les membres de l’organisation peuvent être assignés.'
+                status: 422
+                code: task.assignee-invalid
+            problem7:
+              value:
+                type: about:blank
+                title: '20 personnes au plus par tâche.'
+                status: 422
+                code: task.assignee-limit-reached
+            problem8:
+              value:
+                type: about:blank
+                title: '25 sous-tâches au plus : découpez plutôt en plusieurs tâches.'
+                status: 422
+                code: task.subtask-limit-reached
+            problem9:
+              value:
+                type: about:blank
+                title: 'Niveau maximal atteint : 3 niveaux (tâche, sous-tâche, sous-sous-tâche). Utilisez la checklist pour détailler davantage.'
+                status: 422
+                code: task.subtask-depth-exceeded
+            problem10:
+              value:
+                type: about:blank
+                title: 'Le début doit précéder l’échéance.'
+                status: 422
+                code: task.start-date-invalid
+            problem11:
+              value:
+                type: about:blank
+                title: Ce statut ne convient pas au jalon.
+                status: 422
+                code: milestone.status-invalid
+            problem12:
+              value:
+                type: about:blank
+                title: Les dates du jalon sont invalides.
+                status: 422
+                code: milestone.dates-invalid
+            problem13:
+              value:
+                type: about:blank
+                title: La date de la prochaine occurrence est invalide.
+                status: 422
+                code: recurrence.date-out-of-range
+    TaskDuplicateRefused:
+      description: |
+        `task.subtask-limit-reached`, `task.subtask-depth-exceeded`, `task.status-hidden`, `task.cancel-reason-required`, `idempotency.key-reused`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: '25 sous-tâches au plus : découpez plutôt en plusieurs tâches.'
+                status: 422
+                code: task.subtask-limit-reached
+            problem2:
+              value:
+                type: about:blank
+                title: 'Niveau maximal atteint : 3 niveaux (tâche, sous-tâche, sous-sous-tâche). Utilisez la checklist pour détailler davantage.'
+                status: 422
+                code: task.subtask-depth-exceeded
+            problem3:
+              value:
+                type: about:blank
+                title: 'Ce statut n’est plus utilisé dans cet espace.'
+                status: 422
+                code: task.status-hidden
+            problem4:
+              value:
+                type: about:blank
+                title: 'Indiquez pourquoi : le motif reste visible sur la tâche et dans les rapports.'
+                status: 422
+                code: task.cancel-reason-required
+            problem5:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: idempotency.key-reused
+    DependencyNotFound:
+      description: '`dependency.not-found`, `task.not-found`, `task.trashed`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Dépendance introuvable.
+                status: 404
+                code: dependency.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Tâche introuvable.
+                status: 404
+                code: task.not-found
+            problem3:
+              value:
+                type: about:blank
+                title: 'Cette tâche a été supprimée'
+                status: 404
+                code: task.trashed
+            problem4:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    DependencyConflict:
+      description: '`dependency.already-exists`, `task.archived`, `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Cette dépendance existe déjà.
+                status: 409
+                code: dependency.already-exists
+            problem2:
+              value:
+                type: about:blank
+                title: 'Cette tâche est archivée : restaurez-la depuis les Archives pour la modifier.'
+                status: 409
+                code: task.archived
+            problem3:
+              value:
+                type: about:blank
+                title: 'Conflict'
+                status: 409
+                code: idempotency.request-in-progress
+    DependencyRefused:
+      description: '`dependency.cycle`, `dependency.limit-reached`, `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Cette dépendance créerait un cycle.
+                status: 422
+                code: dependency.cycle
+            problem2:
+              value:
+                type: about:blank
+                title: La limite de dépendances est atteinte.
+                status: 422
+                code: dependency.limit-reached
+            problem3:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: idempotency.key-reused
+    TaskRecurrenceConflict:
+      description: '`task.archived`: a task is archived; `recurrence.already-spawned`: the source already has a successor.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskArchived:
+              $ref: '#/components/examples/TaskArchived'
+            alreadySpawned:
+              value:
+                type: about:blank
+                title: Cette récurrence a déjà créé une occurrence.
+                status: 409
+                code: recurrence.already-spawned
+    CommentVersionMismatch:
+      description: '`request.version-mismatch`: If-Match is not the current comment version; `details.version` is.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 2
+    CollabRole:
+      description: '`access.role-insufficient`, `auth.scope-missing`, `auth.csrf-rejected`, `organization.not-selected`, `organization.mfa-required`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: 'Il faut le droit « Peut modifier » pour cette action.'
+                status: 403
+                code: access.role-insufficient
+    CollabAuthor:
+      description: '`access.role-insufficient`, `comment.author-required`, `auth.scope-missing`, `auth.csrf-rejected`, `organization.not-selected`, `organization.mfa-required`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: 'Il faut le droit « Peut modifier » pour cette action.'
+                status: 403
+                code: access.role-insufficient
+            problem2:
+              value:
+                type: about:blank
+                title: Seul l’auteur peut modifier ce commentaire.
+                status: 403
+                code: comment.author-required
+    CollabCommentNotFound:
+      description: '`comment.not-found`, `task.not-found`, `task.trashed`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Commentaire introuvable.
+                status: 404
+                code: comment.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Tâche introuvable.
+                status: 404
+                code: task.not-found
+            problem3:
+              value:
+                type: about:blank
+                title: 'Cette tâche a été supprimée'
+                status: 404
+                code: task.trashed
+            problem4:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    CollabCreateConflict:
+      description: '`task.archived`, `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: 'Cette tâche est archivée : restaurez-la depuis les Archives pour la modifier.'
+                status: 409
+                code: task.archived
+            problem2:
+              value:
+                type: about:blank
+                title: 'Conflict'
+                status: 409
+                code: idempotency.request-in-progress
+    CollabMention:
+      description: '`mention.recipient-invalid`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Le destinataire de la mention est indisponible.
+                status: 422
+                code: mention.recipient-invalid
+    CollabCreateRefused:
+      description: '`mention.recipient-invalid`, `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Le destinataire de la mention est indisponible.
+                status: 422
+                code: mention.recipient-invalid
+            problem2:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: idempotency.key-reused
+    CollabWatcherRefused:
+      description: '`watcher.recipient-invalid`, `watcher.limit-reached`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Ce destinataire est indisponible.
+                status: 422
+                code: watcher.recipient-invalid
+            problem2:
+              value:
+                type: about:blank
+                title: La limite des abonnements est atteinte.
+                status: 422
+                code: watcher.limit-reached
     BadRequest:
       description: |
         The request does not match the schema: `request.invalid`, with one `details.issues` entry
@@ -2044,12 +3574,21 @@ components:
         - `task.assignee-invalid`: an assignee is not a current member of the organization, or is a
           guest; `details.userIds` lists them;
         - `task.start-date-invalid`: `startDate` without `dueDate`, or after it;
-        - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+        - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body;
+        - `mention.recipient-invalid`: a description mention recipient is ineligible;
+        - `milestone.status-invalid`: the final milestone status is invalid;
+        - `milestone.dates-invalid`: the final milestone dates or estimate are invalid.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           examples:
+            mentionRecipientInvalid:
+              $ref: '#/components/examples/MentionRecipientInvalid'
+            milestoneStatusInvalid:
+              $ref: '#/components/examples/MilestoneStatusInvalid'
+            milestoneDatesInvalid:
+              $ref: '#/components/examples/MilestoneDatesInvalid'
             statusHidden:
               $ref: '#/components/examples/StatusHidden'
             cancelReasonRequired:
@@ -2097,12 +3636,24 @@ components:
         - `task.parent-invalid`: the parent is unknown, not seen, the task itself or one of its
           subtasks; `details.parentKey` repeats it;
         - `task.subtask-depth-exceeded`: the task and its subtasks would go beyond 3 levels;
-        - `task.subtask-limit-reached`: the parent has 25 subtasks.
+        - `task.subtask-limit-reached`: the parent has 25 subtasks;
+        - `mention.recipient-invalid`: a description mention recipient is ineligible;
+        - `milestone.status-invalid`: the final milestone status is invalid;
+        - `milestone.dates-invalid`: the final milestone dates or estimate are invalid;
+        - `recurrence.date-out-of-range`: the successor date cannot be represented.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           examples:
+            mentionRecipientInvalid:
+              $ref: '#/components/examples/MentionRecipientInvalid'
+            milestoneStatusInvalid:
+              $ref: '#/components/examples/MilestoneStatusInvalid'
+            milestoneDatesInvalid:
+              $ref: '#/components/examples/MilestoneDatesInvalid'
+            recurrenceDateOutOfRange:
+              $ref: '#/components/examples/RecurrenceDateOutOfRange'
             statusHidden:
               $ref: '#/components/examples/StatusHidden'
             cancelReasonRequired:
@@ -2209,6 +3760,38 @@ components:
             details:
               service: task-service
   schemas:
+    TaskDuplicate:
+      $ref: '../../components/task.yaml#/components/schemas/TaskDuplicate'
+    BulkTaskAction:
+      $ref: '../../components/task.yaml#/components/schemas/BulkTaskAction'
+    BulkTaskResult:
+      $ref: '../../components/task.yaml#/components/schemas/BulkTaskResult'
+    DependencyDirection:
+      $ref: '../../components/task.yaml#/components/schemas/DependencyDirection'
+    DependencyCreation:
+      $ref: '../../components/task.yaml#/components/schemas/DependencyCreation'
+    Dependency:
+      $ref: '../../components/task.yaml#/components/schemas/Dependency'
+    DependencyPage:
+      $ref: '../../components/task.yaml#/components/schemas/DependencyPage'
+    Mention:
+      $ref: '../../components/task.yaml#/components/schemas/Mention'
+    Comment:
+      $ref: '../../components/task.yaml#/components/schemas/Comment'
+    CommentPage:
+      $ref: '../../components/task.yaml#/components/schemas/CommentPage'
+    CommentCreation:
+      $ref: '../../components/task.yaml#/components/schemas/CommentCreation'
+    CommentPatch:
+      $ref: '../../components/task.yaml#/components/schemas/CommentPatch'
+    TaskParticipant:
+      $ref: '../../components/task.yaml#/components/schemas/TaskParticipant'
+    TaskParticipantPage:
+      $ref: '../../components/task.yaml#/components/schemas/TaskParticipantPage'
+    Watcher:
+      $ref: '../../components/task.yaml#/components/schemas/Watcher'
+    WatcherPage:
+      $ref: '../../components/task.yaml#/components/schemas/WatcherPage'
     Task:
       $ref: '../../components/task.yaml#/components/schemas/Task'
     TaskSummary:
@@ -2390,6 +3973,9 @@ components:
       required: [task, space, list, parent, subtasks, partial]
       description: The task detail, composed by the gateway.
       properties:
+        comments:
+          $ref: '#/components/schemas/CommentPage'
+          description: First page of comments, omitted if that part cannot be read.
         task:
           $ref: '#/components/schemas/Task'
         space:
@@ -2410,8 +3996,8 @@ components:
           type: array
           description: |
             The parts the gateway could not read, the rest of the detail being complete. Always
-            empty in this version; later versions name the parts they add (`comments`,
-            `attachments`, `development`) when their source does not answer, and may name others
+            empty when all parts are available; `comments` identifies a comments-only upstream
+            failure. Later versions may name other parts (`attachments`, `development`)
             (`x-extensible-enum`).
           items:
             type: string

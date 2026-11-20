@@ -24,10 +24,18 @@ import type {
   ActivityPage,
   GetListCountsParams,
   ListCreation,
+  ListDuplicate,
+  ListDuplication,
   ListListActivityParams,
   ListListsParams,
   ListPatch,
+  ListSavedViewsParams,
   ListSummary,
+  SavedView,
+  SavedViewCreation,
+  SavedViewDuplicate,
+  SavedViewPage,
+  SavedViewPatch,
   TaskList,
   TaskListPage
 } from '../model';
@@ -396,6 +404,59 @@ export class ListsService {
     );
   }
 /**
+ * Creates an ordinary live list in the same space, with ` (copie)` appended to the name
+ * after truncating the source portion to fit the name limit. Requires edit on both the source
+ * list and destination space; an archived source list is allowed. It copies the complete live
+ * task forest, regardless of filters, remapping parents and allocating fresh keys using the
+ * current destination prefix; a live task whose parent is outside the forest becomes a root.
+ * Independently archived and trashed tasks are skipped. Task fields follow the single-task
+ * copy rule, but task names are retained. More than 500 live tasks answers
+ * `422 list.duplicate-limit-reached` and creates nothing. The list retains the source look and
+ * organization-access switch, but copies no direct grants, sprint, views or favorites; the
+ * resulting access cannot broaden the source. If-Match checks the source list version. The
+ * optional Idempotency-Key replays the original 201 and Location for 24 hours. The list and
+ * task creation facts commit with the entire copy.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Duplicate a list
+ */
+ duplicateList<TData = ListDuplication>(listId: string,
+    listDuplicate: ListDuplicate, options?: HttpClientBodyOptions): Observable<TData>;
+ duplicateList<TData = ListDuplication>(listId: string,
+    listDuplicate: ListDuplicate, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ duplicateList<TData = ListDuplication>(listId: string,
+    listDuplicate: ListDuplicate, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  duplicateList<TData = ListDuplication>(
+    listId: string,
+    listDuplicate: ListDuplicate, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/lists/${listId}/duplicate`,
+      listDuplicate,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/lists/${listId}/duplicate`,
+      listDuplicate,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/lists/${listId}/duplicate`,
+      listDuplicate,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
  * Returns a list with the counts of its top-level tasks, for its header ("Sprint du 3 – 17
  * nov. · 98 tâches · 25 % terminé") and the progress of a sprint. `today` is the date of the
  * caller, for the late tasks.
@@ -487,6 +548,307 @@ export class ListsService {
         params: filteredParams,}
     );
   }
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * New views append in creation order; a duplicate is inserted after its source.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List saved views
+ */
+ listSavedViews<TData = SavedViewPage>(listId: string,
+    params?: ListSavedViewsParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listSavedViews<TData = SavedViewPage>(listId: string,
+    params?: ListSavedViewsParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listSavedViews<TData = SavedViewPage>(listId: string,
+    params?: ListSavedViewsParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listSavedViews<TData = SavedViewPage>(
+    listId: string,
+    params?: ListSavedViewsParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/saved-views`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/saved-views`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/lists/${listId}/saved-views`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Stores the explicit configuration; `422 saved-view.limit-reached` means the list is full.
+ * Search, milestone, subtask display, collapsed groups, zoom and standard tabs stay local;
+ * Feuille-only sort is client presentation and is never sent as a server task sort.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Create a saved view
+ */
+ createSavedView<TData = SavedView>(listId: string,
+    savedViewCreation: SavedViewCreation, options?: HttpClientBodyOptions): Observable<TData>;
+ createSavedView<TData = SavedView>(listId: string,
+    savedViewCreation: SavedViewCreation, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ createSavedView<TData = SavedView>(listId: string,
+    savedViewCreation: SavedViewCreation, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  createSavedView<TData = SavedView>(
+    listId: string,
+    savedViewCreation: SavedViewCreation, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/lists/${listId}/saved-views`,
+      savedViewCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/lists/${listId}/saved-views`,
+      savedViewCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/lists/${listId}/saved-views`,
+      savedViewCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * A missing, deleted or inaccessible view answers `404 saved-view.not-found`.
+ * Scope `tasks:read` for a personal API token.
+ * @summary Get a saved view
+ */
+ getSavedView<TData = SavedView>(listId: string,
+    viewId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ getSavedView<TData = SavedView>(listId: string,
+    viewId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getSavedView<TData = SavedView>(listId: string,
+    viewId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getSavedView<TData = SavedView>(
+    listId: string,
+    viewId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Rename and edit use JSON Merge Patch, including nested settings; undeclared members are
+ * ignored. Null groupBy clears grouping and is returned as null; null icon clears the icon.
+ * If-Match is optional and checks the view version.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Update a saved view
+ */
+ updateSavedView<TData = SavedView>(listId: string,
+    viewId: string,
+    savedViewPatch: SavedViewPatch, options?: HttpClientBodyOptions): Observable<TData>;
+ updateSavedView<TData = SavedView>(listId: string,
+    viewId: string,
+    savedViewPatch: SavedViewPatch, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ updateSavedView<TData = SavedView>(listId: string,
+    viewId: string,
+    savedViewPatch: SavedViewPatch, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  updateSavedView<TData = SavedView>(
+    listId: string,
+    viewId: string,
+    savedViewPatch: SavedViewPatch, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.patch<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}`,
+      savedViewPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.patch<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}`,
+      savedViewPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.patch<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}`,
+      savedViewPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * The deletion completes immediately. A client may create a new view from its snapshot for
+ * undo. If-Match is optional and checks the view version.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Delete a saved view
+ */
+ deleteSavedView<TData = void>(listId: string,
+    viewId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ deleteSavedView<TData = void>(listId: string,
+    viewId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ deleteSavedView<TData = void>(listId: string,
+    viewId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  deleteSavedView<TData = void>(
+    listId: string,
+    viewId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Creates a new view with a fresh ID and version immediately after the source, appending
+ * ` (copie)` to its name after truncating the source portion to the 80-character ceiling.
+ * If-Match is optional and checks the source view version. `422 saved-view.limit-reached` means the list
+ * is full. The duplicate emits the same creation fact as an ordinary new view.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Duplicate a saved view
+ */
+ duplicateSavedView<TData = SavedView>(listId: string,
+    viewId: string,
+    savedViewDuplicate: SavedViewDuplicate, options?: HttpClientBodyOptions): Observable<TData>;
+ duplicateSavedView<TData = SavedView>(listId: string,
+    viewId: string,
+    savedViewDuplicate: SavedViewDuplicate, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ duplicateSavedView<TData = SavedView>(listId: string,
+    viewId: string,
+    savedViewDuplicate: SavedViewDuplicate, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  duplicateSavedView<TData = SavedView>(
+    listId: string,
+    viewId: string,
+    savedViewDuplicate: SavedViewDuplicate, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}/duplicate`,
+      savedViewDuplicate,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}/duplicate`,
+      savedViewDuplicate,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/lists/${listId}/saved-views/${viewId}/duplicate`,
+      savedViewDuplicate,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
 };
 
 export type CreateListClientResult = NonNullable<TaskList>
@@ -494,5 +856,12 @@ export type ListListsClientResult = NonNullable<TaskListPage>
 export type GetListClientResult = NonNullable<TaskList>
 export type UpdateListClientResult = NonNullable<TaskList>
 export type DeleteListClientResult = NonNullable<void>
+export type DuplicateListClientResult = NonNullable<ListDuplication>
 export type GetListCountsClientResult = NonNullable<ListSummary>
 export type ListListActivityClientResult = NonNullable<ActivityPage>
+export type ListSavedViewsClientResult = NonNullable<SavedViewPage>
+export type CreateSavedViewClientResult = NonNullable<SavedView>
+export type GetSavedViewClientResult = NonNullable<SavedView>
+export type UpdateSavedViewClientResult = NonNullable<SavedView>
+export type DeleteSavedViewClientResult = NonNullable<void>
+export type DuplicateSavedViewClientResult = NonNullable<SavedView>

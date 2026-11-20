@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { SavedViewSort } from '../../packages/contracts/src/generated/types/public/lists';
+
 import { CancelReason as ClientCancelReason } from '../../packages/api-client/src/generated/public/spaces/model/cancelReason';
 import { PriorityKey as ClientPriorityKey } from '../../packages/api-client/src/generated/public/spaces/model/priorityKey';
 import { StatusKey as ClientStatusKey } from '../../packages/api-client/src/generated/public/spaces/model/statusKey';
@@ -13,6 +15,7 @@ import {
 import {
   CANCEL_REASONS,
   PRIORITY_KEYS,
+  RECURRENCES,
   STATUS_CATEGORIES,
   STATUS_KEYS,
 } from '../../packages/contracts/src/index';
@@ -38,6 +41,8 @@ import {
 } from '../../packages/contracts/src/generated/types/public/spaces';
 import {
   CancelReason,
+  Recurrence,
+  TaskSortParameter,
   PriorityKey,
   StatusCategory,
   StatusKey,
@@ -47,15 +52,38 @@ import {
   TaskCreationStatus,
 } from '../../packages/contracts/src/generated/types/public/tasks';
 import {
+  CountTaskGroupsInternalQueryParams,
+  ExecuteBulkTaskActionInternalBody,
+  DuplicateTaskInternalBody,
+  DuplicateListInternalBody,
+  ListSpaceMilestonesInternalResponse,
+  CreateTaskTemplateInternalBody,
+  CreateSavedViewInternalBody,
+  UpdateSavedViewInternalBody,
+  DuplicateSavedViewInternalBody,
+  CreateFavoriteInternalBody,
+  CreateTaskCommentInternalBody,
+  FollowTaskWatcherInternalBody,
+  UpdateTaskCommentInternalBody,
   GetHomeInternalQueryParams,
   ListTasksInternalQueryParams,
 } from '../../packages/contracts/src/generated/validators/internal/task-service';
 import {
+  CreateSavedViewBody,
+  GetSavedViewResponse,
+  UpdateSavedViewBody,
+  DuplicateSavedViewBody,
   CreateListBody,
+  DuplicateListBody,
   ListListActivityResponse,
+  ListListActivityQueryParams,
   UpdateListBody,
 } from '../../packages/contracts/src/generated/validators/public/lists';
 import {
+  ListSpaceMilestonesResponse,
+  CreateTaskTemplateBody,
+  CreateFavoriteBody,
+  GetFavoriteResponse,
   CreateSpaceBody,
   GetSpaceResponse,
   UpdateSpaceBody,
@@ -64,7 +92,19 @@ import {
   AddTaskLabelBody,
   AssignTaskParams,
   CreateSubtaskBody,
+  CountTaskGroupsQueryParams,
+  ExecuteBulkTaskActionBody,
+  DuplicateTaskBody,
+  CreateTaskDependencyBody,
+  ListTaskActivityQueryParams,
   CreateTaskBody,
+  CreateTaskCommentBody,
+  FollowTaskWatcherBody,
+  ListTaskCommentsResponse,
+  ListTaskParticipantsResponse,
+  ListTaskWatchersResponse,
+  UpdateTaskCommentBody,
+  UpdateTaskCommentHeader,
   GetHomeQueryParams,
   GetTaskDetailResponse,
   GetTaskParams,
@@ -437,6 +477,29 @@ describe('events of task-service', () => {
     expect(RESTRICTED_EVENT_NAMES).toEqual([]);
   });
 
+  it('accepts future template actions in the extensible event vocabulary', () => {
+    const schema: (typeof eventSchemas)['space.task-template-changed.v1'] =
+      eventSchemas['space.task-template-changed.v1'];
+    expect(schema.shape.action.parse('created')).toBe('created');
+    expect(schema.shape.action.parse('renamed')).toBe('renamed');
+  });
+
+  it('accepts optional collaboration snapshots without requiring them on older facts', () => {
+    for (const schema of [eventSchemas['task.created.v1'], eventSchemas['task.updated.v1']]) {
+      expect(schema.shape.milestone.safeParse(undefined).success).toBe(true);
+      expect(schema.shape.milestone.parse(true)).toBe(true);
+      expect(schema.shape.recurrence.safeParse(undefined).success).toBe(true);
+      expect(schema.shape.recurrence.parse('weekly')).toBe('weekly');
+      expect(schema.shape.recurrence.safeParse('yearly').success).toBe(false);
+    }
+    const statusSchema: (typeof eventSchemas)['task.status-changed.v1'] =
+      eventSchemas['task.status-changed.v1'];
+    expect(statusSchema.parse(taskCancelled)).toEqual(taskCancelled);
+    expect(statusSchema.parse({ ...taskCancelled, watcherIds: [CAMILLE_ID] })).toMatchObject({
+      watcherIds: [CAMILLE_ID],
+    });
+  });
+
   it('names the person added and every assignee after the change', () => {
     const schema: (typeof eventSchemas)['task.assigned.v1'] = eventSchemas['task.assigned.v1'];
 
@@ -453,5 +516,282 @@ describe('events of task-service', () => {
     const withoutPrevious: Partial<TaskStatusChangedV1> = { ...taskCancelled };
     delete withoutPrevious.previousStatus;
     expect(schema.safeParse(withoutPrevious).success).toBe(false);
+  });
+});
+
+describe('task collaboration contracts', () => {
+  it('validates comment length in Unicode code points on both boundaries', () => {
+    for (const schema of [CreateTaskCommentBody, CreateTaskCommentInternalBody]) {
+      expect(schema.safeParse({ body: '😀'.repeat(5000) }).success).toBe(true);
+      expect(schema.safeParse({ body: '😀'.repeat(5001) }).success).toBe(false);
+      expect(schema.safeParse({ body: '   ' }).success).toBe(false);
+    }
+    for (const schema of [UpdateTaskCommentBody, UpdateTaskCommentInternalBody]) {
+      expect(schema.safeParse({ body: '😀'.repeat(5000) }).success).toBe(true);
+      expect(schema.safeParse({ body: '😀'.repeat(5001) }).success).toBe(false);
+      expect(schema.parse({ body: 'ok', ignored: true })).toEqual({ body: 'ok' });
+    }
+    expect(UpdateTaskCommentHeader.safeParse({}).success).toBe(false);
+  });
+
+  it('requires empty watcher bodies and the page metadata', () => {
+    for (const schema of [FollowTaskWatcherBody, FollowTaskWatcherInternalBody]) {
+      expect(schema.safeParse({}).success).toBe(true);
+      expect(schema.safeParse({ extra: true }).success).toBe(false);
+    }
+    expect(
+      ListTaskCommentsResponse.safeParse({ items: [], nextCursor: null, total: 0 }).success,
+    ).toBe(true);
+    expect(ListTaskParticipantsResponse.safeParse({ items: [], nextCursor: null }).success).toBe(
+      true,
+    );
+    expect(
+      ListTaskWatchersResponse.safeParse({
+        items: [],
+        nextCursor: null,
+        total: 0,
+        callerFollows: false,
+      }).success,
+    ).toBe(true);
+    expect(
+      ListTaskWatchersResponse.safeParse({ items: [], nextCursor: null, total: 0 }).success,
+    ).toBe(false);
+  });
+});
+
+describe('dependencies, milestones and recurrence', () => {
+  it('shares recurrence values and accepts the new task input without changing old requests', () => {
+    expect(Object.values(Recurrence)).toEqual([...RECURRENCES]);
+    expect(
+      CreateTaskBody.safeParse({
+        name: 'CAD',
+        milestone: true,
+        recurrence: 'weekly',
+        checklist: [{ text: 'Maquette validée' }],
+      }).success,
+    ).toBe(true);
+    expect(CreateTaskBody.safeParse({ name: 'CAD' }).success).toBe(true);
+    expect(
+      UpdateTaskBody.safeParse({ recurrence: 'monthly', descriptionMentions: [] }).success,
+    ).toBe(true);
+    expect(UpdateTaskBody.safeParse({ recurrence: 'yearly' }).success).toBe(false);
+    expect(
+      CreateTaskDependencyBody.safeParse({ otherTaskKey: 'CAD-482', direction: 'blocked-by' })
+        .success,
+    ).toBe(true);
+    expect(
+      CreateTaskDependencyBody.safeParse({ otherTaskKey: 'CAD-482', direction: 'unknown' }).success,
+    ).toBe(false);
+  });
+
+  it('parses both HTTP boolean spellings in public and internal task filters', () => {
+    for (const schema of [ListTasksQueryParams, ListTasksInternalQueryParams]) {
+      expect(schema.parse({ milestone: 'false' }).milestone).toBe(false);
+      expect(schema.parse({ milestone: 'true' }).milestone).toBe(true);
+      expect(schema.safeParse({ milestone: 'yes' }).success).toBe(false);
+    }
+    for (const schema of [CountTaskGroupsQueryParams, CountTaskGroupsInternalQueryParams]) {
+      expect(schema.parse({ milestone: 'false', groupBy: 'status' }).milestone).toBe(false);
+      expect(schema.safeParse({ milestone: 'yes', groupBy: 'status' }).success).toBe(false);
+    }
+    expect(
+      ListTaskActivityQueryParams.safeParse({
+        kind: ['create', 'status', 'priority', 'due', 'assign', 'comment'],
+      }).success,
+    ).toBe(true);
+    expect(ListListActivityQueryParams.safeParse({ kind: ['comment'] }).success).toBe(true);
+    expect(
+      GetTaskDetailResponse.shape.comments.safeParse({ items: [], nextCursor: null, total: 0 })
+        .success,
+    ).toBe(true);
+  });
+
+  it('requires milestone page items to have a true milestone flag', () => {
+    const task: Record<string, unknown> = {
+      key: 'CAD-482',
+      name: 'Refondre l’écran de connexion SSO',
+      status: 'todo',
+      cancelReason: null,
+      priority: 'haute',
+      assignees: [],
+      dueDate: null,
+      startDate: null,
+      estimateMinutes: null,
+      labels: [],
+      parentKey: null,
+      listId: SPRINT_14_ID,
+      spaceId: '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01',
+      subtaskCounts: { total: 0, closed: 0 },
+      checklistCounts: { total: 0, done: 0 },
+      completedAt: null,
+      createdAt: '2026-11-08T10:40:00Z',
+      version: 1,
+    };
+    for (const schema of [ListSpaceMilestonesResponse, ListSpaceMilestonesInternalResponse]) {
+      expect(
+        schema.safeParse({ items: [{ ...task, milestone: true }], nextCursor: null, total: 1 })
+          .success,
+      ).toBe(true);
+      expect(
+        schema.safeParse({ items: [{ ...task, milestone: false }], nextCursor: null, total: 1 })
+          .success,
+      ).toBe(false);
+      expect(schema.safeParse({ items: [task], nextCursor: null, total: 1 }).success).toBe(false);
+    }
+  });
+});
+
+describe('task and list copies and bulk actions', () => {
+  it('accepts only empty copy bodies at both boundaries', () => {
+    for (const schema of [
+      DuplicateTaskBody,
+      DuplicateListBody,
+      DuplicateTaskInternalBody,
+      DuplicateListInternalBody,
+    ]) {
+      expect(schema.safeParse({}).success).toBe(true);
+      expect(schema.safeParse({ unexpected: true }).success).toBe(false);
+    }
+  });
+
+  it('validates tagged actions, bounded distinct keys and ambiguous members', () => {
+    const selection: { taskKey: string; version?: number }[] = [
+      { taskKey: 'CAD-482', version: 12 },
+    ];
+    const actions: Record<string, unknown>[] = [
+      { type: 'status', status: 'done' },
+      { type: 'priority', priority: 'haute' },
+      { type: 'assign', userId: CAMILLE_ID },
+      { type: 'unassign', userId: CAMILLE_ID },
+      { type: 'move', listId: SPRINT_14_ID },
+      { type: 'trash' },
+      { type: 'duplicate' },
+    ];
+    for (const schema of [ExecuteBulkTaskActionBody, ExecuteBulkTaskActionInternalBody]) {
+      for (const action of actions)
+        expect(schema.safeParse({ selection, action }).success).toBe(true);
+      expect(schema.safeParse({ selection: [], action: { type: 'trash' } }).success).toBe(false);
+      expect(
+        schema.safeParse({
+          selection: Array.from({ length: 51 }, (_, index) => ({
+            taskKey: `CAD-${String(index + 1)}`,
+          })),
+          action: { type: 'trash' },
+        }).success,
+      ).toBe(false);
+      expect(
+        schema.safeParse({
+          selection: [...selection, { taskKey: 'CAD-482', version: 13 }],
+          action: { type: 'trash' },
+        }).success,
+      ).toBe(false);
+      expect(
+        schema.safeParse({ selection, action: { type: 'trash', priority: 'haute' } }).success,
+      ).toBe(false);
+      expect(schema.safeParse({ selection, action: { type: 'assign' } }).success).toBe(false);
+      expect(schema.safeParse({ selection, action: { type: 'unknown' } }).success).toBe(false);
+    }
+  });
+});
+
+describe('templates, saved views and favorites', () => {
+  it('accepts scoped template requests and enforces the name bound by code point', () => {
+    for (const schema of [CreateTaskTemplateBody, CreateTaskTemplateInternalBody]) {
+      expect(schema.safeParse({ sourceTaskKey: 'CAD-482', name: '😀'.repeat(80) }).success).toBe(
+        true,
+      );
+      expect(schema.safeParse({ sourceTaskKey: 'CAD-482', name: '😀'.repeat(81) }).success).toBe(
+        false,
+      );
+      expect(schema.safeParse({ sourceTaskKey: 'CAD-482', name: ' ' }).success).toBe(false);
+    }
+  });
+
+  it('uses task sort vocabulary and preserves nested merge patches', () => {
+    expect(Object.values(SavedViewSort)).toEqual(Object.values(TaskSortParameter));
+    const configuration: Record<string, unknown> = {
+      layout: 'table',
+      filters: { assignee: ['me'], priority: ['haute'] },
+      sort: '-dueDate',
+      groupBy: null,
+      presentation: {
+        hiddenBoardStatusKeys: ['done'],
+        hiddenSheetColumns: ['spent'],
+        sheetSort: { column: 'points', direction: 'desc' },
+      },
+    };
+    for (const schema of [CreateSavedViewBody, CreateSavedViewInternalBody]) {
+      expect(schema.safeParse({ name: 'Bugs critiques', icon: 'bug', configuration }).success).toBe(
+        true,
+      );
+      expect(
+        schema.safeParse({
+          name: 'Bugs critiques',
+          configuration: { ...configuration, sort: undefined },
+        }).success,
+      ).toBe(false);
+      expect(schema.safeParse({ name: '😀'.repeat(81), configuration }).success).toBe(false);
+      expect(
+        schema.safeParse({ name: 'Bugs critiques', icon: 'future-icon', configuration }).success,
+      ).toBe(false);
+    }
+    for (const schema of [UpdateSavedViewBody, UpdateSavedViewInternalBody]) {
+      const patch: Record<string, unknown> = {
+        configuration: {
+          groupBy: null,
+          filters: { priority: null },
+          presentation: { sheetSort: { direction: 'asc' } },
+        },
+      };
+      expect(schema.parse(patch)).toEqual(patch);
+      expect(schema.safeParse({ icon: 'future-icon' }).success).toBe(false);
+      expect(schema.parse({ configuration: { layout: 'board' }, unknown: true })).toEqual({
+        configuration: { layout: 'board' },
+      });
+    }
+    for (const schema of [DuplicateSavedViewBody, DuplicateSavedViewInternalBody]) {
+      expect(schema.safeParse({}).success).toBe(true);
+      expect(schema.safeParse({ extra: true }).success).toBe(false);
+    }
+    expect(
+      GetSavedViewResponse.safeParse({
+        id: '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01',
+        listId: SPRINT_14_ID,
+        name: 'Bugs critiques',
+        icon: 'future-icon',
+        configuration: {
+          ...configuration,
+          layout: 'future-layout',
+          sort: 'future-sort',
+          groupBy: 'future-group',
+        },
+        createdAt: '2026-11-08T10:40:00Z',
+        updatedAt: '2026-11-08T10:40:00Z',
+        version: 1,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('accepts only supported favorite target kinds on creation and returns visible targets', () => {
+    for (const schema of [CreateFavoriteBody, CreateFavoriteInternalBody]) {
+      expect(
+        schema.safeParse({ kind: 'saved-view', targetId: '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01' })
+          .success,
+      ).toBe(true);
+      expect(
+        schema.safeParse({ kind: 'task', targetId: '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01' })
+          .success,
+      ).toBe(false);
+    }
+    expect(
+      GetFavoriteResponse.safeParse({
+        id: '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02',
+        kind: 'list',
+        targetId: SPRINT_14_ID,
+        target: { name: 'Sprint 14', href: '/v1/lists/019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12' },
+        createdAt: '2026-11-08T10:40:00Z',
+        version: 1,
+      }).success,
+    ).toBe(true);
   });
 });

@@ -13,6 +13,8 @@ import type { SearchParameter } from './searchParameter';
 import type { StatusFilterParameter } from './statusFilterParameter';
 
 export type CountTaskGroupsParams = {
+  /** Keep only milestones when true, or only ordinary tasks when false; absent leaves both. */
+  milestone?: boolean;
   /** What to group by ("Statut", "Priorité", "Assigné"). */
   groupBy: GroupByParameter;
   /**

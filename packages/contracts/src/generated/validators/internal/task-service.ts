@@ -510,6 +510,82 @@ export const DeleteSpaceInternalResponse = zod.void()
 
 
 /**
+ * Returns visible live milestones in visible lists of the space, excluding archived lists.
+ * A caller with only list grants sees only their qualifying lists. Sort by due date ascending,
+ * undated last; the opaque cursor is bound to the space and ordering. Total counts matching
+ * visible milestones and does not change existing space, list or sprint counts.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List milestones of a space
+ */
+export const ListSpaceMilestonesInternalParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space.')
+})
+
+export const listSpaceMilestonesInternalQueryLimitDefault = 50;
+export const listSpaceMilestonesInternalQueryLimitMax = 100;
+
+
+
+export const ListSpaceMilestonesInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listSpaceMilestonesInternalQueryLimitMax).default(listSpaceMilestonesInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listSpaceMilestonesInternalResponseItemsItemOneKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const listSpaceMilestonesInternalResponseItemsItemOneParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listSpaceMilestonesInternalResponseItemsItemOneSubtaskCountsTotalMin = 0;
+
+export const listSpaceMilestonesInternalResponseItemsItemOneSubtaskCountsClosedMin = 0;
+
+export const listSpaceMilestonesInternalResponseItemsItemOneChecklistCountsTotalMin = 0;
+
+export const listSpaceMilestonesInternalResponseItemsItemOneChecklistCountsDoneMin = 0;
+
+
+export const listSpaceMilestonesInternalResponseTotalMin = 0;
+
+
+
+export const ListSpaceMilestonesInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "milestone": zod.literal(true).describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "key": zod.string().regex(listSpaceMilestonesInternalResponseItemsItemOneKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(listSpaceMilestonesInternalResponseItemsItemOneParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(listSpaceMilestonesInternalResponseItemsItemOneSubtaskCountsTotalMin),
+  "closed": zod.int().min(listSpaceMilestonesInternalResponseItemsItemOneSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(listSpaceMilestonesInternalResponseItemsItemOneChecklistCountsTotalMin),
+  "done": zod.int().min(listSpaceMilestonesInternalResponseItemsItemOneChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n').and(zod.object({
+  "milestone": zod.literal(true)
+}))).describe('Task summaries whose milestone flag is true.'),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(listSpaceMilestonesInternalResponseTotalMin).describe('Matching visible milestones on every page.')
+}).describe('Visible milestones in the space, ordered by due date ascending with undated last.')
+
+
+/**
  * Returns the lists of a space the actor sees with the counts of their top-level tasks, as
  * `GET /v1/spaces/{spaceId}/overview` says. Internal token: actor `user`, organization
  * required.
@@ -820,6 +896,69 @@ export const DeleteListInternalResponse = zod.void()
 
 
 /**
+ * Creates an ordinary live list in the same space, with ` (copie)` appended to the name
+ * after truncating the source portion to fit the name limit. Requires edit on both the source
+ * list and destination space; an archived source list is allowed. It copies the complete live
+ * task forest, regardless of filters, remapping parents and allocating fresh keys using the
+ * current destination prefix; a live task whose parent is outside the forest becomes a root.
+ * Independently archived and trashed tasks are skipped. Task fields follow the single-task
+ * copy rule, but task names are retained. More than 500 live tasks answers
+ * `422 list.duplicate-limit-reached` and creates nothing. The list retains the source look and
+ * organization-access switch, but copies no direct grants, sprint, views or favorites; the
+ * resulting access cannot broaden the source. If-Match checks the source list version. The
+ * optional Idempotency-Key replays the original 201 and Location for 24 hours. The list and
+ * task creation facts commit with the entire copy.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Duplicate a list
+ */
+export const DuplicateListInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const duplicateListInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const DuplicateListInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(duplicateListInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.'),
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const DuplicateListInternalBody = zod.strictObject({}).describe('Empty object for duplicating a list.')
+
+
+
+export const duplicateListInternalResponseTaskCountMin = 0;
+
+
+
+export const DuplicateListInternalResponse = zod.object({
+  "list": zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('"Nom", 80 characters at most.'),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "color": zod.string().describe('A color of `LookColor`, as a resource carries it. Later versions add colors\n(`x-extensible-enum`): a client shows an unknown one as `gris`.\n'),
+  "sprint": zod.union([zod.object({
+  "startDate": zod.iso.date().describe('"Début", the first day of the sprint.'),
+  "endDate": zod.iso.date().describe('"Fin", the last day of the sprint, on or after `startDate`.'),
+  "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
+}).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
+}).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
+  "taskCount": zod.int().min(duplicateListInternalResponseTaskCountMin)
+}).describe('The newly created list and number of copied tasks.')
+
+
+/**
  * Returns a list the actor sees with the counts of its top-level tasks, as
  * `GET /v1/lists/{listId}/counts` says. Internal token: actor `user`, organization required.
  * @summary Read the counts of a list
@@ -889,7 +1028,7 @@ export const ListListActivityInternalParams = zod.object({
   "listId": zod.uuid().describe('Id of the list.')
 })
 
-export const listListActivityInternalQueryKindMax = 5;
+export const listListActivityInternalQueryKindMax = 6;
 
 export const listListActivityInternalQueryActorIdItemMax = 100;
 
@@ -901,7 +1040,7 @@ export const listListActivityInternalQueryLimitMax = 100;
 
 
 export const ListListActivityInternalQueryParams = zod.object({
-  "kind": zod.array(zod.enum(['create', 'status', 'priority', 'due', 'assign'])).min(1).max(listListActivityInternalQueryKindMax).optional().describe('Kinds of entries to keep, separated by commas; every kind when absent.'),
+  "kind": zod.array(zod.enum(['create', 'status', 'priority', 'due', 'assign', 'comment'])).min(1).max(listListActivityInternalQueryKindMax).optional().describe('Kinds of entries to keep, separated by commas; every kind when absent.'),
   "actorId": zod.array(zod.string().min(1).max(listListActivityInternalQueryActorIdItemMax)).min(1).max(listListActivityInternalQueryActorIdMax).optional().describe('Actors to keep, separated by commas: account ids for people, the id of the actor otherwise;\nevery actor when absent.\n'),
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.coerce.number().int().min(1).max(listListActivityInternalQueryLimitMax).default(listListActivityInternalQueryLimitDefault).describe('Page size.')
@@ -915,9 +1054,11 @@ export const listListActivityInternalResponseTotalMin = 0;
 
 export const ListListActivityInternalResponse = zod.object({
   "items": zod.array(zod.object({
+  "commentId": zod.uuid().optional().describe('Comment associated with a comment activity entry.'),
+  "commentExcerpt": zod.string().optional().describe('Up to 240 Unicode code points of the current comment body.'),
   "id": zod.uuid(),
   "occurredAt": zod.iso.datetime({"offset":true}).describe('When the change was made; for merged changes, the last of them.'),
-  "kind": zod.string().describe('`create` ("a créé la tâche"), `status` ("a changé le statut"), `priority` ("a passé la\npriorité à"), `due` ("a fixé l’échéance", "a déplacé l’échéance", "a retiré\nl’échéance") or `assign` ("s’est assigné la tâche", "a assigné Inès Robert", "s’est\nretiré de la tâche", "a retiré Inès Robert"). Later versions add kinds\n(`x-extensible-enum`).\n'),
+  "kind": zod.string().describe('`create` records creation, `status` a status change, `priority` a priority change,\n`due` a due-date change, `assign` an assignment change, and `comment` a new comment.\nFuture kinds may be added; render unknown kinds as a generic task change.\n'),
   "actor": zod.object({
   "type": zod.string(),
   "id": zod.string().min(1)
@@ -944,7 +1085,7 @@ export const ListListActivityInternalResponse = zod.object({
   "userId": zod.uuid(),
   "added": zod.boolean()
 }).optional().describe('For `assign`, who was assigned (`added: true`) or left the assignees (`added: false`);\nthe person themself when `userId` is the id of the actor.\n')
-}).describe('One entry of the activity log of a task ("Activité"); every entry names a task, and an entry\nabout a list or a space would come on a route of its own. The member that names the change\nis the one of its `kind`: `status`, `priority`, `dueDate` or `assignee`; a creation has\nnone. Later versions add kinds and their members (comments): a client shows an unknown kind\nas "a modifié la tâche".\n')),
+}).describe('One entry of the activity log of a task ("Activité"); every entry names a task, and an entry\nabout a list or a space would come on a route of its own. The member that names the change\nis the one of its `kind`: `status`, `priority`, `dueDate`, `assignee` or `commentId`; a creation has\nnone. Comment creation records its ID and an excerpt of the current body; deleting the comment\nremoves the entry. Edits and deletions do not create separate entries. Later versions add kinds: a client shows an unknown kind\nas "a modifié la tâche".\n')),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(listListActivityInternalResponseTotalMin)
 })
@@ -958,6 +1099,10 @@ export const ListListActivityInternalResponse = zod.object({
  * `422 task.start-date-invalid`. Records a creation per task. Emits `task.created.v1` per task
  * and `task.assigned.v1` per assignee of each. Internal token: actor `user`, organization
  * required.
+ * Optional checklist entries are created unchecked in order with fresh IDs. Structured
+ * description mentions, milestone constraints and recurrence follow TaskCreation; ineligible
+ * mentions return `422 mention.recipient-invalid`, invalid milestones return
+ * `422 milestone.status-invalid` or `422 milestone.dates-invalid`.
  * @summary Create a task
  */
 export const CreateTaskInternalParams = zod.object({
@@ -971,6 +1116,15 @@ export const createTaskInternalHeaderIdempotencyKeyMax = 255;
 export const CreateTaskInternalHeader = zod.object({
   "Idempotency-Key": zod.string().min(1).max(createTaskInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.')
 })
+
+export const createTaskInternalBodyDescriptionMentionsItemStartMin = 0;
+
+
+export const createTaskInternalBodyDescriptionMentionsMax = 20;
+
+export const createTaskInternalBodyChecklistItemTextMax = 300;
+
+export const createTaskInternalBodyChecklistMax = 100;
 
 export const createTaskInternalBodyNameMax = 300;
 
@@ -998,6 +1152,16 @@ export const createTaskInternalBodySubtasksMax = 25;
 
 
 export const CreateTaskInternalBody = zod.object({
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(createTaskInternalBodyDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).max(createTaskInternalBodyDescriptionMentionsMax).optional().describe('Structured spans in the description; replacing text clears prior spans unless a\nreplacement array is supplied. Invalid\nspans answer `400 request.invalid`, ineligible recipients `422 mention.recipient-invalid`.\n'),
+  "milestone": zod.boolean().optional().describe('A milestone permits only todo, blocked, done and cancelled. Dated milestones have\nequal start and due dates, undated milestones have both null; estimate is null.\nConversion normalizes inherited fields and maps an inherited disallowed status to todo.\nConflicting explicit dates or status answer `422 milestone.dates-invalid` or\n`422 milestone.status-invalid`. Removing the flag keeps normalized fields.\n'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "checklist": zod.array(zod.object({
+  "text": zod.string().min(1).max(createTaskInternalBodyChecklistItemTextMax).describe('"Élément de checklist", trimmed; a text made only of spaces is refused with\n`400 request.invalid`.\n')
+})).max(createTaskInternalBodyChecklistMax).optional().describe('Checklist text in order; fresh IDs and unchecked items are created atomically.'),
   "name": zod.string().min(1).max(createTaskInternalBodyNameMax).describe('"Nom de la tâche", as typed; surrounding spaces are removed, and a name made only of spaces\nis refused with `400 request.invalid`.\n'),
   "description": zod.string().max(createTaskInternalBodyDescriptionMax).nullish().describe('"Description", Markdown; `null` when there is none.'),
   "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).default(createTaskInternalBodyStatusDefault).describe('"Statut", one of `StatusKey`; `todo` ("À faire") by default.'),
@@ -1014,6 +1178,10 @@ export const CreateTaskInternalBody = zod.object({
 }).describe('A subtask to create with its parent ("Ajouter une sous-tâche (Entrée pour valider)").')).max(createTaskInternalBodySubtasksMax).default(createTaskInternalBodySubtasksDefault).describe('Subtasks to create with the task ("Sous-tâches"), in this order. Each takes the next key\nafter the task, its list and its first assignee, the status `todo` and the priority\n`moyenne`.\n')
 }).describe('A new task. `status` and `priority` declare their values themselves, those of `StatusKey`\nand `PriorityKey`, with their default.\n')
 
+export const createTaskInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const createTaskInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const createTaskInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const createTaskInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1031,6 +1199,14 @@ export const createTaskInternalResponseChecklistCountsDoneMin = 0;
 
 
 export const CreateTaskInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(createTaskInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(createTaskInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(createTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -1081,6 +1257,8 @@ export const CreateTaskInternalResponse = zod.object({
  * Lists the tasks of a list the actor sees, filtered and sorted, as
  * `GET /v1/lists/{listId}/tasks` says; `assignee=me` is the actor. Internal token: actor
  * `user`, organization required.
+ * The optional milestone filter is part of the cursor fingerprint and grouped counts;
+ * omitting it preserves the existing filter. It does not change unfiltered totals.
  * @summary List the tasks of a list
  */
 export const ListTasksInternalParams = zod.object({
@@ -1108,6 +1286,7 @@ export const listTasksInternalQueryLimitMax = 100;
 
 
 export const ListTasksInternalQueryParams = zod.object({
+  "milestone": zod.preprocess((value) => value === 'true' ? true : value === 'false' ? false : value, zod.boolean()).optional().describe('Keep only milestones when true, or only ordinary tasks when false; absent leaves both.'),
   "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(listTasksInternalQueryStatusMax).optional().describe('Statuses to keep, separated by commas.'),
   "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(listTasksInternalQueryPriorityMax).optional().describe('Priorities to keep, separated by commas.'),
   "assignee": zod.array(zod.string().regex(listTasksInternalQueryAssigneeItemRegExp)).min(1).max(listTasksInternalQueryAssigneeMax).optional().describe('Assignees to keep, separated by commas: account ids, `me` for the caller, `none` for the\ntasks nobody is assigned.\n'),
@@ -1139,6 +1318,8 @@ export const listTasksInternalResponseTotalMin = 0;
 
 export const ListTasksInternalResponse = zod.object({
   "items": zod.array(zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
   "key": zod.string().regex(listTasksInternalResponseItemsItemKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
@@ -1175,6 +1356,8 @@ export const ListTasksInternalResponse = zod.object({
  * Counts the tasks of a list the actor sees by status, priority or assignee, with the filters
  * of `GET /internal/v1/lists/{listId}/tasks`, as `GET /v1/lists/{listId}/task-groups` says.
  * Internal token: actor `user`, organization required.
+ * The optional milestone filter is part of the cursor fingerprint and grouped counts;
+ * omitting it preserves the existing filter. It does not change unfiltered totals.
  * @summary Count the tasks of a list by group
  */
 export const CountTaskGroupsInternalParams = zod.object({
@@ -1201,6 +1384,7 @@ export const countTaskGroupsInternalQueryLimitMax = 100;
 
 
 export const CountTaskGroupsInternalQueryParams = zod.object({
+  "milestone": zod.preprocess((value) => value === 'true' ? true : value === 'false' ? false : value, zod.boolean()).optional().describe('Keep only milestones when true, or only ordinary tasks when false; absent leaves both.'),
   "groupBy": zod.enum(['status', 'priority', 'assignee']).describe('What to group by ("Statut", "Priorité", "Assigné").'),
   "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(countTaskGroupsInternalQueryStatusMax).optional().describe('Statuses to keep, separated by commas.'),
   "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(countTaskGroupsInternalQueryPriorityMax).optional().describe('Priorities to keep, separated by commas.'),
@@ -1232,6 +1416,96 @@ export const CountTaskGroupsInternalResponse = zod.object({
 
 
 /**
+ * Applies one explicit action to 1–50 distinct selected keys in a single tenant transaction.
+ * Resolve and authorize all keys and optional per-key expected versions, lock and recheck in
+ * stable order, then apply the action and write activity and outbox. A stale selected version
+ * answers `412 request.version-mismatch`; duplicate or ambiguous selections and more than 50
+ * keys answer `400 request.invalid`. The expansion limit is 1,000 affected task rows including
+ * subtrees, successors and copies (`422 bulk.expansion-limit-reached`). On any deterministic
+ * error nothing changes or emits; `details.key` identifies only an authorized visible task.
+ * Status, priority and explicit assign or unassign affect selected tasks, even selected
+ * descendants. Move and trash collapse selections already covered by selected ancestors;
+ * move carries the live subtree with immutable keys, detaching a moved subtask from its old
+ * parent and retaining statuses. Duplicate applies the single-task copy rule per selection.
+ * Existing task status, cancellation, milestone, recurrence, archive, tree and role rules
+ * apply. A destination that is invisible answers `404 list.not-found`, a visible but
+ * uneditable destination `403 access.role-insufficient`. The optional Idempotency-Key replays
+ * the recorded response for 24 hours, and conflicting or concurrent reuse has the standard
+ * `422 idempotency.key-reused` or `409 idempotency.request-in-progress` problem. Normal task
+ * creation, change and lifecycle facts are emitted, never partial facts.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Apply an atomic bulk task action
+ */
+export const executeBulkTaskActionInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const ExecuteBulkTaskActionInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(executeBulkTaskActionInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.')
+})
+
+export const executeBulkTaskActionInternalBodySelectionItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const executeBulkTaskActionInternalBodySelectionMax = 50;
+
+export const executeBulkTaskActionInternalBodyActionOneCancelNoteMax = 500;
+
+
+
+export const ExecuteBulkTaskActionInternalBody = zod.strictObject({
+  "selection": zod.array(zod.strictObject({
+  "taskKey": zod.string().regex(executeBulkTaskActionInternalBodySelectionItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "version": zod.int().min(1).optional().describe('Expected current task version, checked before any changes.')
+}).describe('One explicitly selected task and its optional expected version.')).min(1).max(executeBulkTaskActionInternalBodySelectionMax).describe('Distinct explicit task keys; duplicate keys answer `400 request.invalid`.'),
+  "action": zod.union([zod.strictObject({
+  "type": zod.enum(['status']),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).optional().describe('Required with the status `cancelled`, refused with any other; `null` for none.'),
+  "cancelNote": zod.string().max(executeBulkTaskActionInternalBodyActionOneCancelNoteMax).nullish().describe('Cancellation note, allowed only when the final status is cancelled.')
+}),zod.strictObject({
+  "type": zod.enum(['priority']),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')
+}),zod.strictObject({
+  "type": zod.enum(['assign']),
+  "userId": zod.uuid()
+}),zod.strictObject({
+  "type": zod.enum(['unassign']),
+  "userId": zod.uuid()
+}),zod.strictObject({
+  "type": zod.enum(['move']),
+  "listId": zod.uuid()
+}),zod.strictObject({
+  "type": zod.enum(['trash'])
+}),zod.strictObject({
+  "type": zod.enum(['duplicate'])
+})]).describe('The requested action; its `type` selects the permitted members.')
+}).refine((value) => new Set(value.selection.map((entry) => entry.taskKey)).size === value.selection.length, { path: ['selection'], message: 'Task keys must be distinct' }).describe('One atomic action over 1 to 50 distinct task keys. Duplicate keys are invalid even if\ntheir versions differ. The client sends its visible-row selection explicitly. The action\nand each selection entry must contain only the declared members for their kind.\n')
+
+export const executeBulkTaskActionInternalResponseResultsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const executeBulkTaskActionInternalResponseResultsItemNewTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const executeBulkTaskActionInternalResponseResultsItemSuccessorKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const executeBulkTaskActionInternalResponseAffectedCountMin = 0;
+
+
+
+export const ExecuteBulkTaskActionInternalResponse = zod.object({
+  "results": zod.array(zod.object({
+  "taskKey": zod.string().regex(executeBulkTaskActionInternalResponseResultsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "version": zod.int().min(1).optional().describe('Resulting version of the selected task when applicable.'),
+  "newTaskKey": zod.string().regex(executeBulkTaskActionInternalResponseResultsItemNewTaskKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "newTaskVersion": zod.int().min(1).optional(),
+  "successorKey": zod.string().regex(executeBulkTaskActionInternalResponseResultsItemSuccessorKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "successorVersion": zod.int().min(1).optional(),
+  "trashEntryId": zod.uuid().optional().describe('Trash entry containing this selected task, including a covered descendant.')
+}).describe('The selected task and, where applicable, the resulting versions or created IDs.')).describe('One result per selected key, including selections covered by an ancestor.'),
+  "affectedCount": zod.int().min(executeBulkTaskActionInternalResponseAffectedCountMin).describe('Distinct task rows affected, including subtrees, successors and copies.')
+}).describe('Results for selected keys after one committed transaction; there is no partial success.')
+
+
+/**
  * Returns a task the actor sees, an archived one included; any other key answers
  * `404 task.not-found`, and a task in the trash `404 task.trashed` with its `details` when
  * the actor could change its list. Every route of a key answers a task in the trash so.
@@ -1245,6 +1519,10 @@ export const GetTaskInternalParams = zod.object({
   "taskKey": zod.string().regex(getTaskInternalPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const getTaskInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const getTaskInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const getTaskInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const getTaskInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1262,6 +1540,14 @@ export const getTaskInternalResponseChecklistCountsDoneMin = 0;
 
 
 export const GetTaskInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(getTaskInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(getTaskInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(getTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -1320,6 +1606,21 @@ export const GetTaskInternalResponse = zod.object({
  * entry. Emits `task.updated.v1` and `task.status-changed.v1` as the public route says. The
  * assignee, label, subtask and checklist routes below refuse an archived task the same way.
  * Internal token: actor `user`, organization required.
+ * Description mentions require If-Match, including spans-only changes. Replacing text clears
+ * old spans unless replacements are supplied. Milestone conversion and recurrence follow
+ * the shared TaskPatch rules. Entering done with a due date creates at most one root successor
+ * in the same list, atomically with resetting recurrence to none, the link and the outbox.
+ * Cancellation, an undated completion, a repeated done, creation in done and restore create
+ * none. A source that has already spawned cannot be rearmed (`409 recurrence.already-spawned`).
+ * Unrepresentable dates answer `422 recurrence.date-out-of-range`. A successor copies the
+ * title, Markdown, priority, labels, eligible assignees, ordinary estimate, milestone and
+ * unchecked checklist, with a fresh key and todo status. It excludes children, parent,
+ * mentions, comments, watcher overrides, dependencies and completion metadata. Start dates
+ * move by the due-date delta and milestones retain date alignment. Monthly cadence retains
+ * the original day across short months. Fresh watcher defaults apply. A live existing task
+ * entering done as a milestone emits milestone.reached.v1, including when the same patch
+ * adds the flag. Creation in done, restore, cancellation, repeated done and adding the flag
+ * to an already-done task do not; a later genuine transition into done can emit it again.
  * @summary Change a task
  */
 export const updateTaskInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1333,6 +1634,11 @@ export const UpdateTaskInternalHeader = zod.object({
   "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
 })
 
+export const updateTaskInternalBodyDescriptionMentionsItemStartMin = 0;
+
+
+export const updateTaskInternalBodyDescriptionMentionsMax = 20;
+
 export const updateTaskInternalBodyNameMax = 300;
 
 export const updateTaskInternalBodyDescriptionMax = 50000;
@@ -1345,6 +1651,13 @@ export const updateTaskInternalBodyParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-
 
 
 export const UpdateTaskInternalBody = zod.object({
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(updateTaskInternalBodyDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).max(updateTaskInternalBodyDescriptionMentionsMax).optional().describe('Structured spans in the description; replacing text clears prior spans unless a\nreplacement array is supplied. A spans-only patch also requires If-Match. Invalid\nspans answer `400 request.invalid`, ineligible recipients `422 mention.recipient-invalid`.\n'),
+  "milestone": zod.boolean().optional().describe('A milestone permits only todo, blocked, done and cancelled. Dated milestones have\nequal start and due dates, undated milestones have both null; estimate is null.\nConversion normalizes inherited fields and maps an inherited disallowed status to todo.\nConflicting explicit dates or status answer `422 milestone.dates-invalid` or\n`422 milestone.status-invalid`. Removing the flag keeps normalized fields.\n'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
   "name": zod.string().min(1).max(updateTaskInternalBodyNameMax).optional().describe('"Nom de la tâche", as typed; surrounding spaces are removed, and a name made only of spaces\nis refused with `400 request.invalid`.\n'),
   "description": zod.string().max(updateTaskInternalBodyDescriptionMax).nullish().describe('"Description", Markdown; `null` when there is none.'),
   "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).optional().describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
@@ -1358,6 +1671,10 @@ export const UpdateTaskInternalBody = zod.object({
   "parentKey": zod.union([zod.string().regex(updateTaskInternalBodyParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).optional().describe('The task to attach this one to ("Devenir sous-tâche de…"), which brings it and its\nsubtasks to the list of the parent; `null` detaches it ("Détacher de CAD-482").\n')
 }).describe('JSON Merge Patch of a task; an empty object changes nothing. The assignees, the labels and\nthe checklist are collections: they change through their own routes, and a patch ignores\nthe members it does not declare, `assigneeIds` and `labels` included.\n')
 
+export const updateTaskInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const updateTaskInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const updateTaskInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const updateTaskInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1375,6 +1692,14 @@ export const updateTaskInternalResponseChecklistCountsDoneMin = 0;
 
 
 export const UpdateTaskInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(updateTaskInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(updateTaskInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(updateTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -1446,6 +1771,10 @@ export const AssignTaskInternalBody = zod.object({
 
 }).describe('Empty object `{}`, the body the public route carried.')
 
+export const assignTaskInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const assignTaskInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const assignTaskInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const assignTaskInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1463,6 +1792,14 @@ export const assignTaskInternalResponseChecklistCountsDoneMin = 0;
 
 
 export const AssignTaskInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(assignTaskInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(assignTaskInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(assignTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -1557,6 +1894,10 @@ export const AddTaskLabelInternalBody = zod.object({
   "name": zod.string().min(1).max(addTaskLabelInternalBodyNameMax).describe('A label ("Étiquette"), trimmed; two labels that differ only by case are the same label.\n')
 }).describe('A label to add to a task or to remove from it.')
 
+export const addTaskLabelInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const addTaskLabelInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const addTaskLabelInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const addTaskLabelInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1574,6 +1915,14 @@ export const addTaskLabelInternalResponseChecklistCountsDoneMin = 0;
 
 
 export const AddTaskLabelInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(addTaskLabelInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(addTaskLabelInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(addTaskLabelInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -1645,6 +1994,10 @@ export const RemoveTaskLabelInternalBody = zod.object({
   "name": zod.string().min(1).max(removeTaskLabelInternalBodyNameMax).describe('A label ("Étiquette"), trimmed; two labels that differ only by case are the same label.\n')
 }).describe('A label to add to a task or to remove from it.')
 
+export const removeTaskLabelInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const removeTaskLabelInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const removeTaskLabelInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const removeTaskLabelInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1662,6 +2015,14 @@ export const removeTaskLabelInternalResponseChecklistCountsDoneMin = 0;
 
 
 export const RemoveTaskLabelInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(removeTaskLabelInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(removeTaskLabelInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(removeTaskLabelInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -1709,6 +2070,114 @@ export const RemoveTaskLabelInternalResponse = zod.object({
 
 
 /**
+ * Duplicates one live task in its own list with ` (copie)` appended, truncating the source
+ * portion to fit the existing name limit. It allocates a fresh task key and timestamps and
+ * fresh checklist IDs, preserving checklist ticks, milestone, supported status and valid
+ * cancellation reason and note. It keeps a live parent when tree depth and capacity permit;
+ * a full parent answers `422 task.subtask-limit-reached`. It copies currently assignable
+ * users and Markdown as text, without mention spans, children, comments, watcher overrides,
+ * dependencies, recurrence, files, time or approvals. A copy in done gets its own completedAt.
+ * Requires edit on the list; an archived task refuses changes. If-Match checks the source
+ * task version. An optional Idempotency-Key replays the original 201 and Location for 24
+ * hours; changed payload and concurrent replay use the standard idempotency problems. Emits
+ * the ordinary task creation and assignment facts in the creation transaction.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Duplicate a task
+ */
+export const duplicateTaskInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const DuplicateTaskInternalParams = zod.object({
+  "taskKey": zod.string().regex(duplicateTaskInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const duplicateTaskInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const DuplicateTaskInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(duplicateTaskInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.'),
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const DuplicateTaskInternalBody = zod.strictObject({}).describe('Empty object for duplicating a task.')
+
+export const duplicateTaskInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const duplicateTaskInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const duplicateTaskInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const duplicateTaskInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const duplicateTaskInternalResponseSubtaskCountsTotalMin = 0;
+
+export const duplicateTaskInternalResponseSubtaskCountsClosedMin = 0;
+
+export const duplicateTaskInternalResponseChecklistCountsTotalMin = 0;
+
+export const duplicateTaskInternalResponseChecklistCountsDoneMin = 0;
+
+
+
+
+
+
+export const DuplicateTaskInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(duplicateTaskInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(duplicateTaskInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "key": zod.string().regex(duplicateTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled; `null` unless its status is `cancelled`.'),
+  "cancelNote": zod.string().nullable().describe('"Précision" of the cancellation, 500 characters at most; `null` when there is none or\nthe task is not cancelled.\n'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned.'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance"; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work; `null` when there is none, always `null` without a due date.'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(duplicateTaskInternalResponseParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask; `null` for a top-level task.'),
+  "listId": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(duplicateTaskInternalResponseSubtaskCountsTotalMin),
+  "closed": zod.int().min(duplicateTaskInternalResponseSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklist": zod.array(zod.object({
+  "id": zod.uuid(),
+  "text": zod.string().describe('"Élément de checklist", 300 characters at most.'),
+  "done": zod.boolean().describe('Ticked ("Terminer") or not ("Rouvrir").')
+}).describe('One item of a checklist ("Une checklist sert aux petites étapes sans statut ni assigné.").')).describe('"Checklist", 100 items at most, in the order they were added.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(duplicateTaskInternalResponseChecklistCountsTotalMin),
+  "done": zod.int().min(duplicateTaskInternalResponseChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "createdBy": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
+}).describe('A task, with its description and its checklist.')
+
+
+/**
  * Returns task-service's part of the task detail: the task, its space, its list with
  * `callerRole`, its parent and its direct subtasks, read in one transaction, as
  * `GET /v1/tasks/{taskKey}/detail` says: the subtasks archived or in the trash left out, but
@@ -1724,6 +2193,10 @@ export const GetTaskDetailInternalParams = zod.object({
   "taskKey": zod.string().regex(getTaskDetailInternalPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const getTaskDetailInternalResponseTaskDescriptionMentionsItemStartMin = 0;
+
+
+export const getTaskDetailInternalResponseTaskNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const getTaskDetailInternalResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const getTaskDetailInternalResponseTaskParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1760,6 +2233,14 @@ export const getTaskDetailInternalResponseSubtasksItemChecklistCountsDoneMin = 0
 
 export const GetTaskDetailInternalResponse = zod.object({
   "task": zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(getTaskDetailInternalResponseTaskDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(getTaskDetailInternalResponseTaskNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(getTaskDetailInternalResponseTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -1900,6 +2381,8 @@ export const GetTaskDetailInternalResponse = zod.object({
   "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
 }).describe('A task named by another resource, with its name and status as they are now.'),zod.null()]),
   "subtasks": zod.array(zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
   "key": zod.string().regex(getTaskDetailInternalResponseSubtasksItemKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
@@ -1928,6 +2411,871 @@ export const GetTaskDetailInternalResponse = zod.object({
   "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
 }).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n'))
 }).describe('task-service\'s part of the task detail; the gateway adds `partial`.')
+
+
+/**
+ * Lists live comments oldest first by `(createdAt,id)`, with a total excluding deleted comments.
+ * The cursor is opaque and bound to the task and ordering. Anyone who sees the task may read.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List task comments
+ */
+export const listTaskCommentsInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const ListTaskCommentsInternalParams = zod.object({
+  "taskKey": zod.string().regex(listTaskCommentsInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const listTaskCommentsInternalQueryLimitDefault = 50;
+export const listTaskCommentsInternalQueryLimitMax = 100;
+
+
+
+export const ListTaskCommentsInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listTaskCommentsInternalQueryLimitMax).default(listTaskCommentsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listTaskCommentsInternalResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const listTaskCommentsInternalResponseItemsItemMentionsItemStartMin = 0;
+
+
+export const listTaskCommentsInternalResponseTotalMin = 0;
+
+
+
+export const ListTaskCommentsInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "taskKey": zod.string().regex(listTaskCommentsInternalResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "actor": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "body": zod.string().describe('The submitted Markdown source, unchanged.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "editedAt": zod.iso.datetime({"offset":true}).nullable(),
+  "version": zod.int().min(1),
+  "mentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(listTaskCommentsInternalResponseItemsItemMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')),
+  "replyToCommentId": zod.uuid().nullable().describe('Immutable reply target, retained even when that comment is deleted.')
+}).describe('A live comment in the flat task timeline; deleted comments are omitted.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(listTaskCommentsInternalResponseTotalMin)
+}).describe('Live comments ordered by creation time and ID, oldest first; total excludes tombstones.')
+
+
+/**
+ * Check the caller's comment or edit role before validating recipients; a caller below the
+ * required role receives `403 access.role-insufficient` before `422 mention.recipient-invalid`.
+ * A current member, including a guest, with read access to the list is eligible. Mention spans
+ * are Unicode code-point offsets into unchanged Markdown and are validated for range,
+ * overlap and a displayed token beginning with `@`; invalid spans answer `400 request.invalid`.
+ * Unmarked text is not a mention.
+ * Ineligible recipients answer `422 mention.recipient-invalid` without identifying them.
+ * A `comment` or `edit` role may post. A reply must name a live comment on the same task;
+ * otherwise `404 comment.not-found`. Replies are flat. The optional Idempotency-Key records
+ * the response and Location for 24 hours; replay has no second effect. The comment and task
+ * version, activity and outbox change in the same transaction.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Create a task comment
+ */
+export const createTaskCommentInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const CreateTaskCommentInternalParams = zod.object({
+  "taskKey": zod.string().regex(createTaskCommentInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const createTaskCommentInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateTaskCommentInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createTaskCommentInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.')
+})
+
+export const createTaskCommentInternalBodyBodyMax = 5000;
+
+
+export const createTaskCommentInternalBodyBodyRegExp = new RegExp('\\S');
+export const createTaskCommentInternalBodyMentionsItemStartMin = 0;
+
+
+export const createTaskCommentInternalBodyMentionsMax = 20;
+
+
+
+export const CreateTaskCommentInternalBody = zod.object({
+  "body": zod.string().min(1).refine((value) => Array.from(value).length <= createTaskCommentInternalBodyBodyMax, { message: 'At most 5000 Unicode code points' }).regex(createTaskCommentInternalBodyBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n'),
+  "mentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(createTaskCommentInternalBodyMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).max(createTaskCommentInternalBodyMentionsMax).optional(),
+  "replyToCommentId": zod.uuid().optional().describe('A live comment on this same task.')
+}).describe('A comment and optional structured mentions and reply target.')
+
+export const createTaskCommentInternalResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const createTaskCommentInternalResponseMentionsItemStartMin = 0;
+
+
+
+
+export const CreateTaskCommentInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "taskKey": zod.string().regex(createTaskCommentInternalResponseTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "actor": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "body": zod.string().describe('The submitted Markdown source, unchanged.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "editedAt": zod.iso.datetime({"offset":true}).nullable(),
+  "version": zod.int().min(1),
+  "mentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(createTaskCommentInternalResponseMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')),
+  "replyToCommentId": zod.uuid().nullable().describe('Immutable reply target, retained even when that comment is deleted.')
+}).describe('A live comment in the flat task timeline; deleted comments are omitted.')
+
+
+/**
+ * Reads a live comment on a visible task. A deleted, missing or unrelated comment answers
+ * `404 comment.not-found`; a deleted reply target leaves only its ID, never quoted content.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Get a task comment
+ */
+export const getTaskCommentInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const GetTaskCommentInternalParams = zod.object({
+  "taskKey": zod.string().regex(getTaskCommentInternalPathTaskKeyRegExp).describe('Key of the task.'),
+  "commentId": zod.uuid().describe('ID of the comment on this task.')
+})
+
+export const getTaskCommentInternalResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const getTaskCommentInternalResponseMentionsItemStartMin = 0;
+
+
+
+
+export const GetTaskCommentInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "taskKey": zod.string().regex(getTaskCommentInternalResponseTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "actor": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "body": zod.string().describe('The submitted Markdown source, unchanged.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "editedAt": zod.iso.datetime({"offset":true}).nullable(),
+  "version": zod.int().min(1),
+  "mentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(getTaskCommentInternalResponseMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')),
+  "replyToCommentId": zod.uuid().nullable().describe('Immutable reply target, retained even when that comment is deleted.')
+}).describe('A live comment in the flat task timeline; deleted comments are omitted.')
+
+
+/**
+ * Check the caller's comment or edit role and comment authorship before validating recipients;
+ * a caller below the required role receives `403 access.role-insufficient` before
+ * `422 mention.recipient-invalid`.
+ * A current member, including a guest, with read access to the list is eligible. Mention spans
+ * are Unicode code-point offsets into unchanged Markdown and are validated for range,
+ * overlap and a displayed token beginning with `@`; invalid spans answer `400 request.invalid`.
+ * Unmarked text is not a mention.
+ * Ineligible recipients answer `422 mention.recipient-invalid` without identifying them.
+ * Requires `comment` or `edit` and the human author; another editor gets
+ * `403 comment.author-required`. If-Match is required even for spans alone and uses the
+ * comment version. Replacing text clears spans unless replacements are supplied. The task
+ * version, activity and outbox change once in the same transaction.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Edit a task comment
+ */
+export const updateTaskCommentInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const UpdateTaskCommentInternalParams = zod.object({
+  "taskKey": zod.string().regex(updateTaskCommentInternalPathTaskKeyRegExp).describe('Key of the task.'),
+  "commentId": zod.uuid().describe('ID of the comment on this task.')
+})
+
+export const UpdateTaskCommentInternalHeader = zod.object({
+  "If-Match": zod.string().describe('The comment version as returned in its ETag.')
+})
+
+export const updateTaskCommentInternalBodyBodyMax = 5000;
+
+
+export const updateTaskCommentInternalBodyBodyRegExp = new RegExp('\\S');
+export const updateTaskCommentInternalBodyMentionsItemStartMin = 0;
+
+
+export const updateTaskCommentInternalBodyMentionsMax = 20;
+
+
+
+export const UpdateTaskCommentInternalBody = zod.object({
+  "body": zod.string().min(1).refine((value) => Array.from(value).length <= updateTaskCommentInternalBodyBodyMax, { message: 'At most 5000 Unicode code points' }).regex(updateTaskCommentInternalBodyBodyRegExp).optional().describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.'),
+  "mentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(updateTaskCommentInternalBodyMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).max(updateTaskCommentInternalBodyMentionsMax).optional()
+}).describe('JSON Merge Patch. Replacing the body clears existing mention spans unless a replacement\narray is supplied. A spans-only change still requires the comment\'s If-Match. Undeclared\nmembers are ignored.\n')
+
+export const updateTaskCommentInternalResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const updateTaskCommentInternalResponseMentionsItemStartMin = 0;
+
+
+
+
+export const UpdateTaskCommentInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "taskKey": zod.string().regex(updateTaskCommentInternalResponseTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "actor": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "body": zod.string().describe('The submitted Markdown source, unchanged.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "editedAt": zod.iso.datetime({"offset":true}).nullable(),
+  "version": zod.int().min(1),
+  "mentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(updateTaskCommentInternalResponseMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')),
+  "replyToCommentId": zod.uuid().nullable().describe('Immutable reply target, retained even when that comment is deleted.')
+}).describe('A live comment in the flat task timeline; deleted comments are omitted.')
+
+
+/**
+ * Requires `comment` or `edit` and the human author; another editor gets
+ * `403 comment.author-required`. If-Match is optional and uses the comment version. Removes
+ * text and spans, leaves a content-free tombstone for replies until task purge, and excludes
+ * it from pages and counts. The task version, activity and outbox change atomically.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Delete a task comment
+ */
+export const deleteTaskCommentInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const DeleteTaskCommentInternalParams = zod.object({
+  "taskKey": zod.string().regex(deleteTaskCommentInternalPathTaskKeyRegExp).describe('Key of the task.'),
+  "commentId": zod.uuid().describe('ID of the comment on this task.')
+})
+
+export const DeleteTaskCommentInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('The comment version as returned in its ETag.')
+})
+
+export const DeleteTaskCommentInternalResponse = zod.void()
+
+
+/**
+ * Lists current members, including guests, with read access to this task, ordered by user ID.
+ * Only `userId` and `memberId` are returned. Requires `comment` or `edit`; a viewer receives
+ * `403 access.role-insufficient`. The opaque cursor is bound to the task and ordering.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List eligible task participants
+ */
+export const listTaskParticipantsInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const ListTaskParticipantsInternalParams = zod.object({
+  "taskKey": zod.string().regex(listTaskParticipantsInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const listTaskParticipantsInternalQueryLimitDefault = 50;
+export const listTaskParticipantsInternalQueryLimitMax = 100;
+
+
+
+export const ListTaskParticipantsInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listTaskParticipantsInternalQueryLimitMax).default(listTaskParticipantsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const ListTaskParticipantsInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "memberId": zod.uuid()
+}).describe('A current member eligible for a mention on this task, including guests.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('Eligible accounts ordered by user ID.')
+
+
+/**
+ * Lists effective eligible watchers by user ID. The human creator and current eligible
+ * assignees are defaults, deduplicated; system and automation creators add no account.
+ * Per-user follow and unfollow overrides preserve opt-outs across reassignment. Membership
+ * and list visibility are checked on each read and event audience snapshot. A cursor is bound
+ * to the task and ordering; total and callerFollows are present on every page.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List task watchers
+ */
+export const listTaskWatchersInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const ListTaskWatchersInternalParams = zod.object({
+  "taskKey": zod.string().regex(listTaskWatchersInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const listTaskWatchersInternalQueryLimitDefault = 50;
+export const listTaskWatchersInternalQueryLimitMax = 100;
+
+
+
+export const ListTaskWatchersInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listTaskWatchersInternalQueryLimitMax).default(listTaskWatchersInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listTaskWatchersInternalResponseTotalMin = 0;
+
+
+
+export const ListTaskWatchersInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('An effective watcher who currently has task access.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(listTaskWatchersInternalResponseTotalMin),
+  "callerFollows": zod.boolean()
+}).describe('Effective watchers ordered by user ID, with the same total and caller state on every page.')
+
+
+/**
+ * Check the caller's role and whether the subject is the caller before recipient validation;
+ * a caller without the required role receives `403 access.role-insufficient` before
+ * `422 watcher.recipient-invalid`.
+ * Sets an explicit follow override for this account. `comment` or `edit` may change their own
+ * override; only `edit` may change another account. The target must be a current member with
+ * task read access; ineligible targets return `422 watcher.recipient-invalid` without details.
+ * At most 100 explicit overrides are stored per task, plus defaults; a new override beyond
+ * that bound returns `422 watcher.limit-reached`. Repeating the override is a no-op. If-Match
+ * and the returned ETag use the task version; a committed change bumps it once.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Follow a task
+ */
+export const followTaskWatcherInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const FollowTaskWatcherInternalParams = zod.object({
+  "taskKey": zod.string().regex(followTaskWatcherInternalPathTaskKeyRegExp).describe('Key of the task.'),
+  "userId": zod.uuid().describe('Account whose watcher override is changed.')
+})
+
+export const FollowTaskWatcherInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const FollowTaskWatcherInternalBody = zod.strictObject({}).describe('Empty object `{}`, the body the public route carried.')
+
+export const FollowTaskWatcherInternalResponse = zod.object({
+  "userId": zod.uuid()
+}).describe('An effective watcher who currently has task access.')
+
+
+/**
+ * Check the caller's role and whether the subject is the caller before recipient validation;
+ * a caller without the required role receives `403 access.role-insufficient` before
+ * `422 watcher.recipient-invalid`.
+ * Sets an explicit unfollow override, including for an account without a default subscription.
+ * `comment` or `edit` may change their own override; only `edit` may change another account.
+ * The target must be eligible, otherwise `422 watcher.recipient-invalid`. A new override over
+ * 100 returns `422 watcher.limit-reached`; repeating one is a no-op. If-Match and the returned
+ * ETag use the task version; a committed change bumps it once.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Unfollow a task
+ */
+export const unfollowTaskWatcherInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const UnfollowTaskWatcherInternalParams = zod.object({
+  "taskKey": zod.string().regex(unfollowTaskWatcherInternalPathTaskKeyRegExp).describe('Key of the task.'),
+  "userId": zod.uuid().describe('Account whose watcher override is changed.')
+})
+
+export const UnfollowTaskWatcherInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const UnfollowTaskWatcherInternalResponse = zod.void()
+
+
+/**
+ * Lists edges by creation time and ID. Both endpoints must be readable; edges to an invisible,
+ * trashed or archived counterpart and their counts and warnings are hidden. Edges are retained
+ * through archive and trash, can reappear on restoration, and are erased on endpoint purge.
+ * An archived anchor remains readable and may show visible live counterparts. Dates are
+ * advisory: comparing an open blocker's due date with the blocked task's dates never changes
+ * either status. The opaque cursor is task-bound.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List task dependencies
+ */
+export const listTaskDependenciesInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const ListTaskDependenciesInternalParams = zod.object({
+  "taskKey": zod.string().regex(listTaskDependenciesInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const listTaskDependenciesInternalQueryLimitDefault = 50;
+export const listTaskDependenciesInternalQueryLimitMax = 100;
+
+
+
+export const ListTaskDependenciesInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listTaskDependenciesInternalQueryLimitMax).default(listTaskDependenciesInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listTaskDependenciesInternalResponseItemsItemBlockerKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const listTaskDependenciesInternalResponseItemsItemBlockerParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listTaskDependenciesInternalResponseItemsItemBlockerSubtaskCountsTotalMin = 0;
+
+export const listTaskDependenciesInternalResponseItemsItemBlockerSubtaskCountsClosedMin = 0;
+
+export const listTaskDependenciesInternalResponseItemsItemBlockerChecklistCountsTotalMin = 0;
+
+export const listTaskDependenciesInternalResponseItemsItemBlockerChecklistCountsDoneMin = 0;
+
+
+export const listTaskDependenciesInternalResponseItemsItemBlockedKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const listTaskDependenciesInternalResponseItemsItemBlockedParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listTaskDependenciesInternalResponseItemsItemBlockedSubtaskCountsTotalMin = 0;
+
+export const listTaskDependenciesInternalResponseItemsItemBlockedSubtaskCountsClosedMin = 0;
+
+export const listTaskDependenciesInternalResponseItemsItemBlockedChecklistCountsTotalMin = 0;
+
+export const listTaskDependenciesInternalResponseItemsItemBlockedChecklistCountsDoneMin = 0;
+
+
+
+
+export const ListTaskDependenciesInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "blocker": zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "key": zod.string().regex(listTaskDependenciesInternalResponseItemsItemBlockerKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(listTaskDependenciesInternalResponseItemsItemBlockerParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(listTaskDependenciesInternalResponseItemsItemBlockerSubtaskCountsTotalMin),
+  "closed": zod.int().min(listTaskDependenciesInternalResponseItemsItemBlockerSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(listTaskDependenciesInternalResponseItemsItemBlockerChecklistCountsTotalMin),
+  "done": zod.int().min(listTaskDependenciesInternalResponseItemsItemBlockerChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n'),
+  "blocked": zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "key": zod.string().regex(listTaskDependenciesInternalResponseItemsItemBlockedKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(listTaskDependenciesInternalResponseItemsItemBlockedParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(listTaskDependenciesInternalResponseItemsItemBlockedSubtaskCountsTotalMin),
+  "closed": zod.int().min(listTaskDependenciesInternalResponseItemsItemBlockedSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(listTaskDependenciesInternalResponseItemsItemBlockedChecklistCountsTotalMin),
+  "done": zod.int().min(listTaskDependenciesInternalResponseItemsItemBlockedChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n')
+}).describe('A directed edge between visible tasks in the current organization.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('Visible edges ordered by creation time and ID.')
+
+
+/**
+ * Creates a directed blocker-to-blocked edge between tasks in the same organization, including
+ * across lists and spaces. Requires edit on both live tasks; an invisible other task answers
+ * `404 task.not-found`. Duplicate edges answer `409 dependency.already-exists`; self, direct
+ * and transitive cycles answer `422 dependency.cycle`, without disclosing a path. Graph writes
+ * are serialized and rechecked under locks, including retained edges; 100 incident edges per
+ * task including retained edges are allowed (`422 dependency.limit-reached`). If-Match is the
+ * anchor task version. The optional Idempotency-Key replays the creation and Location for 24
+ * hours. Each changed task version and its outbox facts commit with the edge.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Create a task dependency
+ */
+export const createTaskDependencyInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const CreateTaskDependencyInternalParams = zod.object({
+  "taskKey": zod.string().regex(createTaskDependencyInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const createTaskDependencyInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateTaskDependencyInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.'),
+  "Idempotency-Key": zod.string().min(1).max(createTaskDependencyInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.')
+})
+
+export const createTaskDependencyInternalBodyOtherTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const CreateTaskDependencyInternalBody = zod.object({
+  "otherTaskKey": zod.string().regex(createTaskDependencyInternalBodyOtherTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "direction": zod.enum(['blocks', 'blocked-by']).describe('Whether the anchor task blocks the other task or is blocked by it.')
+})
+
+export const createTaskDependencyInternalResponseBlockerKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const createTaskDependencyInternalResponseBlockerParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const createTaskDependencyInternalResponseBlockerSubtaskCountsTotalMin = 0;
+
+export const createTaskDependencyInternalResponseBlockerSubtaskCountsClosedMin = 0;
+
+export const createTaskDependencyInternalResponseBlockerChecklistCountsTotalMin = 0;
+
+export const createTaskDependencyInternalResponseBlockerChecklistCountsDoneMin = 0;
+
+
+export const createTaskDependencyInternalResponseBlockedKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const createTaskDependencyInternalResponseBlockedParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const createTaskDependencyInternalResponseBlockedSubtaskCountsTotalMin = 0;
+
+export const createTaskDependencyInternalResponseBlockedSubtaskCountsClosedMin = 0;
+
+export const createTaskDependencyInternalResponseBlockedChecklistCountsTotalMin = 0;
+
+export const createTaskDependencyInternalResponseBlockedChecklistCountsDoneMin = 0;
+
+
+
+
+export const CreateTaskDependencyInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "blocker": zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "key": zod.string().regex(createTaskDependencyInternalResponseBlockerKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(createTaskDependencyInternalResponseBlockerParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(createTaskDependencyInternalResponseBlockerSubtaskCountsTotalMin),
+  "closed": zod.int().min(createTaskDependencyInternalResponseBlockerSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(createTaskDependencyInternalResponseBlockerChecklistCountsTotalMin),
+  "done": zod.int().min(createTaskDependencyInternalResponseBlockerChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n'),
+  "blocked": zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "key": zod.string().regex(createTaskDependencyInternalResponseBlockedKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(createTaskDependencyInternalResponseBlockedParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(createTaskDependencyInternalResponseBlockedSubtaskCountsTotalMin),
+  "closed": zod.int().min(createTaskDependencyInternalResponseBlockedSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(createTaskDependencyInternalResponseBlockedChecklistCountsTotalMin),
+  "done": zod.int().min(createTaskDependencyInternalResponseBlockedChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n')
+}).describe('A directed edge between visible tasks in the current organization.')
+
+
+/**
+ * Reads an edge only when both endpoints are visible and the counterpart is live; otherwise
+ * `404 dependency.not-found`. Dates are advisory and never change task status.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Get a task dependency
+ */
+export const getTaskDependencyInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const GetTaskDependencyInternalParams = zod.object({
+  "taskKey": zod.string().regex(getTaskDependencyInternalPathTaskKeyRegExp).describe('Key of the task.'),
+  "dependencyId": zod.uuid().describe('ID of a directed dependency edge.')
+})
+
+export const getTaskDependencyInternalResponseBlockerKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const getTaskDependencyInternalResponseBlockerParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getTaskDependencyInternalResponseBlockerSubtaskCountsTotalMin = 0;
+
+export const getTaskDependencyInternalResponseBlockerSubtaskCountsClosedMin = 0;
+
+export const getTaskDependencyInternalResponseBlockerChecklistCountsTotalMin = 0;
+
+export const getTaskDependencyInternalResponseBlockerChecklistCountsDoneMin = 0;
+
+
+export const getTaskDependencyInternalResponseBlockedKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const getTaskDependencyInternalResponseBlockedParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getTaskDependencyInternalResponseBlockedSubtaskCountsTotalMin = 0;
+
+export const getTaskDependencyInternalResponseBlockedSubtaskCountsClosedMin = 0;
+
+export const getTaskDependencyInternalResponseBlockedChecklistCountsTotalMin = 0;
+
+export const getTaskDependencyInternalResponseBlockedChecklistCountsDoneMin = 0;
+
+
+
+
+export const GetTaskDependencyInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "blocker": zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "key": zod.string().regex(getTaskDependencyInternalResponseBlockerKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(getTaskDependencyInternalResponseBlockerParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(getTaskDependencyInternalResponseBlockerSubtaskCountsTotalMin),
+  "closed": zod.int().min(getTaskDependencyInternalResponseBlockerSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(getTaskDependencyInternalResponseBlockerChecklistCountsTotalMin),
+  "done": zod.int().min(getTaskDependencyInternalResponseBlockerChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n'),
+  "blocked": zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "key": zod.string().regex(getTaskDependencyInternalResponseBlockedKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(getTaskDependencyInternalResponseBlockedParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(getTaskDependencyInternalResponseBlockedSubtaskCountsTotalMin),
+  "closed": zod.int().min(getTaskDependencyInternalResponseBlockedSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(getTaskDependencyInternalResponseBlockedChecklistCountsTotalMin),
+  "done": zod.int().min(getTaskDependencyInternalResponseBlockedChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n')
+}).describe('A directed edge between visible tasks in the current organization.')
+
+
+/**
+ * Removes an edge from either anchor. Requires edit on both live endpoints. Invisible or
+ * absent edges answer `404 dependency.not-found`. If-Match and the returned ETag refer to the
+ * anchor task; each changed task version and its outbox facts commit with the removal.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Remove a task dependency
+ */
+export const deleteTaskDependencyInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const DeleteTaskDependencyInternalParams = zod.object({
+  "taskKey": zod.string().regex(deleteTaskDependencyInternalPathTaskKeyRegExp).describe('Key of the task.'),
+  "dependencyId": zod.uuid().describe('ID of a directed dependency edge.')
+})
+
+export const DeleteTaskDependencyInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const DeleteTaskDependencyInternalResponse = zod.void()
+
+
+/**
+ * Lists editable candidates for the requested direction, same list first, then name and key.
+ * Requires edit on the anchor and candidates. Search uses the existing task search; unsuitable
+ * known endpoints are excluded. The write remains authoritative under concurrency. The opaque
+ * cursor is bound to the task, direction, search and order.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List dependency candidates
+ */
+export const listDependencyCandidatesInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const ListDependencyCandidatesInternalParams = zod.object({
+  "taskKey": zod.string().regex(listDependencyCandidatesInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const listDependencyCandidatesInternalQueryLimitDefault = 50;
+export const listDependencyCandidatesInternalQueryLimitMax = 100;
+
+export const listDependencyCandidatesInternalQuerySearchMax = 100;
+
+
+
+export const ListDependencyCandidatesInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listDependencyCandidatesInternalQueryLimitMax).default(listDependencyCandidatesInternalQueryLimitDefault).describe('Page size.'),
+  "direction": zod.enum(['blocks', 'blocked-by']).describe('Direction of the edge relative to the anchor task.'),
+  "search": zod.string().min(1).max(listDependencyCandidatesInternalQuerySearchMax).optional().describe('Text to find, without regard to case or accents.')
+})
+
+export const listDependencyCandidatesInternalResponseItemsItemKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const listDependencyCandidatesInternalResponseItemsItemParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listDependencyCandidatesInternalResponseItemsItemSubtaskCountsTotalMin = 0;
+
+export const listDependencyCandidatesInternalResponseItemsItemSubtaskCountsClosedMin = 0;
+
+export const listDependencyCandidatesInternalResponseItemsItemChecklistCountsTotalMin = 0;
+
+export const listDependencyCandidatesInternalResponseItemsItemChecklistCountsDoneMin = 0;
+
+
+export const listDependencyCandidatesInternalResponseTotalMin = 0;
+
+
+
+export const ListDependencyCandidatesInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "key": zod.string().regex(listDependencyCandidatesInternalResponseItemsItemKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(listDependencyCandidatesInternalResponseItemsItemParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(listDependencyCandidatesInternalResponseItemsItemSubtaskCountsTotalMin),
+  "closed": zod.int().min(listDependencyCandidatesInternalResponseItemsItemSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(listDependencyCandidatesInternalResponseItemsItemChecklistCountsTotalMin),
+  "done": zod.int().min(listDependencyCandidatesInternalResponseItemsItemChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(listDependencyCandidatesInternalResponseTotalMin)
+})
 
 
 /**
@@ -1971,6 +3319,8 @@ export const listSubtasksInternalResponseTotalMin = 0;
 
 export const ListSubtasksInternalResponse = zod.object({
   "items": zod.array(zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
   "key": zod.string().regex(listSubtasksInternalResponseItemsItemKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
@@ -2061,6 +3411,10 @@ export const CreateSubtaskInternalBody = zod.object({
   "labels": zod.array(zod.string().min(1).max(createSubtaskInternalBodyLabelsItemMax).describe('A label ("Étiquette"), trimmed; two labels that differ only by case are the same label.\n')).max(createSubtaskInternalBodyLabelsMax).default(createSubtaskInternalBodyLabelsDefault)
 }).describe('A subtask created under a task ("Nouvelle sous-tâche"). It takes the list of its parent;\nwithout `assigneeIds`, it takes the first assignee of its parent.\n')
 
+export const createSubtaskInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const createSubtaskInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const createSubtaskInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const createSubtaskInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -2078,6 +3432,14 @@ export const createSubtaskInternalResponseChecklistCountsDoneMin = 0;
 
 
 export const CreateSubtaskInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(createSubtaskInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(createSubtaskInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(createSubtaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -2153,6 +3515,10 @@ export const AddChecklistItemInternalBody = zod.object({
   "text": zod.string().min(1).max(addChecklistItemInternalBodyTextMax).describe('"Élément de checklist", trimmed; a text made only of spaces is refused with\n`400 request.invalid`.\n')
 })
 
+export const addChecklistItemInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const addChecklistItemInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const addChecklistItemInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const addChecklistItemInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -2170,6 +3536,14 @@ export const addChecklistItemInternalResponseChecklistCountsDoneMin = 0;
 
 
 export const AddChecklistItemInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(addChecklistItemInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(addChecklistItemInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(addChecklistItemInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -2239,6 +3613,10 @@ export const UpdateChecklistItemInternalBody = zod.object({
   "done": zod.boolean().describe('`true` ticks the item ("Terminer"), `false` unticks it ("Rouvrir").')
 }).describe('JSON Merge Patch of a checklist item; ticking or unticking it is the one change of this version.')
 
+export const updateChecklistItemInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const updateChecklistItemInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const updateChecklistItemInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const updateChecklistItemInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -2256,6 +3634,14 @@ export const updateChecklistItemInternalResponseChecklistCountsDoneMin = 0;
 
 
 export const UpdateChecklistItemInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(updateChecklistItemInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(updateChecklistItemInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(updateChecklistItemInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -2314,7 +3700,7 @@ export const ListTaskActivityInternalParams = zod.object({
   "taskKey": zod.string().regex(listTaskActivityInternalPathTaskKeyRegExp).describe('Key of the task.')
 })
 
-export const listTaskActivityInternalQueryKindMax = 5;
+export const listTaskActivityInternalQueryKindMax = 6;
 
 export const listTaskActivityInternalQueryLimitDefault = 50;
 export const listTaskActivityInternalQueryLimitMax = 100;
@@ -2322,7 +3708,7 @@ export const listTaskActivityInternalQueryLimitMax = 100;
 
 
 export const ListTaskActivityInternalQueryParams = zod.object({
-  "kind": zod.array(zod.enum(['create', 'status', 'priority', 'due', 'assign'])).min(1).max(listTaskActivityInternalQueryKindMax).optional().describe('Kinds of entries to keep, separated by commas; every kind when absent.'),
+  "kind": zod.array(zod.enum(['create', 'status', 'priority', 'due', 'assign', 'comment'])).min(1).max(listTaskActivityInternalQueryKindMax).optional().describe('Kinds of entries to keep, separated by commas; every kind when absent.'),
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.coerce.number().int().min(1).max(listTaskActivityInternalQueryLimitMax).default(listTaskActivityInternalQueryLimitDefault).describe('Page size.')
 })
@@ -2335,9 +3721,11 @@ export const listTaskActivityInternalResponseTotalMin = 0;
 
 export const ListTaskActivityInternalResponse = zod.object({
   "items": zod.array(zod.object({
+  "commentId": zod.uuid().optional().describe('Comment associated with a comment activity entry.'),
+  "commentExcerpt": zod.string().optional().describe('Up to 240 Unicode code points of the current comment body.'),
   "id": zod.uuid(),
   "occurredAt": zod.iso.datetime({"offset":true}).describe('When the change was made; for merged changes, the last of them.'),
-  "kind": zod.string().describe('`create` ("a créé la tâche"), `status` ("a changé le statut"), `priority` ("a passé la\npriorité à"), `due` ("a fixé l’échéance", "a déplacé l’échéance", "a retiré\nl’échéance") or `assign` ("s’est assigné la tâche", "a assigné Inès Robert", "s’est\nretiré de la tâche", "a retiré Inès Robert"). Later versions add kinds\n(`x-extensible-enum`).\n'),
+  "kind": zod.string().describe('`create` records creation, `status` a status change, `priority` a priority change,\n`due` a due-date change, `assign` an assignment change, and `comment` a new comment.\nFuture kinds may be added; render unknown kinds as a generic task change.\n'),
   "actor": zod.object({
   "type": zod.string(),
   "id": zod.string().min(1)
@@ -2364,7 +3752,7 @@ export const ListTaskActivityInternalResponse = zod.object({
   "userId": zod.uuid(),
   "added": zod.boolean()
 }).optional().describe('For `assign`, who was assigned (`added: true`) or left the assignees (`added: false`);\nthe person themself when `userId` is the id of the actor.\n')
-}).describe('One entry of the activity log of a task ("Activité"); every entry names a task, and an entry\nabout a list or a space would come on a route of its own. The member that names the change\nis the one of its `kind`: `status`, `priority`, `dueDate` or `assignee`; a creation has\nnone. Later versions add kinds and their members (comments): a client shows an unknown kind\nas "a modifié la tâche".\n')),
+}).describe('One entry of the activity log of a task ("Activité"); every entry names a task, and an entry\nabout a list or a space would come on a route of its own. The member that names the change\nis the one of its `kind`: `status`, `priority`, `dueDate`, `assignee` or `commentId`; a creation has\nnone. Comment creation records its ID and an excerpt of the current body; deleting the comment\nremoves the entry. Edits and deletions do not create separate entries. Later versions add kinds: a client shows an unknown kind\nas "a modifié la tâche".\n')),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(listTaskActivityInternalResponseTotalMin)
 })
@@ -2438,6 +3826,8 @@ export const listMyTasksInternalResponseCountsClosedMin = 0;
 
 export const ListMyTasksInternalResponse = zod.object({
   "items": zod.array(zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
   "key": zod.string().regex(listMyTasksInternalResponseItemsItemKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
@@ -2541,6 +3931,8 @@ export const GetHomeInternalResponse = zod.object({
   "done": zod.int().min(getHomeInternalResponseStatsDoneMin)
 }),
   "priorities": zod.array(zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
   "key": zod.string().regex(getHomeInternalResponsePrioritiesItemKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
@@ -3105,6 +4497,10 @@ export const ArchiveTaskInternalBody = zod.object({
 
 }).describe('Empty object `{}`, the body the public route carried.')
 
+export const archiveTaskInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const archiveTaskInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const archiveTaskInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const archiveTaskInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -3122,6 +4518,14 @@ export const archiveTaskInternalResponseChecklistCountsDoneMin = 0;
 
 
 export const ArchiveTaskInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(archiveTaskInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(archiveTaskInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(archiveTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -3192,6 +4596,10 @@ export const UnarchiveTaskInternalBody = zod.object({
 
 }).describe('Empty object `{}`, the body the public route carried.')
 
+export const unarchiveTaskInternalResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const unarchiveTaskInternalResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const unarchiveTaskInternalResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const unarchiveTaskInternalResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -3209,6 +4617,14 @@ export const unarchiveTaskInternalResponseChecklistCountsDoneMin = 0;
 
 
 export const UnarchiveTaskInternalResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(unarchiveTaskInternalResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(unarchiveTaskInternalResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(unarchiveTaskInternalResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -3345,6 +4761,8 @@ export const listArchivedTasksInternalResponseTotalMin = 0;
 export const ListArchivedTasksInternalResponse = zod.object({
   "items": zod.array(zod.object({
   "task": zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
   "key": zod.string().regex(listArchivedTasksInternalResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
@@ -3513,19 +4931,33 @@ export const PurgeTrashEntryInternalResponse = zod.void()
  * Brings an entry the actor may restore back to its list, as
  * `POST /v1/trash/entries/{entryId}/restore` says: the root detached from a parent that is no
  * longer live or can no longer take it, a deleted list and space brought back with it; any
- * other entry answers `404 trash-entry.not-found`. Emits `space.restored.v1` and
- * `list.restored.v1` for what came back with it, then `task.restored.v1` for each task, the
- * root first. Internal token: actor `user`, organization required.
+ * other entry answers `404 trash-entry.not-found`. When a space or list returns it emits
+ * `space.restored.v1` and `space.access-republished.v1`, or `list.restored.v1` and
+ * `list.access-changed.v1`, respectively; then `task.restored.v1` for each task, the
+ * root first. While list deletion is still batching, `reportNotReady=true` returns
+ * `409 trash-entry.not-restorable-yet` only for an entry the actor could restore afterwards;
+ * otherwise the temporary condition remains `404 trash-entry.not-found`. No write occurs.
+ * Internal token: actor `user`, organization required.
  * @summary Restore a trash entry
  */
 export const RestoreTrashEntryInternalParams = zod.object({
   "entryId": zod.uuid().describe('Id of the trash entry.')
 })
 
+export const restoreTrashEntryInternalQueryReportNotReadyDefault = false;
+
+export const RestoreTrashEntryInternalQueryParams = zod.object({
+  "reportNotReady": zod.preprocess((value) => value === 'true' ? true : value === 'false' ? false : value, zod.boolean()).default(restoreTrashEntryInternalQueryReportNotReadyDefault).describe('Report an otherwise restorable entry whose list deletion is still batching.')
+})
+
 export const RestoreTrashEntryInternalBody = zod.object({
 
 }).describe('Empty object `{}`, the body the public route carried.')
 
+export const restoreTrashEntryInternalResponseTaskDescriptionMentionsItemStartMin = 0;
+
+
+export const restoreTrashEntryInternalResponseTaskNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const restoreTrashEntryInternalResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const restoreTrashEntryInternalResponseTaskParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -3548,6 +4980,14 @@ export const restoreTrashEntryInternalResponseSubtaskCountMin = 0;
 
 export const RestoreTrashEntryInternalResponse = zod.object({
   "task": zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(restoreTrashEntryInternalResponseTaskDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(restoreTrashEntryInternalResponseTaskNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(restoreTrashEntryInternalResponseTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -3693,3 +5133,749 @@ export const CheckTaskAccessInternalResponse = zod.object({
   "listId": zod.uuid().describe('The list checked, or the list of the task checked.'),
   "taskKey": zod.union([zod.string().regex(checkTaskAccessInternalResponseTaskKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The task checked; `null` for a list.')
 }).describe('What the realtime gateway needs to let a socket join the room of a list or a task: the role\nof the actor and where the list or the task is.\n')
+
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * Ordered by creation time and ID; the opaque cursor is bound to the space and order.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List task templates
+ */
+export const ListTaskTemplatesInternalParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space.')
+})
+
+export const listTaskTemplatesInternalQueryLimitDefault = 50;
+export const listTaskTemplatesInternalQueryLimitMax = 100;
+
+
+
+export const ListTaskTemplatesInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listTaskTemplatesInternalQueryLimitMax).default(listTaskTemplatesInternalQueryLimitDefault).describe('Page size.')
+})
+
+
+
+
+export const ListTaskTemplatesInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('Library name, at most 80 characters.'),
+  "title": zod.string().describe('Source task title for a new task, at most 300 characters.'),
+  "description": zod.string().nullable().describe('Markdown source at most 50000 characters or null.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "labels": zod.array(zod.string()),
+  "checklist": zod.array(zod.string()).describe('Up to 100 checklist texts, each subject to ChecklistItemCreation rules when submitted.'),
+  "subtasks": zod.array(zod.string()).describe('Up to 25 direct child names, each subject to SubtaskName rules when submitted.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A space-shared snapshot of task ingredients. Checklist texts and direct live child names\nretain their order; dates, assignees, mentions, recurrence, milestones and watchers are not\ncopied. A client uses these ingredients to prefill a normal TaskCreation.\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('Space templates ordered by creation time and ID.')
+
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * The sourceTaskKey must name a live task in this space; a task in another space answers
+ * `404 task.not-found`, as does an invisible task. Requires edit on the space and source list. Captures title, description, priority,
+ * labels, checklist texts and direct live child names, without dates, assignees, mentions,
+ * recurrence, milestone or watchers. An archived source refuses writes. A restricted source
+ * list in an organization-visible space answers `422 template.source-restricted`, preventing
+ * the library from widening its audience. `422 template.limit-reached` means the library is
+ * full. Later source or template changes never alter previously created tasks. The client
+ * submits normal TaskCreation, including its checklist and name-only subtasks.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and space.task-template-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Save a task template
+ */
+export const CreateTaskTemplateInternalParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space.')
+})
+
+export const createTaskTemplateInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateTaskTemplateInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createTaskTemplateInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.')
+})
+
+export const createTaskTemplateInternalBodySourceTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const createTaskTemplateInternalBodyNameMax = 80;
+
+
+export const createTaskTemplateInternalBodyNameRegExp = new RegExp('\\S');
+
+
+export const CreateTaskTemplateInternalBody = zod.object({
+  "sourceTaskKey": zod.string().regex(createTaskTemplateInternalBodySourceTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().min(1).refine((value) => Array.from(value).length <= createTaskTemplateInternalBodyNameMax, { message: 'At most 80 Unicode code points' }).regex(createTaskTemplateInternalBodyNameRegExp).optional().describe('A nonblank saved view or template name, at most 80 characters.')
+})
+
+
+
+
+export const CreateTaskTemplateInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('Library name, at most 80 characters.'),
+  "title": zod.string().describe('Source task title for a new task, at most 300 characters.'),
+  "description": zod.string().nullable().describe('Markdown source at most 50000 characters or null.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "labels": zod.array(zod.string()),
+  "checklist": zod.array(zod.string()).describe('Up to 100 checklist texts, each subject to ChecklistItemCreation rules when submitted.'),
+  "subtasks": zod.array(zod.string()).describe('Up to 25 direct child names, each subject to SubtaskName rules when submitted.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A space-shared snapshot of task ingredients. Checklist texts and direct live child names\nretain their order; dates, assignees, mentions, recurrence, milestones and watchers are not\ncopied. A client uses these ingredients to prefill a normal TaskCreation.\n')
+
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * An unknown or inaccessible scoped template answers `404 template.not-found`.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Get a task template
+ */
+export const GetTaskTemplateInternalParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space.'),
+  "templateId": zod.uuid().describe('ID of the template.')
+})
+
+
+
+
+export const GetTaskTemplateInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('Library name, at most 80 characters.'),
+  "title": zod.string().describe('Source task title for a new task, at most 300 characters.'),
+  "description": zod.string().nullable().describe('Markdown source at most 50000 characters or null.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "labels": zod.array(zod.string()),
+  "checklist": zod.array(zod.string()).describe('Up to 100 checklist texts, each subject to ChecklistItemCreation rules when submitted.'),
+  "subtasks": zod.array(zod.string()).describe('Up to 25 direct child names, each subject to SubtaskName rules when submitted.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A space-shared snapshot of task ingredients. Checklist texts and direct live child names\nretain their order; dates, assignees, mentions, recurrence, milestones and watchers are not\ncopied. A client uses these ingredients to prefill a normal TaskCreation.\n')
+
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * Requires edit on the space. Deletes the template to free library capacity; it never deletes
+ * tasks created from it. If-Match, when sent, checks the template version.
+ * The change and space.task-template-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Delete a task template
+ */
+export const DeleteTaskTemplateInternalParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space.'),
+  "templateId": zod.uuid().describe('ID of the template.')
+})
+
+export const DeleteTaskTemplateInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const DeleteTaskTemplateInternalResponse = zod.void()
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * New views append in creation order; a duplicate is inserted after its source.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List saved views
+ */
+export const ListSavedViewsInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const listSavedViewsInternalQueryLimitDefault = 50;
+export const listSavedViewsInternalQueryLimitMax = 100;
+
+
+
+export const ListSavedViewsInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listSavedViewsInternalQueryLimitMax).default(listSavedViewsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listSavedViewsInternalResponseItemsItemConfigurationFiltersStatusMax = 10;
+
+export const listSavedViewsInternalResponseItemsItemConfigurationFiltersPriorityMax = 4;
+
+export const listSavedViewsInternalResponseItemsItemConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const listSavedViewsInternalResponseItemsItemConfigurationFiltersAssigneeMax = 20;
+
+export const listSavedViewsInternalResponseItemsItemConfigurationFiltersLabelItemMax = 32;
+
+export const listSavedViewsInternalResponseItemsItemConfigurationFiltersLabelMax = 20;
+
+
+
+
+export const ListSavedViewsInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "configuration": zod.object({
+  "layout": zod.string().describe('Layout key; clients may ignore unknown future layouts.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(listSavedViewsInternalResponseItemsItemConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(listSavedViewsInternalResponseItemsItemConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(listSavedViewsInternalResponseItemsItemConfigurationFiltersAssigneeItemRegExp)).min(1).max(listSavedViewsInternalResponseItemsItemConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(listSavedViewsInternalResponseItemsItemConfigurationFiltersLabelItemMax)).min(1).max(listSavedViewsInternalResponseItemsItemConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.string().describe('Signed server task sort; clients may ignore future values.'),
+  "groupBy": zod.string().nullable().describe('Grouping key, or null for ungrouped; clients may ignore future values.'),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
+  "direction": zod.string()
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A view shared with readers of a list.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('Views in creation order, with a duplicate inserted after its source.')
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Stores the explicit configuration; `422 saved-view.limit-reached` means the list is full.
+ * Search, milestone, subtask display, collapsed groups, zoom and standard tabs stay local;
+ * Feuille-only sort is client presentation and is never sent as a server task sort.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Create a saved view
+ */
+export const CreateSavedViewInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const createSavedViewInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateSavedViewInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createSavedViewInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.')
+})
+
+export const createSavedViewInternalBodyNameMax = 80;
+
+
+export const createSavedViewInternalBodyNameRegExp = new RegExp('\\S');
+export const createSavedViewInternalBodyConfigurationFiltersStatusMax = 10;
+
+export const createSavedViewInternalBodyConfigurationFiltersPriorityMax = 4;
+
+export const createSavedViewInternalBodyConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const createSavedViewInternalBodyConfigurationFiltersAssigneeMax = 20;
+
+export const createSavedViewInternalBodyConfigurationFiltersLabelItemMax = 32;
+
+export const createSavedViewInternalBodyConfigurationFiltersLabelMax = 20;
+
+
+
+export const CreateSavedViewInternalBody = zod.object({
+  "name": zod.string().min(1).refine((value) => Array.from(value).length <= createSavedViewInternalBodyNameMax, { message: 'At most 80 Unicode code points' }).regex(createSavedViewInternalBodyNameRegExp).describe('A nonblank saved view or template name, at most 80 characters.'),
+  "icon": zod.union([zod.literal('rocket'),zod.literal('paint'),zod.literal('megaphone'),zod.literal('gear'),zod.literal('code'),zod.literal('bug'),zod.literal('lightning'),zod.literal('target'),zod.literal('flag'),zod.literal('briefcase'),zod.literal('chart'),zod.literal('users'),zod.literal('book'),zod.literal('cube'),zod.literal('headset'),zod.literal('globe'),zod.literal('star'),zod.literal(null)]).nullish().describe('Icon of a space or a list ("Icône"): `rocket` ("Fusée"), `paint` ("Pinceau"), `megaphone`\n("Mégaphone"), `gear` ("Engrenage"), `code` ("Code"), `bug` ("Bogue"), `lightning`\n("Éclair"), `target` ("Cible"), `flag` ("Drapeau"), `briefcase` ("Mallette"), `chart`\n("Courbe"), `users` ("Équipe"), `book` ("Livre"), `cube` ("Cube"), `headset` ("Casque"),\n`globe` ("Globe") or `star` ("Étoile"), the keys of `LOOK_ICONS` of the mockup; `null` for\nnone ("Initiale" for a space, "Par défaut" for a list).\n'),
+  "configuration": zod.object({
+  "layout": zod.enum(['list', 'board', 'calendar', 'gantt', 'workload', 'table', 'form', 'activity', 'timesheet']).describe('Layout key from the task views in the mockup.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(createSavedViewInternalBodyConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(createSavedViewInternalBodyConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(createSavedViewInternalBodyConfigurationFiltersAssigneeItemRegExp)).min(1).max(createSavedViewInternalBodyConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(createSavedViewInternalBodyConfigurationFiltersLabelItemMax)).min(1).max(createSavedViewInternalBodyConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.enum(['manual', '-manual', 'dueDate', '-dueDate', 'priority', '-priority', 'name', '-name', 'createdAt', '-createdAt']).describe('The signed sort vocabulary of the list tasks query, without a patch-time default.'),
+  "groupBy": zod.union([zod.enum(['status', 'priority', 'assignee']),zod.null()]),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.'),
+  "direction": zod.enum(['asc', 'desc'])
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n')
+})
+
+export const createSavedViewInternalResponseConfigurationFiltersStatusMax = 10;
+
+export const createSavedViewInternalResponseConfigurationFiltersPriorityMax = 4;
+
+export const createSavedViewInternalResponseConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const createSavedViewInternalResponseConfigurationFiltersAssigneeMax = 20;
+
+export const createSavedViewInternalResponseConfigurationFiltersLabelItemMax = 32;
+
+export const createSavedViewInternalResponseConfigurationFiltersLabelMax = 20;
+
+
+
+
+export const CreateSavedViewInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "configuration": zod.object({
+  "layout": zod.string().describe('Layout key; clients may ignore unknown future layouts.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(createSavedViewInternalResponseConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(createSavedViewInternalResponseConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(createSavedViewInternalResponseConfigurationFiltersAssigneeItemRegExp)).min(1).max(createSavedViewInternalResponseConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(createSavedViewInternalResponseConfigurationFiltersLabelItemMax)).min(1).max(createSavedViewInternalResponseConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.string().describe('Signed server task sort; clients may ignore future values.'),
+  "groupBy": zod.string().nullable().describe('Grouping key, or null for ungrouped; clients may ignore future values.'),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
+  "direction": zod.string()
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A view shared with readers of a list.')
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * A missing, deleted or inaccessible view answers `404 saved-view.not-found`.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Get a saved view
+ */
+export const GetSavedViewInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.'),
+  "viewId": zod.uuid().describe('ID of the saved view.')
+})
+
+export const getSavedViewInternalResponseConfigurationFiltersStatusMax = 10;
+
+export const getSavedViewInternalResponseConfigurationFiltersPriorityMax = 4;
+
+export const getSavedViewInternalResponseConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const getSavedViewInternalResponseConfigurationFiltersAssigneeMax = 20;
+
+export const getSavedViewInternalResponseConfigurationFiltersLabelItemMax = 32;
+
+export const getSavedViewInternalResponseConfigurationFiltersLabelMax = 20;
+
+
+
+
+export const GetSavedViewInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "configuration": zod.object({
+  "layout": zod.string().describe('Layout key; clients may ignore unknown future layouts.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(getSavedViewInternalResponseConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(getSavedViewInternalResponseConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(getSavedViewInternalResponseConfigurationFiltersAssigneeItemRegExp)).min(1).max(getSavedViewInternalResponseConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(getSavedViewInternalResponseConfigurationFiltersLabelItemMax)).min(1).max(getSavedViewInternalResponseConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.string().describe('Signed server task sort; clients may ignore future values.'),
+  "groupBy": zod.string().nullable().describe('Grouping key, or null for ungrouped; clients may ignore future values.'),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
+  "direction": zod.string()
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A view shared with readers of a list.')
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Rename and edit use JSON Merge Patch, including nested settings; undeclared members are
+ * ignored. Null groupBy clears grouping and is returned as null; null icon clears the icon.
+ * If-Match is optional and checks the view version.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Update a saved view
+ */
+export const UpdateSavedViewInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.'),
+  "viewId": zod.uuid().describe('ID of the saved view.')
+})
+
+export const UpdateSavedViewInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const updateSavedViewInternalBodyNameMax = 80;
+
+
+export const updateSavedViewInternalBodyNameRegExp = new RegExp('\\S');
+export const updateSavedViewInternalBodyConfigurationFiltersStatusOneMax = 10;
+
+export const updateSavedViewInternalBodyConfigurationFiltersPriorityOneMax = 4;
+
+export const updateSavedViewInternalBodyConfigurationFiltersAssigneeOneItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const updateSavedViewInternalBodyConfigurationFiltersAssigneeOneMax = 20;
+
+export const updateSavedViewInternalBodyConfigurationFiltersLabelOneItemMax = 32;
+
+export const updateSavedViewInternalBodyConfigurationFiltersLabelOneMax = 20;
+
+
+
+export const UpdateSavedViewInternalBody = zod.object({
+  "name": zod.string().min(1).refine((value) => Array.from(value).length <= updateSavedViewInternalBodyNameMax, { message: 'At most 80 Unicode code points' }).regex(updateSavedViewInternalBodyNameRegExp).optional().describe('A nonblank saved view or template name, at most 80 characters.'),
+  "icon": zod.union([zod.literal('rocket'),zod.literal('paint'),zod.literal('megaphone'),zod.literal('gear'),zod.literal('code'),zod.literal('bug'),zod.literal('lightning'),zod.literal('target'),zod.literal('flag'),zod.literal('briefcase'),zod.literal('chart'),zod.literal('users'),zod.literal('book'),zod.literal('cube'),zod.literal('headset'),zod.literal('globe'),zod.literal('star'),zod.literal(null)]).nullish().describe('Icon of a space or a list ("Icône"): `rocket` ("Fusée"), `paint` ("Pinceau"), `megaphone`\n("Mégaphone"), `gear` ("Engrenage"), `code` ("Code"), `bug` ("Bogue"), `lightning`\n("Éclair"), `target` ("Cible"), `flag` ("Drapeau"), `briefcase` ("Mallette"), `chart`\n("Courbe"), `users` ("Équipe"), `book` ("Livre"), `cube` ("Cube"), `headset` ("Casque"),\n`globe` ("Globe") or `star` ("Étoile"), the keys of `LOOK_ICONS` of the mockup; `null` for\nnone ("Initiale" for a space, "Par défaut" for a list).\n'),
+  "configuration": zod.object({
+  "layout": zod.enum(['list', 'board', 'calendar', 'gantt', 'workload', 'table', 'form', 'activity', 'timesheet']).optional().describe('Layout key from the task views in the mockup.'),
+  "filters": zod.object({
+  "status": zod.union([zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(updateSavedViewInternalBodyConfigurationFiltersStatusOneMax),zod.null()]).optional(),
+  "priority": zod.union([zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(updateSavedViewInternalBodyConfigurationFiltersPriorityOneMax),zod.null()]).optional(),
+  "assignee": zod.union([zod.array(zod.string().regex(updateSavedViewInternalBodyConfigurationFiltersAssigneeOneItemRegExp)).min(1).max(updateSavedViewInternalBodyConfigurationFiltersAssigneeOneMax),zod.null()]).optional(),
+  "label": zod.union([zod.array(zod.string().min(1).max(updateSavedViewInternalBodyConfigurationFiltersLabelOneItemMax)).min(1).max(updateSavedViewInternalBodyConfigurationFiltersLabelOneMax),zod.null()]).optional()
+}).optional().describe('A nested merge patch; null removes the named filter.'),
+  "sort": zod.enum(['manual', '-manual', 'dueDate', '-dueDate', 'priority', '-priority', 'name', '-name', 'createdAt', '-createdAt']).optional().describe('The signed sort vocabulary of the list tasks query, without a patch-time default.'),
+  "groupBy": zod.union([zod.enum(['status', 'priority', 'assignee']),zod.null()]).optional(),
+  "presentation": zod.union([zod.object({
+  "hiddenBoardStatusKeys": zod.union([zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')),zod.null()]).optional(),
+  "hiddenSheetColumns": zod.union([zod.array(zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.')),zod.null()]).optional(),
+  "sheetSort": zod.union([zod.object({
+  "column": zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).optional().describe('Feuille column key from the mockup.'),
+  "direction": zod.enum(['asc', 'desc']).optional()
+}),zod.null()]).optional()
+}).describe('A nested merge patch; null removes the corresponding presentation setting.'),zod.null()]).optional()
+}).optional().describe('Nested JSON Merge Patch. Null groupBy clears grouping and is returned as null; null\npresentation removes presentation settings. Omitted members keep their current values.\nThe merged result must satisfy SavedViewConfiguration or the request is invalid.\n')
+}).describe('JSON Merge Patch; nested settings are merged and undeclared members are ignored. A null icon clears it.')
+
+export const updateSavedViewInternalResponseConfigurationFiltersStatusMax = 10;
+
+export const updateSavedViewInternalResponseConfigurationFiltersPriorityMax = 4;
+
+export const updateSavedViewInternalResponseConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const updateSavedViewInternalResponseConfigurationFiltersAssigneeMax = 20;
+
+export const updateSavedViewInternalResponseConfigurationFiltersLabelItemMax = 32;
+
+export const updateSavedViewInternalResponseConfigurationFiltersLabelMax = 20;
+
+
+
+
+export const UpdateSavedViewInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "configuration": zod.object({
+  "layout": zod.string().describe('Layout key; clients may ignore unknown future layouts.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(updateSavedViewInternalResponseConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(updateSavedViewInternalResponseConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(updateSavedViewInternalResponseConfigurationFiltersAssigneeItemRegExp)).min(1).max(updateSavedViewInternalResponseConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(updateSavedViewInternalResponseConfigurationFiltersLabelItemMax)).min(1).max(updateSavedViewInternalResponseConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.string().describe('Signed server task sort; clients may ignore future values.'),
+  "groupBy": zod.string().nullable().describe('Grouping key, or null for ungrouped; clients may ignore future values.'),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
+  "direction": zod.string()
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A view shared with readers of a list.')
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * The deletion completes immediately. A client may create a new view from its snapshot for
+ * undo. If-Match is optional and checks the view version.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Delete a saved view
+ */
+export const DeleteSavedViewInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.'),
+  "viewId": zod.uuid().describe('ID of the saved view.')
+})
+
+export const DeleteSavedViewInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const DeleteSavedViewInternalResponse = zod.void()
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Creates a new view with a fresh ID and version immediately after the source, appending
+ * ` (copie)` to its name after truncating the source portion to the 80-character ceiling.
+ * If-Match is optional and checks the source view version. `422 saved-view.limit-reached` means the list
+ * is full. The duplicate emits the same creation fact as an ordinary new view.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Duplicate a saved view
+ */
+export const DuplicateSavedViewInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.'),
+  "viewId": zod.uuid().describe('ID of the saved view.')
+})
+
+export const duplicateSavedViewInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const DuplicateSavedViewInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(duplicateSavedViewInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.'),
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const DuplicateSavedViewInternalBody = zod.strictObject({}).describe('Empty object for duplicating a saved view.')
+
+export const duplicateSavedViewInternalResponseConfigurationFiltersStatusMax = 10;
+
+export const duplicateSavedViewInternalResponseConfigurationFiltersPriorityMax = 4;
+
+export const duplicateSavedViewInternalResponseConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const duplicateSavedViewInternalResponseConfigurationFiltersAssigneeMax = 20;
+
+export const duplicateSavedViewInternalResponseConfigurationFiltersLabelItemMax = 32;
+
+export const duplicateSavedViewInternalResponseConfigurationFiltersLabelMax = 20;
+
+
+
+
+export const DuplicateSavedViewInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "configuration": zod.object({
+  "layout": zod.string().describe('Layout key; clients may ignore unknown future layouts.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(duplicateSavedViewInternalResponseConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(duplicateSavedViewInternalResponseConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(duplicateSavedViewInternalResponseConfigurationFiltersAssigneeItemRegExp)).min(1).max(duplicateSavedViewInternalResponseConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(duplicateSavedViewInternalResponseConfigurationFiltersLabelItemMax)).min(1).max(duplicateSavedViewInternalResponseConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.string().describe('Signed server task sort; clients may ignore future values.'),
+  "groupBy": zod.string().nullable().describe('Grouping key, or null for ungrouped; clients may ignore future values.'),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
+  "direction": zod.string()
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A view shared with readers of a list.')
+
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * The opaque cursor is bound to the caller, organization and insertion order.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List favorites
+ */
+export const listFavoritesInternalQueryLimitDefault = 50;
+export const listFavoritesInternalQueryLimitMax = 100;
+
+
+
+export const ListFavoritesInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listFavoritesInternalQueryLimitMax).default(listFavoritesInternalQueryLimitDefault).describe('Page size.')
+})
+
+
+
+
+export const ListFavoritesInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "kind": zod.string().describe('Target kind; unknown future kinds may be ignored by a client.'),
+  "targetId": zod.uuid(),
+  "target": zod.object({
+  "name": zod.string(),
+  "href": zod.string(),
+  "listId": zod.uuid().optional()
+}).describe('Current visible target name and public resource path; listId is present for a saved view.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A private favorite of the current user and organization.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('The caller\'s currently accessible active targets in insertion order by creation time and ID.')
+
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * A target must be active and visible or the response is `404 favorite.target-not-found`.
+ * A duplicate target answers `409 favorite.already-exists`; capacity answers
+ * `422 favorite.limit-reached`. No downstream event is emitted for this personal preference.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Create a favorite
+ */
+export const createFavoriteInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateFavoriteInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createFavoriteInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.')
+})
+
+export const CreateFavoriteInternalBody = zod.object({
+  "kind": zod.enum(['space', 'list', 'saved-view']).describe('Kind of active target to favorite.'),
+  "targetId": zod.uuid().describe('UUID of the target resource.')
+})
+
+
+
+
+export const CreateFavoriteInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "kind": zod.string().describe('Target kind; unknown future kinds may be ignored by a client.'),
+  "targetId": zod.uuid(),
+  "target": zod.object({
+  "name": zod.string(),
+  "href": zod.string(),
+  "listId": zod.uuid().optional()
+}).describe('Current visible target name and public resource path; listId is present for a saved view.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A private favorite of the current user and organization.')
+
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * A missing, hidden or another user’s favorite answers `404 favorite.not-found`.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Get a favorite
+ */
+export const GetFavoriteInternalParams = zod.object({
+  "favoriteId": zod.uuid().describe('ID of the favorite.')
+})
+
+
+
+
+export const GetFavoriteInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "kind": zod.string().describe('Target kind; unknown future kinds may be ignored by a client.'),
+  "targetId": zod.uuid(),
+  "target": zod.object({
+  "name": zod.string(),
+  "href": zod.string(),
+  "listId": zod.uuid().optional()
+}).describe('Current visible target name and public resource path; listId is present for a saved view.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A private favorite of the current user and organization.')
+
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * Deletes the caller's favorite only; a missing, hidden or another user's favorite answers
+ * `404 favorite.not-found`. If-Match is optional and checks the favorite version.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Delete a favorite
+ */
+export const DeleteFavoriteInternalParams = zod.object({
+  "favoriteId": zod.uuid().describe('ID of the favorite.')
+})
+
+export const DeleteFavoriteInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const DeleteFavoriteInternalResponse = zod.void()

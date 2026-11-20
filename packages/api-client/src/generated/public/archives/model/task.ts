@@ -6,7 +6,9 @@ import type { Actor } from './actor';
 import type { CancelReason } from './cancelReason';
 import type { ChecklistCounts } from './checklistCounts';
 import type { ChecklistItem } from './checklistItem';
+import type { Mention } from './mention';
 import type { PriorityKey } from './priorityKey';
+import type { Recurrence } from './recurrence';
 import type { StatusKey } from './statusKey';
 import type { SubtaskCounts } from './subtaskCounts';
 import type { TaskKey } from './taskKey';
@@ -16,6 +18,12 @@ import type { UserRef } from './userRef';
  * A task, with its description and its checklist.
  */
 export interface Task {
+  /** Whether this task is a milestone; absence means the producer did not report it. */
+  milestone?: boolean;
+  recurrence?: Recurrence;
+  /** Structured spans in the current Markdown description. */
+  descriptionMentions?: Mention[];
+  nextOccurrenceKey?: TaskKey;
   key: TaskKey;
   /** "Nom de la tâche", 300 characters at most. */
   name: string;

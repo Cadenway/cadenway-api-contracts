@@ -115,8 +115,7 @@ info:
     **Errors.** As in `openapi/public/auth.yaml`: a stable `code`, a French `title` for the codes
     the web application shows to the person, the English reason phrase otherwise.
 
-    **Later versions** add, without changing what is here: favorites, templates and the creation
-    from the onboarding assistant.
+    **Later versions** add, without changing what is here: creation from the onboarding assistant.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -495,6 +494,45 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/spaces/{spaceId}/milestones:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: listSpaceMilestones
+      summary: List milestones of a space
+      description: |
+        Returns visible live milestones in visible lists of the space, excluding archived lists.
+        A caller with only list grants sees only their qualifying lists. Sort by due date ascending,
+        undated last; the opaque cursor is bound to the space and ordering. Total counts matching
+        visible milestones and does not change existing space, list or sprint counts.
+        Scope `tasks:read` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of milestones.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MilestonePage'
+              example: { items: [], nextCursor: null, total: 0 }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /v1/spaces/{spaceId}/overview:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -580,6 +618,421 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/spaces/{spaceId}/task-templates:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: listTaskTemplates
+      summary: List task templates
+      description: |
+        The library is shared within the space and requires an actual space role; a grant only on
+        a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+        is enforced in the owning transaction. Built-in presets are client-side.
+        Ordered by creation time and ID; the opaque cursor is bound to the space and order.
+        Scope `tasks:read` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTemplatePage'
+              example:
+                items:
+                  - id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    name: Connexion SSO
+                    title: Refondre l’écran de connexion SSO
+                    description: Remplacer l’écran actuel par la connexion d’entreprise.
+                    priority: haute
+                    labels:
+                      - Auth
+                      - Front
+                    checklist: []
+                    subtasks:
+                      - Messages d’erreur et verrouillage
+                      - Tests de bout en bout du SSO
+                      - Documenter la connexion SSO
+                    createdAt: '2026-11-08T10:40:00Z'
+                    version: 1
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: createTaskTemplate
+      summary: Save a task template
+      description: |
+        The library is shared within the space and requires an actual space role; a grant only on
+        a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+        is enforced in the owning transaction. Built-in presets are client-side.
+        The sourceTaskKey must name a live task in this space; a task in another space answers
+        `404 task.not-found`, as does an invisible task. Requires edit on the space and source list. Captures title, description, priority,
+        labels, checklist texts and direct live child names, without dates, assignees, mentions,
+        recurrence, milestone or watchers. An archived source refuses writes. A restricted source
+        list in an organization-visible space answers `422 template.source-restricted`, preventing
+        the library from widening its audience. `422 template.limit-reached` means the library is
+        full. Later source or template changes never alter previously created tasks. The client
+        submits normal TaskCreation, including its checklist and name-only subtasks.
+        An optional Idempotency-Key replays the original response and Location for 24 hours;
+        a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+        `409 idempotency.request-in-progress`.
+        The change and space.task-template-changed.v1 outbox fact commit together.
+        Scope `tasks:write` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskTemplateCreation'
+            example: { sourceTaskKey: CAD-482, name: Connexion SSO }
+      responses:
+        '201':
+          description: Resource created.
+          headers:
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+            Location:
+              description: Path of the created resource, `/v1/spaces/{spaceId}/task-templates/{templateId}`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTemplate'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                name: Connexion SSO
+                title: Refondre l’écran de connexion SSO
+                description: Remplacer l’écran actuel par la connexion d’entreprise.
+                priority: haute
+                labels: [Auth, Front]
+                checklist: []
+                subtasks:
+                  - Messages d’erreur et verrouillage
+                  - Tests de bout en bout du SSO
+                  - Documenter la connexion SSO
+                createdAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TemplateWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TemplateSourceNotFound'
+        '409':
+          $ref: '#/components/responses/TemplateCreateConflict'
+        '422':
+          $ref: '#/components/responses/TemplateCreateRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/spaces/{spaceId}/task-templates/{templateId}:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+      - $ref: '#/components/parameters/TemplateId'
+    get:
+      operationId: getTaskTemplate
+      summary: Get a task template
+      description: |
+        The library is shared within the space and requires an actual space role; a grant only on
+        a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+        is enforced in the owning transaction. Built-in presets are client-side.
+        An unknown or inaccessible scoped template answers `404 template.not-found`.
+        Scope `tasks:read` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: Resource or page.
+          headers:
+            ETag:
+              description: Version of the resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTemplate'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                name: Connexion SSO
+                title: Refondre l’écran de connexion SSO
+                description: Remplacer l’écran actuel par la connexion d’entreprise.
+                priority: haute
+                labels:
+                  - Auth
+                  - Front
+                checklist: []
+                subtasks:
+                  - Messages d’erreur et verrouillage
+                  - Tests de bout en bout du SSO
+                  - Documenter la connexion SSO
+                createdAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/TemplateNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteTaskTemplate
+      summary: Delete a task template
+      description: |
+        The library is shared within the space and requires an actual space role; a grant only on
+        a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+        is enforced in the owning transaction. Built-in presets are client-side.
+        Requires edit on the space. Deletes the template to free library capacity; it never deletes
+        tasks created from it. If-Match, when sent, checks the template version.
+        The change and space.task-template-changed.v1 outbox fact commit together.
+        Scope `tasks:write` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Resource deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TemplateWriteForbidden'
+        '404':
+          $ref: '#/components/responses/TemplateNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/favorites:
+    get:
+      operationId: listFavorites
+      summary: List favorites
+      description: |
+        Favorites are private to the current user and organization. Any role that can read an active
+        target may favorite it. Only currently readable active targets are returned, in insertion
+        order. Archive or temporary access loss hides a retained favorite; an accessible restored
+        space or list may reappear. Deleted views never return; purge removes dangling favorites.
+        Up to 200 favorites per user and organization are stored.
+        The opaque cursor is bound to the caller, organization and insertion order.
+        Scope `tasks:read` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FavoritePage'
+              example: { items: [], nextCursor: null }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: createFavorite
+      summary: Create a favorite
+      description: |
+        Favorites are private to the current user and organization. Any role that can read an active
+        target may favorite it. Only currently readable active targets are returned, in insertion
+        order. Archive or temporary access loss hides a retained favorite; an accessible restored
+        space or list may reappear. Deleted views never return; purge removes dangling favorites.
+        Up to 200 favorites per user and organization are stored.
+        A target must be active and visible or the response is `404 favorite.target-not-found`.
+        A duplicate target answers `409 favorite.already-exists`; capacity answers
+        `422 favorite.limit-reached`. No downstream event is emitted for this personal preference.
+        An optional Idempotency-Key replays the original response and Location for 24 hours;
+        a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+        `409 idempotency.request-in-progress`.
+        Scope `tasks:write` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FavoriteCreation'
+            example: { kind: list, targetId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12 }
+      responses:
+        '201':
+          description: Resource created.
+          headers:
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+            Location:
+              description: Path of the created resource, `/v1/me/favorites/{favoriteId}`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Favorite'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02
+                kind: list
+                targetId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                target:
+                  name: Sprint 14
+                  href: /v1/lists/019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                createdAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/FavoriteWriteForbidden'
+        '404':
+          $ref: '#/components/responses/FavoriteTargetNotFound'
+        '409':
+          $ref: '#/components/responses/FavoriteCreateConflict'
+        '422':
+          $ref: '#/components/responses/FavoriteCreateRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/favorites/{favoriteId}:
+    parameters:
+      - $ref: '#/components/parameters/FavoriteId'
+    get:
+      operationId: getFavorite
+      summary: Get a favorite
+      description: |
+        Favorites are private to the current user and organization. Any role that can read an active
+        target may favorite it. Only currently readable active targets are returned, in insertion
+        order. Archive or temporary access loss hides a retained favorite; an accessible restored
+        space or list may reappear. Deleted views never return; purge removes dangling favorites.
+        Up to 200 favorites per user and organization are stored.
+        A missing, hidden or another user’s favorite answers `404 favorite.not-found`.
+        Scope `tasks:read` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: Resource or page.
+          headers:
+            ETag:
+              description: Version of the resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Favorite'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/FavoriteNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteFavorite
+      summary: Delete a favorite
+      description: |
+        Favorites are private to the current user and organization. Any role that can read an active
+        target may favorite it. Only currently readable active targets are returned, in insertion
+        order. Archive or temporary access loss hides a retained favorite; an accessible restored
+        space or list may reappear. Deleted views never return; purge removes dangling favorites.
+        Up to 200 favorites per user and organization are stored.
+        Deletes the caller's favorite only; a missing, hidden or another user's favorite answers
+        `404 favorite.not-found`. If-Match is optional and checks the favorite version.
+        Scope `tasks:write` for a personal API token.
+      tags: [spaces]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Resource deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/FavoriteWriteForbidden'
+        '404':
+          $ref: '#/components/responses/FavoriteNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
     sessionCookie:
@@ -597,6 +1050,24 @@ components:
         `Authorization: Bearer`. It acts with the rights of its user in the organization it was
         created in, within the scopes each operation lists.
   parameters:
+    TemplateId:
+      name: templateId
+      in: path
+      required: true
+      description: ID of the template.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01]
+    FavoriteId:
+      name: favoriteId
+      in: path
+      required: true
+      description: ID of the favorite.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01]
     SpaceId:
       name: spaceId
       in: path
@@ -767,6 +1238,229 @@ components:
         status: 429
         code: rate-limit.exceeded
   responses:
+    TemplateWriteForbidden:
+      description: |
+        `access.role-insufficient` when the caller lacks edit on the space or source list;
+        `auth.scope-missing`, `auth.csrf-rejected`, `organization.not-selected` or
+        `organization.mfa-required` as for other task writes.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            roleInsufficient:
+              $ref: '#/components/examples/RoleInsufficient'
+            scopeMissing:
+              $ref: '#/components/examples/ScopeMissingWrite'
+            crossSiteRefused:
+              $ref: '#/components/examples/CrossSiteRefused'
+    TemplateNotFound:
+      description: '`template.not-found`, `space.not-found`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Modèle introuvable.
+                status: 404
+                code: template.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Espace introuvable.
+                status: 404
+                code: space.not-found
+            problem3:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    TemplateSourceNotFound:
+      description: '`space.not-found`, `task.not-found`, `task.trashed`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Espace introuvable.
+                status: 404
+                code: space.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Tâche introuvable.
+                status: 404
+                code: task.not-found
+            problem3:
+              value:
+                type: about:blank
+                title: 'Cette tâche a été supprimée'
+                status: 404
+                code: task.trashed
+            problem4:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    TemplateCreateConflict:
+      description: '`task.archived`, `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: 'Cette tâche est archivée : restaurez-la depuis les Archives pour la modifier.'
+                status: 409
+                code: task.archived
+            problem2:
+              value:
+                type: about:blank
+                title: 'Conflict'
+                status: 409
+                code: idempotency.request-in-progress
+    TemplateCreateRefused:
+      description: '`template.source-restricted`, `template.limit-reached`, `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Ce modèle ne peut pas être partagé dans cet espace.
+                status: 422
+                code: template.source-restricted
+            problem2:
+              value:
+                type: about:blank
+                title: La limite de modèles est atteinte.
+                status: 422
+                code: template.limit-reached
+            problem3:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: idempotency.key-reused
+    FavoriteTargetNotFound:
+      description: '`favorite.target-not-found`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Cet élément est introuvable.
+                status: 404
+                code: favorite.target-not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    FavoriteNotFound:
+      description: '`favorite.not-found`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Favori introuvable.
+                status: 404
+                code: favorite.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    FavoriteCreateConflict:
+      description: '`favorite.already-exists`, `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Cet élément est déjà dans vos favoris.
+                status: 409
+                code: favorite.already-exists
+            problem2:
+              value:
+                type: about:blank
+                title: 'Conflict'
+                status: 409
+                code: idempotency.request-in-progress
+    FavoriteCreateRefused:
+      description: '`favorite.limit-reached`, `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: La limite de favoris est atteinte.
+                status: 422
+                code: favorite.limit-reached
+            problem2:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: idempotency.key-reused
+    FavoriteWriteForbidden:
+      description: '`auth.scope-missing`, `auth.csrf-rejected`, `organization.not-selected`, `organization.mfa-required`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Ce jeton n’a pas la portée nécessaire pour cette requête.
+                status: 403
+                code: auth.scope-missing
+            problem2:
+              value:
+                type: about:blank
+                title: 'Forbidden'
+                status: 403
+                code: auth.csrf-rejected
+            problem3:
+              value:
+                type: about:blank
+                title: Choisissez une organisation pour continuer.
+                status: 403
+                code: organization.not-selected
+            problem4:
+              value:
+                type: about:blank
+                title: 'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.'
+                status: 403
+                code: organization.mfa-required
     BadRequest:
       description: |
         The request does not match the schema: `request.invalid`, with one `details.issues` entry
@@ -1023,6 +1717,20 @@ components:
             details:
               service: task-service
   schemas:
+    Favorite:
+      $ref: '../../components/task.yaml#/components/schemas/Favorite'
+    FavoriteCreation:
+      $ref: '../../components/task.yaml#/components/schemas/FavoriteCreation'
+    FavoritePage:
+      $ref: '../../components/task.yaml#/components/schemas/FavoritePage'
+    TaskTemplate:
+      $ref: '../../components/task.yaml#/components/schemas/TaskTemplate'
+    TaskTemplateCreation:
+      $ref: '../../components/task.yaml#/components/schemas/TaskTemplateCreation'
+    TaskTemplatePage:
+      $ref: '../../components/task.yaml#/components/schemas/TaskTemplatePage'
+    MilestonePage:
+      $ref: '../../components/task.yaml#/components/schemas/MilestonePage'
     Space:
       $ref: '../../components/task.yaml#/components/schemas/Space'
     SpaceCreation:

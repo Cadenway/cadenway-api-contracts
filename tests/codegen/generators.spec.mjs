@@ -43,6 +43,15 @@ describe('schema conversion of the event generator', () => {
     ).toBe("zod.string().min(1).max(3).regex(new RegExp('^[a-z\\']+$'))");
   });
 
+  it('treats extensible event values as annotations rather than a closed set', () => {
+    expect(
+      convertSchema({ type: 'string', 'x-extensible-enum': ['created', 'deleted'] }, '#'),
+    ).toEqual({
+      type: 'string',
+      zod: 'zod.string()',
+    });
+  });
+
   it('writes numbers with their bounds', () => {
     expect(convertSchema({ type: 'integer', minimum: 1, maximum: 100 }, '#')).toEqual({
       type: 'number',

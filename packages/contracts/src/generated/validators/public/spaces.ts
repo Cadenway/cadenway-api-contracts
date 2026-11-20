@@ -549,6 +549,82 @@ export const DeleteSpaceResponse = zod.void()
 
 
 /**
+ * Returns visible live milestones in visible lists of the space, excluding archived lists.
+ * A caller with only list grants sees only their qualifying lists. Sort by due date ascending,
+ * undated last; the opaque cursor is bound to the space and ordering. Total counts matching
+ * visible milestones and does not change existing space, list or sprint counts.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List milestones of a space
+ */
+export const ListSpaceMilestonesParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space, as the list of spaces gives it.')
+})
+
+export const listSpaceMilestonesQueryLimitDefault = 50;
+export const listSpaceMilestonesQueryLimitMax = 100;
+
+
+
+export const ListSpaceMilestonesQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listSpaceMilestonesQueryLimitMax).default(listSpaceMilestonesQueryLimitDefault).describe('Page size.')
+})
+
+export const listSpaceMilestonesResponseItemsItemOneKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const listSpaceMilestonesResponseItemsItemOneParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listSpaceMilestonesResponseItemsItemOneSubtaskCountsTotalMin = 0;
+
+export const listSpaceMilestonesResponseItemsItemOneSubtaskCountsClosedMin = 0;
+
+export const listSpaceMilestonesResponseItemsItemOneChecklistCountsTotalMin = 0;
+
+export const listSpaceMilestonesResponseItemsItemOneChecklistCountsDoneMin = 0;
+
+
+export const listSpaceMilestonesResponseTotalMin = 0;
+
+
+
+export const ListSpaceMilestonesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "milestone": zod.literal(true).describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "key": zod.string().regex(listSpaceMilestonesResponseItemsItemOneKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(listSpaceMilestonesResponseItemsItemOneParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(listSpaceMilestonesResponseItemsItemOneSubtaskCountsTotalMin),
+  "closed": zod.int().min(listSpaceMilestonesResponseItemsItemOneSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(listSpaceMilestonesResponseItemsItemOneChecklistCountsTotalMin),
+  "done": zod.int().min(listSpaceMilestonesResponseItemsItemOneChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n').and(zod.object({
+  "milestone": zod.literal(true)
+}))).describe('Task summaries whose milestone flag is true.'),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(listSpaceMilestonesResponseTotalMin).describe('Matching visible milestones on every page.')
+}).describe('Visible milestones in the space, ordered by due date ascending with undated last.')
+
+
+/**
  * Returns the lists of a space with the counts of their tasks, in the order of the sidebar
  * (their creation, a restored list at the end): the space overview ("Vue d’ensemble": "4
  * listes · 108 tâches", and on each list card "32 tâches", "12 / 32 terminées", "38 %", "14
@@ -632,3 +708,298 @@ export const GetSpaceOverviewResponse = zod.object({
 }).describe('A list with the counts of its tasks.')).describe('The lists of this page, in the order of their creation, with their counts.'),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
 })
+
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * Ordered by creation time and ID; the opaque cursor is bound to the space and order.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List task templates
+ */
+export const ListTaskTemplatesParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space, as the list of spaces gives it.')
+})
+
+export const listTaskTemplatesQueryLimitDefault = 50;
+export const listTaskTemplatesQueryLimitMax = 100;
+
+
+
+export const ListTaskTemplatesQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listTaskTemplatesQueryLimitMax).default(listTaskTemplatesQueryLimitDefault).describe('Page size.')
+})
+
+
+
+
+export const ListTaskTemplatesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('Library name, at most 80 characters.'),
+  "title": zod.string().describe('Source task title for a new task, at most 300 characters.'),
+  "description": zod.string().nullable().describe('Markdown source at most 50000 characters or null.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "labels": zod.array(zod.string()),
+  "checklist": zod.array(zod.string()).describe('Up to 100 checklist texts, each subject to ChecklistItemCreation rules when submitted.'),
+  "subtasks": zod.array(zod.string()).describe('Up to 25 direct child names, each subject to SubtaskName rules when submitted.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A space-shared snapshot of task ingredients. Checklist texts and direct live child names\nretain their order; dates, assignees, mentions, recurrence, milestones and watchers are not\ncopied. A client uses these ingredients to prefill a normal TaskCreation.\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('Space templates ordered by creation time and ID.')
+
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * The sourceTaskKey must name a live task in this space; a task in another space answers
+ * `404 task.not-found`, as does an invisible task. Requires edit on the space and source list. Captures title, description, priority,
+ * labels, checklist texts and direct live child names, without dates, assignees, mentions,
+ * recurrence, milestone or watchers. An archived source refuses writes. A restricted source
+ * list in an organization-visible space answers `422 template.source-restricted`, preventing
+ * the library from widening its audience. `422 template.limit-reached` means the library is
+ * full. Later source or template changes never alter previously created tasks. The client
+ * submits normal TaskCreation, including its checklist and name-only subtasks.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and space.task-template-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Save a task template
+ */
+export const CreateTaskTemplateParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space, as the list of spaces gives it.')
+})
+
+export const createTaskTemplateHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateTaskTemplateHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createTaskTemplateHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
+})
+
+export const createTaskTemplateBodySourceTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const createTaskTemplateBodyNameMax = 80;
+
+
+export const createTaskTemplateBodyNameRegExp = new RegExp('\\S');
+
+
+export const CreateTaskTemplateBody = zod.object({
+  "sourceTaskKey": zod.string().regex(createTaskTemplateBodySourceTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().min(1).refine((value) => Array.from(value).length <= createTaskTemplateBodyNameMax, { message: 'At most 80 Unicode code points' }).regex(createTaskTemplateBodyNameRegExp).optional().describe('A nonblank saved view or template name, at most 80 characters.')
+})
+
+
+
+
+export const CreateTaskTemplateResponse = zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('Library name, at most 80 characters.'),
+  "title": zod.string().describe('Source task title for a new task, at most 300 characters.'),
+  "description": zod.string().nullable().describe('Markdown source at most 50000 characters or null.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "labels": zod.array(zod.string()),
+  "checklist": zod.array(zod.string()).describe('Up to 100 checklist texts, each subject to ChecklistItemCreation rules when submitted.'),
+  "subtasks": zod.array(zod.string()).describe('Up to 25 direct child names, each subject to SubtaskName rules when submitted.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A space-shared snapshot of task ingredients. Checklist texts and direct live child names\nretain their order; dates, assignees, mentions, recurrence, milestones and watchers are not\ncopied. A client uses these ingredients to prefill a normal TaskCreation.\n')
+
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * An unknown or inaccessible scoped template answers `404 template.not-found`.
+ * Scope `tasks:read` for a personal API token.
+ * @summary Get a task template
+ */
+export const GetTaskTemplateParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space, as the list of spaces gives it.'),
+  "templateId": zod.uuid().describe('ID of the template.')
+})
+
+
+
+
+export const GetTaskTemplateResponse = zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('Library name, at most 80 characters.'),
+  "title": zod.string().describe('Source task title for a new task, at most 300 characters.'),
+  "description": zod.string().nullable().describe('Markdown source at most 50000 characters or null.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "labels": zod.array(zod.string()),
+  "checklist": zod.array(zod.string()).describe('Up to 100 checklist texts, each subject to ChecklistItemCreation rules when submitted.'),
+  "subtasks": zod.array(zod.string()).describe('Up to 25 direct child names, each subject to SubtaskName rules when submitted.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A space-shared snapshot of task ingredients. Checklist texts and direct live child names\nretain their order; dates, assignees, mentions, recurrence, milestones and watchers are not\ncopied. A client uses these ingredients to prefill a normal TaskCreation.\n')
+
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * Requires edit on the space. Deletes the template to free library capacity; it never deletes
+ * tasks created from it. If-Match, when sent, checks the template version.
+ * The change and space.task-template-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Delete a task template
+ */
+export const DeleteTaskTemplateParams = zod.object({
+  "spaceId": zod.uuid().describe('Id of the space, as the list of spaces gives it.'),
+  "templateId": zod.uuid().describe('ID of the template.')
+})
+
+export const DeleteTaskTemplateHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const DeleteTaskTemplateResponse = zod.void()
+
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * The opaque cursor is bound to the caller, organization and insertion order.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List favorites
+ */
+export const listFavoritesQueryLimitDefault = 50;
+export const listFavoritesQueryLimitMax = 100;
+
+
+
+export const ListFavoritesQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listFavoritesQueryLimitMax).default(listFavoritesQueryLimitDefault).describe('Page size.')
+})
+
+
+
+
+export const ListFavoritesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "kind": zod.string().describe('Target kind; unknown future kinds may be ignored by a client.'),
+  "targetId": zod.uuid(),
+  "target": zod.object({
+  "name": zod.string(),
+  "href": zod.string(),
+  "listId": zod.uuid().optional()
+}).describe('Current visible target name and public resource path; listId is present for a saved view.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A private favorite of the current user and organization.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('The caller\'s currently accessible active targets in insertion order by creation time and ID.')
+
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * A target must be active and visible or the response is `404 favorite.target-not-found`.
+ * A duplicate target answers `409 favorite.already-exists`; capacity answers
+ * `422 favorite.limit-reached`. No downstream event is emitted for this personal preference.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Create a favorite
+ */
+export const createFavoriteHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateFavoriteHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createFavoriteHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
+})
+
+export const CreateFavoriteBody = zod.object({
+  "kind": zod.enum(['space', 'list', 'saved-view']).describe('Kind of active target to favorite.'),
+  "targetId": zod.uuid().describe('UUID of the target resource.')
+})
+
+
+
+
+export const CreateFavoriteResponse = zod.object({
+  "id": zod.uuid(),
+  "kind": zod.string().describe('Target kind; unknown future kinds may be ignored by a client.'),
+  "targetId": zod.uuid(),
+  "target": zod.object({
+  "name": zod.string(),
+  "href": zod.string(),
+  "listId": zod.uuid().optional()
+}).describe('Current visible target name and public resource path; listId is present for a saved view.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A private favorite of the current user and organization.')
+
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * A missing, hidden or another user’s favorite answers `404 favorite.not-found`.
+ * Scope `tasks:read` for a personal API token.
+ * @summary Get a favorite
+ */
+export const GetFavoriteParams = zod.object({
+  "favoriteId": zod.uuid().describe('ID of the favorite.')
+})
+
+
+
+
+export const GetFavoriteResponse = zod.object({
+  "id": zod.uuid(),
+  "kind": zod.string().describe('Target kind; unknown future kinds may be ignored by a client.'),
+  "targetId": zod.uuid(),
+  "target": zod.object({
+  "name": zod.string(),
+  "href": zod.string(),
+  "listId": zod.uuid().optional()
+}).describe('Current visible target name and public resource path; listId is present for a saved view.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A private favorite of the current user and organization.')
+
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * Deletes the caller's favorite only; a missing, hidden or another user's favorite answers
+ * `404 favorite.not-found`. If-Match is optional and checks the favorite version.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Delete a favorite
+ */
+export const DeleteFavoriteParams = zod.object({
+  "favoriteId": zod.uuid().describe('ID of the favorite.')
+})
+
+export const DeleteFavoriteHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const DeleteFavoriteResponse = zod.void()

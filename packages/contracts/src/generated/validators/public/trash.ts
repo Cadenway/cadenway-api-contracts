@@ -147,19 +147,35 @@ export const PurgeTrashEntryResponse = zod.void()
  * the sidebar (`spaceRestored`). An entry the caller may not restore, or that is gone,
  * restored or erased already, answers `404 trash-entry.not-found` ("Déjà restaurée").
  *
- * An action: answers `200` with what came back. Emits `space.restored.v1` and
- * `list.restored.v1` for what came back with it, then `task.restored.v1` for each task of
- * the entry, the root first. Scope `tasks:write` for a personal API token.
+ * While list deletion is still batching, an entry the caller could restore afterwards answers
+ * `404 trash-entry.not-found` by default. With `reportNotReady=true` it instead answers
+ * `409 trash-entry.not-restorable-yet` without writing. Unauthorized, missing, purged and
+ * already restored entries continue to answer `404`.
+ *
+ * An action: answers `200` with what came back. When a space or list returns, it emits its
+ * `space.restored.v1` and `space.access-republished.v1`, or `list.restored.v1` and
+ * `list.access-changed.v1`, respectively; then `task.restored.v1` for each task of the
+ * entry, the root first. Scope `tasks:write` for a personal API token.
  * @summary Restore a trash entry
  */
 export const RestoreTrashEntryParams = zod.object({
   "entryId": zod.uuid().describe('Id of the trash entry, as the trash or `details.entryId` of `404 task.trashed` gives it.')
 })
 
+export const restoreTrashEntryQueryReportNotReadyDefault = false;
+
+export const RestoreTrashEntryQueryParams = zod.object({
+  "reportNotReady": zod.preprocess((value) => value === 'true' ? true : value === 'false' ? false : value, zod.boolean()).default(restoreTrashEntryQueryReportNotReadyDefault).describe('Report a restorable entry whose list deletion is still batching as not ready.')
+})
+
 export const RestoreTrashEntryBody = zod.object({
 
 }).describe('Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.')
 
+export const restoreTrashEntryResponseTaskDescriptionMentionsItemStartMin = 0;
+
+
+export const restoreTrashEntryResponseTaskNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const restoreTrashEntryResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const restoreTrashEntryResponseTaskParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -182,6 +198,14 @@ export const restoreTrashEntryResponseSubtaskCountMin = 0;
 
 export const RestoreTrashEntryResponse = zod.object({
   "task": zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(restoreTrashEntryResponseTaskDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(restoreTrashEntryResponseTaskNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(restoreTrashEntryResponseTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),

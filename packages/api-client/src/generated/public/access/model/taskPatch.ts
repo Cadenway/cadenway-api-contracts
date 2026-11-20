@@ -4,7 +4,9 @@
  */
 import type { CancelReason } from './cancelReason';
 import type { EstimateMinutes } from './estimateMinutes';
+import type { Mention } from './mention';
 import type { PriorityKey } from './priorityKey';
+import type { Recurrence } from './recurrence';
 import type { StatusKey } from './statusKey';
 import type { TaskDescription } from './taskDescription';
 import type { TaskKey } from './taskKey';
@@ -16,6 +18,22 @@ import type { TaskName } from './taskName';
  * the members it does not declare, `assigneeIds` and `labels` included.
  */
 export interface TaskPatch {
+  /**
+     * Structured spans in the description; replacing text clears prior spans unless a
+     * replacement array is supplied. A spans-only patch also requires If-Match. Invalid
+     * spans answer `400 request.invalid`, ineligible recipients `422 mention.recipient-invalid`.
+     * @maxItems 20
+     */
+  descriptionMentions?: Mention[];
+  /**
+     * A milestone permits only todo, blocked, done and cancelled. Dated milestones have
+     * equal start and due dates, undated milestones have both null; estimate is null.
+     * Conversion normalizes inherited fields and maps an inherited disallowed status to todo.
+     * Conflicting explicit dates or status answer `422 milestone.dates-invalid` or
+     * `422 milestone.status-invalid`. Removing the flag keeps normalized fields.
+     */
+  milestone?: boolean;
+  recurrence?: Recurrence;
   name?: TaskName;
   description?: TaskDescription | null;
   status?: StatusKey;

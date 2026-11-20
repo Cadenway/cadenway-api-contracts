@@ -8,7 +8,7 @@ export type ListTaskActivityParams = {
   /**
    * Kinds of entries to keep, separated by commas; every kind when absent.
    * @minItems 1
-   * @maxItems 5
+   * @maxItems 6
    */
   kind?: ActivityKindParameter;
   /** Opaque cursor taken from the `nextCursor` of the previous page. */

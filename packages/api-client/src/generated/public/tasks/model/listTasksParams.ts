@@ -13,6 +13,8 @@ import type { StatusFilterParameter } from './statusFilterParameter';
 import type { TaskSortParameter } from './taskSortParameter';
 
 export type ListTasksParams = {
+  /** Keep only milestones when true, or only ordinary tasks when false; absent leaves both. */
+  milestone?: boolean;
   /**
    * Statuses to keep, separated by commas.
    * @minItems 1

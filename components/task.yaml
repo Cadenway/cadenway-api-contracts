@@ -179,6 +179,13 @@ components:
         type: string
         default: open
         enum: [open, closed]
+    MilestoneFilter:
+      name: milestone
+      in: query
+      required: false
+      description: Keep only milestones when true, or only ordinary tasks when false; absent leaves both.
+      schema:
+        type: boolean
     ActivityKind:
       name: kind
       in: query
@@ -189,10 +196,10 @@ components:
       schema:
         type: array
         minItems: 1
-        maxItems: 5
+        maxItems: 6
         items:
           type: string
-          enum: [create, status, priority, due, assign]
+          enum: [create, status, priority, due, assign, comment]
         examples: [[status, assign]]
     ActorId:
       name: actorId
@@ -213,6 +220,716 @@ components:
           maxLength: 100
         examples: [[019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32]]
   schemas:
+    TaskTemplateCreation:
+      type: object
+      required: [sourceTaskKey]
+      properties:
+        sourceTaskKey:
+          $ref: '#/components/schemas/TaskKey'
+        name:
+          $ref: '#/components/schemas/SavedItemName'
+          description: Optional library name; when omitted it defaults to the source task name.
+    SavedItemName:
+      type: string
+      minLength: 1
+      maxLength: 80
+      pattern: '\S'
+      description: A nonblank saved view or template name, at most 80 characters.
+    TaskTemplate:
+      type: object
+      required:
+        [
+          id,
+          spaceId,
+          name,
+          title,
+          description,
+          priority,
+          labels,
+          checklist,
+          subtasks,
+          createdAt,
+          version,
+        ]
+      description: |
+        A space-shared snapshot of task ingredients. Checklist texts and direct live child names
+        retain their order; dates, assignees, mentions, recurrence, milestones and watchers are not
+        copied. A client uses these ingredients to prefill a normal TaskCreation.
+      properties:
+        id: { type: string, format: uuid }
+        spaceId: { type: string, format: uuid }
+        name: { type: string, description: 'Library name, at most 80 characters.' }
+        title:
+          { type: string, description: 'Source task title for a new task, at most 300 characters.' }
+        description:
+          { type: [string, 'null'], description: Markdown source at most 50000 characters or null. }
+        priority:
+          $ref: '#/components/schemas/PriorityKey'
+        labels:
+          type: array
+          items: { type: string }
+        checklist:
+          type: array
+          description: Up to 100 checklist texts, each subject to ChecklistItemCreation rules when submitted.
+          items: { type: string }
+        subtasks:
+          type: array
+          description: Up to 25 direct child names, each subject to SubtaskName rules when submitted.
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        version: { type: integer, minimum: 1 }
+    TaskTemplatePage:
+      type: object
+      required: [items, nextCursor]
+      description: Space templates ordered by creation time and ID.
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TaskTemplate' }
+        nextCursor: { $ref: './http.yaml#/components/schemas/NextCursor' }
+    SavedViewSort:
+      type: string
+      description: The signed sort vocabulary of the list tasks query, without a patch-time default.
+      enum:
+        [
+          manual,
+          -manual,
+          dueDate,
+          -dueDate,
+          priority,
+          -priority,
+          name,
+          -name,
+          createdAt,
+          -createdAt,
+        ]
+    SavedViewLayout:
+      type: string
+      description: Layout key from the task views in the mockup.
+      enum: [list, board, calendar, gantt, workload, table, form, activity, timesheet]
+    SavedViewSheetColumn:
+      type: string
+      description: Feuille column key from the mockup.
+      enum: [name, status, priority, people, due, estimate, spent, labels, list, points, client]
+    SavedViewFilters:
+      type: object
+      description: |
+        Existing task-query filters. `me` is resolved for the person applying the view, not its
+        creator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.
+      properties:
+        status: { $ref: '#/components/parameters/StatusFilter/schema' }
+        priority: { $ref: '#/components/parameters/PriorityFilter/schema' }
+        assignee: { $ref: '#/components/parameters/AssigneeFilter/schema' }
+        label: { $ref: '#/components/parameters/LabelFilter/schema' }
+    SavedViewPresentation:
+      type: object
+      description: Client presentation settings; sheet sort never changes the server query sort.
+      properties:
+        hiddenBoardStatusKeys:
+          type: array
+          items: { $ref: '#/components/schemas/StatusKey' }
+        hiddenSheetColumns:
+          type: array
+          items: { $ref: '#/components/schemas/SavedViewSheetColumn' }
+        sheetSort:
+          type: object
+          required: [column, direction]
+          description: Feuille-only sort applied to the fully loaded result by the client.
+          properties:
+            column: { $ref: '#/components/schemas/SavedViewSheetColumn' }
+            direction: { type: string, enum: [asc, desc] }
+    SavedViewLayoutValue:
+      type: string
+      x-extensible-enum: [list, board, calendar, gantt, workload, table, form, activity, timesheet]
+      description: Layout key; clients may ignore unknown future layouts.
+    SavedViewSheetColumnValue:
+      type: string
+      x-extensible-enum:
+        [name, status, priority, people, due, estimate, spent, labels, list, points, client]
+      description: Feuille column key; clients may ignore unknown future columns.
+    SavedViewPresentationValue:
+      type: object
+      description: Client presentation settings; sheet sort never changes the server query sort.
+      properties:
+        hiddenBoardStatusKeys:
+          type: array
+          items: { $ref: '#/components/schemas/StatusKey' }
+        hiddenSheetColumns:
+          type: array
+          items: { $ref: '#/components/schemas/SavedViewSheetColumnValue' }
+        sheetSort:
+          type: object
+          required: [column, direction]
+          description: Feuille-only sort applied to the fully loaded result by the client.
+          properties:
+            column: { $ref: '#/components/schemas/SavedViewSheetColumnValue' }
+            direction: { type: string, x-extensible-enum: [asc, desc] }
+    SavedViewConfigurationInput:
+      type: object
+      required: [layout, filters, sort, groupBy]
+      description: |
+        Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips
+        the task-groups call. Signed `sort` values use the existing list-tasks vocabulary.
+      properties:
+        layout: { $ref: '#/components/schemas/SavedViewLayout' }
+        filters: { $ref: '#/components/schemas/SavedViewFilters' }
+        sort: { $ref: '#/components/schemas/SavedViewSort' }
+        groupBy:
+          oneOf:
+            - $ref: '#/components/parameters/GroupBy/schema'
+            - type: 'null'
+        presentation: { $ref: '#/components/schemas/SavedViewPresentation' }
+    SavedViewSortValue:
+      type: string
+      description: Signed server task sort; clients may ignore future values.
+      x-extensible-enum:
+        [
+          manual,
+          -manual,
+          dueDate,
+          -dueDate,
+          priority,
+          -priority,
+          name,
+          -name,
+          createdAt,
+          -createdAt,
+        ]
+    SavedViewGroupByValue:
+      type: [string, 'null']
+      description: Grouping key, or null for ungrouped; clients may ignore future values.
+      x-extensible-enum: [status, priority, assignee]
+    SavedViewConfiguration:
+      type: object
+      required: [layout, filters, sort, groupBy]
+      description: |
+        Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips
+        the task-groups call. Signed `sort` values use the existing list-tasks vocabulary.
+      properties:
+        layout: { $ref: '#/components/schemas/SavedViewLayoutValue' }
+        filters: { $ref: '#/components/schemas/SavedViewFilters' }
+        sort: { $ref: '#/components/schemas/SavedViewSortValue' }
+        groupBy: { $ref: '#/components/schemas/SavedViewGroupByValue' }
+        presentation: { $ref: '#/components/schemas/SavedViewPresentationValue' }
+    SavedViewFiltersPatch:
+      type: object
+      description: A nested merge patch; null removes the named filter.
+      properties:
+        status:
+          oneOf:
+            - $ref: '#/components/parameters/StatusFilter/schema'
+            - type: 'null'
+        priority:
+          oneOf:
+            - $ref: '#/components/parameters/PriorityFilter/schema'
+            - type: 'null'
+        assignee:
+          oneOf:
+            - $ref: '#/components/parameters/AssigneeFilter/schema'
+            - type: 'null'
+        label:
+          oneOf:
+            - $ref: '#/components/parameters/LabelFilter/schema'
+            - type: 'null'
+    SavedViewPresentationPatch:
+      type: object
+      description: A nested merge patch; null removes the corresponding presentation setting.
+      properties:
+        hiddenBoardStatusKeys:
+          oneOf:
+            - type: array
+              items: { $ref: '#/components/schemas/StatusKey' }
+            - type: 'null'
+        hiddenSheetColumns:
+          oneOf:
+            - type: array
+              items: { $ref: '#/components/schemas/SavedViewSheetColumn' }
+            - type: 'null'
+        sheetSort:
+          oneOf:
+            - type: object
+              properties:
+                column: { $ref: '#/components/schemas/SavedViewSheetColumn' }
+                direction: { type: string, enum: [asc, desc] }
+            - type: 'null'
+    SavedViewConfigurationPatch:
+      type: object
+      description: |
+        Nested JSON Merge Patch. Null groupBy clears grouping and is returned as null; null
+        presentation removes presentation settings. Omitted members keep their current values.
+        The merged result must satisfy SavedViewConfiguration or the request is invalid.
+      properties:
+        layout: { $ref: '#/components/schemas/SavedViewLayout' }
+        filters: { $ref: '#/components/schemas/SavedViewFiltersPatch' }
+        sort: { $ref: '#/components/schemas/SavedViewSort' }
+        groupBy:
+          oneOf:
+            - $ref: '#/components/parameters/GroupBy/schema'
+            - type: 'null'
+        presentation:
+          oneOf:
+            - $ref: '#/components/schemas/SavedViewPresentationPatch'
+            - type: 'null'
+    SavedViewCreation:
+      type: object
+      required: [name, configuration]
+      properties:
+        name: { $ref: '#/components/schemas/SavedItemName' }
+        icon: { $ref: '#/components/schemas/LookIcon' }
+        configuration: { $ref: '#/components/schemas/SavedViewConfigurationInput' }
+    SavedViewPatch:
+      type: object
+      description: JSON Merge Patch; nested settings are merged and undeclared members are ignored. A null icon clears it.
+      properties:
+        name: { $ref: '#/components/schemas/SavedItemName' }
+        icon: { $ref: '#/components/schemas/LookIcon' }
+        configuration: { $ref: '#/components/schemas/SavedViewConfigurationPatch' }
+    SavedViewDuplicate:
+      type: object
+      additionalProperties: false
+      description: Empty object for duplicating a saved view.
+    SavedView:
+      type: object
+      required: [id, listId, name, icon, configuration, createdAt, updatedAt, version]
+      description: A view shared with readers of a list.
+      properties:
+        id: { type: string, format: uuid }
+        listId: { type: string, format: uuid }
+        name: { type: string }
+        icon: { $ref: '#/components/schemas/LookIconValue' }
+        configuration: { $ref: '#/components/schemas/SavedViewConfiguration' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, minimum: 1 }
+    SavedViewPage:
+      type: object
+      required: [items, nextCursor]
+      description: Views in creation order, with a duplicate inserted after its source.
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SavedView' }
+        nextCursor: { $ref: './http.yaml#/components/schemas/NextCursor' }
+    FavoriteKindInput:
+      type: string
+      enum: [space, list, saved-view]
+      description: Kind of active target to favorite.
+    FavoriteCreation:
+      type: object
+      required: [kind, targetId]
+      properties:
+        kind: { $ref: '#/components/schemas/FavoriteKindInput' }
+        targetId: { type: string, format: uuid, description: UUID of the target resource. }
+    Favorite:
+      type: object
+      required: [id, kind, targetId, target, createdAt, version]
+      description: A private favorite of the current user and organization.
+      properties:
+        id: { type: string, format: uuid }
+        kind:
+          type: string
+          x-extensible-enum: [space, list, saved-view]
+          description: Target kind; unknown future kinds may be ignored by a client.
+        targetId: { type: string, format: uuid }
+        target:
+          type: object
+          required: [name, href]
+          description: Current visible target name and public resource path; listId is present for a saved view.
+          properties:
+            name: { type: string }
+            href: { type: string, format: uri-reference }
+            listId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        version: { type: integer, minimum: 1 }
+    FavoritePage:
+      type: object
+      required: [items, nextCursor]
+      description: The caller's currently accessible active targets in insertion order by creation time and ID.
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Favorite' }
+        nextCursor: { $ref: './http.yaml#/components/schemas/NextCursor' }
+    TaskDuplicate:
+      type: object
+      additionalProperties: false
+      description: Empty object for duplicating a task.
+    ListDuplicate:
+      type: object
+      additionalProperties: false
+      description: Empty object for duplicating a list.
+    ListDuplication:
+      type: object
+      required: [list, taskCount]
+      description: The newly created list and number of copied tasks.
+      properties:
+        list:
+          $ref: '#/components/schemas/TaskList'
+        taskCount:
+          type: integer
+          minimum: 0
+    BulkTaskSelection:
+      type: object
+      additionalProperties: false
+      required: [taskKey]
+      description: One explicitly selected task and its optional expected version.
+      properties:
+        taskKey:
+          $ref: '#/components/schemas/TaskKey'
+        version:
+          type: integer
+          minimum: 1
+          description: Expected current task version, checked before any changes.
+    BulkTaskAction:
+      type: object
+      additionalProperties: false
+      required: [selection, action]
+      description: |
+        One atomic action over 1 to 50 distinct task keys. Duplicate keys are invalid even if
+        their versions differ. The client sends its visible-row selection explicitly. The action
+        and each selection entry must contain only the declared members for their kind.
+      properties:
+        selection:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: Distinct explicit task keys; duplicate keys answer `400 request.invalid`.
+          items:
+            $ref: '#/components/schemas/BulkTaskSelection'
+        action:
+          $ref: '#/components/schemas/BulkTaskActionValue'
+    BulkTaskActionValue:
+      description: The requested action; its `type` selects the permitted members.
+      oneOf:
+        - $ref: '#/components/schemas/BulkTaskStatusAction'
+        - $ref: '#/components/schemas/BulkTaskPriorityAction'
+        - $ref: '#/components/schemas/BulkTaskAssignAction'
+        - $ref: '#/components/schemas/BulkTaskUnassignAction'
+        - $ref: '#/components/schemas/BulkTaskMoveAction'
+        - $ref: '#/components/schemas/BulkTaskTrashAction'
+        - $ref: '#/components/schemas/BulkTaskDuplicateAction'
+      discriminator:
+        propertyName: type
+        mapping:
+          status: '#/components/schemas/BulkTaskStatusAction'
+          priority: '#/components/schemas/BulkTaskPriorityAction'
+          assign: '#/components/schemas/BulkTaskAssignAction'
+          unassign: '#/components/schemas/BulkTaskUnassignAction'
+          move: '#/components/schemas/BulkTaskMoveAction'
+          trash: '#/components/schemas/BulkTaskTrashAction'
+          duplicate: '#/components/schemas/BulkTaskDuplicateAction'
+    BulkTaskStatusAction:
+      type: object
+      additionalProperties: false
+      required: [type, status]
+      properties:
+        type: { type: string, const: status }
+        status:
+          $ref: '#/components/schemas/StatusKey'
+        cancelReason:
+          $ref: '#/components/schemas/CancelReasonInput'
+        cancelNote:
+          type: [string, 'null']
+          maxLength: 500
+          description: Cancellation note, allowed only when the final status is cancelled.
+    BulkTaskPriorityAction:
+      type: object
+      additionalProperties: false
+      required: [type, priority]
+      properties:
+        type: { type: string, const: priority }
+        priority:
+          $ref: '#/components/schemas/PriorityKey'
+    BulkTaskAssignAction:
+      type: object
+      additionalProperties: false
+      required: [type, userId]
+      properties:
+        type: { type: string, const: assign }
+        userId: { type: string, format: uuid }
+    BulkTaskUnassignAction:
+      type: object
+      additionalProperties: false
+      required: [type, userId]
+      properties:
+        type: { type: string, const: unassign }
+        userId: { type: string, format: uuid }
+    BulkTaskMoveAction:
+      type: object
+      additionalProperties: false
+      required: [type, listId]
+      properties:
+        type: { type: string, const: move }
+        listId: { type: string, format: uuid }
+    BulkTaskTrashAction:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { type: string, const: trash }
+    BulkTaskDuplicateAction:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { type: string, const: duplicate }
+    BulkTaskResult:
+      type: object
+      required: [results, affectedCount]
+      description: Results for selected keys after one committed transaction; there is no partial success.
+      properties:
+        results:
+          type: array
+          description: One result per selected key, including selections covered by an ancestor.
+          items:
+            $ref: '#/components/schemas/BulkTaskResultEntry'
+        affectedCount:
+          type: integer
+          minimum: 0
+          description: Distinct task rows affected, including subtrees, successors and copies.
+    BulkTaskResultEntry:
+      type: object
+      required: [taskKey]
+      description: The selected task and, where applicable, the resulting versions or created IDs.
+      properties:
+        taskKey:
+          $ref: '#/components/schemas/TaskKey'
+        version:
+          type: integer
+          minimum: 1
+          description: Resulting version of the selected task when applicable.
+        newTaskKey:
+          $ref: '#/components/schemas/TaskKey'
+          description: Key of the copy created for this selection.
+        newTaskVersion:
+          type: integer
+          minimum: 1
+        successorKey:
+          $ref: '#/components/schemas/TaskKey'
+          description: Key of the recurrence successor when one was created.
+        successorVersion:
+          type: integer
+          minimum: 1
+        trashEntryId:
+          type: string
+          format: uuid
+          description: Trash entry containing this selected task, including a covered descendant.
+    Recurrence:
+      type: string
+      description: |
+        `RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a
+        successor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;
+        monthly clamps to the last day while retaining the chain's original day.
+      enum: [none, daily, weekly, biweekly, monthly]
+    DependencyDirection:
+      type: string
+      description: Whether the anchor task blocks the other task or is blocked by it.
+      enum: [blocks, blocked-by]
+    DependencyCreation:
+      type: object
+      required: [otherTaskKey, direction]
+      properties:
+        otherTaskKey:
+          $ref: '#/components/schemas/TaskKey'
+        direction:
+          $ref: '#/components/schemas/DependencyDirection'
+    Dependency:
+      type: object
+      required: [id, blocker, blocked]
+      description: A directed edge between visible tasks in the current organization.
+      properties:
+        id:
+          type: string
+          format: uuid
+        blocker:
+          $ref: '#/components/schemas/TaskSummary'
+        blocked:
+          $ref: '#/components/schemas/TaskSummary'
+    DependencyPage:
+      type: object
+      required: [items, nextCursor]
+      description: Visible edges ordered by creation time and ID.
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Dependency'
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'
+    MilestonePage:
+      type: object
+      required: [items, nextCursor, total]
+      description: Visible milestones in the space, ordered by due date ascending with undated last.
+      properties:
+        items:
+          type: array
+          description: Task summaries whose milestone flag is true.
+          items:
+            allOf:
+              - $ref: '#/components/schemas/TaskSummary'
+              - type: object
+                required: [milestone]
+                properties:
+                  milestone:
+                    type: boolean
+                    const: true
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+          description: Matching visible milestones on every page.
+    Mention:
+      type: object
+      required: [userId, start, end]
+      description: |
+        A recipient identified by account, not spelling. Offsets count Unicode code points in
+        the unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be
+        non-overlapping, in range, and cover a nonempty displayed token beginning with `@`.
+        Raw text without a span never identifies a recipient. The recipient must be a current
+        member, including a guest, with read access to the task's list after the write.
+      properties:
+        userId:
+          type: string
+          format: uuid
+        start:
+          type: integer
+          minimum: 0
+        end:
+          type: integer
+          minimum: 1
+    Comment:
+      type: object
+      required: [id, taskKey, actor, body, createdAt, editedAt, version, mentions, replyToCommentId]
+      description: A live comment in the flat task timeline; deleted comments are omitted.
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskKey:
+          $ref: '#/components/schemas/TaskKey'
+        actor:
+          $ref: '#/components/schemas/Actor'
+        body:
+          type: string
+          description: The submitted Markdown source, unchanged.
+        createdAt:
+          type: string
+          format: date-time
+        editedAt:
+          type: [string, 'null']
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+        mentions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mention'
+        replyToCommentId:
+          type: [string, 'null']
+          format: uuid
+          description: Immutable reply target, retained even when that comment is deleted.
+    CommentCreation:
+      type: object
+      required: [body]
+      description: A comment and optional structured mentions and reply target.
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          pattern: '\S'
+          description: |
+            Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.
+          examples: ['@Camille Martin, la maquette est prête.']
+        mentions:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/Mention'
+        replyToCommentId:
+          type: string
+          format: uuid
+          description: A live comment on this same task.
+    CommentPatch:
+      type: object
+      description: |
+        JSON Merge Patch. Replacing the body clears existing mention spans unless a replacement
+        array is supplied. A spans-only change still requires the comment's If-Match. Undeclared
+        members are ignored.
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          pattern: '\S'
+          description: Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.
+        mentions:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/Mention'
+    CommentPage:
+      type: object
+      required: [items, nextCursor, total]
+      description: Live comments ordered by creation time and ID, oldest first; total excludes tombstones.
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+    TaskParticipant:
+      type: object
+      required: [userId, memberId]
+      description: A current member eligible for a mention on this task, including guests.
+      properties:
+        userId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+    TaskParticipantPage:
+      type: object
+      required: [items, nextCursor]
+      description: Eligible accounts ordered by user ID.
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskParticipant'
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'
+    Watcher:
+      type: object
+      required: [userId]
+      description: An effective watcher who currently has task access.
+      properties:
+        userId:
+          type: string
+          format: uuid
+    WatcherPage:
+      type: object
+      required: [items, nextCursor, total, callerFollows]
+      description: Effective watchers ordered by user ID, with the same total and caller state on every page.
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Watcher'
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'
+        total:
+          type: integer
+          minimum: 0
+        callerFollows:
+          type: boolean
     StatusKey:
       type: string
       description: |
@@ -1015,6 +1732,11 @@ components:
         A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the
         description, the note of the cancellation and the items of the checklist.
       properties:
+        milestone:
+          type: boolean
+          description: Whether this task is a milestone; absence means the producer did not report it.
+        recurrence:
+          $ref: '#/components/schemas/Recurrence'
         key:
           $ref: '#/components/schemas/TaskKey'
         name:
@@ -1112,6 +1834,19 @@ components:
         ]
       description: A task, with its description and its checklist.
       properties:
+        milestone:
+          type: boolean
+          description: Whether this task is a milestone; absence means the producer did not report it.
+        recurrence:
+          $ref: '#/components/schemas/Recurrence'
+        descriptionMentions:
+          type: array
+          description: Structured spans in the current Markdown description.
+          items:
+            $ref: '#/components/schemas/Mention'
+        nextOccurrenceKey:
+          $ref: '#/components/schemas/TaskKey'
+          description: Successor key only when the successor is live and readable by the caller.
         key:
           $ref: '#/components/schemas/TaskKey'
         name:
@@ -1223,6 +1958,31 @@ components:
         A new task. `status` and `priority` declare their values themselves, those of `StatusKey`
         and `PriorityKey`, with their default.
       properties:
+        descriptionMentions:
+          type: array
+          maxItems: 20
+          description: |
+            Structured spans in the description; replacing text clears prior spans unless a
+            replacement array is supplied. Invalid
+            spans answer `400 request.invalid`, ineligible recipients `422 mention.recipient-invalid`.
+          items:
+            $ref: '#/components/schemas/Mention'
+        milestone:
+          type: boolean
+          description: |
+            A milestone permits only todo, blocked, done and cancelled. Dated milestones have
+            equal start and due dates, undated milestones have both null; estimate is null.
+            Conversion normalizes inherited fields and maps an inherited disallowed status to todo.
+            Conflicting explicit dates or status answer `422 milestone.dates-invalid` or
+            `422 milestone.status-invalid`. Removing the flag keeps normalized fields.
+        recurrence:
+          $ref: '#/components/schemas/Recurrence'
+        checklist:
+          type: array
+          maxItems: 100
+          description: Checklist text in order; fresh IDs and unchecked items are created atomically.
+          items:
+            $ref: '#/components/schemas/ChecklistItemCreation'
         name:
           $ref: '#/components/schemas/TaskName'
         description:
@@ -1338,6 +2098,25 @@ components:
         the checklist are collections: they change through their own routes, and a patch ignores
         the members it does not declare, `assigneeIds` and `labels` included.
       properties:
+        descriptionMentions:
+          type: array
+          maxItems: 20
+          description: |
+            Structured spans in the description; replacing text clears prior spans unless a
+            replacement array is supplied. A spans-only patch also requires If-Match. Invalid
+            spans answer `400 request.invalid`, ineligible recipients `422 mention.recipient-invalid`.
+          items:
+            $ref: '#/components/schemas/Mention'
+        milestone:
+          type: boolean
+          description: |
+            A milestone permits only todo, blocked, done and cancelled. Dated milestones have
+            equal start and due dates, undated milestones have both null; estimate is null.
+            Conversion normalizes inherited fields and maps an inherited disallowed status to todo.
+            Conflicting explicit dates or status answer `422 milestone.dates-invalid` or
+            `422 milestone.status-invalid`. Removing the flag keeps normalized fields.
+        recurrence:
+          $ref: '#/components/schemas/Recurrence'
         name:
           $ref: '#/components/schemas/TaskName'
         description:
@@ -1415,10 +2194,18 @@ components:
       description: |
         One entry of the activity log of a task ("Activité"); every entry names a task, and an entry
         about a list or a space would come on a route of its own. The member that names the change
-        is the one of its `kind`: `status`, `priority`, `dueDate` or `assignee`; a creation has
-        none. Later versions add kinds and their members (comments): a client shows an unknown kind
+        is the one of its `kind`: `status`, `priority`, `dueDate`, `assignee` or `commentId`; a creation has
+        none. Comment creation records its ID and an excerpt of the current body; deleting the comment
+        removes the entry. Edits and deletions do not create separate entries. Later versions add kinds: a client shows an unknown kind
         as "a modifié la tâche".
       properties:
+        commentId:
+          type: string
+          format: uuid
+          description: Comment associated with a comment activity entry.
+        commentExcerpt:
+          type: string
+          description: Up to 240 Unicode code points of the current comment body.
         id:
           type: string
           format: uuid
@@ -1429,12 +2216,10 @@ components:
         kind:
           type: string
           description: |
-            `create` ("a créé la tâche"), `status` ("a changé le statut"), `priority` ("a passé la
-            priorité à"), `due` ("a fixé l’échéance", "a déplacé l’échéance", "a retiré
-            l’échéance") or `assign` ("s’est assigné la tâche", "a assigné Inès Robert", "s’est
-            retiré de la tâche", "a retiré Inès Robert"). Later versions add kinds
-            (`x-extensible-enum`).
-          x-extensible-enum: [create, status, priority, due, assign]
+            `create` records creation, `status` a status change, `priority` a priority change,
+            `due` a due-date change, `assign` an assignment change, and `comment` a new comment.
+            Future kinds may be added; render unknown kinds as a generic task change.
+          x-extensible-enum: [create, status, priority, due, assign, comment]
         actor:
           $ref: '#/components/schemas/Actor'
         task:

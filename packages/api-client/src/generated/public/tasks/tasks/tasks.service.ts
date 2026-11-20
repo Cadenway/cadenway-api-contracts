@@ -21,19 +21,37 @@ import type {
 } from 'rxjs';
 
 import type {
+  BulkTaskAction,
+  BulkTaskResult,
   ChecklistItemCreation,
   ChecklistItemPatch,
+  Comment,
+  CommentCreation,
+  CommentPage,
+  CommentPatch,
+  Dependency,
+  DependencyCreation,
+  DependencyPage,
   EmptyRequest,
   LabelChange,
   LabelPage,
+  ListDependencyCandidatesParams,
   ListLabelsParams,
   ListSubtasksParams,
+  ListTaskCommentsParams,
+  ListTaskDependenciesParams,
+  ListTaskParticipantsParams,
+  ListTaskWatchersParams,
   SubtaskCreation,
   Task,
   TaskCreation,
   TaskDetail,
+  TaskDuplicate,
+  TaskParticipantPage,
   TaskPatch,
-  TaskSummaryPage
+  TaskSummaryPage,
+  Watcher,
+  WatcherPage
 } from '../model';
 
 import type {
@@ -179,6 +197,10 @@ export class TasksService {
  * Records a creation in the activity log of each task created. Emits `task.created.v1` for
  * each task created, and `task.assigned.v1` for each of their assignees. Scope `tasks:write`
  * for a personal API token.
+ * Optional checklist entries are created unchecked in order with fresh IDs. Structured
+ * description mentions, milestone constraints and recurrence follow TaskCreation; ineligible
+ * mentions return `422 mention.recipient-invalid`, invalid milestones return
+ * `422 milestone.status-invalid` or `422 milestone.dates-invalid`.
  * @summary Create a task
  */
  createTask<TData = Task>(listId: string,
@@ -213,6 +235,60 @@ export class TasksService {
     return this.http.post<TData>(
       `/v1/lists/${listId}/tasks`,
       taskCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Applies one explicit action to 1–50 distinct selected keys in a single tenant transaction.
+ * Resolve and authorize all keys and optional per-key expected versions, lock and recheck in
+ * stable order, then apply the action and write activity and outbox. A stale selected version
+ * answers `412 request.version-mismatch`; duplicate or ambiguous selections and more than 50
+ * keys answer `400 request.invalid`. The expansion limit is 1,000 affected task rows including
+ * subtrees, successors and copies (`422 bulk.expansion-limit-reached`). On any deterministic
+ * error nothing changes or emits; `details.key` identifies only an authorized visible task.
+ * Status, priority and explicit assign or unassign affect selected tasks, even selected
+ * descendants. Move and trash collapse selections already covered by selected ancestors;
+ * move carries the live subtree with immutable keys, detaching a moved subtask from its old
+ * parent and retaining statuses. Duplicate applies the single-task copy rule per selection.
+ * Existing task status, cancellation, milestone, recurrence, archive, tree and role rules
+ * apply. A destination that is invisible answers `404 list.not-found`, a visible but
+ * uneditable destination `403 access.role-insufficient`. The optional Idempotency-Key replays
+ * the recorded response for 24 hours, and conflicting or concurrent reuse has the standard
+ * `422 idempotency.key-reused` or `409 idempotency.request-in-progress` problem. Normal task
+ * creation, change and lifecycle facts are emitted, never partial facts.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Apply an atomic bulk task action
+ */
+ executeBulkTaskAction<TData = BulkTaskResult>(bulkTaskAction: BulkTaskAction, options?: HttpClientBodyOptions): Observable<TData>;
+ executeBulkTaskAction<TData = BulkTaskResult>(bulkTaskAction: BulkTaskAction, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ executeBulkTaskAction<TData = BulkTaskResult>(bulkTaskAction: BulkTaskAction, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  executeBulkTaskAction<TData = BulkTaskResult>(
+    bulkTaskAction: BulkTaskAction, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/tasks/bulk-actions`,
+      bulkTaskAction,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/tasks/bulk-actions`,
+      bulkTaskAction,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/tasks/bulk-actions`,
+      bulkTaskAction,{
         ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
       }
@@ -296,6 +372,21 @@ export class TasksService {
  * `task.status-changed.v1` for a new status; a move emits `task.updated.v1` for each subtask
  * that moves too. A patch that changes nothing answers `200` with the same version and emits
  * nothing. Scope `tasks:write` for a personal API token.
+ * Description mentions require If-Match, including spans-only changes. Replacing text clears
+ * old spans unless replacements are supplied. Milestone conversion and recurrence follow
+ * the shared TaskPatch rules. Entering done with a due date creates at most one root successor
+ * in the same list, atomically with resetting recurrence to none, the link and the outbox.
+ * Cancellation, an undated completion, a repeated done, creation in done and restore create
+ * none. A source that has already spawned cannot be rearmed (`409 recurrence.already-spawned`).
+ * Unrepresentable dates answer `422 recurrence.date-out-of-range`. A successor copies the
+ * title, Markdown, priority, labels, eligible assignees, ordinary estimate, milestone and
+ * unchecked checklist, with a fresh key and todo status. It excludes children, parent,
+ * mentions, comments, watcher overrides, dependencies and completion metadata. Start dates
+ * move by the due-date delta and milestones retain date alignment. Monthly cadence retains
+ * the original day across short months. Fresh watcher defaults apply. A live existing task
+ * entering done as a milestone emits milestone.reached.v1, including when the same patch
+ * adds the flag. Creation in done, restore, cancellation, repeated done and adding the flag
+ * to an already-done task do not; a later genuine transition into done can emit it again.
  * @summary Change a task
  */
  updateTask<TData = Task>(taskKey: string,
@@ -336,18 +427,71 @@ export class TasksService {
     );
   }
 /**
+ * Duplicates one live task in its own list with ` (copie)` appended, truncating the source
+ * portion to fit the existing name limit. It allocates a fresh task key and timestamps and
+ * fresh checklist IDs, preserving checklist ticks, milestone, supported status and valid
+ * cancellation reason and note. It keeps a live parent when tree depth and capacity permit;
+ * a full parent answers `422 task.subtask-limit-reached`. It copies currently assignable
+ * users and Markdown as text, without mention spans, children, comments, watcher overrides,
+ * dependencies, recurrence, files, time or approvals. A copy in done gets its own completedAt.
+ * Requires edit on the list; an archived task refuses changes. If-Match checks the source
+ * task version. An optional Idempotency-Key replays the original 201 and Location for 24
+ * hours; changed payload and concurrent replay use the standard idempotency problems. Emits
+ * the ordinary task creation and assignment facts in the creation transaction.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Duplicate a task
+ */
+ duplicateTask<TData = Task>(taskKey: string,
+    taskDuplicate: TaskDuplicate, options?: HttpClientBodyOptions): Observable<TData>;
+ duplicateTask<TData = Task>(taskKey: string,
+    taskDuplicate: TaskDuplicate, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ duplicateTask<TData = Task>(taskKey: string,
+    taskDuplicate: TaskDuplicate, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  duplicateTask<TData = Task>(
+    taskKey: string,
+    taskDuplicate: TaskDuplicate, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/duplicate`,
+      taskDuplicate,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/duplicate`,
+      taskDuplicate,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/duplicate`,
+      taskDuplicate,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
  * Returns what the task detail shows ("Détails", "Propriétés"): the task, its space with its
  * statuses, its list, its parent ("Sous-tâche de CAD-482 · Refondre l’écran de connexion
  * SSO") and its direct subtasks ("Sous-tâches 3"), those archived or in the trash left out
  * but for an archived task, whose detail shows the subtasks archived with it, and `list`
  * carries the role of the caller (`callerRole`). The gateway composes it; `partial` names
- * the parts it could not read, so that the web application shows the rest. In this version
- * task-service is its only source: `partial` is always empty, and the detail fails as a whole
- * when task-service cannot answer ("Impossible de charger la tâche"). Later versions add
- * parts (comments, attachments, development links), each named in `partial` when its source
- * does not answer.
+ * the parts it could not read, so that the web application shows the rest. A failure of the
+ * base task read fails the detail as a whole. Later versions may add parts for attachments
+ * and development links.
  *
  * `ETag` is the version of the task. Scope `tasks:read` for a personal API token.
+ * The gateway also reads the first comment page from task-service. A comments-only upstream
+ * failure omits `comments` and adds `comments` to `partial`; a visibility denial fails closed.
+ * A base failure retains the existing whole-detail error.
  * @summary Read the detail of a task
  */
  getTaskDetail<TData = TaskDetail>(taskKey: string, options?: HttpClientBodyOptions): Observable<TData>;
@@ -378,6 +522,647 @@ export class TasksService {
         ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
       }
+    );
+  }
+/**
+ * Lists live comments oldest first by `(createdAt,id)`, with a total excluding deleted comments.
+ * The cursor is opaque and bound to the task and ordering. Anyone who sees the task may read.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List task comments
+ */
+ listTaskComments<TData = CommentPage>(taskKey: string,
+    params?: ListTaskCommentsParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listTaskComments<TData = CommentPage>(taskKey: string,
+    params?: ListTaskCommentsParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listTaskComments<TData = CommentPage>(taskKey: string,
+    params?: ListTaskCommentsParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listTaskComments<TData = CommentPage>(
+    taskKey: string,
+    params?: ListTaskCommentsParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/comments`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/comments`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/comments`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * Check the caller's comment or edit role before validating recipients; a caller below the
+ * required role receives `403 access.role-insufficient` before `422 mention.recipient-invalid`.
+ * A current member, including a guest, with read access to the list is eligible. Mention spans
+ * are Unicode code-point offsets into unchanged Markdown and are validated for range,
+ * overlap and a displayed token beginning with `@`; invalid spans answer `400 request.invalid`.
+ * Unmarked text is not a mention.
+ * Ineligible recipients answer `422 mention.recipient-invalid` without identifying them.
+ * A `comment` or `edit` role may post. A reply must name a live comment on the same task;
+ * otherwise `404 comment.not-found`. Replies are flat. The optional Idempotency-Key records
+ * the response and Location for 24 hours; replay has no second effect. The comment and task
+ * version, activity and outbox change in the same transaction.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Create a task comment
+ */
+ createTaskComment<TData = Comment>(taskKey: string,
+    commentCreation: CommentCreation, options?: HttpClientBodyOptions): Observable<TData>;
+ createTaskComment<TData = Comment>(taskKey: string,
+    commentCreation: CommentCreation, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ createTaskComment<TData = Comment>(taskKey: string,
+    commentCreation: CommentCreation, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  createTaskComment<TData = Comment>(
+    taskKey: string,
+    commentCreation: CommentCreation, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/comments`,
+      commentCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/comments`,
+      commentCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/comments`,
+      commentCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Reads a live comment on a visible task. A deleted, missing or unrelated comment answers
+ * `404 comment.not-found`; a deleted reply target leaves only its ID, never quoted content.
+ * Scope `tasks:read` for a personal API token.
+ * @summary Get a task comment
+ */
+ getTaskComment<TData = Comment>(taskKey: string,
+    commentId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ getTaskComment<TData = Comment>(taskKey: string,
+    commentId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getTaskComment<TData = Comment>(taskKey: string,
+    commentId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getTaskComment<TData = Comment>(
+    taskKey: string,
+    commentId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/comments/${commentId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/comments/${commentId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/comments/${commentId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Check the caller's comment or edit role and comment authorship before validating recipients;
+ * a caller below the required role receives `403 access.role-insufficient` before
+ * `422 mention.recipient-invalid`.
+ * A current member, including a guest, with read access to the list is eligible. Mention spans
+ * are Unicode code-point offsets into unchanged Markdown and are validated for range,
+ * overlap and a displayed token beginning with `@`; invalid spans answer `400 request.invalid`.
+ * Unmarked text is not a mention.
+ * Ineligible recipients answer `422 mention.recipient-invalid` without identifying them.
+ * Requires `comment` or `edit` and the human author; another editor gets
+ * `403 comment.author-required`. If-Match is required even for spans alone and uses the
+ * comment version. Replacing text clears spans unless replacements are supplied. The task
+ * version, activity and outbox change once in the same transaction.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Edit a task comment
+ */
+ updateTaskComment<TData = Comment>(taskKey: string,
+    commentId: string,
+    commentPatch: CommentPatch, options?: HttpClientBodyOptions): Observable<TData>;
+ updateTaskComment<TData = Comment>(taskKey: string,
+    commentId: string,
+    commentPatch: CommentPatch, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ updateTaskComment<TData = Comment>(taskKey: string,
+    commentId: string,
+    commentPatch: CommentPatch, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  updateTaskComment<TData = Comment>(
+    taskKey: string,
+    commentId: string,
+    commentPatch: CommentPatch, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.patch<TData>(
+      `/v1/tasks/${taskKey}/comments/${commentId}`,
+      commentPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.patch<TData>(
+      `/v1/tasks/${taskKey}/comments/${commentId}`,
+      commentPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.patch<TData>(
+      `/v1/tasks/${taskKey}/comments/${commentId}`,
+      commentPatch,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Requires `comment` or `edit` and the human author; another editor gets
+ * `403 comment.author-required`. If-Match is optional and uses the comment version. Removes
+ * text and spans, leaves a content-free tombstone for replies until task purge, and excludes
+ * it from pages and counts. The task version, activity and outbox change atomically.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Delete a task comment
+ */
+ deleteTaskComment<TData = void>(taskKey: string,
+    commentId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ deleteTaskComment<TData = void>(taskKey: string,
+    commentId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ deleteTaskComment<TData = void>(taskKey: string,
+    commentId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  deleteTaskComment<TData = void>(
+    taskKey: string,
+    commentId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/comments/${commentId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/comments/${commentId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/comments/${commentId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Lists current members, including guests, with read access to this task, ordered by user ID.
+ * Only `userId` and `memberId` are returned. Requires `comment` or `edit`; a viewer receives
+ * `403 access.role-insufficient`. The opaque cursor is bound to the task and ordering.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List eligible task participants
+ */
+ listTaskParticipants<TData = TaskParticipantPage>(taskKey: string,
+    params?: ListTaskParticipantsParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listTaskParticipants<TData = TaskParticipantPage>(taskKey: string,
+    params?: ListTaskParticipantsParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listTaskParticipants<TData = TaskParticipantPage>(taskKey: string,
+    params?: ListTaskParticipantsParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listTaskParticipants<TData = TaskParticipantPage>(
+    taskKey: string,
+    params?: ListTaskParticipantsParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/participants`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/participants`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/participants`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * Lists effective eligible watchers by user ID. The human creator and current eligible
+ * assignees are defaults, deduplicated; system and automation creators add no account.
+ * Per-user follow and unfollow overrides preserve opt-outs across reassignment. Membership
+ * and list visibility are checked on each read and event audience snapshot. A cursor is bound
+ * to the task and ordering; total and callerFollows are present on every page.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List task watchers
+ */
+ listTaskWatchers<TData = WatcherPage>(taskKey: string,
+    params?: ListTaskWatchersParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listTaskWatchers<TData = WatcherPage>(taskKey: string,
+    params?: ListTaskWatchersParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listTaskWatchers<TData = WatcherPage>(taskKey: string,
+    params?: ListTaskWatchersParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listTaskWatchers<TData = WatcherPage>(
+    taskKey: string,
+    params?: ListTaskWatchersParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/watchers`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/watchers`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/watchers`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * Check the caller's role and whether the subject is the caller before recipient validation;
+ * a caller without the required role receives `403 access.role-insufficient` before
+ * `422 watcher.recipient-invalid`.
+ * Sets an explicit follow override for this account. `comment` or `edit` may change their own
+ * override; only `edit` may change another account. The target must be a current member with
+ * task read access; ineligible targets return `422 watcher.recipient-invalid` without details.
+ * At most 100 explicit overrides are stored per task, plus defaults; a new override beyond
+ * that bound returns `422 watcher.limit-reached`. Repeating the override is a no-op. If-Match
+ * and the returned ETag use the task version; a committed change bumps it once.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Follow a task
+ */
+ followTaskWatcher<TData = Watcher>(taskKey: string,
+    userId: string,
+    emptyRequest: EmptyRequest, options?: HttpClientBodyOptions): Observable<TData>;
+ followTaskWatcher<TData = Watcher>(taskKey: string,
+    userId: string,
+    emptyRequest: EmptyRequest, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ followTaskWatcher<TData = Watcher>(taskKey: string,
+    userId: string,
+    emptyRequest: EmptyRequest, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  followTaskWatcher<TData = Watcher>(
+    taskKey: string,
+    userId: string,
+    emptyRequest: EmptyRequest, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.put<TData>(
+      `/v1/tasks/${taskKey}/watchers/${userId}`,
+      emptyRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.put<TData>(
+      `/v1/tasks/${taskKey}/watchers/${userId}`,
+      emptyRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.put<TData>(
+      `/v1/tasks/${taskKey}/watchers/${userId}`,
+      emptyRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Check the caller's role and whether the subject is the caller before recipient validation;
+ * a caller without the required role receives `403 access.role-insufficient` before
+ * `422 watcher.recipient-invalid`.
+ * Sets an explicit unfollow override, including for an account without a default subscription.
+ * `comment` or `edit` may change their own override; only `edit` may change another account.
+ * The target must be eligible, otherwise `422 watcher.recipient-invalid`. A new override over
+ * 100 returns `422 watcher.limit-reached`; repeating one is a no-op. If-Match and the returned
+ * ETag use the task version; a committed change bumps it once.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Unfollow a task
+ */
+ unfollowTaskWatcher<TData = void>(taskKey: string,
+    userId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ unfollowTaskWatcher<TData = void>(taskKey: string,
+    userId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ unfollowTaskWatcher<TData = void>(taskKey: string,
+    userId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  unfollowTaskWatcher<TData = void>(
+    taskKey: string,
+    userId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/watchers/${userId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/watchers/${userId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/watchers/${userId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Lists edges by creation time and ID. Both endpoints must be readable; edges to an invisible,
+ * trashed or archived counterpart and their counts and warnings are hidden. Edges are retained
+ * through archive and trash, can reappear on restoration, and are erased on endpoint purge.
+ * An archived anchor remains readable and may show visible live counterparts. Dates are
+ * advisory: comparing an open blocker's due date with the blocked task's dates never changes
+ * either status. The opaque cursor is task-bound.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List task dependencies
+ */
+ listTaskDependencies<TData = DependencyPage>(taskKey: string,
+    params?: ListTaskDependenciesParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listTaskDependencies<TData = DependencyPage>(taskKey: string,
+    params?: ListTaskDependenciesParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listTaskDependencies<TData = DependencyPage>(taskKey: string,
+    params?: ListTaskDependenciesParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listTaskDependencies<TData = DependencyPage>(
+    taskKey: string,
+    params?: ListTaskDependenciesParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/dependencies`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/dependencies`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/dependencies`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * Creates a directed blocker-to-blocked edge between tasks in the same organization, including
+ * across lists and spaces. Requires edit on both live tasks; an invisible other task answers
+ * `404 task.not-found`. Duplicate edges answer `409 dependency.already-exists`; self, direct
+ * and transitive cycles answer `422 dependency.cycle`, without disclosing a path. Graph writes
+ * are serialized and rechecked under locks, including retained edges; 100 incident edges per
+ * task including retained edges are allowed (`422 dependency.limit-reached`). If-Match is the
+ * anchor task version. The optional Idempotency-Key replays the creation and Location for 24
+ * hours. Each changed task version and its outbox facts commit with the edge.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Create a task dependency
+ */
+ createTaskDependency<TData = Dependency>(taskKey: string,
+    dependencyCreation: DependencyCreation, options?: HttpClientBodyOptions): Observable<TData>;
+ createTaskDependency<TData = Dependency>(taskKey: string,
+    dependencyCreation: DependencyCreation, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ createTaskDependency<TData = Dependency>(taskKey: string,
+    dependencyCreation: DependencyCreation, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  createTaskDependency<TData = Dependency>(
+    taskKey: string,
+    dependencyCreation: DependencyCreation, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/dependencies`,
+      dependencyCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/dependencies`,
+      dependencyCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/tasks/${taskKey}/dependencies`,
+      dependencyCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Reads an edge only when both endpoints are visible and the counterpart is live; otherwise
+ * `404 dependency.not-found`. Dates are advisory and never change task status.
+ * Scope `tasks:read` for a personal API token.
+ * @summary Get a task dependency
+ */
+ getTaskDependency<TData = Dependency>(taskKey: string,
+    dependencyId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ getTaskDependency<TData = Dependency>(taskKey: string,
+    dependencyId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getTaskDependency<TData = Dependency>(taskKey: string,
+    dependencyId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getTaskDependency<TData = Dependency>(
+    taskKey: string,
+    dependencyId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/dependencies/${dependencyId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/dependencies/${dependencyId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/dependencies/${dependencyId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Removes an edge from either anchor. Requires edit on both live endpoints. Invisible or
+ * absent edges answer `404 dependency.not-found`. If-Match and the returned ETag refer to the
+ * anchor task; each changed task version and its outbox facts commit with the removal.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Remove a task dependency
+ */
+ deleteTaskDependency<TData = void>(taskKey: string,
+    dependencyId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ deleteTaskDependency<TData = void>(taskKey: string,
+    dependencyId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ deleteTaskDependency<TData = void>(taskKey: string,
+    dependencyId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  deleteTaskDependency<TData = void>(
+    taskKey: string,
+    dependencyId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/dependencies/${dependencyId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/dependencies/${dependencyId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/tasks/${taskKey}/dependencies/${dependencyId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Lists editable candidates for the requested direction, same list first, then name and key.
+ * Requires edit on the anchor and candidates. Search uses the existing task search; unsuitable
+ * known endpoints are excluded. The write remains authoritative under concurrency. The opaque
+ * cursor is bound to the task, direction, search and order.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List dependency candidates
+ */
+ listDependencyCandidates<TData = TaskSummaryPage>(taskKey: string,
+    params: ListDependencyCandidatesParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listDependencyCandidates<TData = TaskSummaryPage>(taskKey: string,
+    params: ListDependencyCandidatesParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listDependencyCandidates<TData = TaskSummaryPage>(taskKey: string,
+    params: ListDependencyCandidatesParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listDependencyCandidates<TData = TaskSummaryPage>(
+    taskKey: string,
+    params: ListDependencyCandidatesParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/dependency-candidates`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/dependency-candidates`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/tasks/${taskKey}/dependency-candidates`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
     );
   }
 /**
@@ -804,9 +1589,25 @@ export class TasksService {
 };
 
 export type CreateTaskClientResult = NonNullable<Task>
+export type ExecuteBulkTaskActionClientResult = NonNullable<BulkTaskResult>
 export type GetTaskClientResult = NonNullable<Task>
 export type UpdateTaskClientResult = NonNullable<Task>
+export type DuplicateTaskClientResult = NonNullable<Task>
 export type GetTaskDetailClientResult = NonNullable<TaskDetail>
+export type ListTaskCommentsClientResult = NonNullable<CommentPage>
+export type CreateTaskCommentClientResult = NonNullable<Comment>
+export type GetTaskCommentClientResult = NonNullable<Comment>
+export type UpdateTaskCommentClientResult = NonNullable<Comment>
+export type DeleteTaskCommentClientResult = NonNullable<void>
+export type ListTaskParticipantsClientResult = NonNullable<TaskParticipantPage>
+export type ListTaskWatchersClientResult = NonNullable<WatcherPage>
+export type FollowTaskWatcherClientResult = NonNullable<Watcher>
+export type UnfollowTaskWatcherClientResult = NonNullable<void>
+export type ListTaskDependenciesClientResult = NonNullable<DependencyPage>
+export type CreateTaskDependencyClientResult = NonNullable<Dependency>
+export type GetTaskDependencyClientResult = NonNullable<Dependency>
+export type DeleteTaskDependencyClientResult = NonNullable<void>
+export type ListDependencyCandidatesClientResult = NonNullable<TaskSummaryPage>
 export type ListSubtasksClientResult = NonNullable<TaskSummaryPage>
 export type CreateSubtaskClientResult = NonNullable<Task>
 export type AddChecklistItemClientResult = NonNullable<Task>

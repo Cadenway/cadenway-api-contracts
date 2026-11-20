@@ -12,6 +12,9 @@ import type { Problem } from './problem';
  * - `task.assignee-invalid`: an assignee is not a current member of the organization, or is a
  *   guest; `details.userIds` lists them;
  * - `task.start-date-invalid`: `startDate` without `dueDate`, or after it;
- * - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+ * - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body;
+ * - `mention.recipient-invalid`: a description mention recipient is ineligible;
+ * - `milestone.status-invalid`: the final milestone status is invalid;
+ * - `milestone.dates-invalid`: the final milestone dates or estimate are invalid.
  */
 export type TaskCreationRefusedResponse = Problem;

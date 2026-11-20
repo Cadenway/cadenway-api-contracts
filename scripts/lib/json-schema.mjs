@@ -8,7 +8,14 @@
  */
 
 /** Keywords that describe a schema without constraining it. */
-const ANNOTATIONS = ['$comment', 'deprecated', 'description', 'examples', 'title'];
+const ANNOTATIONS = [
+  '$comment',
+  'deprecated',
+  'description',
+  'examples',
+  'title',
+  'x-extensible-enum',
+];
 
 /** Keywords read for each kind of schema. */
 const KEYWORDS = {
