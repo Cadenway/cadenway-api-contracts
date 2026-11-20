@@ -2788,6 +2788,32 @@ export interface AccessCheck {
   taskId?: string;
 }
 
+/**
+ * Stable UUID of a space, as accepted by the other Task space routes.
+ */
+export type DocumentSpaceAccessSpaceId = string;
+
+export interface DocumentSpaceAccessLookup {
+  /**
+     * Candidate spaces for a document query or mutation. An empty array requests only the current membership check. Repeated IDs share one result.
+     * @maxItems 100
+     */
+  spaceIds: DocumentSpaceAccessSpaceId[];
+}
+
+export type DocumentSpaceAccessResultResultsItem = {
+  spaceId: DocumentSpaceAccessSpaceId;
+  role: AccessRole;
+};
+
+export interface DocumentSpaceAccessResult {
+  /**
+     * One entry per accessible space. An empty response grants no access.
+     * @maxItems 100
+     */
+  results: DocumentSpaceAccessResultResultsItem[];
+}
+
 export interface NotificationTaskIdSubjectRef {
   kind: 'task-id';
   taskId: string;
@@ -4401,6 +4427,11 @@ export type AttachmentTaskArchivedResponse = Problem;
  * organization of the token, removed or not yet learnt.
  */
 export type OrganizationNotFoundResponse = Problem;
+
+/**
+ * `task.document-space-access-unavailable`: Task could not establish a current space access snapshot.
+ */
+export type DocumentSpaceAccessUnavailableResponse = Problem;
 
 /**
  * `task.notification-visibility-unavailable`: Task could not establish a current visibility snapshot.

@@ -1,0 +1,373 @@
+# Document service HTTP routes.
+openapi: 3.1.0
+info:
+  title: document-service internal routes
+  version: 1.0.0
+  description: |
+    Internal requests use a signed `api-gateway` token for the verified user and selected
+    organization, with `document-service` as audience. The gateway applies session, CSRF and rate
+    limits. Document owns its data, derives the tenant and actor from the token, and resolves live
+    direct-space access in bounded batches through `resolveDocumentSpaceAccessInternal` in Task.
+    It requires a current Task proof before disclosure or mutation, including before replay. An
+    indirect list grant gives no direct-space role. A read can use `view`, `comment` or `edit`.
+    A write requires `edit`. A requested space omitted from a valid result carries no proof.
+    When a catalog page has no candidate spaces, an empty Task lookup still verifies
+    the active membership before returning the empty page.
+    A malformed proof, unknown role, duplicate result or unrequested space invalidates the batch
+    and returns `503 document.unavailable` before disclosure or mutation.
+
+    Scope lookups, documents and cursor positions to the signed tenant and actor. Space visibility
+    is checked anew even if a cursor or replay receipt is available. Document state, creation
+    receipt and the corresponding outbox fact commit together. Create and delete emit
+    `doc.created.v1` and `doc.deleted.v1` respectively. A changed patch emits `doc.updated.v1`.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Calls these routes through its generated internal client.
+servers:
+  - url: http://document-service:3014
+    description: Document service on the internal network.
+security:
+  - internalToken: []
+tags:
+  - name: documents
+    description: Space-scoped documents and their Markdown content.
+paths:
+  /internal/v1/documents:
+    get:
+      operationId: listDocumentsInternal
+      summary: List visible documents
+      description: |
+        Returns metadata in descending `(updatedAt, id)` order. The opaque cursor is scoped to
+        the caller, selected organization and normalized query. Visibility is checked again on
+        every page and only readable documents count towards its limit. The title and body
+        filter applies within this document catalog.
+      tags: [documents]
+      parameters:
+        - $ref: '../../components/documents.yaml#/components/parameters/DocumentQuery'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of readable document metadata.
+          headers:
+            Cache-Control:
+              $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/documents.yaml#/components/schemas/DocumentPage'
+              example:
+                items:
+                  - id: 019a7005-4b2c-7d4e-8f5a-6b7c8d9e0f17
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    title: Notes de version 3.1
+                    authorUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    createdAt: '2026-11-07T08:00:00Z'
+                    updatedAt: '2026-11-09T17:20:00Z'
+                    version: 3
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: createDocumentInternal
+      summary: Create a document in a space
+      description: |
+        Creates the document in a space the caller can edit. The space is immutable. The caller
+        becomes the author and version starts at 1. With an idempotency key, the same normalized
+        request replays its original response, Location and ETag for 24 hours while the caller
+        retains edit access and the created document still exists.
+      tags: [documents]
+      parameters:
+        - $ref: '../../components/documents.yaml#/components/parameters/IdempotencyKey'
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/documents.yaml#/components/schemas/DocumentCreation'
+            example:
+              spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+              title: Notes de version 3.1
+              body: ''
+      responses:
+        '201':
+          description: The stored document including its original version.
+          headers:
+            Cache-Control:
+              $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+            Location:
+              required: true
+              description: URI path for reading the created document.
+              schema:
+                type: string
+                examples: ['/internal/v1/documents/019a7005-4b2c-7d4e-8f5a-6b7c8d9e0f17']
+            ETag:
+              $ref: '../../components/documents.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/documents.yaml#/components/schemas/DocumentDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/CreationTargetNotFound'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/documents/{documentId}:
+    parameters:
+      - $ref: '../../components/documents.yaml#/components/parameters/DocumentId'
+    get:
+      operationId: getDocumentInternal
+      summary: Read the current document
+      description: Returns the ordered Markdown body and current metadata under live space access.
+      tags: [documents]
+      responses:
+        '200':
+          $ref: '#/components/responses/DocumentResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ReadForbidden'
+        '404':
+          $ref: '#/components/responses/DocumentNotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateDocumentInternal
+      summary: Save a document edit
+      description: |
+        Applies a JSON Merge Patch to the title or Markdown body. The caller needs edit access
+        and sends the strong current ETag. The supplied body replaces the complete source in its
+        original order. A stored change updates the author, date and version together. An
+        equivalent patch returns the current document without a version or event change.
+      tags: [documents]
+      parameters:
+        - $ref: '../../components/documents.yaml#/components/parameters/IfMatch'
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/documents.yaml#/components/schemas/DocumentPatch'
+            example:
+              title: Notes de version 3.1
+              body: |-
+                # Nouveautés
+                - Vue Tableau : limite configurable par colonne
+                - Export CSV qui respecte les filtres et le tri
+      responses:
+        '200':
+          $ref: '#/components/responses/DocumentResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/DocumentNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteDocumentInternal
+      summary: Delete the current document
+      description: |
+        Deletes the document for the organization. The caller needs edit access and sends the
+        strong current ETag. The deletion commits at the next version. A later read or deletion
+        returns the same not-found response as an invisible document.
+      tags: [documents]
+      parameters:
+        - $ref: '../../components/documents.yaml#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The document was deleted.
+          headers:
+            Cache-Control:
+              $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/DocumentNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    DocumentResult:
+      description: The current document including its Markdown body.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+        ETag:
+          $ref: '../../components/documents.yaml#/components/headers/ETag'
+      content:
+        application/json:
+          schema:
+            $ref: '../../components/documents.yaml#/components/schemas/DocumentDetail'
+          examples:
+            atelierNord:
+              $ref: '../../components/documents.yaml#/components/examples/DocumentReleaseNotes'
+    BadRequest:
+      description: |
+        `request.invalid` with `details.issues` for malformed input, including a missing or invalid
+        write precondition or a cursor that does not belong to this request. `request.body-too-large`
+        applies when a request body exceeds the HTTP limit.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unauthenticated:
+      description: |
+        The internal token is missing (`auth.token-missing`) or refused (`auth.token-invalid`).
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    ReadForbidden:
+      description: |
+        `auth.issuer-not-allowed`, `auth.actor-not-allowed` or `auth.organization-required`.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    WriteForbidden:
+      description: |
+        `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required` or
+        `access.role-insufficient` when the caller can read the space but cannot edit it.
+        A space role refusal reports `details.role` and `details.requiredRole`, with `edit` as the latter.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    OrganizationNotFound:
+      description: |
+        `organization.not-found` for an inactive membership of the selected organization.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    CreationTargetNotFound:
+      description: |
+        `space.not-found` for a missing or invisible space, `document.not-found` for a deleted replay
+        target, or `organization.not-found` for an inactive organization membership.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    DocumentNotFound:
+      description: |
+        `document.not-found` for a missing, deleted, invisible or cross-organization document, or
+        `organization.not-found` for an inactive membership of the selected organization.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    RequestInProgress:
+      description: |
+        `idempotency.request-in-progress` while an equivalent document creation is running.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    IdempotencyKeyReused:
+      description: |
+        `idempotency.key-reused` when the key was used for a different request.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    VersionMismatch:
+      description: |
+        `request.version-mismatch` when `If-Match` differs from the current strong document ETag.
+        After live write authorization, `details.version` carries the current document version as
+        an integer.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Precondition Failed
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 3
+    Unavailable:
+      description: |
+        `document.unavailable` when Document cannot complete the request or establish current space
+        authority with Task. A failed authority check produces no document data or write.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'

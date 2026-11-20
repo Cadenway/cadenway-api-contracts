@@ -39,6 +39,11 @@ apis:
     rules:
       no-empty-servers: off
       no-unused-components: off
+  shared-documents:
+    root: components/documents.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
   shared-task-approval:
     root: components/approval.yaml
     rules:

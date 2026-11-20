@@ -6064,6 +6064,49 @@ export const EmptyTrashInternalResponse = zod.object({
 
 
 /**
+ * Checks the requested space IDs in a single read-only tenant snapshot. The lookup reads
+ * the actor's active membership and role from the Organization projection together with
+ * live spaces and their grants, applying Task's canonical effective space role. Access to
+ * a list alone does not count as a role on its parent space. Unknown, deleted, hidden and
+ * cross-organization spaces are all omitted, as are spaces where the actor has no role.
+ * An absent active membership answers `404 organization.not-found` for the whole lookup.
+ * An empty request checks the same active membership and returns an empty result on success.
+ *
+ * IDs are compared case-insensitively. Each authorized space appears once with its
+ * canonical lowercase ID, in the order of its first occurrence in the request.
+ * The caller uses this decision for one authorization check for the same actor and
+ * organization. An omitted requested ID conveys no access. The caller rejects the whole
+ * proof if an entry has no role or a role other than `view`, `comment` or `edit`, a
+ * malformed ID, a duplicate ID after normalization or an ID outside the request. An
+ * error never supplies a partial decision.
+ * The lookup writes nothing and emits no events.
+ *
+ * Internal token: issuer `document-service` only, actor `user`, organization required.
+ * Document-service forwards the verified account and selected organization from its
+ * incoming call. The body cannot override the actor, organization or role.
+ * @summary Resolve current space access for documents
+ */
+export const resolveDocumentSpaceAccessInternalBodySpaceIdsMax = 100;
+
+
+
+export const ResolveDocumentSpaceAccessInternalBody = zod.strictObject({
+  "spaceIds": zod.array(zod.uuid().describe('Stable UUID of a space, as accepted by the other Task space routes.')).max(resolveDocumentSpaceAccessInternalBodySpaceIdsMax).describe('Candidate spaces for a document query or mutation. An empty array requests only the current membership check. Repeated IDs share one result.')
+})
+
+export const resolveDocumentSpaceAccessInternalResponseResultsMax = 100;
+
+
+
+export const ResolveDocumentSpaceAccessInternalResponse = zod.object({
+  "results": zod.array(zod.object({
+  "spaceId": zod.uuid().describe('Stable UUID of a space, as accepted by the other Task space routes.'),
+  "role": zod.enum(['edit', 'comment', 'view']).describe('A role given by a grant ("Droit d’accès"): `edit` ("Peut modifier"), `comment` ("Peut\ncommenter", which reads like `view` until comments exist) or `view` ("Lecture seule"),\nfrom the most to the least. The owner of a space ("Propriétaire") holds no grant: they\nalways have `edit` on it and on its lists.\n')
+})).max(resolveDocumentSpaceAccessInternalResponseResultsMax).describe('One entry per accessible space. An empty response grants no access.')
+})
+
+
+/**
  * Answers whether the actor, the person of a socket of the realtime gateway, sees a list and
  * with which role, before the socket joins the room of the list. A list they do not see, a
  * deleted one included, answers `404 list.not-found`, as everywhere; an archived list they
