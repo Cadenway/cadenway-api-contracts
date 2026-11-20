@@ -1,9 +1,10 @@
-# Internal routes of identity-service, called by cadenway-api-gateway: the authentication flows of
+# Internal routes of identity-service. cadenway-api-gateway calls the authentication flows of
 # openapi/public/auth.yaml and their two-step challenge, the introspection of the session cookie and
 # of a personal API token, the sessions of a user, their revocation and the choice of their
 # organization, the password reset and the recent re-authentication, the reading, the profile, the
 # password, the address, the two-step verification and the deletion of a user, the authentication
 # policy of an organization, and the personal API tokens of openapi/public/api-tokens.yaml.
+# cadenway-notification-service calls the notification email recipient read.
 openapi: 3.1.0
 info:
   title: identity-service internal routes
@@ -14,6 +15,7 @@ info:
     tokens. The service has no public route: the gateway serves `openapi/public/auth.yaml`,
     `openapi/public/api-tokens.yaml`, and the choice of the current organization and the
     authentication policy of `openapi/public/organizations.yaml`, and calls these routes.
+    Notification calls the internal recipient read for account notification emails.
 
     | Public route | Internal call |
     | --- | --- |
@@ -152,8 +154,9 @@ info:
     of an organization. It never calls organization-service for it.
 
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
-    (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `identity-service`). Every route accepts
-    the issuer `api-gateway` only. Each operation says which actor it accepts: `anonymous` for the
+    (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `identity-service`). The notification
+    recipient read accepts only the issuer `notification-service` and an unscoped `system` actor.
+    The other routes accept only the issuer `api-gateway`. Each operation says which actor it accepts: `anonymous` for the
     flows that run before a session exists, `system` for the introspections, `user` for the routes
     of the signed-in user; and whether it requires an organization: only the personal API token
     routes and the authentication policy do, the current organization of the session that calls
@@ -161,7 +164,7 @@ info:
     answers `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
     `403 auth.actor-not-allowed` and `403 auth.organization-required`. The gateway answers
     `403 organization.not-selected` itself, before the call, when the session has no current
-    organization. A route that requires no organization ignores the one the token may carry.
+    organization. Gateway routes that require no organization ignore the one the token may carry.
 
     **Memberships.** identity-service keeps a copy of the memberships (organization, user, role)
     from `member.joined.v1`, `member.role-changed.v1` and `member.removed.v1`
@@ -186,7 +189,13 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Calls every route through its generated client, for openapi/public/auth.yaml, openapi/public/api-tokens.yaml, the choice of the current organization and its authentication policy, and the guard of every authenticated route (session and personal API token introspection, including the withheld organization).
+      uses: Calls the gateway routes through its generated client for auth, API tokens, organization choice and authentication policy, and session and API token introspection.
+    - repository: cadenway-notification-service
+      uses: >-
+        Reads one current recipient profile for immediate notification email or a digest,
+        including weekday and Monday deliveries at 09:00 in the account's time zone.
+        Enable the consumer after identity-service serves the route and trusts the Notification
+        issuer for this operation.
 servers:
   - url: http://identity-service:3010
     description: identity-service on the internal network of each environment (`IDENTITY_SERVICE_URL`).
@@ -1224,6 +1233,108 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/SessionNotFound'
+  /internal/v1/users/{userId}/notification-recipient:
+    get:
+      operationId: getNotificationRecipientInternal
+      summary: Read the current recipient of a notification email
+      description: |
+        Returns one account's current verified email address, language, IANA time zone and version
+        from the same account read. A missing account, an unverified current address or an account
+        scheduled for deletion has the same `404 user.not-found` response as a deleted account.
+        The address of a pending email change becomes eligible only after its confirmation.
+
+        Only a Notification delivery job calls this operation. The internal token has issuer
+        `notification-service`, audience `identity-service` and actor `system`, with no
+        organization, role or scopes. The path uses the user ID from the job's authorized
+        recipient and takes no query parameters or body. The lookup does not authorize access
+        to organization content. Notification applies its own preferences and verifies current
+        access before sending content from an organization.
+
+        Resolve the profile when deciding the schedule and before attempting delivery. A
+        response is current at the time of the read. Do not cache the response or persist its
+        address in a job payload. Keep the address out of application logs, telemetry, problems
+        and events. This operation emits no event and has no public route.
+      tags: [users]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: Account id of the authorized recipient already carried by the Notification job.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+      responses:
+        '200':
+          description: The current verified recipient profile.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NotificationRecipientNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationRecipient'
+              example:
+                email: camille.martin@ateliernord.fr
+                language: fr
+                timeZone: Europe/Paris
+                version: 3
+        '400':
+          description: '`request.invalid` for malformed request input.'
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NotificationRecipientNoStore'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '../../components/http.yaml#/components/schemas/Problem'
+        '401':
+          description: '`auth.token-missing` or `auth.token-invalid`.'
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NotificationRecipientNoStore'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '../../components/http.yaml#/components/schemas/Problem'
+        '403':
+          description: |
+            `auth.issuer-not-allowed` for a different issuer, or `auth.actor-not-allowed` for a
+            different actor type or a token carrying an organization, role or scopes.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NotificationRecipientNoStore'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '../../components/http.yaml#/components/schemas/Problem'
+        '404':
+          description: '`user.not-found` when no current deliverable recipient exists for the account.'
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NotificationRecipientNoStore'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '../../components/http.yaml#/components/schemas/Problem'
+              example:
+                { type: 'about:blank', title: 'Not Found', status: 404, code: user.not-found }
+        '503':
+          description: '`upstream.unavailable` when Identity cannot read the account state.'
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NotificationRecipientNoStore'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '../../components/http.yaml#/components/schemas/Problem'
+              example:
+                {
+                  type: 'about:blank',
+                  title: 'Service Unavailable',
+                  status: 503,
+                  code: upstream.unavailable,
+                }
   /internal/v1/users/{userId}/sessions:
     get:
       operationId: listUserSessionsInternal
@@ -2272,7 +2383,7 @@ components:
       bearerFormat: JWT
       description: |
         Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` = `identity-service`,
-        issuer `api-gateway`.
+        issuer `api-gateway` or `notification-service` as declared by the operation.
   parameters:
     SessionId:
       name: sessionId
@@ -2293,6 +2404,12 @@ components:
         format: uuid
         examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
   headers:
+    NotificationRecipientNoStore:
+      required: true
+      description: Prevents storage of the recipient profile or the result of the lookup.
+      schema:
+        type: string
+        const: no-store
     RetryAfter:
       description: Seconds to wait before the request can succeed (RFC 9110).
       schema:
@@ -3139,6 +3256,25 @@ components:
       type: string
       description: BCP 47 language tag of the account, used for its emails. `fr` by default.
       examples: [fr]
+    NotificationRecipient:
+      type: object
+      additionalProperties: false
+      required: [email, language, timeZone, version]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        language:
+          $ref: '#/components/schemas/Language'
+        timeZone:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The account's IANA time zone name.
+          examples: [Europe/Paris]
+        version:
+          type: integer
+          minimum: 1
+          description: Monotone account version as returned by the account route.
     Client:
       type: object
       required: [ipAddress, userAgent]

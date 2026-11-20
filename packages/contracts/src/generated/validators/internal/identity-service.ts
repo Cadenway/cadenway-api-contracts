@@ -1017,6 +1017,44 @@ export const RevokeOtherSessionsInternalResponse = zod.object({
 
 
 /**
+ * Returns one account's current verified email address, language, IANA time zone and version
+ * from the same account read. A missing account, an unverified current address or an account
+ * scheduled for deletion has the same `404 user.not-found` response as a deleted account.
+ * The address of a pending email change becomes eligible only after its confirmation.
+ *
+ * Only a Notification delivery job calls this operation. The internal token has issuer
+ * `notification-service`, audience `identity-service` and actor `system`, with no
+ * organization, role or scopes. The path uses the user ID from the job's authorized
+ * recipient and takes no query parameters or body. The lookup does not authorize access
+ * to organization content. Notification applies its own preferences and verifies current
+ * access before sending content from an organization.
+ *
+ * Resolve the profile when deciding the schedule and before attempting delivery. A
+ * response is current at the time of the read. Do not cache the response or persist its
+ * address in a job payload. Keep the address out of application logs, telemetry, problems
+ * and events. This operation emits no event and has no public route.
+ * @summary Read the current recipient of a notification email
+ */
+export const GetNotificationRecipientInternalParams = zod.object({
+  "userId": zod.uuid().describe('Account id of the authorized recipient already carried by the Notification job.')
+})
+
+export const getNotificationRecipientInternalResponseEmailMax = 254;
+
+export const getNotificationRecipientInternalResponseTimeZoneMax = 64;
+
+
+
+
+export const GetNotificationRecipientInternalResponse = zod.object({
+  "email": zod.email().max(getNotificationRecipientInternalResponseEmailMax).describe('Email address, compared without regard to case.'),
+  "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "timeZone": zod.string().min(1).max(getNotificationRecipientInternalResponseTimeZoneMax).describe('The account\'s IANA time zone name.'),
+  "version": zod.int().min(1).describe('Monotone account version as returned by the account route.')
+})
+
+
+/**
  * Lists the open sessions of the actor, sorted by sign-in, the most recent first, then by
  * id, marks `currentSessionId` as `current`, and gives each the inactivity of the policy of
  * its current organization (`inactivityTimeoutMinutes`). Another user id, or an unknown one,
