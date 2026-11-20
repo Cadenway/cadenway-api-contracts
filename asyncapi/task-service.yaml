@@ -13,6 +13,8 @@ info:
     appended in the tenant transaction of that organization. The aggregates are the space
     (`spaceId`), the list (`listId`) and the task, named by its `key` as everywhere outside
     task-service: a key never changes and is never given to another task of the organization.
+    A notification delivery authorization decision has its own immutable aggregate identified
+    by the authorization request ID.
 
     **Without calling back.** Each event carries what its planned consumers need without reading
     task-service: the whole space or list after the change, and for a task its key, name, status,
@@ -98,7 +100,7 @@ info:
     - repository: cadenway-search-service
       uses: Planned, the creations, changes, access changes, archives, deletions, restorations and purges of spaces, lists and tasks, for the search index and who may find what.
     - repository: cadenway-notification-service
-      uses: Planned, assignments, watched status changes, comment creation and edits, description mention changes and comment deletion for the inbox and emails; access requests and their answers for notices; approval requests and reviewer decisions in P4.
+      uses: Planned, assignments, watched status changes, comment creation and edits, description mention changes and comment deletion for the inbox and emails; access requests and their answers for notices; approval requests and reviewer decisions in P4; task.notification-delivery-authorized.v1 for a pending task delivery attempt.
     - repository: cadenway-realtime-gateway
       uses: Planned, collaboration and resource changes to push updates to open lists and tasks and close rooms a person no longer sees; not access requests or their answers.
     - repository: cadenway-automation-service
@@ -429,6 +431,14 @@ channels:
     messages:
       taskPurgedV1:
         $ref: '#/components/messages/taskPurgedV1'
+  taskNotificationDeliveryAuthorizedV1:
+    address: evt.task.notification-delivery-authorized.v1
+    description: |
+      Task decided a single notification delivery authorization request. Emitted by task-service.
+      Planned consumer: cadenway-notification-service.
+    messages:
+      taskNotificationDeliveryAuthorizedV1:
+        $ref: '#/components/messages/taskNotificationDeliveryAuthorizedV1'
 operations:
   publishCommentCreatedV1:
     action: send
@@ -758,6 +768,24 @@ operations:
       $ref: '#/channels/taskPurgedV1'
     messages:
       - $ref: '#/channels/taskPurgedV1/messages/taskPurgedV1'
+  publishTaskNotificationDeliveryAuthorizedV1:
+    action: send
+    summary: task-service publishes one correlated task delivery authorization decision.
+    description: |
+      Consume `notification.delivery-authorization-requested.v1` from the authorized producer.
+      In the tenant transaction that records the decision, resolve the recipient and task using
+      the current canonical Task access policy for that account. Include effective organization,
+      space and list access and the task's current state, as in an ordinary authorized Task
+      read. An audience on a prior event never proves current access.
+
+      Persist the request's immutable binding, the decision and its outbox record atomically.
+      Each organization and correlation identifies one logical decision. A redelivery preserves
+      its decision, event ID and version. A conflicting reuse cannot change the persisted
+      binding. Retain decision deduplication throughout the supported event replay window.
+    channel:
+      $ref: '#/channels/taskNotificationDeliveryAuthorizedV1'
+    messages:
+      - $ref: '#/channels/taskNotificationDeliveryAuthorizedV1/messages/taskNotificationDeliveryAuthorizedV1'
 components:
   schemas:
     EventHeaders:
@@ -4831,3 +4859,96 @@ components:
             spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
             listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f11
             parentKey: null
+    taskNotificationDeliveryAuthorizedV1:
+      name: task.notification-delivery-authorized.v1
+      title: Task notification delivery authorization decided
+      summary: Task decided whether to permit a single pending delivery attempt.
+      description: |
+        The system actor is task-service. The decision corresponds to one request from
+        notification-service. An absent or unreadable task and a recipient with no effective
+        membership receive the same generic denial. If current access cannot be established,
+        retry while the request remains live. An expired attempt can receive only a denial.
+
+        `validUntil` never exceeds the request expiry. A permit requires a current positive
+        decision strictly before `validUntil`. A denial of an already expired request has a
+        deadline that is already past. The consumer discards decisions it no longer awaits.
+        The permit authorizes only the matching redacted internal operation within that
+        window. Private Task content remains subject to current authorization at disclosure,
+        including in browser and email deliveries.
+
+        The envelope identifies the organization and the opaque correlation. The payload
+        contains a generic outcome and its deadline without recipient, task, authorization
+        reason or resource state.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            authorizationRequestId,
+            decision,
+            validUntil,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Stable event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC instant of the canonical Task decision, or of an expiry denial.
+          organizationId:
+            type: string
+            format: uuid
+            description: The organization of the matched authorization request.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            maximum: 1
+            description: Version of the immutable decision. It does not track the task version.
+          authorizationRequestId:
+            type: string
+            format: uuid
+            description: Opaque UUID from the matching Notification attempt.
+          decision:
+            type: string
+            enum: [permit, deny]
+            description: The generic outcome for that intended recipient and task.
+          validUntil:
+            type: string
+            format: date-time
+            description: Exclusive UTC deadline for accepting this decision.
+      examples:
+        - name: authorized-attempt
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d14
+            occurredAt: '2026-11-08T11:00:02Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: task-service
+            version: 1
+            authorizationRequestId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a24
+            decision: permit
+            validUntil: '2026-11-08T11:00:15Z'
+        - name: denied-attempt
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d15
+            occurredAt: '2026-11-08T11:00:02Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: task-service
+            version: 1
+            authorizationRequestId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a25
+            decision: deny
+            validUntil: '2026-11-08T11:00:15Z'

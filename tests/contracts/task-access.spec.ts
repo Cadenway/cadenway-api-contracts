@@ -542,9 +542,10 @@ describe('events of access, archives and trash', () => {
         'list.saved-view-changed.v1',
         'approval.requested.v1',
         'approval.decided.v1',
+        'task.notification-delivery-authorized.v1',
       ]),
     );
-    expect(EVENT_NAMES).toHaveLength(41);
+    expect(EVENT_NAMES).toHaveLength(42);
     expect(RESTRICTED_EVENT_NAMES).toEqual([]);
   });
 

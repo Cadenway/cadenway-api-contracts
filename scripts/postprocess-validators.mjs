@@ -136,6 +136,96 @@ for (const root of ROOTS) {
           `.refine((value) => Array.from(value).length <= ${operation}BodyNoteMax, { message: 'At most 500 Unicode code points' })`,
         );
     }
+    // Reminder notes count Unicode code points on both requests and responses.
+    if (
+      root.name === 'contracts' &&
+      ['public/reminders', 'internal/notification-service'].includes(spec)
+    ) {
+      const suffix = spec === 'public/reminders' ? '' : 'Internal';
+      const limits = [
+        spec === 'public/reminders'
+          ? 'listRemindersResponseItemsItemNoteMax'
+          : 'listVisibleReminderRecordsInternalResponseItemsItemNoteMax',
+        `getTaskReminder${suffix}ResponseNoteMax`,
+        `setTaskReminder${suffix}BodyNoteMax`,
+        `setTaskReminder${suffix}ResponseNoteMax`,
+        `getReminder${suffix}ResponseNoteMax`,
+        `updateReminderNote${suffix}BodyNoteMax`,
+        `updateReminderNote${suffix}ResponseNoteMax`,
+        `snoozeReminder${suffix}ResponseNoteMax`,
+        `completeReminder${suffix}ResponseNoteMax`,
+      ];
+      for (const limit of limits) {
+        const original = `zod.string().max(${limit})`;
+        if (!generated.includes(original))
+          throw new Error(`${source}: missing reminder note length ${limit}`);
+        generated = generated.replace(
+          original,
+          `zod.string().refine((value) => Array.from(value).length <= ${limit}, { message: 'At most 500 Unicode code points' })`,
+        );
+      }
+    }
+    // Notification inputs are closed, including each subject and preference branch.
+    if (
+      root.name === 'contracts' &&
+      ['public/inbox', 'public/reminders', 'internal/notification-service'].includes(spec)
+    ) {
+      const operations =
+        spec === 'public/inbox'
+          ? ['UpdateNotificationPreferences']
+          : spec === 'public/reminders'
+            ? ['SetTaskReminder', 'UpdateReminderNote', 'SnoozeReminder']
+            : [
+                'MarkInboxNotificationsReadInternal',
+                'MarkInboxNotificationReadInternal',
+                'ArchiveInboxNotificationInternal',
+                'UpdateNotificationPreferencesInternal',
+                'ListVisibleReminderRecordsInternal',
+                'SetTaskReminderInternal',
+                'UpdateReminderNoteInternal',
+                'SnoozeReminderInternal',
+              ];
+      for (const operation of operations) {
+        const name = `${operation}Body`;
+        const start = generated.indexOf(`export const ${name} = `);
+        const end = generated.indexOf('\nexport const ', start + 1);
+        if (start < 0 || end < 0) throw new Error(`${source}: missing notification body ${name}`);
+        let body = generated.slice(start, end).replaceAll('zod.object({', 'zod.strictObject({');
+        if (operation === 'MarkInboxNotificationsReadInternal') {
+          const original = `).describe('Exact non-null unread subjects permitted by Task for this attempt.')`;
+          if (!body.includes(original)) throw new Error(`${source}: missing authorized subjects`);
+          body = body.replace(
+            original,
+            `).refine((items) => new Set(items.map((item) => JSON.stringify(item))).size === items.length, { message: 'Subjects must be unique' }).describe('Exact non-null unread subjects permitted by Task for this attempt.')`,
+          );
+        }
+        if (operation === 'ListVisibleReminderRecordsInternal') {
+          const original = '.max(listVisibleReminderRecordsInternalBodyItemsMax)';
+          if (!body.includes(original)) throw new Error(`${source}: missing reminder selection`);
+          body = body.replace(
+            original,
+            `${original}.refine((items) => new Set(items.map((item) => JSON.stringify(item))).size === items.length, { message: 'Reminder references must be unique' })`,
+          );
+        }
+        generated = generated.slice(0, start) + body + generated.slice(end);
+      }
+    }
+    if (root.name === 'contracts' && spec === 'internal/task-service') {
+      const name = 'ResolveNotificationSubjectsInternalBody';
+      const start = generated.indexOf(`export const ${name} = `);
+      const end = generated.indexOf('\nexport const ', start + 1);
+      if (start < 0 || end < 0) throw new Error(`${source}: missing notification subject lookup`);
+      const body = generated.slice(start, end).replaceAll('zod.object({', 'zod.strictObject({');
+      generated = generated.slice(0, start) + body + generated.slice(end);
+      const limit =
+        'resolveNotificationSubjectsInternalResponseResultsItemTwoDisplayCommentExcerptMax';
+      const excerpt = `.max(${limit})`;
+      if (!generated.includes(excerpt)) throw new Error(`${source}: missing comment excerpt limit`);
+      generated = generated.replace(
+        excerpt,
+        `.refine((value) => Array.from(value).length <= ${limit}, { message: 'At most 200 Unicode code points' })`,
+      );
+    }
     // Intake writes must refuse unknown routing, identity, and field settings at the boundary.
     if (root.name === 'contracts' && ['public/intake', 'internal/task-service'].includes(spec)) {
       const suffix = spec === 'public/intake' ? '' : 'Internal';

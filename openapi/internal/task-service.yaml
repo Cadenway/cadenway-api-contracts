@@ -3,8 +3,8 @@
 # queries, "Mes tâches" and "Accueil" of openapi/public/tasks.yaml, the grants and access requests
 # of openapi/public/access.yaml, the archives of openapi/public/archives.yaml, the trash of
 # openapi/public/trash.yaml, the work logs, status durations and timesheets of openapi/public/time.yaml,
-# goals and reports, the intake form and attachment access. The realtime gateway calls its access
-# checks.
+# goals and reports, the intake form and attachment access. Both gateways check notification
+# subject visibility. The realtime gateway also checks access before a socket joins a room.
 openapi: 3.1.0
 info:
   title: task-service internal routes
@@ -92,10 +92,14 @@ info:
     The realtime gateway calls `GET /internal/v1/lists/{listId}/access` and
     `GET /internal/v1/tasks/{taskKey}/access`, which have no public route.
 
+    Both gateways call `POST /internal/v1/notification-subjects/resolve` to check current access
+    before disclosing a notification. The API gateway may also request display data for the task.
+
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
     (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `task-service`). Every route accepts the
     issuer `api-gateway` and the actor `user` by default. The two access checks accept
-    `realtime-gateway` with the actor `user`. The applicant intake routes accept `api-gateway`
+    `realtime-gateway` with the actor `user`. The notification lookup accepts both gateways
+    with the actor `user` and restricts enrichment to `api-gateway`. The applicant intake routes accept `api-gateway`
     with the actor `system` and resolve the target exclusively from the publication key.
     All other routes require an organization and run in the tenant transaction for the
     organization's session or personal API token. They take the actor and organization from
@@ -180,14 +184,15 @@ info:
   x-consumers:
     - repository: cadenway-api-gateway
       uses: >-
-        Calls every route except the realtime gateway's access checks through its generated client for
+        Calls the public route counterparts through its generated client for
         openapi/public/spaces.yaml, openapi/public/lists.yaml, openapi/public/tasks.yaml,
         openapi/public/access.yaml, openapi/public/archives.yaml, openapi/public/trash.yaml,
         openapi/public/time.yaml, openapi/public/goals.yaml, openapi/public/reports.yaml and
         openapi/public/intake.yaml. It checks access for openapi/public/attachments.yaml before
-        relaying to storage-service and also composes the task detail.
+        relaying to storage-service. It also composes the task detail and checks visibility and
+        display data for the inbox and reminders.
     - repository: cadenway-realtime-gateway
-      uses: Planned, the access checks of a list and a task, before a socket joins their room.
+      uses: Checks room access and verifies notification subject visibility before relay.
 servers:
   - url: http://task-service:3013
     description: task-service on the internal network of each environment (`TASK_SERVICE_URL`).
@@ -3934,6 +3939,70 @@ paths:
           $ref: '#/components/responses/AttachmentTaskNotFound'
         '409':
           $ref: '#/components/responses/AttachmentTaskArchived'
+  /internal/v1/notification-subjects/resolve:
+    post:
+      operationId: resolveNotificationSubjectsInternal
+      summary: Resolve current visibility for notification subjects
+      description: |
+        Checks up to 100 references in one read-only tenant snapshot. Task applies its canonical
+        active-membership and read-access rules to each subject and its current placement. Archived
+        resources remain visible when the ordinary read policy allows them. Missing, hidden,
+        deleted and trashed subjects all return `visible: false`, with no resource details.
+        Every input position has exactly one result at the same position, including repeated
+        selectors. A missing active membership answers `404 organization.not-found`.
+
+        Internal token: issuer `api-gateway` or `realtime-gateway`, actor `user` and organization
+        required. The API gateway can request display data for a visible task. An optional comment
+        excerpt requires a currently readable comment belonging to that same resolved task. The
+        realtime gateway can request visibility only. An enrichment request from it answers
+        `403 auth.issuer-not-allowed` before any subject is resolved.
+
+        The decision belongs to this snapshot and this actor. Each later disclosure needs a
+        fresh decision. If Task cannot establish the snapshot it returns an error for the whole
+        batch. This lookup writes nothing and emits no events.
+      tags: [access]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationSubjectLookup'
+            example:
+              subjects:
+                - subject: { kind: task-key, taskKey: CAD-482 }
+                  display: { commentId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01 }
+                - subject: { kind: list, listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12 }
+      responses:
+        '200':
+          description: One result for each subject, in request order.
+          headers:
+            Cache-Control:
+              description: Each visibility decision applies to the current lookup only.
+              required: true
+              schema: { const: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSubjectLookupResult'
+              example:
+                results:
+                  - visible: true
+                    display:
+                      taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+                      taskKey: CAD-482
+                      taskName: Refondre l’écran de connexion SSO
+                      commentExcerpt: Le verrouillage après 5 essais est prêt côté API, branche auth/lockout.
+                  - visible: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '503':
+          $ref: '#/components/responses/NotificationSubjectLookupUnavailable'
   /internal/v1/spaces/{spaceId}/task-templates:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -7267,6 +7336,17 @@ components:
             title: Not Found
             status: 404
             code: organization.not-found
+    NotificationSubjectLookupUnavailable:
+      description: '`task.notification-visibility-unavailable`: Task could not establish a current visibility snapshot.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Notification visibility unavailable.
+            status: 503
+            code: task.notification-visibility-unavailable
     UserNotFound:
       description: |
         - `user.not-found`: the `userId` of the path is not the actor;
@@ -8006,6 +8086,82 @@ components:
           oneOf:
             - $ref: '../../components/task.yaml#/components/schemas/TaskKey'
             - type: 'null'
+    NotificationSubjectLookup:
+      type: object
+      additionalProperties: false
+      required: [subjects]
+      properties:
+        subjects:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            oneOf:
+              - type: object
+                additionalProperties: false
+                required: [subject]
+                properties:
+                  subject:
+                    $ref: '../../components/notification.yaml#/components/schemas/NotificationSubjectRef'
+              - type: object
+                additionalProperties: false
+                required: [subject, display]
+                properties:
+                  subject:
+                    oneOf:
+                      - $ref: '../../components/notification.yaml#/components/schemas/NotificationTaskIdSubjectRef'
+                      - $ref: '../../components/notification.yaml#/components/schemas/NotificationTaskKeySubjectRef'
+                  display:
+                    type: object
+                    additionalProperties: false
+                    description: Requests the task identity and name for display for a visible task.
+                    properties:
+                      commentId:
+                        type: string
+                        format: uuid
+                        description: Requests a bounded excerpt from this comment on the resolved task.
+    NotificationSubjectLookupResult:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          minItems: 1
+          maxItems: 100
+          description: Position-aligned outcomes, one for each submitted subject.
+          items:
+            oneOf:
+              - type: object
+                additionalProperties: false
+                required: [visible]
+                properties:
+                  visible: { const: false }
+              - type: object
+                additionalProperties: false
+                required: [visible]
+                properties:
+                  visible: { const: true }
+                  display:
+                    type: object
+                    additionalProperties: false
+                    description: Returned when the API gateway requested display data for this visible task.
+                    required: [taskId, taskKey, taskName]
+                    properties:
+                      taskId:
+                        type: string
+                        format: uuid
+                      taskKey:
+                        $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+                      taskName:
+                        type: string
+                      commentExcerpt:
+                        type: [string, 'null']
+                        maxLength: 200
+                        description: |
+                          Returned only when a comment was requested. A plain-text preview of at
+                          most 200 Unicode code points, or null if the comment is missing, belongs
+                          to another task, was deleted or is hidden.
     GrantPage:
       type: object
       required: [items, nextCursor, total]
