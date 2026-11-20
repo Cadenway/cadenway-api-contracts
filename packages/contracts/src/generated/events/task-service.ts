@@ -273,6 +273,91 @@ export const commentUpdatedV1Schema = zod.object({
   removedMentionUserIds: zod.array(zod.uuid()),
 }) satisfies zod.ZodType<CommentUpdatedV1>;
 
+/** Name of the event `intake.attachment-claimed.v1`. A submission assigned the verified attachment to its new task. */
+export const INTAKE_ATTACHMENT_CLAIMED_V1 = 'intake.attachment-claimed.v1';
+
+/** Payload of the event `intake.attachment-claimed.v1`. */
+export interface IntakeAttachmentClaimedV1 {
+  /** Stable event ID, the delivery deduplication key. */
+  id: string;
+  /** UTC instant when the submission was recorded. */
+  occurredAt: string;
+  /** Organization of the intake reservation and new task. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the immutable Task decision record. */
+  version: number;
+  /** Internal UUID of a single publication, independent of its public capability key. */
+  publicationId: string;
+  attachmentId: string;
+  /**
+   * Key of a task, the only way a task is named outside task-service: the prefix of the space
+   * it was created in, a dash and a number. A key never changes, also when the task moves to
+   * another space or its space changes prefix, and is never given to another task.
+   */
+  taskKey: string;
+}
+
+/** Validator of the payload of the event `intake.attachment-claimed.v1`. */
+export const intakeAttachmentClaimedV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1).max(1),
+  publicationId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  attachmentId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  taskKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+}) satisfies zod.ZodType<IntakeAttachmentClaimedV1>;
+
+/** Name of the event `intake.attachment-released.v1`. Task closed an anonymous attachment reservation without attaching it. */
+export const INTAKE_ATTACHMENT_RELEASED_V1 = 'intake.attachment-released.v1';
+
+/** Payload of the event `intake.attachment-released.v1`. */
+export interface IntakeAttachmentReleasedV1 {
+  /** Stable event ID, the delivery deduplication key. */
+  id: string;
+  /** UTC instant when the release was recorded. */
+  occurredAt: string;
+  /** Organization of the intake reservation. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the immutable Task decision record. */
+  version: number;
+  /** Internal UUID of a single publication, independent of its public capability key. */
+  publicationId: string;
+  attachmentId: string;
+}
+
+/** Validator of the payload of the event `intake.attachment-released.v1`. */
+export const intakeAttachmentReleasedV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1).max(1),
+  publicationId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  attachmentId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+}) satisfies zod.ZodType<IntakeAttachmentReleasedV1>;
+
 /** Name of the event `list.access-changed.v1`. The grants or the switch "Accès de l’organisation" of a list changed. */
 export const LIST_ACCESS_CHANGED_V1 = 'list.access-changed.v1';
 
@@ -2811,7 +2896,7 @@ export const taskWatcherChangedV1Schema = zod.object({
 }) satisfies zod.ZodType<TaskWatcherChangedV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [APPROVAL_DECIDED_V1, APPROVAL_REQUESTED_V1, COMMENT_CREATED_V1, COMMENT_DELETED_V1, COMMENT_UPDATED_V1, LIST_ACCESS_CHANGED_V1, LIST_ACCESS_REQUEST_DECIDED_V1, LIST_ACCESS_REQUESTED_V1, LIST_ARCHIVED_V1, LIST_CREATED_V1, LIST_DELETED_V1, LIST_RESTORED_V1, LIST_SAVED_VIEW_CHANGED_V1, LIST_UNARCHIVED_V1, LIST_UPDATED_V1, MILESTONE_REACHED_V1, SPACE_ACCESS_CHANGED_V1, SPACE_ACCESS_REPUBLISHED_V1, SPACE_ACCESS_REQUEST_DECIDED_V1, SPACE_ACCESS_REQUESTED_V1, SPACE_CREATED_V1, SPACE_DELETED_V1, SPACE_RESTORED_V1, SPACE_TASK_TEMPLATE_CHANGED_V1, SPACE_UPDATED_V1, TASK_ACCESS_REQUEST_DECIDED_V1, TASK_ACCESS_REQUESTED_V1, TASK_ARCHIVED_V1, TASK_ASSIGNED_V1, TASK_CREATED_V1, TASK_DEPENDENCY_ADDED_V1, TASK_DEPENDENCY_REMOVED_V1, TASK_DESCRIPTION_MENTIONS_CHANGED_V1, TASK_NOTIFICATION_DELIVERY_AUTHORIZED_V1, TASK_OCCURRENCE_CREATED_V1, TASK_PURGED_V1, TASK_RESTORED_V1, TASK_STATUS_CHANGED_V1, TASK_TRASHED_V1, TASK_UNARCHIVED_V1, TASK_UPDATED_V1, TASK_WATCHER_CHANGED_V1] as const;
+export const EVENT_NAMES = [APPROVAL_DECIDED_V1, APPROVAL_REQUESTED_V1, COMMENT_CREATED_V1, COMMENT_DELETED_V1, COMMENT_UPDATED_V1, INTAKE_ATTACHMENT_CLAIMED_V1, INTAKE_ATTACHMENT_RELEASED_V1, LIST_ACCESS_CHANGED_V1, LIST_ACCESS_REQUEST_DECIDED_V1, LIST_ACCESS_REQUESTED_V1, LIST_ARCHIVED_V1, LIST_CREATED_V1, LIST_DELETED_V1, LIST_RESTORED_V1, LIST_SAVED_VIEW_CHANGED_V1, LIST_UNARCHIVED_V1, LIST_UPDATED_V1, MILESTONE_REACHED_V1, SPACE_ACCESS_CHANGED_V1, SPACE_ACCESS_REPUBLISHED_V1, SPACE_ACCESS_REQUEST_DECIDED_V1, SPACE_ACCESS_REQUESTED_V1, SPACE_CREATED_V1, SPACE_DELETED_V1, SPACE_RESTORED_V1, SPACE_TASK_TEMPLATE_CHANGED_V1, SPACE_UPDATED_V1, TASK_ACCESS_REQUEST_DECIDED_V1, TASK_ACCESS_REQUESTED_V1, TASK_ARCHIVED_V1, TASK_ASSIGNED_V1, TASK_CREATED_V1, TASK_DEPENDENCY_ADDED_V1, TASK_DEPENDENCY_REMOVED_V1, TASK_DESCRIPTION_MENTIONS_CHANGED_V1, TASK_NOTIFICATION_DELIVERY_AUTHORIZED_V1, TASK_OCCURRENCE_CREATED_V1, TASK_PURGED_V1, TASK_RESTORED_V1, TASK_STATUS_CHANGED_V1, TASK_TRASHED_V1, TASK_UNARCHIVED_V1, TASK_UPDATED_V1, TASK_WATCHER_CHANGED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -2833,6 +2918,8 @@ export interface EventPayloads {
   'comment.created.v1': CommentCreatedV1;
   'comment.deleted.v1': CommentDeletedV1;
   'comment.updated.v1': CommentUpdatedV1;
+  'intake.attachment-claimed.v1': IntakeAttachmentClaimedV1;
+  'intake.attachment-released.v1': IntakeAttachmentReleasedV1;
   'list.access-changed.v1': ListAccessChangedV1;
   'list.access-request-decided.v1': ListAccessRequestDecidedV1;
   'list.access-requested.v1': ListAccessRequestedV1;
@@ -2879,6 +2966,8 @@ export const eventSchemas = {
   'comment.created.v1': commentCreatedV1Schema,
   'comment.deleted.v1': commentDeletedV1Schema,
   'comment.updated.v1': commentUpdatedV1Schema,
+  'intake.attachment-claimed.v1': intakeAttachmentClaimedV1Schema,
+  'intake.attachment-released.v1': intakeAttachmentReleasedV1Schema,
   'list.access-changed.v1': listAccessChangedV1Schema,
   'list.access-request-decided.v1': listAccessRequestDecidedV1Schema,
   'list.access-requested.v1': listAccessRequestedV1Schema,

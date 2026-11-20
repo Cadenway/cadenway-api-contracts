@@ -502,7 +502,9 @@ describe('archives and trash', () => {
 describe('events of access, archives and trash', () => {
   it('stay inside the families the NATS user task publishes, none restricted', () => {
     for (const name of EVENT_NAMES) {
-      expect(name).toMatch(/^(space|list|task|comment|milestone|approval)\.[a-z-]+\.v1$/);
+      expect(name).toMatch(
+        /^(?:(?:space|list|task|comment|milestone|approval)\.[a-z-]+|intake\.attachment-(?:claimed|released))\.v1$/,
+      );
     }
     expect(EVENT_NAMES).toEqual(
       expect.arrayContaining([
@@ -543,9 +545,11 @@ describe('events of access, archives and trash', () => {
         'approval.requested.v1',
         'approval.decided.v1',
         'task.notification-delivery-authorized.v1',
+        'intake.attachment-claimed.v1',
+        'intake.attachment-released.v1',
       ]),
     );
-    expect(EVENT_NAMES).toHaveLength(42);
+    expect(EVENT_NAMES).toHaveLength(44);
     expect(RESTRICTED_EVENT_NAMES).toEqual([]);
   });
 

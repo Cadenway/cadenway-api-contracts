@@ -88,6 +88,9 @@ info:
     | `GET /v1/tasks/{taskKey}/intake-contact` | `GET /internal/v1/tasks/{taskKey}/intake-contact` |
     | `GET /v1/intake-forms/{publicKey}` | `GET /internal/v1/intake-forms/{publicKey}` |
     | `POST /v1/intake-forms/{publicKey}/submissions` | `POST /internal/v1/intake-forms/{publicKey}/submissions` |
+    | `POST /v1/intake-forms/{publicKey}/attachments` | `POST /internal/v1/intake-forms/{publicKey}/attachments` |
+    | `POST /v1/intake-forms/{publicKey}/attachments/{attachmentId}/completion` | `GET /internal/v1/intake-forms/{publicKey}/attachments/{attachmentId}` before relaying completion to storage-service |
+    | `DELETE /v1/intake-forms/{publicKey}/attachments/{attachmentId}` | `DELETE /internal/v1/intake-forms/{publicKey}/attachments/{attachmentId}` |
 
     The realtime gateway calls `GET /internal/v1/lists/{listId}/access` and
     `GET /internal/v1/tasks/{taskKey}/access`, which have no public route.
@@ -112,12 +115,14 @@ info:
     organization. Later versions accept other issuers (the automation and Git integrations, with
     their actors).
 
-    **Applicant intake.** The gateway uses a system token without an organization for the two
+    **Applicant intake.** The gateway uses a system token without an organization for the
     applicant routes. A valid publication key is the only authority for resolving the list
     and tenant. Task-service enters that tenant's transaction after lookup and rechecks the
-    publication, list and task defaults before a write. Its task and contact commit together.
-    Request payloads carry no actor, tenant or placement override. The normal task events use
-    the system actor and exclude the contact field and publication key.
+    publication, list and task defaults before a write. Upload authorization additionally
+    requires the private key of the same applicant draft. The request carries no actor,
+    tenant or placement override. The task, contact, upload claims and receipt commit
+    together. The normal task events use the system actor. Event payloads carry no contact,
+    publication key or draft key.
 
     **Members.** task-service decides every rule from its own copy of the members of each
     organization and their roles, never from the `role` of the token. It builds the copy from
@@ -5538,12 +5543,20 @@ paths:
         Internal token: api-gateway and actor system, without an organization. Resolve the
         tenant and list by key. Recheck the publication, list, status and assignee under the
         write locks before applying the form's fields and normal task creation rules.
-        Store contact separately in the same transaction as the task and its ordinary
-        outbox events. Idempotency is scoped to the publication and returns the original
-        opaque receipt on a matching replay within 24 hours while the publication stays valid.
+        Attachment IDs require the private draft key and idempotency key. When a draft
+        key is supplied without attachment IDs, it still requires an idempotency key.
+        Require each selected reservation to have a matching verified fact and belong to
+        this same publication and draft. Commit the task, private contact, receipt, ordinary
+        task outbox events and the reservation decisions in the same tenant transaction.
+        Claim the selected reservations and release the others when a draft is committed.
+        A matching replay returns the original opaque receipt within 24 hours while the
+        publication is valid, even after the draft closes. The set of normalized attachment IDs,
+        regardless of their order, and the draft identity are part of the replay comparison.
+        A submission without a draft or attachments keeps its existing replay behavior.
       tags: [intake]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IntakeDraftKey'
       requestBody:
         required: true
         content:
@@ -5570,11 +5583,135 @@ paths:
         '403':
           $ref: '#/components/responses/IntakeApplicantAccessRefused'
         '404':
-          $ref: '#/components/responses/PublicIntakeNotFound'
+          $ref: '#/components/responses/IntakeDraftNotFound'
+        '409':
+          $ref: '#/components/responses/IntakeAttachmentSubmissionConflict'
+        '422':
+          $ref: '#/components/responses/IntakeSubmissionRefused'
+  /internal/v1/intake-forms/{publicKey}/attachments:
+    parameters:
+      - $ref: '#/components/parameters/IntakePublicKey'
+    post:
+      operationId: allocateIntakeAttachmentInternal
+      summary: Authorize an anonymous upload and allocate its stable ID
+      description: |
+        Internal token: api-gateway and actor system, without an organization. Recheck
+        the live publication, its defaults and its attachment policy in the resolved
+        tenant. The private draft key scopes the allocation. Its first reservation
+        opens a 30-minute draft with at most five active reservations. Refuse a
+        declaration above 25 MiB before occupying a slot.
+
+        A matching reservation key and declaration return the same allocation while
+        the reservation, draft and publication stay eligible. The idempotency key is
+        scoped to the tenant, publication and draft. A retry cannot extend their expiry.
+        The gateway uses the returned tenant, publication, ID and expiry to request
+        the signed upload from storage-service. The applicant never receives this
+        allocation response directly.
+      tags: [intake]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIntakeDraftKey'
+        - $ref: '#/components/parameters/IntakeAttachmentIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/attachments.yaml#/components/schemas/StartAttachmentUpload'
+            example: { fileName: capture-sso.png, contentType: image/png, sizeBytes: 184320 }
+      responses:
+        '201':
+          description: The publication and reservation binding.
+          headers:
+            Location:
+              $ref: '#/components/headers/IntakeAttachmentLocation'
+            Cache-Control:
+              $ref: '#/components/headers/IntakeAttachmentNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/intake.yaml#/components/schemas/IntakeAttachmentAllocation'
+              example:
+                organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                publicationId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                attachmentId: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                expiresAt: '2026-11-20T14:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/IntakeApplicantAccessRefused'
+        '404':
+          $ref: '#/components/responses/IntakeDraftNotFound'
         '409':
           $ref: '#/components/responses/IntakeSubmissionInProgress'
         '422':
-          $ref: '#/components/responses/IntakeSubmissionRefused'
+          $ref: '#/components/responses/IntakeAttachmentAllocationRefused'
+  /internal/v1/intake-forms/{publicKey}/attachments/{attachmentId}:
+    parameters:
+      - $ref: '#/components/parameters/IntakePublicKey'
+      - $ref: '#/components/parameters/IntakeAttachmentId'
+    get:
+      operationId: resolveIntakeAttachmentInternal
+      summary: Authorize completion of a draft upload
+      description: |
+        Internal token: api-gateway and actor system, without an organization. In
+        one snapshot check the current publication, attachment policy and draft
+        ownership. Return only the trusted scope for storage-service. Unknown or
+        unrelated IDs, unusable publications and closed or expired drafts return
+        the same refusal. This lookup does not provide any storage status.
+      tags: [intake]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIntakeDraftKey'
+      responses:
+        '200':
+          description: This reservation is eligible for upload completion.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IntakeAttachmentNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/intake.yaml#/components/schemas/IntakeAttachmentAllocation'
+              example:
+                organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+                publicationId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                attachmentId: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                expiresAt: '2026-11-20T14:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/IntakeApplicantAccessRefused'
+        '404':
+          $ref: '#/components/responses/IntakeDraftNotFound'
+    delete:
+      operationId: releaseIntakeAttachmentInternal
+      summary: Release a draft upload that has not been claimed
+      description: |
+        Internal token: api-gateway and actor system, without an organization. Check
+        the current publication and draft ownership. Commit the terminal release
+        and its outbox fact together, including when storage-service has not yet
+        recorded the reservation. A repeat of the same release is successful while
+        the publication and draft are eligible. A claimed reservation is unavailable.
+      tags: [intake]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIntakeDraftKey'
+      responses:
+        '204':
+          description: The reservation has been released.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IntakeAttachmentNoStore'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/IntakeApplicantAccessRefused'
+        '404':
+          $ref: '#/components/responses/IntakeDraftNotFound'
 components:
   securitySchemes:
     internalToken:
@@ -5861,6 +5998,36 @@ components:
       schema:
         type: string
         example: F3Nq7tG2hu0TQvQqMCuBCgBl2R7dV7jvxrT3SRiYkTQ
+    IntakeAttachmentId:
+      name: attachmentId
+      in: path
+      required: true
+      description: Stable ID already allocated to the verified publication and draft.
+      schema:
+        $ref: '../../components/attachments.yaml#/components/schemas/AttachmentId'
+    IntakeDraftKey:
+      name: Intake-Draft-Key
+      in: header
+      required: false
+      description: Private applicant key, required when claiming attachment IDs.
+      schema:
+        $ref: '../../components/intake.yaml#/components/schemas/IntakeDraftKey'
+    RequiredIntakeDraftKey:
+      name: Intake-Draft-Key
+      in: header
+      required: true
+      description: Private applicant key presented by the gateway for this same draft.
+      schema:
+        $ref: '../../components/intake.yaml#/components/schemas/IntakeDraftKey'
+    IntakeAttachmentIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-chosen key for this reservation within its tenant, publication and draft.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -5905,6 +6072,18 @@ components:
       schema:
         type: string
         const: no-store
+    IntakeAttachmentNoStore:
+      required: true
+      description: Prevents storage of the draft authorization by caches.
+      schema:
+        type: string
+        const: no-store
+    IntakeAttachmentLocation:
+      required: true
+      description: Relative reference to the reservation, resolved against the request URI.
+      schema:
+        type: string
+        examples: ['attachments/019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15']
     OnboardingETag:
       description: Version of the caller's onboarding state, `"<version>"`.
       schema:
@@ -6080,6 +6259,19 @@ components:
             title: Not Found
             status: 404
             code: intake-form.not-found
+    IntakeDraftNotFound:
+      description: |
+        `intake-form.not-found` for an unavailable publication, expired or closed draft, or
+        an unknown, unavailable or unrelated reservation. These cases use the same response.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: intake-form.not-found
     IntakeListArchived:
       description: '`intake-form.list-archived`: editing or publishing an archived list’s form is refused.'
       content:
@@ -6111,6 +6303,43 @@ components:
           examples:
             requestInProgress:
               $ref: '#/components/examples/RequestInProgress'
+    IntakeAttachmentSubmissionConflict:
+      description: |
+        `idempotency.request-in-progress` when another write holds the submission key,
+        or `attachment.upload-not-ready` when verification has not been recorded for a
+        selected reservation that belongs to this draft.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            requestInProgress:
+              $ref: '#/components/examples/RequestInProgress'
+            uploadNotReady:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: attachment.upload-not-ready
+    IntakeAttachmentAllocationRefused:
+      description: |
+        `attachment.file-too-large` above 26,214,400 bytes,
+        `intake-form.attachments-disabled` if the form disallows attachments,
+        `intake-form.attachment-limit-exceeded` if the draft holds five active
+        reservations, or `idempotency.key-reused` on a mismatched declaration for this key.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
+            draftLimit:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: intake-form.attachment-limit-exceeded
     IntakeSubmissionRefused:
       description: '`idempotency.key-reused`: this key was used before with another body on the same publication.'
       content:

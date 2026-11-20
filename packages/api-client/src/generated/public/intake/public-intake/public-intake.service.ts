@@ -21,9 +21,12 @@ import type {
 } from 'rxjs';
 
 import type {
+  AttachmentUpload,
+  IntakeAttachmentCompletion,
   IntakeReceipt,
   IntakeSubmission,
-  PublicIntakeForm
+  PublicIntakeForm,
+  StartAttachmentUpload
 } from '../model';
 
 import type {
@@ -123,11 +126,20 @@ export class PublicIntakeService {
  * required. Missing required fields and supplied disabled fields are reported by field
  * in `details.issues`. An empty required text field is invalid after trimming.
  *
- * The producer rechecks that the publication is active and its defaults are valid
- * before creating a normal task and saving the contact in the same transaction. A valid
- * form replays an identical request with the same idempotency key for 24 hours, with the
- * original receipt and no second task. The receipt is an acknowledgment without a
- * public task link or contact email.
+ * When the form allows attachments, submit the IDs of up to five completed uploads
+ * from the same draft, using `Intake-Draft-Key` and `Idempotency-Key`. Changing only
+ * the order or hexadecimal case of the same attachment IDs is a matching replay.
+ * The draft key requires an idempotency key even if no attachment IDs are supplied.
+ * A submission without either a draft key or attachment IDs retains the ordinary
+ * text-only behavior. A form that requires attachments refuses a submission with none.
+ *
+ * The producer rechecks the active publication and its defaults before committing a
+ * normal task, any contact, an opaque receipt and the selected upload claims in one
+ * transaction. A committed draft releases its unselected reservations. Attachment
+ * metadata becomes available only to authorized members through the task attachment API.
+ * A valid publication replays a matching request with the same idempotency key for
+ * 24 hours, using the original receipt even if its successful draft is no longer open.
+ * The receipt carries no attachment metadata, public task link or contact email.
  * @summary Submit a request through a published form
  */
  submitPublicIntakeForm<TData = IntakeReceipt>(publicKey: string,
@@ -167,7 +179,151 @@ export class PublicIntakeService {
       }
     );
   }
+/**
+ * Reserve one upload on an active publication that allows attachments. Generate a
+ * private draft key once for this submission and keep it with the draft. Use a distinct
+ * idempotency key for each new file. The draft starts with its first reservation and
+ * accepts up to five active reservations within its 30-minute lifetime.
+ *
+ * The signed multipart POST permits up to 25 MiB and expires after five minutes at
+ * most, bounded by the draft expiry. Append the returned fields unchanged to FormData,
+ * then append the file as the final part named `file`. Call completion after transfer.
+ * The declared media type must match the registered final filename extension. The
+ * temporary destination does not identify the organization, list or publication.
+ *
+ * The service retains the reservation key for 24 hours. While the draft and publication
+ * remain eligible, a matching start replays the original signed response without
+ * extending its expiry. Use a new reservation for another upload.
+ * @summary Reserve a signed upload for an applicant's draft
+ */
+ startPublicIntakeAttachmentUpload<TData = AttachmentUpload>(publicKey: string,
+    startAttachmentUpload: StartAttachmentUpload, options?: HttpClientBodyOptions): Observable<TData>;
+ startPublicIntakeAttachmentUpload<TData = AttachmentUpload>(publicKey: string,
+    startAttachmentUpload: StartAttachmentUpload, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ startPublicIntakeAttachmentUpload<TData = AttachmentUpload>(publicKey: string,
+    startAttachmentUpload: StartAttachmentUpload, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  startPublicIntakeAttachmentUpload<TData = AttachmentUpload>(
+    publicKey: string,
+    startAttachmentUpload: StartAttachmentUpload, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/intake-forms/${publicKey}/attachments`,
+      startAttachmentUpload,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/intake-forms/${publicKey}/attachments`,
+      startAttachmentUpload,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/intake-forms/${publicKey}/attachments`,
+      startAttachmentUpload,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Release a reservation of the same live publication and draft. This frees its slot
+ * and schedules object cleanup. A matching repeat of an abandoned upload succeeds
+ * while the draft and publication remain eligible. A claimed file cannot be removed
+ * by an applicant. Files not selected at submission or left in an expired draft are
+ * released without a separate request.
+ * @summary Release an applicant's unused upload
+ */
+ abandonPublicIntakeAttachmentUpload<TData = void>(publicKey: string,
+    attachmentId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ abandonPublicIntakeAttachmentUpload<TData = void>(publicKey: string,
+    attachmentId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ abandonPublicIntakeAttachmentUpload<TData = void>(publicKey: string,
+    attachmentId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  abandonPublicIntakeAttachmentUpload<TData = void>(
+    publicKey: string,
+    attachmentId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/intake-forms/${publicKey}/attachments/${attachmentId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/intake-forms/${publicKey}/attachments/${attachmentId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/intake-forms/${publicKey}/attachments/${attachmentId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Verify the file from the temporary upload on this same live publication and draft.
+ * A matching retry returns the same acknowledgement without another verification
+ * fact. Submission can briefly answer `409 attachment.upload-not-ready` while the
+ * verification reaches task-service. Retry submission with the same idempotency key.
+ * The acknowledgement gives the applicant no metadata or download access.
+ * @summary Verify an applicant's uploaded file
+ */
+ completePublicIntakeAttachmentUpload<TData = IntakeAttachmentCompletion>(publicKey: string,
+    attachmentId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ completePublicIntakeAttachmentUpload<TData = IntakeAttachmentCompletion>(publicKey: string,
+    attachmentId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ completePublicIntakeAttachmentUpload<TData = IntakeAttachmentCompletion>(publicKey: string,
+    attachmentId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  completePublicIntakeAttachmentUpload<TData = IntakeAttachmentCompletion>(
+    publicKey: string,
+    attachmentId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/intake-forms/${publicKey}/attachments/${attachmentId}/completion`,
+      undefined,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/intake-forms/${publicKey}/attachments/${attachmentId}/completion`,
+      undefined,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/intake-forms/${publicKey}/attachments/${attachmentId}/completion`,
+      undefined,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
 };
 
 export type GetPublicIntakeFormClientResult = NonNullable<PublicIntakeForm>
 export type SubmitPublicIntakeFormClientResult = NonNullable<IntakeReceipt>
+export type StartPublicIntakeAttachmentUploadClientResult = NonNullable<AttachmentUpload>
+export type AbandonPublicIntakeAttachmentUploadClientResult = NonNullable<void>
+export type CompletePublicIntakeAttachmentUploadClientResult = NonNullable<IntakeAttachmentCompletion>

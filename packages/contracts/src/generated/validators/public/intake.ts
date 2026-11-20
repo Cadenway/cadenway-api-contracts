@@ -31,7 +31,8 @@ export const GetIntakeFormConfigurationResponse = zod.object({
   "description": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
   "priority": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
   "dueDate": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
-  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.')
+  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "attachments": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.')
 }).describe('Policy for the configurable fields. The title is required for every submission.'),
   "defaultStatus": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
   "defaultAssigneeId": zod.uuid().nullable().describe('UUID of the eligible account assigned to new tasks, or null for no assignment.'),
@@ -69,7 +70,8 @@ export const UpdateIntakeFormConfigurationBody = zod.strictObject({
   "description": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.'),
   "priority": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.'),
   "dueDate": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.'),
-  "contactEmail": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.')
+  "contactEmail": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.'),
+  "attachments": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.')
 }).optional().describe('Partial changes to the configurable fields. Omitted modes retain their values.'),
   "defaultStatus": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).optional().describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
   "defaultAssigneeId": zod.uuid().nullish().describe('UUID of the eligible account assigned to new tasks, or null for no assignment.')
@@ -90,7 +92,8 @@ export const UpdateIntakeFormConfigurationResponse = zod.object({
   "description": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
   "priority": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
   "dueDate": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
-  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.')
+  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "attachments": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.')
 }).describe('Policy for the configurable fields. The title is required for every submission.'),
   "defaultStatus": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
   "defaultAssigneeId": zod.uuid().nullable().describe('UUID of the eligible account assigned to new tasks, or null for no assignment.'),
@@ -129,7 +132,8 @@ export const PublishIntakeFormResponse = zod.object({
   "description": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
   "priority": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
   "dueDate": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
-  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.')
+  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "attachments": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.')
 }).describe('Policy for the configurable fields. The title is required for every submission.'),
   "defaultStatus": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
   "defaultAssigneeId": zod.uuid().nullable().describe('UUID of the eligible account assigned to new tasks, or null for no assignment.'),
@@ -203,7 +207,8 @@ export const GetPublicIntakeFormResponse = zod.object({
   "description": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
   "priority": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
   "dueDate": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
-  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.')
+  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "attachments": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.')
 }).describe('Policy for the configurable fields. The title is required for every submission.')
 }).describe('Public projection of the settings deliberately provided for display.')
 
@@ -214,11 +219,20 @@ export const GetPublicIntakeFormResponse = zod.object({
  * required. Missing required fields and supplied disabled fields are reported by field
  * in `details.issues`. An empty required text field is invalid after trimming.
  *
- * The producer rechecks that the publication is active and its defaults are valid
- * before creating a normal task and saving the contact in the same transaction. A valid
- * form replays an identical request with the same idempotency key for 24 hours, with the
- * original receipt and no second task. The receipt is an acknowledgment without a
- * public task link or contact email.
+ * When the form allows attachments, submit the IDs of up to five completed uploads
+ * from the same draft, using `Intake-Draft-Key` and `Idempotency-Key`. Changing only
+ * the order or hexadecimal case of the same attachment IDs is a matching replay.
+ * The draft key requires an idempotency key even if no attachment IDs are supplied.
+ * A submission without either a draft key or attachment IDs retains the ordinary
+ * text-only behavior. A form that requires attachments refuses a submission with none.
+ *
+ * The producer rechecks the active publication and its defaults before committing a
+ * normal task, any contact, an opaque receipt and the selected upload claims in one
+ * transaction. A committed draft releases its unselected reservations. Attachment
+ * metadata becomes available only to authorized members through the task attachment API.
+ * A valid publication replays a matching request with the same idempotency key for
+ * 24 hours, using the original receipt even if its successful draft is no longer open.
+ * The receipt carries no attachment metadata, public task link or contact email.
  * @summary Submit a request through a published form
  */
 export const SubmitPublicIntakeFormParams = zod.object({
@@ -227,10 +241,12 @@ export const SubmitPublicIntakeFormParams = zod.object({
 
 export const submitPublicIntakeFormHeaderIdempotencyKeyMax = 255;
 
+export const submitPublicIntakeFormHeaderIntakeDraftKeyRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
 
 
 export const SubmitPublicIntakeFormHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(submitPublicIntakeFormHeaderIdempotencyKeyMax).optional().describe('Client-chosen key scoped to this publication, retained for 24 hours.')
+  "Idempotency-Key": zod.string().min(1).max(submitPublicIntakeFormHeaderIdempotencyKeyMax).optional().describe('Client-chosen key scoped to this publication, retained for 24 hours.'),
+  "Intake-Draft-Key": zod.string().regex(submitPublicIntakeFormHeaderIntakeDraftKeyRegExp).optional().describe('Private applicant key, required when attachment IDs are supplied.')
 })
 
 export const submitPublicIntakeFormBodyTitleMax = 300;
@@ -239,6 +255,9 @@ export const submitPublicIntakeFormBodyDescriptionMax = 50000;
 
 export const submitPublicIntakeFormBodyContactEmailMax = 254;
 
+export const submitPublicIntakeFormBodyAttachmentIdsItemRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const submitPublicIntakeFormBodyAttachmentIdsMax = 5;
+
 
 
 export const SubmitPublicIntakeFormBody = zod.strictObject({
@@ -246,7 +265,8 @@ export const SubmitPublicIntakeFormBody = zod.strictObject({
   "description": zod.string().max(submitPublicIntakeFormBodyDescriptionMax).nullish().describe('"Description", Markdown; `null` when there is none.'),
   "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).optional().describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
   "dueDate": zod.iso.date().optional().describe('Requested due date in calendar days.'),
-  "contactEmail": zod.email().max(submitPublicIntakeFormBodyContactEmailMax).optional().describe('Address submitted by the applicant and stored separately from the task.')
+  "contactEmail": zod.email().max(submitPublicIntakeFormBodyContactEmailMax).optional().describe('Address submitted by the applicant and stored separately from the task.'),
+  "attachmentIds": zod.array(zod.uuid().regex(submitPublicIntakeFormBodyAttachmentIdsItemRegExp)).min(1).max(submitPublicIntakeFormBodyAttachmentIdsMax).refine((value) => new Set(value.map((id) => id.toLowerCase())).size === value.length, { message: 'Attachment IDs must be distinct' }).optional().describe('Verified files from the same live publication and draft, each at most 25 MiB.\nIdentifiers must be unique regardless of case. The order is immaterial.\nOmit this field when there are no attachments.\n')
 }).describe('The service validates configurable fields against the current publication after resolving\nthe form key. Disabled fields must be omitted. Required fields must contain a value.\n')
 
 export const submitPublicIntakeFormResponseReceiptRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
@@ -255,3 +275,121 @@ export const submitPublicIntakeFormResponseReceiptRegExp = new RegExp('^[A-Za-z0
 export const SubmitPublicIntakeFormResponse = zod.object({
   "receipt": zod.string().regex(submitPublicIntakeFormResponseReceiptRegExp).describe('Opaque identifier of this acknowledgement.')
 }).describe('Acknowledgement returned after committing the submission.')
+
+
+/**
+ * Reserve one upload on an active publication that allows attachments. Generate a
+ * private draft key once for this submission and keep it with the draft. Use a distinct
+ * idempotency key for each new file. The draft starts with its first reservation and
+ * accepts up to five active reservations within its 30-minute lifetime.
+ *
+ * The signed multipart POST permits up to 25 MiB and expires after five minutes at
+ * most, bounded by the draft expiry. Append the returned fields unchanged to FormData,
+ * then append the file as the final part named `file`. Call completion after transfer.
+ * The declared media type must match the registered final filename extension. The
+ * temporary destination does not identify the organization, list or publication.
+ *
+ * The service retains the reservation key for 24 hours. While the draft and publication
+ * remain eligible, a matching start replays the original signed response without
+ * extending its expiry. Use a new reservation for another upload.
+ * @summary Reserve a signed upload for an applicant's draft
+ */
+export const StartPublicIntakeAttachmentUploadParams = zod.object({
+  "publicKey": zod.string().describe('Opaque key from the published link. A key with an invalid shape is handled as unknown.\nIt is separate from the authenticated management credentials.\n')
+})
+
+export const startPublicIntakeAttachmentUploadHeaderIntakeDraftKeyRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+export const startPublicIntakeAttachmentUploadHeaderIdempotencyKeyMax = 255;
+
+
+
+export const StartPublicIntakeAttachmentUploadHeader = zod.object({
+  "Intake-Draft-Key": zod.string().regex(startPublicIntakeAttachmentUploadHeaderIntakeDraftKeyRegExp).describe('Private applicant key reused for the reservations and submission of this draft.'),
+  "Idempotency-Key": zod.string().min(1).max(startPublicIntakeAttachmentUploadHeaderIdempotencyKeyMax).describe('Client-chosen reservation key scoped to the publication and draft.')
+})
+
+export const startPublicIntakeAttachmentUploadBodyFileNameMax = 255;
+
+
+export const startPublicIntakeAttachmentUploadBodyFileNameRegExp = new RegExp('^(?=[\\s\\S]*\\S)(?!\\s*\\.{1,2}\\s*$)(?:[^/\\\\\\x00-\\x1F\\x7F-\\x9F\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])+$');
+export const startPublicIntakeAttachmentUploadBodyContentTypeMax = 127;
+
+
+export const startPublicIntakeAttachmentUploadBodyContentTypeRegExp = new RegExp('^(?!\\*/)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+/(?!\\*$)[!#$%&\'*+\\-.^_\\x60|~0-9A-Za-z]+$');
+export const startPublicIntakeAttachmentUploadBodySizeBytesMax = 9007199254740991;
+
+
+
+export const StartPublicIntakeAttachmentUploadBody = zod.strictObject({
+  "fileName": zod.string().min(1).refine((value) => Array.from(value).length <= startPublicIntakeAttachmentUploadBodyFileNameMax, { message: 'At most 255 Unicode code points' }).regex(startPublicIntakeAttachmentUploadBodyFileNameRegExp).describe('Original Unicode basename without path separators, control characters or whitespace-padded dot segments.'),
+  "contentType": zod.string().min(1).max(startPublicIntakeAttachmentUploadBodyContentTypeMax).regex(startPublicIntakeAttachmentUploadBodyContentTypeRegExp).describe('Concrete media type and subtype without wildcards or parameters.'),
+  "sizeBytes": zod.int().min(1).max(startPublicIntakeAttachmentUploadBodySizeBytesMax).describe('Declared length in bytes. The storage service refuses values above 25 MiB.')
+})
+
+export const startPublicIntakeAttachmentUploadResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const StartPublicIntakeAttachmentUploadResponse = zod.object({
+  "id": zod.uuid().regex(startPublicIntakeAttachmentUploadResponseIdRegExp),
+  "method": zod.literal("POST"),
+  "url": zod.url().describe('Signed multipart upload destination, valid for five minutes.'),
+  "fields": zod.record(zod.string(), zod.string()).refine((value) => Object.keys(value).length >= 1, { message: 'At least 1 signed form field' }).describe('Signed form fields to append unchanged before the file part.'),
+  "expiresAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
+ * Release a reservation of the same live publication and draft. This frees its slot
+ * and schedules object cleanup. A matching repeat of an abandoned upload succeeds
+ * while the draft and publication remain eligible. A claimed file cannot be removed
+ * by an applicant. Files not selected at submission or left in an expired draft are
+ * released without a separate request.
+ * @summary Release an applicant's unused upload
+ */
+export const abandonPublicIntakeAttachmentUploadPathAttachmentIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AbandonPublicIntakeAttachmentUploadParams = zod.object({
+  "publicKey": zod.string().describe('Opaque key from the published link. A key with an invalid shape is handled as unknown.\nIt is separate from the authenticated management credentials.\n'),
+  "attachmentId": zod.uuid().regex(abandonPublicIntakeAttachmentUploadPathAttachmentIdRegExp).describe('ID previously allocated to this draft by the reservation route.')
+})
+
+export const abandonPublicIntakeAttachmentUploadHeaderIntakeDraftKeyRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+
+
+export const AbandonPublicIntakeAttachmentUploadHeader = zod.object({
+  "Intake-Draft-Key": zod.string().regex(abandonPublicIntakeAttachmentUploadHeaderIntakeDraftKeyRegExp).describe('Private applicant key reused for the reservations and submission of this draft.')
+})
+
+export const AbandonPublicIntakeAttachmentUploadResponse = zod.void()
+
+
+/**
+ * Verify the file from the temporary upload on this same live publication and draft.
+ * A matching retry returns the same acknowledgement without another verification
+ * fact. Submission can briefly answer `409 attachment.upload-not-ready` while the
+ * verification reaches task-service. Retry submission with the same idempotency key.
+ * The acknowledgement gives the applicant no metadata or download access.
+ * @summary Verify an applicant's uploaded file
+ */
+export const completePublicIntakeAttachmentUploadPathAttachmentIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const CompletePublicIntakeAttachmentUploadParams = zod.object({
+  "publicKey": zod.string().describe('Opaque key from the published link. A key with an invalid shape is handled as unknown.\nIt is separate from the authenticated management credentials.\n'),
+  "attachmentId": zod.uuid().regex(completePublicIntakeAttachmentUploadPathAttachmentIdRegExp).describe('ID previously allocated to this draft by the reservation route.')
+})
+
+export const completePublicIntakeAttachmentUploadHeaderIntakeDraftKeyRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+
+
+export const CompletePublicIntakeAttachmentUploadHeader = zod.object({
+  "Intake-Draft-Key": zod.string().regex(completePublicIntakeAttachmentUploadHeaderIntakeDraftKeyRegExp).describe('Private applicant key reused for the reservations and submission of this draft.')
+})
+
+export const completePublicIntakeAttachmentUploadResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const CompletePublicIntakeAttachmentUploadResponse = zod.strictObject({
+  "id": zod.uuid().regex(completePublicIntakeAttachmentUploadResponseIdRegExp)
+}).describe('Acknowledges verification for the identified reservation without exposing file data.')
