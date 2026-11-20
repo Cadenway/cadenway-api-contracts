@@ -4,7 +4,8 @@
 # of openapi/public/access.yaml, the archives of openapi/public/archives.yaml, the trash of
 # openapi/public/trash.yaml, the work logs, status durations and timesheets of openapi/public/time.yaml,
 # goals and reports, the intake form and attachment access. Both gateways check notification
-# subject visibility. The realtime gateway also checks access before a socket joins a room.
+# subject visibility. The realtime gateway checks access before a socket joins a room, and
+# document-service resolves the actor's current role on the spaces that contain documents.
 openapi: 3.1.0
 info:
   title: task-service internal routes
@@ -13,7 +14,7 @@ info:
     What task-service exposes to the API gateway for spaces, lists, sprints, tasks, access,
     archives, trash, time, goals, reports, intake and attachment access, and to the realtime gateway
     for its access checks. The API gateway serves the public contracts for these features and calls
-    the corresponding internal routes.
+    the corresponding internal routes. Document-service checks access to a document's space here.
 
     | Public route | Internal call |
     | --- | --- |
@@ -98,11 +99,15 @@ info:
     Both gateways call `POST /internal/v1/notification-subjects/resolve` to check current access
     before disclosing a notification. The API gateway may also request display data for the task.
 
+    Document-service calls `POST /internal/v1/spaces/access/resolve` for the actor's effective
+    space roles. This lookup has no public route.
+
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
     (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `task-service`). Every route accepts the
     issuer `api-gateway` and the actor `user` by default. The two access checks accept
     `realtime-gateway` with the actor `user`. The notification lookup accepts both gateways
-    with the actor `user` and restricts enrichment to `api-gateway`. The applicant intake routes accept `api-gateway`
+    with the actor `user` and restricts enrichment to `api-gateway`. The document space lookup
+    accepts `document-service` with the actor `user`. The applicant intake routes accept `api-gateway`
     with the actor `system` and resolve the target exclusively from the publication key.
     All other routes require an organization and run in the tenant transaction for the
     organization's session or personal API token. They take the actor and organization from
@@ -198,6 +203,8 @@ info:
         display data for the inbox and reminders.
     - repository: cadenway-realtime-gateway
       uses: Checks list or task access before a room join and verifies notification subject visibility before relay.
+    - repository: cadenway-document-service
+      uses: Resolves the actor's current space roles before returning or mutating documents.
 servers:
   - url: http://task-service:3013
     description: task-service on the internal network of each environment (`TASK_SERVICE_URL`).
@@ -3826,6 +3833,69 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/spaces/access/resolve:
+    post:
+      operationId: resolveDocumentSpaceAccessInternal
+      summary: Resolve current space access for documents
+      description: |
+        Checks the requested space IDs in a single read-only tenant snapshot. The lookup reads
+        the actor's active membership and role from the Organization projection together with
+        live spaces and their grants, applying Task's canonical effective space role. Access to
+        a list alone does not count as a role on its parent space. Unknown, deleted, hidden and
+        cross-organization spaces are all omitted, as are spaces where the actor has no role.
+        An absent active membership answers `404 organization.not-found` for the whole lookup.
+        An empty request checks the same active membership and returns an empty result on success.
+
+        IDs are compared case-insensitively. Each authorized space appears once with its
+        canonical lowercase ID, in the order of its first occurrence in the request.
+        The caller uses this decision for one authorization check for the same actor and
+        organization. An omitted requested ID conveys no access. The caller rejects the whole
+        proof if an entry has no role or a role other than `view`, `comment` or `edit`, a
+        malformed ID, a duplicate ID after normalization or an ID outside the request. An
+        error never supplies a partial decision.
+        The lookup writes nothing and emits no events.
+
+        Internal token: issuer `document-service` only, actor `user`, organization required.
+        Document-service forwards the verified account and selected organization from its
+        incoming call. The body cannot override the actor, organization or role.
+      tags: [access]
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentSpaceAccessLookup'
+            example:
+              spaceIds:
+                - 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                - 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02
+      responses:
+        '200':
+          description: The actor's effective roles on the requested spaces where they have access.
+          headers:
+            Cache-Control:
+              description: The caller obtains a fresh decision for each authorization check.
+              required: true
+              schema: { const: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSpaceAccessResult'
+              example:
+                results:
+                  - spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    role: edit
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '503':
+          $ref: '#/components/responses/DocumentSpaceAccessUnavailable'
   /internal/v1/lists/{listId}/access:
     parameters:
       - $ref: '#/components/parameters/ListId'
@@ -7570,6 +7640,17 @@ components:
             title: Not Found
             status: 404
             code: organization.not-found
+    DocumentSpaceAccessUnavailable:
+      description: '`task.document-space-access-unavailable`: Task could not establish a current space access snapshot.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Document space access unavailable.
+            status: 503
+            code: task.document-space-access-unavailable
     NotificationSubjectLookupUnavailable:
       description: '`task.notification-visibility-unavailable`: Task could not establish a current visibility snapshot.'
       content:
@@ -8326,6 +8407,38 @@ components:
           description: |
             Stable UUID of the checked task, present on task access checks once the producer
             supports realtime room joins. Omitted on list access checks.
+    DocumentSpaceAccessSpaceId:
+      type: string
+      format: uuid
+      description: Stable UUID of a space, as accepted by the other Task space routes.
+      examples: [019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01]
+    DocumentSpaceAccessLookup:
+      type: object
+      additionalProperties: false
+      required: [spaceIds]
+      properties:
+        spaceIds:
+          type: array
+          maxItems: 100
+          description: Candidate spaces for a document query or mutation. An empty array requests only the current membership check. Repeated IDs share one result.
+          items:
+            $ref: '#/components/schemas/DocumentSpaceAccessSpaceId'
+    DocumentSpaceAccessResult:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          maxItems: 100
+          description: One entry per accessible space. An empty response grants no access.
+          items:
+            type: object
+            required: [spaceId, role]
+            properties:
+              spaceId:
+                $ref: '#/components/schemas/DocumentSpaceAccessSpaceId'
+              role:
+                $ref: '../../components/task.yaml#/components/schemas/AccessRole'
     NotificationSubjectLookup:
       type: object
       additionalProperties: false

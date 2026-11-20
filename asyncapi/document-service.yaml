@@ -1,0 +1,239 @@
+asyncapi: 3.0.0
+info:
+  title: document-service events
+  version: 1.0.0
+  description: |
+    Document-service owns the document content, its immutable space association and its
+    lifecycle version. Each fact is appended to the outbox in the same tenant transaction as
+    the change. The relay publishes to `EVENTS` after commit with at-least-once delivery.
+
+    The facts carry the document and space identifiers and the resulting version. The actor
+    identifies who caused the change. Document titles, blocks, excerpts and access grants stay
+    out of the broker payload. A client retry that replays a committed response and an update
+    with no effect append no second fact.
+
+    Search deduplicates by event `id` and tracks versions per `(organizationId, documentId)`.
+    Create and update signal that an authoritative document projection can be refreshed.
+    A deletion retains the latest version as a tombstone even when Search has never seen the
+    document. Older facts and stale projection fetches cannot restore the deleted record.
+
+    Search obtains document content through the authorized projection boundary. Before exposing
+    a document result it checks current organization membership and space visibility. If the
+    current visibility cannot be established, it withholds the result. Task-service owns space
+    visibility, including changes that do not advance a document's version. The Document
+    projection and rebuild contracts will be defined with the P5 reconstruction producers.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  tags:
+    - name: documents
+      description: Committed document lifecycle changes.
+  x-consumers:
+    - repository: cadenway-search-service
+      uses: Planned in P5, doc.created.v1 and doc.updated.v1 to refresh the document projection, and doc.deleted.v1 to remove it and retain its version.
+servers:
+  nats:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream of each environment, on its internal network.
+defaultContentType: application/json
+channels:
+  docCreatedV1:
+    address: evt.doc.created.v1
+    description: A document was created. Emitted by document-service. Planned consumer cadenway-search-service.
+    messages:
+      docCreatedV1:
+        $ref: '#/components/messages/docCreatedV1'
+  docUpdatedV1:
+    address: evt.doc.updated.v1
+    description: A document's title or blocks changed. Emitted by document-service. Planned consumer cadenway-search-service.
+    messages:
+      docUpdatedV1:
+        $ref: '#/components/messages/docUpdatedV1'
+  docDeletedV1:
+    address: evt.doc.deleted.v1
+    description: A document was deleted. Emitted by document-service. Planned consumer cadenway-search-service.
+    messages:
+      docDeletedV1:
+        $ref: '#/components/messages/docDeletedV1'
+operations:
+  publishDocCreatedV1:
+    action: send
+    summary: Publish the creation of a document.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/docCreatedV1'
+    messages:
+      - $ref: '#/channels/docCreatedV1/messages/docCreatedV1'
+  publishDocUpdatedV1:
+    action: send
+    summary: Publish a change to a document.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/docUpdatedV1'
+    messages:
+      - $ref: '#/channels/docUpdatedV1/messages/docUpdatedV1'
+  publishDocDeletedV1:
+    action: send
+    summary: Publish the deletion of a document.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/docDeletedV1'
+    messages:
+      - $ref: '#/channels/docDeletedV1/messages/docDeletedV1'
+components:
+  schemas:
+    EventHeaders:
+      type: object
+      properties:
+        traceparent:
+          type: string
+          description: W3C Trace Context of the request or event that caused the change.
+    DocumentId:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      description: Stable UUIDv7 of the document. A deleted document's ID is never reused.
+    DocumentSpaceId:
+      type: string
+      format: uuid
+      description: Task-service identifier of the owning space, unchanged throughout the document lifecycle.
+  messages:
+    docCreatedV1:
+      name: doc.created.v1
+      title: Document created
+      summary: A document became available in its owning space.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, documentId, spaceId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the document was created.
+          organizationId:
+            type: string
+            format: uuid
+            description: Tenant that owns the document and its space.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            const: 1
+            description: Initial document version.
+          documentId:
+            $ref: '#/components/schemas/DocumentId'
+          spaceId:
+            $ref: '#/components/schemas/DocumentSpaceId'
+      examples:
+        - name: documentCreated
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d30
+            occurredAt: '2026-11-20T14:02:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b31
+            version: 1
+            documentId: 019a7004-4d5e-7f6a-8b9c-0d1e2f3a4b01
+            spaceId: 019a6f03-6f7a-7b8c-9d0e-1f2a3b4c5d33
+    docUpdatedV1:
+      name: doc.updated.v1
+      title: Document updated
+      summary: At least one of the title or ordered blocks changed.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, documentId, spaceId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: string
+            format: uuid
+            description: Tenant that owns the document and its space.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            maximum: 9007199254740991
+            description: Document version after the committed update.
+          documentId:
+            $ref: '#/components/schemas/DocumentId'
+          spaceId:
+            $ref: '#/components/schemas/DocumentSpaceId'
+      examples:
+        - name: documentUpdated
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d31
+            occurredAt: '2026-11-20T14:04:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b31
+            version: 2
+            documentId: 019a7004-4d5e-7f6a-8b9c-0d1e2f3a4b01
+            spaceId: 019a6f03-6f7a-7b8c-9d0e-1f2a3b4c5d33
+    docDeletedV1:
+      name: doc.deleted.v1
+      title: Document deleted
+      summary: A document was permanently removed from its owning space.
+      description: Consumers discard the indexed content and retain the document version as a tombstone.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, documentId, spaceId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the deletion was committed.
+          organizationId:
+            type: string
+            format: uuid
+            description: Tenant that owned the document and its space.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            maximum: 9007199254740991
+            description: Terminal document version recorded by the deletion.
+          documentId:
+            $ref: '#/components/schemas/DocumentId'
+          spaceId:
+            $ref: '#/components/schemas/DocumentSpaceId'
+      examples:
+        - name: documentDeleted
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d32
+            occurredAt: '2026-11-20T14:06:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b31
+            version: 3
+            documentId: 019a7004-4d5e-7f6a-8b9c-0d1e2f3a4b01
+            spaceId: 019a6f03-6f7a-7b8c-9d0e-1f2a3b4c5d33

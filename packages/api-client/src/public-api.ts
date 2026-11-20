@@ -11,6 +11,23 @@
  * type of the same name, exported together.
  */
 
+// openapi/public/documents.yaml
+export {
+  DocumentsService,
+  type CreateDocumentClientResult,
+  type DeleteDocumentClientResult,
+  type GetDocumentClientResult,
+  type ListDocumentsClientResult,
+  type UpdateDocumentClientResult,
+} from './generated/public/documents/documents/documents.service';
+export type {
+  DocumentCreation,
+  DocumentDetail,
+  DocumentMetadata,
+  DocumentPage,
+  DocumentPatch,
+} from './generated/public/documents/model';
+
 // openapi/public/realtime.yaml
 export {
   RealtimeService,

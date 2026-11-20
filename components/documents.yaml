@@ -1,0 +1,166 @@
+# Shared Document schemas and request parameters for public and internal HTTP.
+openapi: 3.1.0
+info:
+  title: Cadenway shared Document components
+  version: 1.0.0
+  description: Metadata, Markdown content, pagination and write preconditions for documents.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  parameters:
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      description: Identifier of the document.
+      schema:
+        $ref: '#/components/schemas/DocumentUuid'
+    DocumentQuery:
+      name: q
+      in: query
+      description: |
+        Case-insensitive literal substring of the title or Markdown body. Leading and trailing
+        whitespace is ignored. An empty query applies no filter.
+      schema:
+        type: string
+        maxLength: 200
+        examples: [export CSV]
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: Client-chosen key for one document creation.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: The current strong document ETag. Weak tags, wildcards and tag lists are invalid.
+      schema:
+        $ref: '#/components/schemas/DocumentTag'
+  headers:
+    ETag:
+      required: true
+      description: Strong entity tag equal to the document version in double quotes.
+      schema:
+        $ref: '#/components/schemas/DocumentTag'
+    PrivateNoStore:
+      required: true
+      description: The caller's document result may not be stored by an HTTP cache.
+      schema:
+        type: string
+        const: private, no-store
+  schemas:
+    DocumentUuid:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      description: A UUID version 7.
+    DocumentTag:
+      type: string
+      pattern: '^"[1-9][0-9]*"$'
+      examples: ['"1"']
+    DocumentTitle:
+      type: string
+      minLength: 1
+      maxLength: 200
+      pattern: '\S'
+      description: Display title. Leading and trailing whitespace is trimmed.
+      examples: [Notes de version 3.1]
+    DocumentMarkdown:
+      type: string
+      maxLength: 100000
+      description: |
+        Ordered blocks serialized as lightweight Markdown. The editor supports paragraphs,
+        headings 1–3, bulleted and numbered items, checkboxes, quotes, fenced code and separators.
+        Inline marks include bold, italic, underline, strikethrough, code and links. This is
+        source text. A consumer treats raw HTML as text and does not activate non-HTTP(S) links.
+        An empty string represents a document without content.
+    DocumentMetadata:
+      type: object
+      required: [id, spaceId, title, authorUserId, createdAt, updatedAt, version]
+      properties:
+        id:
+          $ref: '#/components/schemas/DocumentUuid'
+        spaceId:
+          type: string
+          format: uuid
+          description: The owning space. It cannot be moved by editing the document.
+        title:
+          $ref: '#/components/schemas/DocumentTitle'
+        authorUserId:
+          type: string
+          format: uuid
+          description: The account that made the last stored edit, or the creating account before any edit.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    DocumentDetail:
+      allOf:
+        - $ref: '#/components/schemas/DocumentMetadata'
+        - type: object
+          required: [body]
+          properties:
+            body:
+              $ref: '#/components/schemas/DocumentMarkdown'
+    DocumentPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentMetadata'
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'
+    DocumentCreation:
+      type: object
+      additionalProperties: false
+      required: [spaceId, title]
+      properties:
+        spaceId:
+          type: string
+          format: uuid
+        title:
+          $ref: '#/components/schemas/DocumentTitle'
+        body:
+          $ref: '#/components/schemas/DocumentMarkdown'
+          default: ''
+    DocumentPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title:
+          $ref: '#/components/schemas/DocumentTitle'
+        body:
+          $ref: '#/components/schemas/DocumentMarkdown'
+  examples:
+    DocumentReleaseNotes:
+      summary: The release notes in the Product space of Atelier Nord.
+      value:
+        id: 019a7005-4b2c-7d4e-8f5a-6b7c8d9e0f17
+        spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+        title: Notes de version 3.1
+        authorUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+        createdAt: '2026-11-07T08:00:00Z'
+        updatedAt: '2026-11-09T17:20:00Z'
+        version: 3
+        body: |-
+          # Nouveautés
+          La version 3.1 apporte les limites de tâches en cours sur le tableau et l’export CSV filtré.
+          - Vue Tableau : limite configurable par colonne
+          - Export CSV qui respecte les filtres et le tri
