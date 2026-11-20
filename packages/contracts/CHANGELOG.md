@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.22.0
+
+### Minor Changes
+
+- e4b265b: Add internal projection export and refresh contracts so Search can rebuild its index from the owning services.
+
 ## 0.21.1
 
 ### Patch Changes
