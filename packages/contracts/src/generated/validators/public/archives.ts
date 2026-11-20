@@ -126,6 +126,10 @@ export const ArchiveTaskBody = zod.object({
 
 }).describe('Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.')
 
+export const archiveTaskResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const archiveTaskResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const archiveTaskResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const archiveTaskResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -143,6 +147,14 @@ export const archiveTaskResponseChecklistCountsDoneMin = 0;
 
 
 export const ArchiveTaskResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(archiveTaskResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(archiveTaskResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(archiveTaskResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -217,6 +229,10 @@ export const UnarchiveTaskBody = zod.object({
 
 }).describe('Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.')
 
+export const unarchiveTaskResponseDescriptionMentionsItemStartMin = 0;
+
+
+export const unarchiveTaskResponseNextOccurrenceKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const unarchiveTaskResponseKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const unarchiveTaskResponseParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -234,6 +250,14 @@ export const unarchiveTaskResponseChecklistCountsDoneMin = 0;
 
 
 export const UnarchiveTaskResponse = zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "descriptionMentions": zod.array(zod.object({
+  "userId": zod.uuid(),
+  "start": zod.int().min(unarchiveTaskResponseDescriptionMentionsItemStartMin),
+  "end": zod.int().min(1)
+}).describe('A recipient identified by account, not spelling. Offsets count Unicode code points in\nthe unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be\nnon-overlapping, in range, and cover a nonempty displayed token beginning with `@`.\nRaw text without a span never identifies a recipient. The recipient must be a current\nmember, including a guest, with read access to the task\'s list after the write.\n')).optional().describe('Structured spans in the current Markdown description.'),
+  "nextOccurrenceKey": zod.string().regex(unarchiveTaskResponseNextOccurrenceKeyRegExp).optional().describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "key": zod.string().regex(unarchiveTaskResponseKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "description": zod.string().nullable().describe('"Description", Markdown, 50,000 characters at most; `null` when there is none.'),
@@ -378,6 +402,8 @@ export const listArchivedTasksResponseTotalMin = 0;
 export const ListArchivedTasksResponse = zod.object({
   "items": zod.array(zod.object({
   "task": zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
   "key": zod.string().regex(listArchivedTasksResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
   "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),

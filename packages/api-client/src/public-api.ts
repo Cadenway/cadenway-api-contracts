@@ -294,8 +294,40 @@ export {
   type GetSpaceClientResult,
   type GetSpaceOverviewClientResult,
   type ListSpacesClientResult,
+  type ListSpaceMilestonesClientResult,
+  type ListTaskTemplatesClientResult,
+  type CreateTaskTemplateClientResult,
+  type GetTaskTemplateClientResult,
+  type DeleteTaskTemplateClientResult,
+  type ListFavoritesClientResult,
+  type CreateFavoriteClientResult,
+  type GetFavoriteClientResult,
+  type DeleteFavoriteClientResult,
   type UpdateSpaceClientResult,
 } from './generated/public/spaces/spaces/spaces.service';
+export type { TaskTemplate } from './generated/public/spaces/model/taskTemplate';
+export type { TaskTemplateCreation } from './generated/public/spaces/model/taskTemplateCreation';
+export type { TaskTemplatePage } from './generated/public/spaces/model/taskTemplatePage';
+export type { ListTaskTemplatesParams } from './generated/public/spaces/model/listTaskTemplatesParams';
+export type { Favorite } from './generated/public/spaces/model/favorite';
+export type { FavoriteCreation } from './generated/public/spaces/model/favoriteCreation';
+export type { FavoritePage } from './generated/public/spaces/model/favoritePage';
+export type { FavoriteTarget } from './generated/public/spaces/model/favoriteTarget';
+export type { ListFavoritesParams } from './generated/public/spaces/model/listFavoritesParams';
+export type { TemplateCreateConflictResponse } from './generated/public/spaces/model/templateCreateConflictResponse';
+export type { TemplateCreateRefusedResponse } from './generated/public/spaces/model/templateCreateRefusedResponse';
+export type { TemplateNotFoundResponse } from './generated/public/spaces/model/templateNotFoundResponse';
+export type { TemplateWriteForbiddenResponse } from './generated/public/spaces/model/templateWriteForbiddenResponse';
+export type { TemplateSourceNotFoundResponse } from './generated/public/spaces/model/templateSourceNotFoundResponse';
+export type { FavoriteCreateConflictResponse } from './generated/public/spaces/model/favoriteCreateConflictResponse';
+export type { FavoriteCreateRefusedResponse } from './generated/public/spaces/model/favoriteCreateRefusedResponse';
+export type { FavoriteNotFoundResponse } from './generated/public/spaces/model/favoriteNotFoundResponse';
+export type { FavoriteTargetNotFoundResponse } from './generated/public/spaces/model/favoriteTargetNotFoundResponse';
+export type { FavoriteWriteForbiddenResponse } from './generated/public/spaces/model/favoriteWriteForbiddenResponse';
+export { FavoriteKindInput } from './generated/public/spaces/model/favoriteKindInput';
+export type { MilestonePage } from './generated/public/spaces/model/milestonePage';
+export type { ListSpaceMilestonesParams } from './generated/public/spaces/model/listSpaceMilestonesParams';
+export { Recurrence } from './generated/public/spaces/model/recurrence';
 export type { AccessRequest } from './generated/public/spaces/model/accessRequest';
 export type { AccessRequestApproval } from './generated/public/spaces/model/accessRequestApproval';
 export type { AccessRequestCreation } from './generated/public/spaces/model/accessRequestCreation';
@@ -396,6 +428,13 @@ export type { VisibilityValue } from './generated/public/spaces/model/visibility
 export {
   ListsService,
   type CreateListClientResult,
+  type DuplicateListClientResult,
+  type ListSavedViewsClientResult,
+  type CreateSavedViewClientResult,
+  type GetSavedViewClientResult,
+  type UpdateSavedViewClientResult,
+  type DeleteSavedViewClientResult,
+  type DuplicateSavedViewClientResult,
   type DeleteListClientResult,
   type GetListClientResult,
   type GetListCountsClientResult,
@@ -408,6 +447,36 @@ export { ActivityKindParameterItem } from './generated/public/lists/model/activi
 export type { ActivityPage } from './generated/public/lists/model/activityPage';
 export type { ActorIdParameter } from './generated/public/lists/model/actorIdParameter';
 export type { GetListCountsParams } from './generated/public/lists/model/getListCountsParams';
+export type { SavedItemName } from './generated/public/lists/model/savedItemName';
+export type { SavedView } from './generated/public/lists/model/savedView';
+export type { SavedViewCreation } from './generated/public/lists/model/savedViewCreation';
+export type { SavedViewPatch } from './generated/public/lists/model/savedViewPatch';
+export type { SavedViewDuplicate } from './generated/public/lists/model/savedViewDuplicate';
+export type { SavedViewPage } from './generated/public/lists/model/savedViewPage';
+export type { SavedViewConfiguration } from './generated/public/lists/model/savedViewConfiguration';
+export type { SavedViewConfigurationInput } from './generated/public/lists/model/savedViewConfigurationInput';
+export type { SavedViewConfigurationPatch } from './generated/public/lists/model/savedViewConfigurationPatch';
+export type { SavedViewFilters } from './generated/public/lists/model/savedViewFilters';
+export type { SavedViewFiltersPatch } from './generated/public/lists/model/savedViewFiltersPatch';
+export type { SavedViewPresentation } from './generated/public/lists/model/savedViewPresentation';
+export type { SavedViewPresentationValue } from './generated/public/lists/model/savedViewPresentationValue';
+export type { SavedViewPresentationPatch } from './generated/public/lists/model/savedViewPresentationPatch';
+export type { SavedViewLayoutValue } from './generated/public/lists/model/savedViewLayoutValue';
+export type { SavedViewSortValue } from './generated/public/lists/model/savedViewSortValue';
+export type { SavedViewGroupByValue } from './generated/public/lists/model/savedViewGroupByValue';
+export type { SavedViewSheetColumnValue } from './generated/public/lists/model/savedViewSheetColumnValue';
+export type { ListSavedViewsParams } from './generated/public/lists/model/listSavedViewsParams';
+export type { SavedViewCreateConflictResponse } from './generated/public/lists/model/savedViewCreateConflictResponse';
+export type { SavedViewCreateRefusedResponse } from './generated/public/lists/model/savedViewCreateRefusedResponse';
+export type { SavedViewNotFoundResponse } from './generated/public/lists/model/savedViewNotFoundResponse';
+export type { SavedViewWriteConflictResponse } from './generated/public/lists/model/savedViewWriteConflictResponse';
+export { SavedViewSort } from './generated/public/lists/model/savedViewSort';
+export { SavedViewLayout } from './generated/public/lists/model/savedViewLayout';
+export { SavedViewSheetColumn } from './generated/public/lists/model/savedViewSheetColumn';
+export type { ListDuplicate } from './generated/public/lists/model/listDuplicate';
+export type { ListDuplication } from './generated/public/lists/model/listDuplication';
+export type { ListDuplicateConflictResponse } from './generated/public/lists/model/listDuplicateConflictResponse';
+export type { ListDuplicateRefusedResponse } from './generated/public/lists/model/listDuplicateRefusedResponse';
 export type { ListCreationRefusedResponse } from './generated/public/lists/model/listCreationRefusedResponse';
 export type { ListListActivityParams } from './generated/public/lists/model/listListActivityParams';
 export type { ListListsParams } from './generated/public/lists/model/listListsParams';
@@ -425,6 +494,22 @@ export {
   type AssignTaskClientResult,
   type CreateSubtaskClientResult,
   type CreateTaskClientResult,
+  type CreateTaskCommentClientResult,
+  type CreateTaskDependencyClientResult,
+  type DuplicateTaskClientResult,
+  type ExecuteBulkTaskActionClientResult,
+  type DeleteTaskDependencyClientResult,
+  type GetTaskDependencyClientResult,
+  type ListTaskDependenciesClientResult,
+  type ListDependencyCandidatesClientResult,
+  type DeleteTaskCommentClientResult,
+  type FollowTaskWatcherClientResult,
+  type GetTaskCommentClientResult,
+  type ListTaskCommentsClientResult,
+  type ListTaskParticipantsClientResult,
+  type ListTaskWatchersClientResult,
+  type UnfollowTaskWatcherClientResult,
+  type UpdateTaskCommentClientResult,
   type GetTaskClientResult,
   type GetTaskDetailClientResult,
   type ListLabelsClientResult,
@@ -450,6 +535,50 @@ export {
 } from './generated/public/tasks/my-tasks/my-tasks.service';
 export type { AssigneeFilterParameter } from './generated/public/tasks/model/assigneeFilterParameter';
 export type { AssigneeRefusedResponse } from './generated/public/tasks/model/assigneeRefusedResponse';
+export type { BulkTaskAction } from './generated/public/tasks/model/bulkTaskAction';
+export type { BulkTaskActionValue } from './generated/public/tasks/model/bulkTaskActionValue';
+export type { BulkTaskSelection } from './generated/public/tasks/model/bulkTaskSelection';
+export type { BulkTaskStatusAction } from './generated/public/tasks/model/bulkTaskStatusAction';
+export type { BulkTaskPriorityAction } from './generated/public/tasks/model/bulkTaskPriorityAction';
+export type { BulkTaskAssignAction } from './generated/public/tasks/model/bulkTaskAssignAction';
+export type { BulkTaskUnassignAction } from './generated/public/tasks/model/bulkTaskUnassignAction';
+export type { BulkTaskMoveAction } from './generated/public/tasks/model/bulkTaskMoveAction';
+export type { BulkTaskTrashAction } from './generated/public/tasks/model/bulkTaskTrashAction';
+export type { BulkTaskDuplicateAction } from './generated/public/tasks/model/bulkTaskDuplicateAction';
+export type { BulkTaskResult } from './generated/public/tasks/model/bulkTaskResult';
+export type { BulkTaskResultEntry } from './generated/public/tasks/model/bulkTaskResultEntry';
+export type { TaskDuplicate } from './generated/public/tasks/model/taskDuplicate';
+export type { TaskDuplicateConflictResponse } from './generated/public/tasks/model/taskDuplicateConflictResponse';
+export type { TaskDuplicateRefusedResponse } from './generated/public/tasks/model/taskDuplicateRefusedResponse';
+export type { BulkConflictResponse } from './generated/public/tasks/model/bulkConflictResponse';
+export type { BulkRefusedResponse } from './generated/public/tasks/model/bulkRefusedResponse';
+export type { BulkTargetNotFoundResponse } from './generated/public/tasks/model/bulkTargetNotFoundResponse';
+export type { Dependency } from './generated/public/tasks/model/dependency';
+export type { DependencyCreation } from './generated/public/tasks/model/dependencyCreation';
+export { DependencyDirection } from './generated/public/tasks/model/dependencyDirection';
+export type { DependencyPage } from './generated/public/tasks/model/dependencyPage';
+export type { ListTaskDependenciesParams } from './generated/public/tasks/model/listTaskDependenciesParams';
+export type { ListDependencyCandidatesParams } from './generated/public/tasks/model/listDependencyCandidatesParams';
+export type { Comment } from './generated/public/tasks/model/comment';
+export type { CommentCreation } from './generated/public/tasks/model/commentCreation';
+export type { CommentPage } from './generated/public/tasks/model/commentPage';
+export type { CommentPatch } from './generated/public/tasks/model/commentPatch';
+export type { Mention } from './generated/public/tasks/model/mention';
+export type { TaskParticipant } from './generated/public/tasks/model/taskParticipant';
+export type { TaskParticipantPage } from './generated/public/tasks/model/taskParticipantPage';
+export type { Watcher } from './generated/public/tasks/model/watcher';
+export type { WatcherPage } from './generated/public/tasks/model/watcherPage';
+export type { ListTaskCommentsParams } from './generated/public/tasks/model/listTaskCommentsParams';
+export type { ListTaskParticipantsParams } from './generated/public/tasks/model/listTaskParticipantsParams';
+export type { ListTaskWatchersParams } from './generated/public/tasks/model/listTaskWatchersParams';
+export type { CollabAuthorResponse } from './generated/public/tasks/model/collabAuthorResponse';
+export type { CollabRoleResponse } from './generated/public/tasks/model/collabRoleResponse';
+export type { CollabCommentNotFoundResponse } from './generated/public/tasks/model/collabCommentNotFoundResponse';
+export type { CollabCreateConflictResponse } from './generated/public/tasks/model/collabCreateConflictResponse';
+export type { CollabCreateRefusedResponse } from './generated/public/tasks/model/collabCreateRefusedResponse';
+export type { CollabMentionResponse } from './generated/public/tasks/model/collabMentionResponse';
+export type { CollabWatcherRefusedResponse } from './generated/public/tasks/model/collabWatcherRefusedResponse';
+export type { CommentVersionMismatchResponse } from './generated/public/tasks/model/commentVersionMismatchResponse';
 export type { ChecklistItemConflictResponse } from './generated/public/tasks/model/checklistItemConflictResponse';
 export type { ChecklistItemNotFoundResponse } from './generated/public/tasks/model/checklistItemNotFoundResponse';
 export type { ChecklistItemRefusedResponse } from './generated/public/tasks/model/checklistItemRefusedResponse';

@@ -16,6 +16,10 @@ import type { Problem } from './problem';
  * - `task.parent-invalid`: the parent is unknown, not seen, the task itself or one of its
  *   subtasks; `details.parentKey` repeats it;
  * - `task.subtask-depth-exceeded`: the task and its subtasks would go beyond 3 levels;
- * - `task.subtask-limit-reached`: the parent has 25 subtasks.
+ * - `task.subtask-limit-reached`: the parent has 25 subtasks;
+ * - `mention.recipient-invalid`: a description mention recipient is ineligible;
+ * - `milestone.status-invalid`: the final milestone status is invalid;
+ * - `milestone.dates-invalid`: the final milestone dates or estimate are invalid;
+ * - `recurrence.date-out-of-range`: the successor date cannot be represented.
  */
 export type TaskChangeRefusedResponse = Problem;

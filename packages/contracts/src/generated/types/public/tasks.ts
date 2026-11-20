@@ -3,12 +3,36 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
+ * Empty object for duplicating a task.
+ */
+export interface TaskDuplicate { [key: string]: never }
+
+/**
  * Key of a task, the only way a task is named outside task-service: the prefix of the space
  * it was created in, a dash and a number. A key never changes, also when the task moves to
  * another space or its space changes prefix, and is never given to another task.
  * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
  */
 export type TaskKey = string;
+
+/**
+ * One explicitly selected task and its optional expected version.
+ */
+export interface BulkTaskSelection {
+  taskKey: TaskKey;
+  /**
+     * Expected current task version, checked before any changes.
+     * @minimum 1
+     */
+  version?: number;
+}
+
+export type BulkTaskStatusActionType = typeof BulkTaskStatusActionType[keyof typeof BulkTaskStatusActionType];
+
+
+export const BulkTaskStatusActionType = {
+  status: 'status',
+} as const;
 
 /**
  * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
@@ -49,6 +73,30 @@ export const CancelReason = {
 } as const;
 
 /**
+ * Required with the status `cancelled`, refused with any other; `null` for none.
+ */
+export type CancelReasonInput = CancelReason | null;
+
+export interface BulkTaskStatusAction {
+  type: BulkTaskStatusActionType;
+  status: StatusKey;
+  cancelReason?: CancelReasonInput;
+  /**
+     * Cancellation note, allowed only when the final status is cancelled.
+     * @maxLength 500
+     * @nullable
+     */
+  cancelNote?: string | null;
+}
+
+export type BulkTaskPriorityActionType = typeof BulkTaskPriorityActionType[keyof typeof BulkTaskPriorityActionType];
+
+
+export const BulkTaskPriorityActionType = {
+  priority: 'priority',
+} as const;
+
+/**
  * Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`
  * ("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of
  * `@cadenway/contracts`. A closed set: another priority would be a breaking change.
@@ -61,6 +109,154 @@ export const PriorityKey = {
   haute: 'haute',
   moyenne: 'moyenne',
   basse: 'basse',
+} as const;
+
+export interface BulkTaskPriorityAction {
+  type: BulkTaskPriorityActionType;
+  priority: PriorityKey;
+}
+
+export type BulkTaskAssignActionType = typeof BulkTaskAssignActionType[keyof typeof BulkTaskAssignActionType];
+
+
+export const BulkTaskAssignActionType = {
+  assign: 'assign',
+} as const;
+
+export interface BulkTaskAssignAction {
+  type: BulkTaskAssignActionType;
+  userId: string;
+}
+
+export type BulkTaskUnassignActionType = typeof BulkTaskUnassignActionType[keyof typeof BulkTaskUnassignActionType];
+
+
+export const BulkTaskUnassignActionType = {
+  unassign: 'unassign',
+} as const;
+
+export interface BulkTaskUnassignAction {
+  type: BulkTaskUnassignActionType;
+  userId: string;
+}
+
+export type BulkTaskMoveActionType = typeof BulkTaskMoveActionType[keyof typeof BulkTaskMoveActionType];
+
+
+export const BulkTaskMoveActionType = {
+  move: 'move',
+} as const;
+
+export interface BulkTaskMoveAction {
+  type: BulkTaskMoveActionType;
+  listId: string;
+}
+
+export type BulkTaskTrashActionType = typeof BulkTaskTrashActionType[keyof typeof BulkTaskTrashActionType];
+
+
+export const BulkTaskTrashActionType = {
+  trash: 'trash',
+} as const;
+
+export interface BulkTaskTrashAction {
+  type: BulkTaskTrashActionType;
+}
+
+export type BulkTaskDuplicateActionType = typeof BulkTaskDuplicateActionType[keyof typeof BulkTaskDuplicateActionType];
+
+
+export const BulkTaskDuplicateActionType = {
+  duplicate: 'duplicate',
+} as const;
+
+export interface BulkTaskDuplicateAction {
+  type: BulkTaskDuplicateActionType;
+}
+
+/**
+ * The requested action; its `type` selects the permitted members.
+ */
+export type BulkTaskActionValue = BulkTaskStatusAction | BulkTaskPriorityAction | BulkTaskAssignAction | BulkTaskUnassignAction | BulkTaskMoveAction | BulkTaskTrashAction | BulkTaskDuplicateAction;
+
+/**
+ * One atomic action over 1 to 50 distinct task keys. Duplicate keys are invalid even if
+ * their versions differ. The client sends its visible-row selection explicitly. The action
+ * and each selection entry must contain only the declared members for their kind.
+ */
+export interface BulkTaskAction {
+  /**
+     * Distinct explicit task keys; duplicate keys answer `400 request.invalid`.
+     * @minItems 1
+     * @maxItems 50
+     */
+  selection: BulkTaskSelection[];
+  action: BulkTaskActionValue;
+}
+
+/**
+ * The selected task and, where applicable, the resulting versions or created IDs.
+ */
+export interface BulkTaskResultEntry {
+  taskKey: TaskKey;
+  /**
+     * Resulting version of the selected task when applicable.
+     * @minimum 1
+     */
+  version?: number;
+  newTaskKey?: TaskKey;
+  /** @minimum 1 */
+  newTaskVersion?: number;
+  successorKey?: TaskKey;
+  /** @minimum 1 */
+  successorVersion?: number;
+  /** Trash entry containing this selected task, including a covered descendant. */
+  trashEntryId?: string;
+}
+
+/**
+ * Results for selected keys after one committed transaction; there is no partial success.
+ */
+export interface BulkTaskResult {
+  /** One result per selected key, including selections covered by an ancestor. */
+  results: BulkTaskResultEntry[];
+  /**
+     * Distinct task rows affected, including subtrees, successors and copies.
+     * @minimum 0
+     */
+  affectedCount: number;
+}
+
+/**
+ * Whether the anchor task blocks the other task or is blocked by it.
+ */
+export type DependencyDirection = typeof DependencyDirection[keyof typeof DependencyDirection];
+
+
+export const DependencyDirection = {
+  blocks: 'blocks',
+  'blocked-by': 'blocked-by',
+} as const;
+
+export interface DependencyCreation {
+  otherTaskKey: TaskKey;
+  direction: DependencyDirection;
+}
+
+/**
+ * `RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a
+ * successor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;
+ * monthly clamps to the last day while retaining the chain's original day.
+ */
+export type Recurrence = typeof Recurrence[keyof typeof Recurrence];
+
+
+export const Recurrence = {
+  none: 'none',
+  daily: 'daily',
+  weekly: 'weekly',
+  biweekly: 'biweekly',
+  monthly: 'monthly',
 } as const;
 
 /**
@@ -83,17 +279,6 @@ export interface SubtaskCounts {
 }
 
 /**
- * One item of a checklist ("Une checklist sert aux petites étapes sans statut ni assigné.").
- */
-export interface ChecklistItem {
-  id: string;
-  /** "Élément de checklist", 300 characters at most. */
-  text: string;
-  /** Ticked ("Terminer") or not ("Rouvrir"). */
-  done: boolean;
-}
-
-/**
  * Items of the checklist of a task, and those ticked ("3 / 3").
  */
 export interface ChecklistCounts {
@@ -101,6 +286,101 @@ export interface ChecklistCounts {
   total: number;
   /** @minimum 0 */
   done: number;
+}
+
+/**
+ * A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the
+ * description, the note of the cancellation and the items of the checklist.
+ */
+export interface TaskSummary {
+  /** Whether this task is a milestone; absence means the producer did not report it. */
+  milestone?: boolean;
+  recurrence?: Recurrence;
+  key: TaskKey;
+  /** "Nom de la tâche", 300 characters at most. */
+  name: string;
+  status: StatusKey;
+  /** Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`. */
+  cancelReason: CancelReason | null;
+  priority: PriorityKey;
+  /** "Assignés", 20 at most, in the order they were assigned; empty for "Non assignée". */
+  assignees: UserRef[];
+  /**
+     * "Échéance", a calendar date; `null` when there is none.
+     * @nullable
+     */
+  dueDate: string | null;
+  /**
+     * First day of the work, for the Gantt view; `null` when there is none, always `null`
+     * without a due date, and never after the due date.
+     * @nullable
+     */
+  startDate: string | null;
+  /**
+     * "Estimation", in whole minutes, 60,000 at most; `null` when there is none.
+     * @minimum 1
+     * @nullable
+     */
+  estimateMinutes: number | null;
+  /** "Étiquettes", 20 at most, in the order they were added. */
+  labels: string[];
+  /** The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task. */
+  parentKey: TaskKey | null;
+  /** The list of the task; a subtask is always in the list of its parent. */
+  listId: string;
+  /** The space of that list, which may not be the space of the prefix of the key. */
+  spaceId: string;
+  subtaskCounts: SubtaskCounts;
+  checklistCounts: ChecklistCounts;
+  /**
+     * When the task last entered `done`; `null` while its status is not `done`.
+     * @nullable
+     */
+  completedAt: string | null;
+  createdAt: string;
+  /**
+     * Version of the task, also sent as `ETag` by the routes of one task.
+     * @minimum 1
+     */
+  version: number;
+}
+
+/**
+ * A directed edge between visible tasks in the current organization.
+ */
+export interface Dependency {
+  id: string;
+  blocker: TaskSummary;
+  blocked: TaskSummary;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+/**
+ * Visible edges ordered by creation time and ID.
+ */
+export interface DependencyPage {
+  items: Dependency[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * A recipient identified by account, not spelling. Offsets count Unicode code points in
+ * the unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be
+ * non-overlapping, in range, and cover a nonempty displayed token beginning with `@`.
+ * Raw text without a span never identifies a recipient. The recipient must be a current
+ * member, including a guest, with read access to the task's list after the write.
+ */
+export interface Mention {
+  userId: string;
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 1 */
+  end: number;
 }
 
 /**
@@ -117,9 +397,126 @@ export interface Actor {
 }
 
 /**
+ * A live comment in the flat task timeline; deleted comments are omitted.
+ */
+export interface Comment {
+  id: string;
+  taskKey: TaskKey;
+  actor: Actor;
+  /** The submitted Markdown source, unchanged. */
+  body: string;
+  createdAt: string;
+  /** @nullable */
+  editedAt: string | null;
+  /** @minimum 1 */
+  version: number;
+  mentions: Mention[];
+  /**
+     * Immutable reply target, retained even when that comment is deleted.
+     * @nullable
+     */
+  replyToCommentId: string | null;
+}
+
+/**
+ * Live comments ordered by creation time and ID, oldest first; total excludes tombstones.
+ */
+export interface CommentPage {
+  items: Comment[];
+  nextCursor: NextCursor | null;
+  /** @minimum 0 */
+  total: number;
+}
+
+/**
+ * A comment and optional structured mentions and reply target.
+ */
+export interface CommentCreation {
+  /**
+     * Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.
+     * @minLength 1
+     * @maxLength 5000
+     * @pattern \S
+     */
+  body: string;
+  /** @maxItems 20 */
+  mentions?: Mention[];
+  /** A live comment on this same task. */
+  replyToCommentId?: string;
+}
+
+/**
+ * JSON Merge Patch. Replacing the body clears existing mention spans unless a replacement
+ * array is supplied. A spans-only change still requires the comment's If-Match. Undeclared
+ * members are ignored.
+ */
+export interface CommentPatch {
+  /**
+     * Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.
+     * @minLength 1
+     * @maxLength 5000
+     * @pattern \S
+     */
+  body?: string;
+  /** @maxItems 20 */
+  mentions?: Mention[];
+}
+
+/**
+ * A current member eligible for a mention on this task, including guests.
+ */
+export interface TaskParticipant {
+  userId: string;
+  memberId: string;
+}
+
+/**
+ * Eligible accounts ordered by user ID.
+ */
+export interface TaskParticipantPage {
+  items: TaskParticipant[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * An effective watcher who currently has task access.
+ */
+export interface Watcher {
+  userId: string;
+}
+
+/**
+ * Effective watchers ordered by user ID, with the same total and caller state on every page.
+ */
+export interface WatcherPage {
+  items: Watcher[];
+  nextCursor: NextCursor | null;
+  /** @minimum 0 */
+  total: number;
+  callerFollows: boolean;
+}
+
+/**
+ * One item of a checklist ("Une checklist sert aux petites étapes sans statut ni assigné.").
+ */
+export interface ChecklistItem {
+  id: string;
+  /** "Élément de checklist", 300 characters at most. */
+  text: string;
+  /** Ticked ("Terminer") or not ("Rouvrir"). */
+  done: boolean;
+}
+
+/**
  * A task, with its description and its checklist.
  */
 export interface Task {
+  /** Whether this task is a milestone; absence means the producer did not report it. */
+  milestone?: boolean;
+  recurrence?: Recurrence;
+  /** Structured spans in the current Markdown description. */
+  descriptionMentions?: Mention[];
+  nextOccurrenceKey?: TaskKey;
   key: TaskKey;
   /** "Nom de la tâche", 300 characters at most. */
   name: string;
@@ -194,60 +591,6 @@ export interface Task {
 }
 
 /**
- * A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the
- * description, the note of the cancellation and the items of the checklist.
- */
-export interface TaskSummary {
-  key: TaskKey;
-  /** "Nom de la tâche", 300 characters at most. */
-  name: string;
-  status: StatusKey;
-  /** Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`. */
-  cancelReason: CancelReason | null;
-  priority: PriorityKey;
-  /** "Assignés", 20 at most, in the order they were assigned; empty for "Non assignée". */
-  assignees: UserRef[];
-  /**
-     * "Échéance", a calendar date; `null` when there is none.
-     * @nullable
-     */
-  dueDate: string | null;
-  /**
-     * First day of the work, for the Gantt view; `null` when there is none, always `null`
-     * without a due date, and never after the due date.
-     * @nullable
-     */
-  startDate: string | null;
-  /**
-     * "Estimation", in whole minutes, 60,000 at most; `null` when there is none.
-     * @minimum 1
-     * @nullable
-     */
-  estimateMinutes: number | null;
-  /** "Étiquettes", 20 at most, in the order they were added. */
-  labels: string[];
-  /** The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task. */
-  parentKey: TaskKey | null;
-  /** The list of the task; a subtask is always in the list of its parent. */
-  listId: string;
-  /** The space of that list, which may not be the space of the prefix of the key. */
-  spaceId: string;
-  subtaskCounts: SubtaskCounts;
-  checklistCounts: ChecklistCounts;
-  /**
-     * When the task last entered `done`; `null` while its status is not `done`.
-     * @nullable
-     */
-  completedAt: string | null;
-  createdAt: string;
-  /**
-     * Version of the task, also sent as `ETag` by the routes of one task.
-     * @minimum 1
-     */
-  version: number;
-}
-
-/**
  * A task named by another resource, with its name and status as they are now.
  */
 export interface TaskRef {
@@ -288,6 +631,16 @@ export const TaskCreationPriority = {
   basse: 'basse',
 } as const;
 
+export interface ChecklistItemCreation {
+  /**
+     * "Élément de checklist", trimmed; a text made only of spaces is refused with
+     * `400 request.invalid`.
+     * @minLength 1
+     * @maxLength 300
+     */
+  text: string;
+}
+
 /**
  * "Nom de la tâche", as typed; surrounding spaces are removed, and a name made only of spaces
  * is refused with `400 request.invalid`.
@@ -302,11 +655,6 @@ export type TaskName = string;
  * @nullable
  */
 export type TaskDescription = string | null;
-
-/**
- * Required with the status `cancelled`, refused with any other; `null` for none.
- */
-export type CancelReasonInput = CancelReason | null;
 
 /**
  * "Estimation", in whole minutes ("8 h" is `480`); `null` for none.
@@ -335,6 +683,27 @@ export interface SubtaskName {
  * and `PriorityKey`, with their default.
  */
 export interface TaskCreation {
+  /**
+     * Structured spans in the description; replacing text clears prior spans unless a
+     * replacement array is supplied. Invalid
+     * spans answer `400 request.invalid`, ineligible recipients `422 mention.recipient-invalid`.
+     * @maxItems 20
+     */
+  descriptionMentions?: Mention[];
+  /**
+     * A milestone permits only todo, blocked, done and cancelled. Dated milestones have
+     * equal start and due dates, undated milestones have both null; estimate is null.
+     * Conversion normalizes inherited fields and maps an inherited disallowed status to todo.
+     * Conflicting explicit dates or status answer `422 milestone.dates-invalid` or
+     * `422 milestone.status-invalid`. Removing the flag keeps normalized fields.
+     */
+  milestone?: boolean;
+  recurrence?: Recurrence;
+  /**
+     * Checklist text in order; fresh IDs and unchecked items are created atomically.
+     * @maxItems 100
+     */
+  checklist?: ChecklistItemCreation[];
   name: TaskName;
   description?: TaskDescription | null;
   /** "Statut", one of `StatusKey`; `todo` ("À faire") by default. */
@@ -452,6 +821,22 @@ export interface SubtaskCreation {
  * the members it does not declare, `assigneeIds` and `labels` included.
  */
 export interface TaskPatch {
+  /**
+     * Structured spans in the description; replacing text clears prior spans unless a
+     * replacement array is supplied. A spans-only patch also requires If-Match. Invalid
+     * spans answer `400 request.invalid`, ineligible recipients `422 mention.recipient-invalid`.
+     * @maxItems 20
+     */
+  descriptionMentions?: Mention[];
+  /**
+     * A milestone permits only todo, blocked, done and cancelled. Dated milestones have
+     * equal start and due dates, undated milestones have both null; estimate is null.
+     * Conversion normalizes inherited fields and maps an inherited disallowed status to todo.
+     * Conflicting explicit dates or status answer `422 milestone.dates-invalid` or
+     * `422 milestone.status-invalid`. Removing the flag keeps normalized fields.
+     */
+  milestone?: boolean;
+  recurrence?: Recurrence;
   name?: TaskName;
   description?: TaskDescription | null;
   status?: StatusKey;
@@ -503,16 +888,6 @@ export interface LabelChange {
  */
 export interface EmptyRequest { [key: string]: never }
 
-export interface ChecklistItemCreation {
-  /**
-     * "Élément de checklist", trimmed; a text made only of spaces is refused with
-     * `400 request.invalid`.
-     * @minLength 1
-     * @maxLength 300
-     */
-  text: string;
-}
-
 /**
  * JSON Merge Patch of a checklist item; ticking or unticking it is the one change of this version.
  */
@@ -559,20 +934,23 @@ export type ActivityEntryAssignee = {
 /**
  * One entry of the activity log of a task ("Activité"); every entry names a task, and an entry
  * about a list or a space would come on a route of its own. The member that names the change
- * is the one of its `kind`: `status`, `priority`, `dueDate` or `assignee`; a creation has
- * none. Later versions add kinds and their members (comments): a client shows an unknown kind
+ * is the one of its `kind`: `status`, `priority`, `dueDate`, `assignee` or `commentId`; a creation has
+ * none. Comment creation records its ID and an excerpt of the current body; deleting the comment
+ * removes the entry. Edits and deletions do not create separate entries. Later versions add kinds: a client shows an unknown kind
  * as "a modifié la tâche".
  */
 export interface ActivityEntry {
+  /** Comment associated with a comment activity entry. */
+  commentId?: string;
+  /** Up to 240 Unicode code points of the current comment body. */
+  commentExcerpt?: string;
   id: string;
   /** When the change was made; for merged changes, the last of them. */
   occurredAt: string;
   /**
-     * `create` ("a créé la tâche"), `status` ("a changé le statut"), `priority` ("a passé la
-     * priorité à"), `due` ("a fixé l’échéance", "a déplacé l’échéance", "a retiré
-     * l’échéance") or `assign` ("s’est assigné la tâche", "a assigné Inès Robert", "s’est
-     * retiré de la tâche", "a retiré Inès Robert"). Later versions add kinds
-     * (`x-extensible-enum`).
+     * `create` records creation, `status` a status change, `priority` a priority change,
+     * `due` a due-date change, `assign` an assignment change, and `comment` a new comment.
+     * Future kinds may be added; render unknown kinds as a generic task change.
      */
   kind: string;
   actor: Actor;
@@ -824,12 +1202,6 @@ export interface ListSummary {
   counts: TaskCounts;
 }
 
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
-
 export interface TaskSummaryPage {
   items: TaskSummary[];
   nextCursor: NextCursor | null;
@@ -948,6 +1320,8 @@ export interface Home {
  * The task detail, composed by the gateway.
  */
 export interface TaskDetail {
+  /** First page of comments, omitted if that part cannot be read. */
+  comments?: CommentPage;
   task: Task;
   space: Space;
   list: TaskList;
@@ -957,62 +1331,300 @@ export interface TaskDetail {
   subtasks: TaskSummary[];
   /**
      * The parts the gateway could not read, the rest of the detail being complete. Always
-     * empty in this version; later versions name the parts they add (`comments`,
-     * `attachments`, `development`) when their source does not answer, and may name others
+     * empty when all parts are available; `comments` identifies a comments-only upstream
+     * failure. Later versions may name other parts (`attachments`, `development`)
      * (`x-extensible-enum`).
      */
   partial: string[];
 }
 
 /**
- * Members specific to the code, for example the fields that failed validation.
+ * A nonblank saved view or template name, at most 80 characters.
+ * @minLength 1
+ * @maxLength 80
+ * @pattern \S
  */
-export type ProblemDetails = { [key: string]: unknown };
+export type SavedItemName = string;
 
-/**
- * RFC 9457 problem with the Cadenway extensions `code` and `details`.
- */
-export interface Problem {
-  /** URI reference that identifies the problem type. */
-  type: string;
-  /** Short summary of the problem type, the same for every occurrence. */
-  title: string;
-  /** HTTP status of the response. */
-  status: number;
-  /** Explanation specific to this occurrence. */
-  detail?: string;
-  /** URI reference that identifies this occurrence. */
-  instance?: string;
-  /** Stable machine code, `<domain>.<reason>`. */
-  code: string;
-  /** Members specific to the code, for example the fields that failed validation. */
-  details?: ProblemDetails;
+export interface TaskTemplateCreation {
+  sourceTaskKey: TaskKey;
+  name?: SavedItemName;
 }
 
 /**
- * Color of a space or a list ("Couleur"): `gris` ("Gris", the default), `violet` ("Améthyste"),
- * `indigo` ("Indigo"), `azur` ("Azur"), `lagon` ("Lagon"), `vert` ("Jade"), `olive` ("Olive"),
- * `jaune` ("Balise"), `orange` ("Cornaline"), `rouge` ("Grenat"), `rose` ("Rose"), `fuchsia`
- * ("Fuchsia") or `ardoise` ("Ardoise"). The keys of `LOOK_COLORS` of the mockup.
+ * A space-shared snapshot of task ingredients. Checklist texts and direct live child names
+ * retain their order; dates, assignees, mentions, recurrence, milestones and watchers are not
+ * copied. A client uses these ingredients to prefill a normal TaskCreation.
  */
-export type LookColor = typeof LookColor[keyof typeof LookColor];
+export interface TaskTemplate {
+  id: string;
+  spaceId: string;
+  /** Library name, at most 80 characters. */
+  name: string;
+  /** Source task title for a new task, at most 300 characters. */
+  title: string;
+  /**
+     * Markdown source at most 50000 characters or null.
+     * @nullable
+     */
+  description: string | null;
+  priority: PriorityKey;
+  labels: string[];
+  /** Up to 100 checklist texts, each subject to ChecklistItemCreation rules when submitted. */
+  checklist: string[];
+  /** Up to 25 direct child names, each subject to SubtaskName rules when submitted. */
+  subtasks: string[];
+  createdAt: string;
+  /** @minimum 1 */
+  version: number;
+}
+
+/**
+ * Space templates ordered by creation time and ID.
+ */
+export interface TaskTemplatePage {
+  items: TaskTemplate[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * The signed sort vocabulary of the list tasks query, without a patch-time default.
+ */
+export type SavedViewSort = typeof SavedViewSort[keyof typeof SavedViewSort];
 
 
-export const LookColor = {
-  gris: 'gris',
-  violet: 'violet',
-  indigo: 'indigo',
-  azur: 'azur',
-  lagon: 'lagon',
-  vert: 'vert',
-  olive: 'olive',
-  jaune: 'jaune',
-  orange: 'orange',
-  rouge: 'rouge',
-  rose: 'rose',
-  fuchsia: 'fuchsia',
-  ardoise: 'ardoise',
+export const SavedViewSort = {
+  manual: 'manual',
+  '-manual': '-manual',
+  dueDate: 'dueDate',
+  '-dueDate': '-dueDate',
+  priority: 'priority',
+  '-priority': '-priority',
+  name: 'name',
+  '-name': '-name',
+  createdAt: 'createdAt',
+  '-createdAt': '-createdAt',
 } as const;
+
+/**
+ * Layout key from the task views in the mockup.
+ */
+export type SavedViewLayout = typeof SavedViewLayout[keyof typeof SavedViewLayout];
+
+
+export const SavedViewLayout = {
+  list: 'list',
+  board: 'board',
+  calendar: 'calendar',
+  gantt: 'gantt',
+  workload: 'workload',
+  table: 'table',
+  form: 'form',
+  activity: 'activity',
+  timesheet: 'timesheet',
+} as const;
+
+/**
+ * Feuille column key from the mockup.
+ */
+export type SavedViewSheetColumn = typeof SavedViewSheetColumn[keyof typeof SavedViewSheetColumn];
+
+
+export const SavedViewSheetColumn = {
+  name: 'name',
+  status: 'status',
+  priority: 'priority',
+  people: 'people',
+  due: 'due',
+  estimate: 'estimate',
+  spent: 'spent',
+  labels: 'labels',
+  list: 'list',
+  points: 'points',
+  client: 'client',
+} as const;
+
+/**
+ * Existing task-query filters. `me` is resolved for the person applying the view, not its
+ * creator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.
+ */
+export interface SavedViewFilters {
+  /**
+     * @minItems 1
+     * @maxItems 10
+     */
+  status?: StatusKey[];
+  /**
+     * @minItems 1
+     * @maxItems 4
+     */
+  priority?: PriorityKey[];
+  /**
+     * @minItems 1
+     * @maxItems 20
+     * @items.pattern ^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+     */
+  assignee?: string[];
+  /**
+     * @minItems 1
+     * @maxItems 20
+     * @items.minLength 1
+     * @items.maxLength 32
+     */
+  label?: string[];
+}
+
+export type SavedViewPresentationSheetSortDirection = typeof SavedViewPresentationSheetSortDirection[keyof typeof SavedViewPresentationSheetSortDirection];
+
+
+export const SavedViewPresentationSheetSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+/**
+ * Feuille-only sort applied to the fully loaded result by the client.
+ */
+export type SavedViewPresentationSheetSort = {
+  column: SavedViewSheetColumn;
+  direction: SavedViewPresentationSheetSortDirection;
+};
+
+/**
+ * Client presentation settings; sheet sort never changes the server query sort.
+ */
+export interface SavedViewPresentation {
+  hiddenBoardStatusKeys?: StatusKey[];
+  hiddenSheetColumns?: SavedViewSheetColumn[];
+  /** Feuille-only sort applied to the fully loaded result by the client. */
+  sheetSort?: SavedViewPresentationSheetSort;
+}
+
+/**
+ * Layout key; clients may ignore unknown future layouts.
+ */
+export type SavedViewLayoutValue = string;
+
+/**
+ * Feuille column key; clients may ignore unknown future columns.
+ */
+export type SavedViewSheetColumnValue = string;
+
+/**
+ * Feuille-only sort applied to the fully loaded result by the client.
+ */
+export type SavedViewPresentationValueSheetSort = {
+  column: SavedViewSheetColumnValue;
+  direction: string;
+};
+
+/**
+ * Client presentation settings; sheet sort never changes the server query sort.
+ */
+export interface SavedViewPresentationValue {
+  hiddenBoardStatusKeys?: StatusKey[];
+  hiddenSheetColumns?: SavedViewSheetColumnValue[];
+  /** Feuille-only sort applied to the fully loaded result by the client. */
+  sheetSort?: SavedViewPresentationValueSheetSort;
+}
+
+export type SavedViewConfigurationInputGroupBy = typeof SavedViewConfigurationInputGroupBy[keyof typeof SavedViewConfigurationInputGroupBy] | null;
+
+
+export const SavedViewConfigurationInputGroupBy = {
+  status: 'status',
+  priority: 'priority',
+  assignee: 'assignee',
+} as const;
+
+/**
+ * Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips
+ * the task-groups call. Signed `sort` values use the existing list-tasks vocabulary.
+ */
+export interface SavedViewConfigurationInput {
+  layout: SavedViewLayout;
+  filters: SavedViewFilters;
+  sort: SavedViewSort;
+  groupBy: SavedViewConfigurationInputGroupBy;
+  presentation?: SavedViewPresentation;
+}
+
+/**
+ * Signed server task sort; clients may ignore future values.
+ */
+export type SavedViewSortValue = string;
+
+/**
+ * Grouping key, or null for ungrouped; clients may ignore future values.
+ * @nullable
+ */
+export type SavedViewGroupByValue = string | null;
+
+/**
+ * Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips
+ * the task-groups call. Signed `sort` values use the existing list-tasks vocabulary.
+ */
+export interface SavedViewConfiguration {
+  layout: SavedViewLayoutValue;
+  filters: SavedViewFilters;
+  sort: SavedViewSortValue;
+  groupBy: SavedViewGroupByValue | null;
+  presentation?: SavedViewPresentationValue;
+}
+
+/**
+ * A nested merge patch; null removes the named filter.
+ */
+export interface SavedViewFiltersPatch {
+  status?: StatusKey[] | null;
+  priority?: PriorityKey[] | null;
+  assignee?: string[] | null;
+  label?: string[] | null;
+}
+
+export type SavedViewPresentationPatchSheetSortDirection = typeof SavedViewPresentationPatchSheetSortDirection[keyof typeof SavedViewPresentationPatchSheetSortDirection];
+
+
+export const SavedViewPresentationPatchSheetSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+export type SavedViewPresentationPatchSheetSort = {
+  column?: SavedViewSheetColumn;
+  direction?: SavedViewPresentationPatchSheetSortDirection;
+} | null;
+
+/**
+ * A nested merge patch; null removes the corresponding presentation setting.
+ */
+export interface SavedViewPresentationPatch {
+  hiddenBoardStatusKeys?: StatusKey[] | null;
+  hiddenSheetColumns?: SavedViewSheetColumn[] | null;
+  sheetSort?: SavedViewPresentationPatchSheetSort;
+}
+
+export type SavedViewConfigurationPatchGroupBy = typeof SavedViewConfigurationPatchGroupBy[keyof typeof SavedViewConfigurationPatchGroupBy] | null;
+
+
+export const SavedViewConfigurationPatchGroupBy = {
+  status: 'status',
+  priority: 'priority',
+  assignee: 'assignee',
+} as const;
+
+/**
+ * Nested JSON Merge Patch. Null groupBy clears grouping and is returned as null; null
+ * presentation removes presentation settings. Omitted members keep their current values.
+ * The merged result must satisfy SavedViewConfiguration or the request is invalid.
+ */
+export interface SavedViewConfigurationPatch {
+  layout?: SavedViewLayout;
+  filters?: SavedViewFiltersPatch;
+  sort?: SavedViewSort;
+  groupBy?: SavedViewConfigurationPatchGroupBy;
+  presentation?: SavedViewPresentationPatch | null;
+}
 
 /**
  * Icon of a space or a list ("Icône"): `rocket` ("Fusée"), `paint` ("Pinceau"), `megaphone`
@@ -1044,6 +1656,156 @@ export const LookIcon = {
   headset: 'headset',
   globe: 'globe',
   star: 'star',
+} as const;
+
+export interface SavedViewCreation {
+  name: SavedItemName;
+  icon?: LookIcon | null;
+  configuration: SavedViewConfigurationInput;
+}
+
+/**
+ * JSON Merge Patch; nested settings are merged and undeclared members are ignored. A null icon clears it.
+ */
+export interface SavedViewPatch {
+  name?: SavedItemName;
+  icon?: LookIcon | null;
+  configuration?: SavedViewConfigurationPatch;
+}
+
+/**
+ * Empty object for duplicating a saved view.
+ */
+export interface SavedViewDuplicate { [key: string]: never }
+
+/**
+ * A view shared with readers of a list.
+ */
+export interface SavedView {
+  id: string;
+  listId: string;
+  name: string;
+  icon: LookIconValue | null;
+  configuration: SavedViewConfiguration;
+  createdAt: string;
+  updatedAt: string;
+  /** @minimum 1 */
+  version: number;
+}
+
+/**
+ * Views in creation order, with a duplicate inserted after its source.
+ */
+export interface SavedViewPage {
+  items: SavedView[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * Kind of active target to favorite.
+ */
+export type FavoriteKindInput = typeof FavoriteKindInput[keyof typeof FavoriteKindInput];
+
+
+export const FavoriteKindInput = {
+  space: 'space',
+  list: 'list',
+  'saved-view': 'saved-view',
+} as const;
+
+export interface FavoriteCreation {
+  kind: FavoriteKindInput;
+  /** UUID of the target resource. */
+  targetId: string;
+}
+
+/**
+ * Current visible target name and public resource path; listId is present for a saved view.
+ */
+export type FavoriteTarget = {
+  name: string;
+  href: string;
+  listId?: string;
+};
+
+/**
+ * A private favorite of the current user and organization.
+ */
+export interface Favorite {
+  id: string;
+  /** Target kind; unknown future kinds may be ignored by a client. */
+  kind: string;
+  targetId: string;
+  /** Current visible target name and public resource path; listId is present for a saved view. */
+  target: FavoriteTarget;
+  createdAt: string;
+  /** @minimum 1 */
+  version: number;
+}
+
+/**
+ * The caller's currently accessible active targets in insertion order by creation time and ID.
+ */
+export interface FavoritePage {
+  items: Favorite[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * Empty object for duplicating a list.
+ */
+export interface ListDuplicate { [key: string]: never }
+
+/**
+ * The newly created list and number of copied tasks.
+ */
+export interface ListDuplication {
+  list: TaskList;
+  /** @minimum 0 */
+  taskCount: number;
+}
+
+export type MilestonePageItemsItem = TaskSummary & {
+  milestone: true;
+};
+
+/**
+ * Visible milestones in the space, ordered by due date ascending with undated last.
+ */
+export interface MilestonePage {
+  /** Task summaries whose milestone flag is true. */
+  items: MilestonePageItemsItem[];
+  nextCursor: NextCursor | null;
+  /**
+     * Matching visible milestones on every page.
+     * @minimum 0
+     */
+  total: number;
+}
+
+/**
+ * Color of a space or a list ("Couleur"): `gris` ("Gris", the default), `violet` ("Améthyste"),
+ * `indigo` ("Indigo"), `azur` ("Azur"), `lagon` ("Lagon"), `vert` ("Jade"), `olive` ("Olive"),
+ * `jaune` ("Balise"), `orange` ("Cornaline"), `rouge` ("Grenat"), `rose` ("Rose"), `fuchsia`
+ * ("Fuchsia") or `ardoise` ("Ardoise"). The keys of `LOOK_COLORS` of the mockup.
+ */
+export type LookColor = typeof LookColor[keyof typeof LookColor];
+
+
+export const LookColor = {
+  gris: 'gris',
+  violet: 'violet',
+  indigo: 'indigo',
+  azur: 'azur',
+  lagon: 'lagon',
+  vert: 'vert',
+  olive: 'olive',
+  jaune: 'jaune',
+  orange: 'orange',
+  rouge: 'rouge',
+  rose: 'rose',
+  fuchsia: 'fuchsia',
+  ardoise: 'ardoise',
 } as const;
 
 /**
@@ -1539,6 +2301,116 @@ export interface AccessRequestApproval {
 }
 
 /**
+ * Members specific to the code, for example the fields that failed validation.
+ */
+export type ProblemDetails = { [key: string]: unknown };
+
+/**
+ * RFC 9457 problem with the Cadenway extensions `code` and `details`.
+ */
+export interface Problem {
+  /** URI reference that identifies the problem type. */
+  type: string;
+  /** Short summary of the problem type, the same for every occurrence. */
+  title: string;
+  /** HTTP status of the response. */
+  status: number;
+  /** Explanation specific to this occurrence. */
+  detail?: string;
+  /** URI reference that identifies this occurrence. */
+  instance?: string;
+  /** Stable machine code, `<domain>.<reason>`. */
+  code: string;
+  /** Members specific to the code, for example the fields that failed validation. */
+  details?: ProblemDetails;
+}
+
+/**
+ * `task.archived` or `idempotency.request-in-progress`.
+ */
+export type TaskDuplicateConflictResponse = Problem;
+
+/**
+ * `task.archived`, `recurrence.already-spawned`, `idempotency.request-in-progress`.
+ */
+export type BulkConflictResponse = Problem;
+
+/**
+ * `task.not-found`, `task.trashed`, `list.not-found`, `organization.not-found`.
+ */
+export type BulkTargetNotFoundResponse = Problem;
+
+/**
+ * `bulk.expansion-limit-reached`, `idempotency.key-reused`, `task.status-hidden`, `task.cancel-reason-required`, `task.cancel-reason-unexpected`, `task.assignee-invalid`, `task.assignee-limit-reached`, `task.subtask-limit-reached`, `task.subtask-depth-exceeded`, `task.start-date-invalid`, `milestone.status-invalid`, `milestone.dates-invalid`, `recurrence.date-out-of-range`.
+ */
+export type BulkRefusedResponse = Problem;
+
+/**
+ * `task.subtask-limit-reached`, `task.subtask-depth-exceeded`, `task.status-hidden`, `task.cancel-reason-required`, `idempotency.key-reused`.
+ */
+export type TaskDuplicateRefusedResponse = Problem;
+
+/**
+ * `dependency.not-found`, `task.not-found`, `task.trashed`, `organization.not-found`.
+ */
+export type DependencyNotFoundResponse = Problem;
+
+/**
+ * `dependency.already-exists`, `task.archived`, `idempotency.request-in-progress`.
+ */
+export type DependencyConflictResponse = Problem;
+
+/**
+ * `dependency.cycle`, `dependency.limit-reached`, `idempotency.key-reused`.
+ */
+export type DependencyRefusedResponse = Problem;
+
+/**
+ * `task.archived`: a task is archived; `recurrence.already-spawned`: the source already has a successor.
+ */
+export type TaskRecurrenceConflictResponse = Problem;
+
+/**
+ * `request.version-mismatch`: If-Match is not the current comment version; `details.version` is.
+ */
+export type CommentVersionMismatchResponse = Problem;
+
+/**
+ * `access.role-insufficient`, `auth.scope-missing`, `auth.csrf-rejected`, `organization.not-selected`, `organization.mfa-required`.
+ */
+export type CollabRoleResponse = Problem;
+
+/**
+ * `access.role-insufficient`, `comment.author-required`, `auth.scope-missing`, `auth.csrf-rejected`, `organization.not-selected`, `organization.mfa-required`.
+ */
+export type CollabAuthorResponse = Problem;
+
+/**
+ * `comment.not-found`, `task.not-found`, `task.trashed`, `organization.not-found`.
+ */
+export type CollabCommentNotFoundResponse = Problem;
+
+/**
+ * `task.archived`, `idempotency.request-in-progress`.
+ */
+export type CollabCreateConflictResponse = Problem;
+
+/**
+ * `mention.recipient-invalid`.
+ */
+export type CollabMentionResponse = Problem;
+
+/**
+ * `mention.recipient-invalid`, `idempotency.key-reused`.
+ */
+export type CollabCreateRefusedResponse = Problem;
+
+/**
+ * `watcher.recipient-invalid`, `watcher.limit-reached`.
+ */
+export type CollabWatcherRefusedResponse = Problem;
+
+/**
  * The request does not match the schema: `request.invalid`, with one `details.issues` entry
  * per failed member (`path` is the dotted path of the member, empty for the body itself, the
  * name of the header for a header). A change of `description` without `If-Match` answers it
@@ -1637,7 +2509,10 @@ export type ChecklistItemConflictResponse = Problem;
  * - `task.assignee-invalid`: an assignee is not a current member of the organization, or is a
  *   guest; `details.userIds` lists them;
  * - `task.start-date-invalid`: `startDate` without `dueDate`, or after it;
- * - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+ * - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body;
+ * - `mention.recipient-invalid`: a description mention recipient is ineligible;
+ * - `milestone.status-invalid`: the final milestone status is invalid;
+ * - `milestone.dates-invalid`: the final milestone dates or estimate are invalid.
  */
 export type TaskCreationRefusedResponse = Problem;
 
@@ -1662,7 +2537,11 @@ export type SubtaskCreationRefusedResponse = Problem;
  * - `task.parent-invalid`: the parent is unknown, not seen, the task itself or one of its
  *   subtasks; `details.parentKey` repeats it;
  * - `task.subtask-depth-exceeded`: the task and its subtasks would go beyond 3 levels;
- * - `task.subtask-limit-reached`: the parent has 25 subtasks.
+ * - `task.subtask-limit-reached`: the parent has 25 subtasks;
+ * - `mention.recipient-invalid`: a description mention recipient is ineligible;
+ * - `milestone.status-invalid`: the final milestone status is invalid;
+ * - `milestone.dates-invalid`: the final milestone dates or estimate are invalid;
+ * - `recurrence.date-out-of-range`: the successor date cannot be represented.
  */
 export type TaskChangeRefusedResponse = Problem;
 
@@ -1700,6 +2579,8 @@ export type RateLimitedResponse = Problem;
  * `upstream.deadline-exceeded`, with `details.service`.
  */
 export type UnavailableResponse = Problem;
+
+export type DependencyDirectionParameter = DependencyDirection;
 
 /**
  * `"<version>"` of the task the change was made from, as the `ETag` gave it.
@@ -1804,6 +2685,7 @@ export const ActivityKindParameterItem = {
   priority: 'priority',
   due: 'due',
   assign: 'assign',
+  comment: 'comment',
 } as const;
 
 /**
@@ -1812,6 +2694,8 @@ export const ActivityKindParameterItem = {
 export type ActivityKindParameter = ActivityKindParameterItem[];
 
 export type ListTasksParams = {
+  /** Keep only milestones when true, or only ordinary tasks when false; absent leaves both. */
+  milestone?: boolean;
   /**
    * Statuses to keep, separated by commas.
    * @minItems 1
@@ -1865,6 +2749,8 @@ export type ListTasksParams = {
 };
 
 export type CountTaskGroupsParams = {
+  /** Keep only milestones when true, or only ordinary tasks when false; absent leaves both. */
+  milestone?: boolean;
   /** What to group by ("Statut", "Priorité", "Assigné"). */
   groupBy: GroupByParameter;
   /**
@@ -1917,6 +2803,69 @@ export type CountTaskGroupsParams = {
   limit?: number;
 };
 
+export type ListTaskCommentsParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListTaskParticipantsParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListTaskWatchersParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListTaskDependenciesParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListDependencyCandidatesParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  /** Whether the anchor task blocks the other task or is blocked by it. */
+  direction: DependencyDirectionParameter;
+  /**
+   * Text to find, without regard to case or accents.
+   * @minLength 1
+   * @maxLength 100
+   */
+  search?: SearchParameter;
+};
+
 export type ListSubtasksParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: string;
@@ -1932,7 +2881,7 @@ export type ListTaskActivityParams = {
   /**
    * Kinds of entries to keep, separated by commas; every kind when absent.
    * @minItems 1
-   * @maxItems 5
+   * @maxItems 6
    */
   kind?: ActivityKindParameter;
   /** Opaque cursor taken from the `nextCursor` of the previous page. */

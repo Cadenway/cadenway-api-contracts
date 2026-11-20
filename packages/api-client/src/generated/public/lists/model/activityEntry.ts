@@ -12,20 +12,23 @@ import type { TaskRef } from './taskRef';
 /**
  * One entry of the activity log of a task ("Activité"); every entry names a task, and an entry
  * about a list or a space would come on a route of its own. The member that names the change
- * is the one of its `kind`: `status`, `priority`, `dueDate` or `assignee`; a creation has
- * none. Later versions add kinds and their members (comments): a client shows an unknown kind
+ * is the one of its `kind`: `status`, `priority`, `dueDate`, `assignee` or `commentId`; a creation has
+ * none. Comment creation records its ID and an excerpt of the current body; deleting the comment
+ * removes the entry. Edits and deletions do not create separate entries. Later versions add kinds: a client shows an unknown kind
  * as "a modifié la tâche".
  */
 export interface ActivityEntry {
+  /** Comment associated with a comment activity entry. */
+  commentId?: string;
+  /** Up to 240 Unicode code points of the current comment body. */
+  commentExcerpt?: string;
   id: string;
   /** When the change was made; for merged changes, the last of them. */
   occurredAt: string;
   /**
-     * `create` ("a créé la tâche"), `status` ("a changé le statut"), `priority` ("a passé la
-     * priorité à"), `due` ("a fixé l’échéance", "a déplacé l’échéance", "a retiré
-     * l’échéance") or `assign` ("s’est assigné la tâche", "a assigné Inès Robert", "s’est
-     * retiré de la tâche", "a retiré Inès Robert"). Later versions add kinds
-     * (`x-extensible-enum`).
+     * `create` records creation, `status` a status change, `priority` a priority change,
+     * `due` a due-date change, `assign` an assignment change, and `comment` a new comment.
+     * Future kinds may be added; render unknown kinds as a generic task change.
      */
   kind: string;
   actor: Actor;

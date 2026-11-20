@@ -3,7 +3,7 @@
  *
  * @description
  * How a task repeats: never, every working day, every week, every two weeks, every month. The next
- * occurrence is created when the task is closed. Source: the `RECURS` table of the mockup data
+ * occurrence is created when the task enters `done` with a due date. Source: the `RECURS` table of the mockup data
  * model.
  *
  * @type {readonly ['none', 'daily', 'weekly', 'biweekly', 'monthly']}

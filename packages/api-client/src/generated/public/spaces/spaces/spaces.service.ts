@@ -21,14 +21,24 @@ import type {
 } from 'rxjs';
 
 import type {
+  Favorite,
+  FavoriteCreation,
+  FavoritePage,
   GetSpaceOverviewParams,
+  ListFavoritesParams,
+  ListSpaceMilestonesParams,
   ListSpacesParams,
+  ListTaskTemplatesParams,
+  MilestonePage,
   Space,
   SpaceCreated,
   SpaceCreation,
   SpaceOverview,
   SpacePage,
-  SpacePatch
+  SpacePatch,
+  TaskTemplate,
+  TaskTemplateCreation,
+  TaskTemplatePage
 } from '../model';
 
 import type {
@@ -393,6 +403,50 @@ export class SpacesService {
     );
   }
 /**
+ * Returns visible live milestones in visible lists of the space, excluding archived lists.
+ * A caller with only list grants sees only their qualifying lists. Sort by due date ascending,
+ * undated last; the opaque cursor is bound to the space and ordering. Total counts matching
+ * visible milestones and does not change existing space, list or sprint counts.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List milestones of a space
+ */
+ listSpaceMilestones<TData = MilestonePage>(spaceId: string,
+    params?: ListSpaceMilestonesParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listSpaceMilestones<TData = MilestonePage>(spaceId: string,
+    params?: ListSpaceMilestonesParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listSpaceMilestones<TData = MilestonePage>(spaceId: string,
+    params?: ListSpaceMilestonesParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listSpaceMilestones<TData = MilestonePage>(
+    spaceId: string,
+    params?: ListSpaceMilestonesParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/milestones`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/milestones`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/milestones`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
  * Returns the lists of a space with the counts of their tasks, in the order of the sidebar
  * (their creation, a restored list at the end): the space overview ("Vue d’ensemble": "4
  * listes · 108 tâches", and on each list card "32 tâches", "12 / 32 terminées", "38 %", "14
@@ -443,6 +497,363 @@ export class SpacesService {
         params: filteredParams,}
     );
   }
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * Ordered by creation time and ID; the opaque cursor is bound to the space and order.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List task templates
+ */
+ listTaskTemplates<TData = TaskTemplatePage>(spaceId: string,
+    params?: ListTaskTemplatesParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listTaskTemplates<TData = TaskTemplatePage>(spaceId: string,
+    params?: ListTaskTemplatesParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listTaskTemplates<TData = TaskTemplatePage>(spaceId: string,
+    params?: ListTaskTemplatesParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listTaskTemplates<TData = TaskTemplatePage>(
+    spaceId: string,
+    params?: ListTaskTemplatesParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/task-templates`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/task-templates`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/task-templates`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * The sourceTaskKey must name a live task in this space; a task in another space answers
+ * `404 task.not-found`, as does an invisible task. Requires edit on the space and source list. Captures title, description, priority,
+ * labels, checklist texts and direct live child names, without dates, assignees, mentions,
+ * recurrence, milestone or watchers. An archived source refuses writes. A restricted source
+ * list in an organization-visible space answers `422 template.source-restricted`, preventing
+ * the library from widening its audience. `422 template.limit-reached` means the library is
+ * full. Later source or template changes never alter previously created tasks. The client
+ * submits normal TaskCreation, including its checklist and name-only subtasks.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and space.task-template-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Save a task template
+ */
+ createTaskTemplate<TData = TaskTemplate>(spaceId: string,
+    taskTemplateCreation: TaskTemplateCreation, options?: HttpClientBodyOptions): Observable<TData>;
+ createTaskTemplate<TData = TaskTemplate>(spaceId: string,
+    taskTemplateCreation: TaskTemplateCreation, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ createTaskTemplate<TData = TaskTemplate>(spaceId: string,
+    taskTemplateCreation: TaskTemplateCreation, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  createTaskTemplate<TData = TaskTemplate>(
+    spaceId: string,
+    taskTemplateCreation: TaskTemplateCreation, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/spaces/${spaceId}/task-templates`,
+      taskTemplateCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/spaces/${spaceId}/task-templates`,
+      taskTemplateCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/spaces/${spaceId}/task-templates`,
+      taskTemplateCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * An unknown or inaccessible scoped template answers `404 template.not-found`.
+ * Scope `tasks:read` for a personal API token.
+ * @summary Get a task template
+ */
+ getTaskTemplate<TData = TaskTemplate>(spaceId: string,
+    templateId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ getTaskTemplate<TData = TaskTemplate>(spaceId: string,
+    templateId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getTaskTemplate<TData = TaskTemplate>(spaceId: string,
+    templateId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getTaskTemplate<TData = TaskTemplate>(
+    spaceId: string,
+    templateId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/task-templates/${templateId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/task-templates/${templateId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/spaces/${spaceId}/task-templates/${templateId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * Requires edit on the space. Deletes the template to free library capacity; it never deletes
+ * tasks created from it. If-Match, when sent, checks the template version.
+ * The change and space.task-template-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Delete a task template
+ */
+ deleteTaskTemplate<TData = void>(spaceId: string,
+    templateId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ deleteTaskTemplate<TData = void>(spaceId: string,
+    templateId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ deleteTaskTemplate<TData = void>(spaceId: string,
+    templateId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  deleteTaskTemplate<TData = void>(
+    spaceId: string,
+    templateId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/spaces/${spaceId}/task-templates/${templateId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/spaces/${spaceId}/task-templates/${templateId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/spaces/${spaceId}/task-templates/${templateId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * The opaque cursor is bound to the caller, organization and insertion order.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List favorites
+ */
+ listFavorites<TData = FavoritePage>(params?: ListFavoritesParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listFavorites<TData = FavoritePage>(params?: ListFavoritesParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listFavorites<TData = FavoritePage>(params?: ListFavoritesParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listFavorites<TData = FavoritePage>(
+    params?: ListFavoritesParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/me/favorites`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/me/favorites`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/me/favorites`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * A target must be active and visible or the response is `404 favorite.target-not-found`.
+ * A duplicate target answers `409 favorite.already-exists`; capacity answers
+ * `422 favorite.limit-reached`. No downstream event is emitted for this personal preference.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Create a favorite
+ */
+ createFavorite<TData = Favorite>(favoriteCreation: FavoriteCreation, options?: HttpClientBodyOptions): Observable<TData>;
+ createFavorite<TData = Favorite>(favoriteCreation: FavoriteCreation, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ createFavorite<TData = Favorite>(favoriteCreation: FavoriteCreation, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  createFavorite<TData = Favorite>(
+    favoriteCreation: FavoriteCreation, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/me/favorites`,
+      favoriteCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/me/favorites`,
+      favoriteCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/me/favorites`,
+      favoriteCreation,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * A missing, hidden or another user’s favorite answers `404 favorite.not-found`.
+ * Scope `tasks:read` for a personal API token.
+ * @summary Get a favorite
+ */
+ getFavorite<TData = Favorite>(favoriteId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ getFavorite<TData = Favorite>(favoriteId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getFavorite<TData = Favorite>(favoriteId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getFavorite<TData = Favorite>(
+    favoriteId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/me/favorites/${favoriteId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/me/favorites/${favoriteId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/me/favorites/${favoriteId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * Deletes the caller's favorite only; a missing, hidden or another user's favorite answers
+ * `404 favorite.not-found`. If-Match is optional and checks the favorite version.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Delete a favorite
+ */
+ deleteFavorite<TData = void>(favoriteId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ deleteFavorite<TData = void>(favoriteId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ deleteFavorite<TData = void>(favoriteId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  deleteFavorite<TData = void>(
+    favoriteId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/me/favorites/${favoriteId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/me/favorites/${favoriteId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/me/favorites/${favoriteId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
 };
 
 export type CreateSpaceClientResult = NonNullable<SpaceCreated>
@@ -450,4 +861,13 @@ export type ListSpacesClientResult = NonNullable<SpacePage>
 export type GetSpaceClientResult = NonNullable<Space>
 export type UpdateSpaceClientResult = NonNullable<Space>
 export type DeleteSpaceClientResult = NonNullable<void>
+export type ListSpaceMilestonesClientResult = NonNullable<MilestonePage>
 export type GetSpaceOverviewClientResult = NonNullable<SpaceOverview>
+export type ListTaskTemplatesClientResult = NonNullable<TaskTemplatePage>
+export type CreateTaskTemplateClientResult = NonNullable<TaskTemplate>
+export type GetTaskTemplateClientResult = NonNullable<TaskTemplate>
+export type DeleteTaskTemplateClientResult = NonNullable<void>
+export type ListFavoritesClientResult = NonNullable<FavoritePage>
+export type CreateFavoriteClientResult = NonNullable<Favorite>
+export type GetFavoriteClientResult = NonNullable<Favorite>
+export type DeleteFavoriteClientResult = NonNullable<void>

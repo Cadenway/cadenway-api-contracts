@@ -2,7 +2,14 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { collectEvents } from './events-module.mjs';
 
-const ANNOTATIONS = new Set(['$comment', 'description', 'title', 'examples', 'deprecated']);
+const ANNOTATIONS = new Set([
+  '$comment',
+  'description',
+  'title',
+  'examples',
+  'deprecated',
+  'x-extensible-enum',
+]);
 const CHILDREN = new Set(['properties', 'items', 'oneOf', 'anyOf', 'additionalProperties']);
 
 function sortedLiterals(values) {

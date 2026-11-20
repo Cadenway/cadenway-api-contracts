@@ -178,6 +178,8 @@ export class TaskQueriesService {
  * the group added to the filters.
  *
  * Scope `tasks:read` for a personal API token.
+ * The optional milestone filter is part of the cursor fingerprint and grouped counts;
+ * omitting it preserves the existing filter. It does not change unfiltered totals.
  * @summary List the tasks of a list
  */
  listTasks<TData = TaskSummaryPage>(listId: string,
@@ -230,6 +232,8 @@ export class TaskQueriesService {
  *   two assignees counts in both groups.
  *
  * Scope `tasks:read` for a personal API token.
+ * The optional milestone filter is part of the cursor fingerprint and grouped counts;
+ * omitting it preserves the existing filter. It does not change unfiltered totals.
  * @summary Count the tasks of a list by group
  */
  countTaskGroups<TData = TaskGroupPage>(listId: string,

@@ -53,8 +53,7 @@ info:
     optional `Idempotency-Key` on a creation, the scopes `tasks:read` and `tasks:write`, 600
     requests per minute, French titles for the codes the web application shows.
 
-    **Later versions** add, without changing what is here: duplicating a list, favorites, saved
-    views, the CSV export and the sprint report.
+    **Later versions** add, without changing what is here: the CSV export and the sprint report.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -392,6 +391,76 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/duplicate:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    post:
+      operationId: duplicateList
+      x-cadenway-strict-empty: true
+      summary: Duplicate a list
+      description: |
+        Creates an ordinary live list in the same space, with ` (copie)` appended to the name
+        after truncating the source portion to fit the name limit. Requires edit on both the source
+        list and destination space; an archived source list is allowed. It copies the complete live
+        task forest, regardless of filters, remapping parents and allocating fresh keys using the
+        current destination prefix; a live task whose parent is outside the forest becomes a root.
+        Independently archived and trashed tasks are skipped. Task fields follow the single-task
+        copy rule, but task names are retained. More than 500 live tasks answers
+        `422 list.duplicate-limit-reached` and creates nothing. The list retains the source look and
+        organization-access switch, but copies no direct grants, sprint, views or favorites; the
+        resulting access cannot broaden the source. If-Match checks the source list version. The
+        optional Idempotency-Key replays the original 201 and Location for 24 hours. The list and
+        task creation facts commit with the entire copy.
+        Scope `tasks:write` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListDuplicate'
+            example: {}
+      responses:
+        '201':
+          description: The copy was created.
+          headers:
+            Location:
+              description: Path of the new list.
+              schema:
+                type: string
+                examples: ['/v1/lists/019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f15']
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListDuplication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '409':
+          $ref: '#/components/responses/ListDuplicateConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/ListDuplicateRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/counts:
     parameters:
       - $ref: '#/components/parameters/ListId'
@@ -538,6 +607,384 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/saved-views:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: listSavedViews
+      summary: List saved views
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        New views append in creation order; a duplicate is inserted after its source.
+        Scope `tasks:read` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedViewPage'
+              example:
+                items:
+                  - id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    name: Bugs critiques
+                    icon: bug
+                    configuration:
+                      layout: list
+                      filters:
+                        priority:
+                          - urgente
+                          - haute
+                      sort: dueDate
+                      groupBy: status
+                    createdAt: '2026-11-08T10:40:00Z'
+                    updatedAt: '2026-11-08T10:40:00Z'
+                    version: 1
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: createSavedView
+      summary: Create a saved view
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        Stores the explicit configuration; `422 saved-view.limit-reached` means the list is full.
+        Search, milestone, subtask display, collapsed groups, zoom and standard tabs stay local;
+        Feuille-only sort is client presentation and is never sent as a server task sort.
+        An optional Idempotency-Key replays the original response and Location for 24 hours;
+        a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+        `409 idempotency.request-in-progress`.
+        The change and list.saved-view-changed.v1 outbox fact commit together.
+        Scope `tasks:write` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavedViewCreation'
+            example:
+              name: Bugs critiques
+              icon: bug
+              configuration:
+                layout: list
+                filters: { priority: [urgente, haute] }
+                sort: dueDate
+                groupBy: status
+      responses:
+        '201':
+          description: Resource created.
+          headers:
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+            Location:
+              description: Path of the created resource, `/v1/lists/{listId}/saved-views/{viewId}`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedView'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                name: Bugs critiques
+                icon: bug
+                configuration:
+                  layout: list
+                  filters: { priority: [urgente, haute] }
+                  sort: dueDate
+                  groupBy: status
+                createdAt: '2026-11-08T10:40:00Z'
+                updatedAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '409':
+          $ref: '#/components/responses/SavedViewCreateConflict'
+        '422':
+          $ref: '#/components/responses/SavedViewCreateRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/saved-views/{viewId}:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+      - $ref: '#/components/parameters/SavedViewId'
+    get:
+      operationId: getSavedView
+      summary: Get a saved view
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        A missing, deleted or inaccessible view answers `404 saved-view.not-found`.
+        Scope `tasks:read` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      responses:
+        '200':
+          description: Resource or page.
+          headers:
+            ETag:
+              description: Version of the resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedView'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                name: Bugs critiques
+                icon: bug
+                configuration:
+                  layout: list
+                  filters:
+                    priority:
+                      - urgente
+                      - haute
+                  sort: dueDate
+                  groupBy: status
+                createdAt: '2026-11-08T10:40:00Z'
+                updatedAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/SavedViewNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateSavedView
+      summary: Update a saved view
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        Rename and edit use JSON Merge Patch, including nested settings; undeclared members are
+        ignored. Null groupBy clears grouping and is returned as null; null icon clears the icon.
+        If-Match is optional and checks the view version.
+        The change and list.saved-view-changed.v1 outbox fact commit together.
+        Scope `tasks:write` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavedViewPatch'
+      responses:
+        '200':
+          description: Resource or page.
+          headers:
+            ETag:
+              description: Version of the resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/SavedViewNotFound'
+        '409':
+          $ref: '#/components/responses/SavedViewWriteConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteSavedView
+      summary: Delete a saved view
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        The deletion completes immediately. A client may create a new view from its snapshot for
+        undo. If-Match is optional and checks the view version.
+        The change and list.saved-view-changed.v1 outbox fact commit together.
+        Scope `tasks:write` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Resource deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/SavedViewNotFound'
+        '409':
+          $ref: '#/components/responses/SavedViewWriteConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/saved-views/{viewId}/duplicate:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+      - $ref: '#/components/parameters/SavedViewId'
+    post:
+      operationId: duplicateSavedView
+      x-cadenway-strict-empty: true
+      summary: Duplicate a saved view
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        Creates a new view with a fresh ID and version immediately after the source, appending
+        ` (copie)` to its name after truncating the source portion to the 80-character ceiling.
+        If-Match is optional and checks the source view version. `422 saved-view.limit-reached` means the list
+        is full. The duplicate emits the same creation fact as an ordinary new view.
+        An optional Idempotency-Key replays the original response and Location for 24 hours;
+        a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+        `409 idempotency.request-in-progress`.
+        The change and list.saved-view-changed.v1 outbox fact commit together.
+        Scope `tasks:write` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavedViewDuplicate'
+            example: {}
+      responses:
+        '201':
+          description: Resource created.
+          headers:
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+            Location:
+              description: Path of the created resource, `/v1/lists/{listId}/saved-views/{viewId}`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedView'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f03
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                name: Bugs critiques (copie)
+                icon: bug
+                configuration:
+                  layout: list
+                  filters:
+                    priority:
+                      - urgente
+                      - haute
+                  sort: dueDate
+                  groupBy: status
+                createdAt: '2026-11-08T10:40:00Z'
+                updatedAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksWriteForbidden'
+        '404':
+          $ref: '#/components/responses/SavedViewNotFound'
+        '409':
+          $ref: '#/components/responses/SavedViewCreateConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/SavedViewCreateRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
     sessionCookie:
@@ -555,6 +1002,15 @@ components:
         `Authorization: Bearer`. It acts with the rights of its user in the organization it was
         created in, within the scopes each operation lists.
   parameters:
+    SavedViewId:
+      name: viewId
+      in: path
+      required: true
+      description: ID of the saved view.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01]
     SpaceId:
       name: spaceId
       in: path
@@ -705,6 +1161,113 @@ components:
         status: 429
         code: rate-limit.exceeded
   responses:
+    SavedViewNotFound:
+      description: '`saved-view.not-found`, `list.not-found`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Vue introuvable.
+                status: 404
+                code: saved-view.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Liste introuvable.
+                status: 404
+                code: list.not-found
+            problem3:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    SavedViewCreateConflict:
+      description: '`saved-view.list-archived`, `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Cette liste est archivée.
+                status: 409
+                code: saved-view.list-archived
+            problem2:
+              value:
+                type: about:blank
+                title: 'Conflict'
+                status: 409
+                code: idempotency.request-in-progress
+    SavedViewWriteConflict:
+      description: '`saved-view.list-archived`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Cette liste est archivée.
+                status: 409
+                code: saved-view.list-archived
+    SavedViewCreateRefused:
+      description: '`saved-view.limit-reached`, `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: La limite de vues est atteinte.
+                status: 422
+                code: saved-view.limit-reached
+            problem2:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: idempotency.key-reused
+    ListDuplicateConflict:
+      description: '`idempotency.request-in-progress`: a request with this key is still running.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Conflict'
+            status: 409
+            code: idempotency.request-in-progress
+    ListDuplicateRefused:
+      description: |
+        `list.duplicate-limit-reached`, `idempotency.key-reused`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Cette liste contient trop de tâches à dupliquer.
+                status: 422
+                code: list.duplicate-limit-reached
+            problem2:
+              value:
+                type: about:blank
+                title: 'Unprocessable Content'
+                status: 422
+                code: idempotency.key-reused
     BadRequest:
       description: |
         The request does not match the schema: `request.invalid`, with one `details.issues` entry
@@ -900,6 +1463,20 @@ components:
             details:
               service: task-service
   schemas:
+    SavedView:
+      $ref: '../../components/task.yaml#/components/schemas/SavedView'
+    SavedViewCreation:
+      $ref: '../../components/task.yaml#/components/schemas/SavedViewCreation'
+    SavedViewDuplicate:
+      $ref: '../../components/task.yaml#/components/schemas/SavedViewDuplicate'
+    SavedViewPage:
+      $ref: '../../components/task.yaml#/components/schemas/SavedViewPage'
+    SavedViewPatch:
+      $ref: '../../components/task.yaml#/components/schemas/SavedViewPatch'
+    ListDuplicate:
+      $ref: '../../components/task.yaml#/components/schemas/ListDuplicate'
+    ListDuplication:
+      $ref: '../../components/task.yaml#/components/schemas/ListDuplication'
     TaskList:
       $ref: '../../components/task.yaml#/components/schemas/TaskList'
     ListCreation:

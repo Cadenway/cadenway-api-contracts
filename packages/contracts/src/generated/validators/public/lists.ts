@@ -272,6 +272,69 @@ export const DeleteListResponse = zod.void()
 
 
 /**
+ * Creates an ordinary live list in the same space, with ` (copie)` appended to the name
+ * after truncating the source portion to fit the name limit. Requires edit on both the source
+ * list and destination space; an archived source list is allowed. It copies the complete live
+ * task forest, regardless of filters, remapping parents and allocating fresh keys using the
+ * current destination prefix; a live task whose parent is outside the forest becomes a root.
+ * Independently archived and trashed tasks are skipped. Task fields follow the single-task
+ * copy rule, but task names are retained. More than 500 live tasks answers
+ * `422 list.duplicate-limit-reached` and creates nothing. The list retains the source look and
+ * organization-access switch, but copies no direct grants, sprint, views or favorites; the
+ * resulting access cannot broaden the source. If-Match checks the source list version. The
+ * optional Idempotency-Key replays the original 201 and Location for 24 hours. The list and
+ * task creation facts commit with the entire copy.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Duplicate a list
+ */
+export const DuplicateListParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const duplicateListHeaderIdempotencyKeyMax = 255;
+
+
+
+export const DuplicateListHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(duplicateListHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n'),
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const DuplicateListBody = zod.strictObject({}).describe('Empty object for duplicating a list.')
+
+
+
+export const duplicateListResponseTaskCountMin = 0;
+
+
+
+export const DuplicateListResponse = zod.object({
+  "list": zod.object({
+  "id": zod.uuid(),
+  "spaceId": zod.uuid(),
+  "name": zod.string().describe('"Nom", 80 characters at most.'),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "color": zod.string().describe('A color of `LookColor`, as a resource carries it. Later versions add colors\n(`x-extensible-enum`): a client shows an unknown one as `gris`.\n'),
+  "sprint": zod.union([zod.object({
+  "startDate": zod.iso.date().describe('"Début", the first day of the sprint.'),
+  "endDate": zod.iso.date().describe('"Fin", the last day of the sprint, on or after `startDate`.'),
+  "goal": zod.string().nullable().describe('"Objectif du sprint", 300 characters at most; `null` when there is none.')
+}).describe('What makes a list a sprint ("Une période datée, avec un objectif et un suivi\nd’avancement."). Its state follows from its dates: there is no start or completion.\n'),zod.null()]).describe('The dates and the goal of a sprint; `null` for a list that is not a sprint.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the list, also sent as `ETag`; a change of its grants, an archive and a\nrestoration add one too.\n'),
+  "organizationAccess": zod.boolean().optional().describe('The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir\ncette liste"), on by default. In a space of the whole organization, on, every owner,\nadmin and member of the organization has `edit` on the list; off, only the owner of\nthe space and the people the space or the list is shared with see it. In a private\nspace it changes nothing. Absent, it reads as `true`.\n'),
+  "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
+  "archivedBy": zod.union([zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1)
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
+}).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
+  "taskCount": zod.int().min(duplicateListResponseTaskCountMin)
+}).describe('The newly created list and number of copied tasks.')
+
+
+/**
  * Returns a list with the counts of its top-level tasks, for its header ("Sprint du 3 – 17
  * nov. · 98 tâches · 25 % terminé") and the progress of a sprint. `today` is the date of the
  * caller, for the late tasks.
@@ -349,7 +412,7 @@ export const ListListActivityParams = zod.object({
   "listId": zod.uuid().describe('Id of the list or the sprint.')
 })
 
-export const listListActivityQueryKindMax = 5;
+export const listListActivityQueryKindMax = 6;
 
 export const listListActivityQueryActorIdItemMax = 100;
 
@@ -361,7 +424,7 @@ export const listListActivityQueryLimitMax = 100;
 
 
 export const ListListActivityQueryParams = zod.object({
-  "kind": zod.array(zod.enum(['create', 'status', 'priority', 'due', 'assign'])).min(1).max(listListActivityQueryKindMax).optional().describe('Kinds of entries to keep, separated by commas; every kind when absent.'),
+  "kind": zod.array(zod.enum(['create', 'status', 'priority', 'due', 'assign', 'comment'])).min(1).max(listListActivityQueryKindMax).optional().describe('Kinds of entries to keep, separated by commas; every kind when absent.'),
   "actorId": zod.array(zod.string().min(1).max(listListActivityQueryActorIdItemMax)).min(1).max(listListActivityQueryActorIdMax).optional().describe('Actors to keep, separated by commas: account ids for people, the id of the actor otherwise;\nevery actor when absent.\n'),
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.coerce.number().int().min(1).max(listListActivityQueryLimitMax).default(listListActivityQueryLimitDefault).describe('Page size.')
@@ -375,9 +438,11 @@ export const listListActivityResponseTotalMin = 0;
 
 export const ListListActivityResponse = zod.object({
   "items": zod.array(zod.object({
+  "commentId": zod.uuid().optional().describe('Comment associated with a comment activity entry.'),
+  "commentExcerpt": zod.string().optional().describe('Up to 240 Unicode code points of the current comment body.'),
   "id": zod.uuid(),
   "occurredAt": zod.iso.datetime({"offset":true}).describe('When the change was made; for merged changes, the last of them.'),
-  "kind": zod.string().describe('`create` ("a créé la tâche"), `status` ("a changé le statut"), `priority` ("a passé la\npriorité à"), `due` ("a fixé l’échéance", "a déplacé l’échéance", "a retiré\nl’échéance") or `assign` ("s’est assigné la tâche", "a assigné Inès Robert", "s’est\nretiré de la tâche", "a retiré Inès Robert"). Later versions add kinds\n(`x-extensible-enum`).\n'),
+  "kind": zod.string().describe('`create` records creation, `status` a status change, `priority` a priority change,\n`due` a due-date change, `assign` an assignment change, and `comment` a new comment.\nFuture kinds may be added; render unknown kinds as a generic task change.\n'),
   "actor": zod.object({
   "type": zod.string(),
   "id": zod.string().min(1)
@@ -404,7 +469,458 @@ export const ListListActivityResponse = zod.object({
   "userId": zod.uuid(),
   "added": zod.boolean()
 }).optional().describe('For `assign`, who was assigned (`added: true`) or left the assignees (`added: false`);\nthe person themself when `userId` is the id of the actor.\n')
-}).describe('One entry of the activity log of a task ("Activité"); every entry names a task, and an entry\nabout a list or a space would come on a route of its own. The member that names the change\nis the one of its `kind`: `status`, `priority`, `dueDate` or `assignee`; a creation has\nnone. Later versions add kinds and their members (comments): a client shows an unknown kind\nas "a modifié la tâche".\n')).describe('The entries, the most recent first.'),
+}).describe('One entry of the activity log of a task ("Activité"); every entry names a task, and an entry\nabout a list or a space would come on a route of its own. The member that names the change\nis the one of its `kind`: `status`, `priority`, `dueDate`, `assignee` or `commentId`; a creation has\nnone. Comment creation records its ID and an excerpt of the current body; deleting the comment\nremoves the entry. Edits and deletions do not create separate entries. Later versions add kinds: a client shows an unknown kind\nas "a modifié la tâche".\n')).describe('The entries, the most recent first.'),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(listListActivityResponseTotalMin).describe('Entries that match the filters, on every page ("18 événements").')
 })
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * New views append in creation order; a duplicate is inserted after its source.
+ * Scope `tasks:read` for a personal API token.
+ * @summary List saved views
+ */
+export const ListSavedViewsParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const listSavedViewsQueryLimitDefault = 50;
+export const listSavedViewsQueryLimitMax = 100;
+
+
+
+export const ListSavedViewsQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listSavedViewsQueryLimitMax).default(listSavedViewsQueryLimitDefault).describe('Page size.')
+})
+
+export const listSavedViewsResponseItemsItemConfigurationFiltersStatusMax = 10;
+
+export const listSavedViewsResponseItemsItemConfigurationFiltersPriorityMax = 4;
+
+export const listSavedViewsResponseItemsItemConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const listSavedViewsResponseItemsItemConfigurationFiltersAssigneeMax = 20;
+
+export const listSavedViewsResponseItemsItemConfigurationFiltersLabelItemMax = 32;
+
+export const listSavedViewsResponseItemsItemConfigurationFiltersLabelMax = 20;
+
+
+
+
+export const ListSavedViewsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "configuration": zod.object({
+  "layout": zod.string().describe('Layout key; clients may ignore unknown future layouts.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(listSavedViewsResponseItemsItemConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(listSavedViewsResponseItemsItemConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(listSavedViewsResponseItemsItemConfigurationFiltersAssigneeItemRegExp)).min(1).max(listSavedViewsResponseItemsItemConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(listSavedViewsResponseItemsItemConfigurationFiltersLabelItemMax)).min(1).max(listSavedViewsResponseItemsItemConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.string().describe('Signed server task sort; clients may ignore future values.'),
+  "groupBy": zod.string().nullable().describe('Grouping key, or null for ungrouped; clients may ignore future values.'),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
+  "direction": zod.string()
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A view shared with readers of a list.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('Views in creation order, with a duplicate inserted after its source.')
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Stores the explicit configuration; `422 saved-view.limit-reached` means the list is full.
+ * Search, milestone, subtask display, collapsed groups, zoom and standard tabs stay local;
+ * Feuille-only sort is client presentation and is never sent as a server task sort.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Create a saved view
+ */
+export const CreateSavedViewParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const createSavedViewHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateSavedViewHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createSavedViewHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
+})
+
+export const createSavedViewBodyNameMax = 80;
+
+
+export const createSavedViewBodyNameRegExp = new RegExp('\\S');
+export const createSavedViewBodyConfigurationFiltersStatusMax = 10;
+
+export const createSavedViewBodyConfigurationFiltersPriorityMax = 4;
+
+export const createSavedViewBodyConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const createSavedViewBodyConfigurationFiltersAssigneeMax = 20;
+
+export const createSavedViewBodyConfigurationFiltersLabelItemMax = 32;
+
+export const createSavedViewBodyConfigurationFiltersLabelMax = 20;
+
+
+
+export const CreateSavedViewBody = zod.object({
+  "name": zod.string().min(1).refine((value) => Array.from(value).length <= createSavedViewBodyNameMax, { message: 'At most 80 Unicode code points' }).regex(createSavedViewBodyNameRegExp).describe('A nonblank saved view or template name, at most 80 characters.'),
+  "icon": zod.union([zod.literal('rocket'),zod.literal('paint'),zod.literal('megaphone'),zod.literal('gear'),zod.literal('code'),zod.literal('bug'),zod.literal('lightning'),zod.literal('target'),zod.literal('flag'),zod.literal('briefcase'),zod.literal('chart'),zod.literal('users'),zod.literal('book'),zod.literal('cube'),zod.literal('headset'),zod.literal('globe'),zod.literal('star'),zod.literal(null)]).nullish().describe('Icon of a space or a list ("Icône"): `rocket` ("Fusée"), `paint` ("Pinceau"), `megaphone`\n("Mégaphone"), `gear` ("Engrenage"), `code` ("Code"), `bug` ("Bogue"), `lightning`\n("Éclair"), `target` ("Cible"), `flag` ("Drapeau"), `briefcase` ("Mallette"), `chart`\n("Courbe"), `users` ("Équipe"), `book` ("Livre"), `cube` ("Cube"), `headset` ("Casque"),\n`globe` ("Globe") or `star` ("Étoile"), the keys of `LOOK_ICONS` of the mockup; `null` for\nnone ("Initiale" for a space, "Par défaut" for a list).\n'),
+  "configuration": zod.object({
+  "layout": zod.enum(['list', 'board', 'calendar', 'gantt', 'workload', 'table', 'form', 'activity', 'timesheet']).describe('Layout key from the task views in the mockup.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(createSavedViewBodyConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(createSavedViewBodyConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(createSavedViewBodyConfigurationFiltersAssigneeItemRegExp)).min(1).max(createSavedViewBodyConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(createSavedViewBodyConfigurationFiltersLabelItemMax)).min(1).max(createSavedViewBodyConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.enum(['manual', '-manual', 'dueDate', '-dueDate', 'priority', '-priority', 'name', '-name', 'createdAt', '-createdAt']).describe('The signed sort vocabulary of the list tasks query, without a patch-time default.'),
+  "groupBy": zod.union([zod.enum(['status', 'priority', 'assignee']),zod.null()]),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.'),
+  "direction": zod.enum(['asc', 'desc'])
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n')
+})
+
+export const createSavedViewResponseConfigurationFiltersStatusMax = 10;
+
+export const createSavedViewResponseConfigurationFiltersPriorityMax = 4;
+
+export const createSavedViewResponseConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const createSavedViewResponseConfigurationFiltersAssigneeMax = 20;
+
+export const createSavedViewResponseConfigurationFiltersLabelItemMax = 32;
+
+export const createSavedViewResponseConfigurationFiltersLabelMax = 20;
+
+
+
+
+export const CreateSavedViewResponse = zod.object({
+  "id": zod.uuid(),
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "configuration": zod.object({
+  "layout": zod.string().describe('Layout key; clients may ignore unknown future layouts.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(createSavedViewResponseConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(createSavedViewResponseConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(createSavedViewResponseConfigurationFiltersAssigneeItemRegExp)).min(1).max(createSavedViewResponseConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(createSavedViewResponseConfigurationFiltersLabelItemMax)).min(1).max(createSavedViewResponseConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.string().describe('Signed server task sort; clients may ignore future values.'),
+  "groupBy": zod.string().nullable().describe('Grouping key, or null for ungrouped; clients may ignore future values.'),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
+  "direction": zod.string()
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A view shared with readers of a list.')
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * A missing, deleted or inaccessible view answers `404 saved-view.not-found`.
+ * Scope `tasks:read` for a personal API token.
+ * @summary Get a saved view
+ */
+export const GetSavedViewParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.'),
+  "viewId": zod.uuid().describe('ID of the saved view.')
+})
+
+export const getSavedViewResponseConfigurationFiltersStatusMax = 10;
+
+export const getSavedViewResponseConfigurationFiltersPriorityMax = 4;
+
+export const getSavedViewResponseConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const getSavedViewResponseConfigurationFiltersAssigneeMax = 20;
+
+export const getSavedViewResponseConfigurationFiltersLabelItemMax = 32;
+
+export const getSavedViewResponseConfigurationFiltersLabelMax = 20;
+
+
+
+
+export const GetSavedViewResponse = zod.object({
+  "id": zod.uuid(),
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "configuration": zod.object({
+  "layout": zod.string().describe('Layout key; clients may ignore unknown future layouts.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(getSavedViewResponseConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(getSavedViewResponseConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(getSavedViewResponseConfigurationFiltersAssigneeItemRegExp)).min(1).max(getSavedViewResponseConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(getSavedViewResponseConfigurationFiltersLabelItemMax)).min(1).max(getSavedViewResponseConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.string().describe('Signed server task sort; clients may ignore future values.'),
+  "groupBy": zod.string().nullable().describe('Grouping key, or null for ungrouped; clients may ignore future values.'),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
+  "direction": zod.string()
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A view shared with readers of a list.')
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Rename and edit use JSON Merge Patch, including nested settings; undeclared members are
+ * ignored. Null groupBy clears grouping and is returned as null; null icon clears the icon.
+ * If-Match is optional and checks the view version.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Update a saved view
+ */
+export const UpdateSavedViewParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.'),
+  "viewId": zod.uuid().describe('ID of the saved view.')
+})
+
+export const UpdateSavedViewHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const updateSavedViewBodyNameMax = 80;
+
+
+export const updateSavedViewBodyNameRegExp = new RegExp('\\S');
+export const updateSavedViewBodyConfigurationFiltersStatusOneMax = 10;
+
+export const updateSavedViewBodyConfigurationFiltersPriorityOneMax = 4;
+
+export const updateSavedViewBodyConfigurationFiltersAssigneeOneItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const updateSavedViewBodyConfigurationFiltersAssigneeOneMax = 20;
+
+export const updateSavedViewBodyConfigurationFiltersLabelOneItemMax = 32;
+
+export const updateSavedViewBodyConfigurationFiltersLabelOneMax = 20;
+
+
+
+export const UpdateSavedViewBody = zod.object({
+  "name": zod.string().min(1).refine((value) => Array.from(value).length <= updateSavedViewBodyNameMax, { message: 'At most 80 Unicode code points' }).regex(updateSavedViewBodyNameRegExp).optional().describe('A nonblank saved view or template name, at most 80 characters.'),
+  "icon": zod.union([zod.literal('rocket'),zod.literal('paint'),zod.literal('megaphone'),zod.literal('gear'),zod.literal('code'),zod.literal('bug'),zod.literal('lightning'),zod.literal('target'),zod.literal('flag'),zod.literal('briefcase'),zod.literal('chart'),zod.literal('users'),zod.literal('book'),zod.literal('cube'),zod.literal('headset'),zod.literal('globe'),zod.literal('star'),zod.literal(null)]).nullish().describe('Icon of a space or a list ("Icône"): `rocket` ("Fusée"), `paint` ("Pinceau"), `megaphone`\n("Mégaphone"), `gear` ("Engrenage"), `code` ("Code"), `bug` ("Bogue"), `lightning`\n("Éclair"), `target` ("Cible"), `flag` ("Drapeau"), `briefcase` ("Mallette"), `chart`\n("Courbe"), `users` ("Équipe"), `book` ("Livre"), `cube` ("Cube"), `headset` ("Casque"),\n`globe` ("Globe") or `star` ("Étoile"), the keys of `LOOK_ICONS` of the mockup; `null` for\nnone ("Initiale" for a space, "Par défaut" for a list).\n'),
+  "configuration": zod.object({
+  "layout": zod.enum(['list', 'board', 'calendar', 'gantt', 'workload', 'table', 'form', 'activity', 'timesheet']).optional().describe('Layout key from the task views in the mockup.'),
+  "filters": zod.object({
+  "status": zod.union([zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(updateSavedViewBodyConfigurationFiltersStatusOneMax),zod.null()]).optional(),
+  "priority": zod.union([zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(updateSavedViewBodyConfigurationFiltersPriorityOneMax),zod.null()]).optional(),
+  "assignee": zod.union([zod.array(zod.string().regex(updateSavedViewBodyConfigurationFiltersAssigneeOneItemRegExp)).min(1).max(updateSavedViewBodyConfigurationFiltersAssigneeOneMax),zod.null()]).optional(),
+  "label": zod.union([zod.array(zod.string().min(1).max(updateSavedViewBodyConfigurationFiltersLabelOneItemMax)).min(1).max(updateSavedViewBodyConfigurationFiltersLabelOneMax),zod.null()]).optional()
+}).optional().describe('A nested merge patch; null removes the named filter.'),
+  "sort": zod.enum(['manual', '-manual', 'dueDate', '-dueDate', 'priority', '-priority', 'name', '-name', 'createdAt', '-createdAt']).optional().describe('The signed sort vocabulary of the list tasks query, without a patch-time default.'),
+  "groupBy": zod.union([zod.enum(['status', 'priority', 'assignee']),zod.null()]).optional(),
+  "presentation": zod.union([zod.object({
+  "hiddenBoardStatusKeys": zod.union([zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')),zod.null()]).optional(),
+  "hiddenSheetColumns": zod.union([zod.array(zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.')),zod.null()]).optional(),
+  "sheetSort": zod.union([zod.object({
+  "column": zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).optional().describe('Feuille column key from the mockup.'),
+  "direction": zod.enum(['asc', 'desc']).optional()
+}),zod.null()]).optional()
+}).describe('A nested merge patch; null removes the corresponding presentation setting.'),zod.null()]).optional()
+}).optional().describe('Nested JSON Merge Patch. Null groupBy clears grouping and is returned as null; null\npresentation removes presentation settings. Omitted members keep their current values.\nThe merged result must satisfy SavedViewConfiguration or the request is invalid.\n')
+}).describe('JSON Merge Patch; nested settings are merged and undeclared members are ignored. A null icon clears it.')
+
+export const updateSavedViewResponseConfigurationFiltersStatusMax = 10;
+
+export const updateSavedViewResponseConfigurationFiltersPriorityMax = 4;
+
+export const updateSavedViewResponseConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const updateSavedViewResponseConfigurationFiltersAssigneeMax = 20;
+
+export const updateSavedViewResponseConfigurationFiltersLabelItemMax = 32;
+
+export const updateSavedViewResponseConfigurationFiltersLabelMax = 20;
+
+
+
+
+export const UpdateSavedViewResponse = zod.object({
+  "id": zod.uuid(),
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "configuration": zod.object({
+  "layout": zod.string().describe('Layout key; clients may ignore unknown future layouts.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(updateSavedViewResponseConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(updateSavedViewResponseConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(updateSavedViewResponseConfigurationFiltersAssigneeItemRegExp)).min(1).max(updateSavedViewResponseConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(updateSavedViewResponseConfigurationFiltersLabelItemMax)).min(1).max(updateSavedViewResponseConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.string().describe('Signed server task sort; clients may ignore future values.'),
+  "groupBy": zod.string().nullable().describe('Grouping key, or null for ungrouped; clients may ignore future values.'),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
+  "direction": zod.string()
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A view shared with readers of a list.')
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * The deletion completes immediately. A client may create a new view from its snapshot for
+ * undo. If-Match is optional and checks the view version.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Delete a saved view
+ */
+export const DeleteSavedViewParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.'),
+  "viewId": zod.uuid().describe('ID of the saved view.')
+})
+
+export const DeleteSavedViewHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const DeleteSavedViewResponse = zod.void()
+
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Creates a new view with a fresh ID and version immediately after the source, appending
+ * ` (copie)` to its name after truncating the source portion to the 80-character ceiling.
+ * If-Match is optional and checks the source view version. `422 saved-view.limit-reached` means the list
+ * is full. The duplicate emits the same creation fact as an ordinary new view.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Scope `tasks:write` for a personal API token.
+ * @summary Duplicate a saved view
+ */
+export const DuplicateSavedViewParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.'),
+  "viewId": zod.uuid().describe('ID of the saved view.')
+})
+
+export const duplicateSavedViewHeaderIdempotencyKeyMax = 255;
+
+
+
+export const DuplicateSavedViewHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(duplicateSavedViewHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n'),
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
+})
+
+export const DuplicateSavedViewBody = zod.strictObject({}).describe('Empty object for duplicating a saved view.')
+
+export const duplicateSavedViewResponseConfigurationFiltersStatusMax = 10;
+
+export const duplicateSavedViewResponseConfigurationFiltersPriorityMax = 4;
+
+export const duplicateSavedViewResponseConfigurationFiltersAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const duplicateSavedViewResponseConfigurationFiltersAssigneeMax = 20;
+
+export const duplicateSavedViewResponseConfigurationFiltersLabelItemMax = 32;
+
+export const duplicateSavedViewResponseConfigurationFiltersLabelMax = 20;
+
+
+
+
+export const DuplicateSavedViewResponse = zod.object({
+  "id": zod.uuid(),
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "icon": zod.string().nullable().describe('An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name\nfor a space ("Initiale"), and for a list its bullets, or the lightning for a sprint ("Par\ndéfaut"). Later versions add icons (`x-extensible-enum`): a client shows an unknown one as\n`null`.\n'),
+  "configuration": zod.object({
+  "layout": zod.string().describe('Layout key; clients may ignore unknown future layouts.'),
+  "filters": zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(duplicateSavedViewResponseConfigurationFiltersStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(duplicateSavedViewResponseConfigurationFiltersPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(duplicateSavedViewResponseConfigurationFiltersAssigneeItemRegExp)).min(1).max(duplicateSavedViewResponseConfigurationFiltersAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(duplicateSavedViewResponseConfigurationFiltersLabelItemMax)).min(1).max(duplicateSavedViewResponseConfigurationFiltersLabelMax).optional()
+}).describe('Existing task-query filters. `me` is resolved for the person applying the view, not its\ncreator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.\n'),
+  "sort": zod.string().describe('Signed server task sort; clients may ignore future values.'),
+  "groupBy": zod.string().nullable().describe('Grouping key, or null for ungrouped; clients may ignore future values.'),
+  "presentation": zod.object({
+  "hiddenBoardStatusKeys": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).optional(),
+  "hiddenSheetColumns": zod.array(zod.string().describe('Feuille column key; clients may ignore unknown future columns.')).optional(),
+  "sheetSort": zod.object({
+  "column": zod.string().describe('Feuille column key; clients may ignore unknown future columns.'),
+  "direction": zod.string()
+}).optional().describe('Feuille-only sort applied to the fully loaded result by the client.')
+}).optional().describe('Client presentation settings; sheet sort never changes the server query sort.')
+}).describe('Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips\nthe task-groups call. Signed `sort` values use the existing list-tasks vocabulary.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).describe('A view shared with readers of a list.')

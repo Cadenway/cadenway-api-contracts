@@ -12,4 +12,5 @@ export const ActivityKindParameterItem = {
   priority: 'priority',
   due: 'due',
   assign: 'assign',
+  comment: 'comment',
 } as const;

@@ -355,6 +355,38 @@ paths:
           $ref: '#/components/responses/SpaceNotFound'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/spaces/{spaceId}/milestones:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: listSpaceMilestonesInternal
+      summary: List milestones of a space
+      description: |
+        Returns visible live milestones in visible lists of the space, excluding archived lists.
+        A caller with only list grants sees only their qualifying lists. Sort by due date ascending,
+        undated last; the opaque cursor is bound to the space and ordering. Total counts matching
+        visible milestones and does not change existing space, list or sprint counts.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of milestones.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MilestonePage'
+              example: { items: [], nextCursor: null, total: 0 }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
   /internal/v1/spaces/{spaceId}/overview:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -560,6 +592,69 @@ paths:
           $ref: '#/components/responses/ListNotFound'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/lists/{listId}/duplicate:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    post:
+      operationId: duplicateListInternal
+      x-cadenway-strict-empty: true
+      summary: Duplicate a list
+      description: |
+        Creates an ordinary live list in the same space, with ` (copie)` appended to the name
+        after truncating the source portion to fit the name limit. Requires edit on both the source
+        list and destination space; an archived source list is allowed. It copies the complete live
+        task forest, regardless of filters, remapping parents and allocating fresh keys using the
+        current destination prefix; a live task whose parent is outside the forest becomes a root.
+        Independently archived and trashed tasks are skipped. Task fields follow the single-task
+        copy rule, but task names are retained. More than 500 live tasks answers
+        `422 list.duplicate-limit-reached` and creates nothing. The list retains the source look and
+        organization-access switch, but copies no direct grants, sprint, views or favorites; the
+        resulting access cannot broaden the source. If-Match checks the source list version. The
+        optional Idempotency-Key replays the original 201 and Location for 24 hours. The list and
+        task creation facts commit with the entire copy.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListDuplicate'
+            example: {}
+      responses:
+        '201':
+          description: The copy was created.
+          headers:
+            Location:
+              description: Path of the new list.
+              schema:
+                type: string
+                examples: ['/internal/v1/lists/019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f15']
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListDuplication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '409':
+          $ref: '#/components/responses/ListDuplicateConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/ListDuplicateRefused'
   /internal/v1/lists/{listId}/counts:
     parameters:
       - $ref: '#/components/parameters/ListId'
@@ -633,6 +728,10 @@ paths:
         `422 task.start-date-invalid`. Records a creation per task. Emits `task.created.v1` per task
         and `task.assigned.v1` per assignee of each. Internal token: actor `user`, organization
         required.
+        Optional checklist entries are created unchecked in order with fresh IDs. Structured
+        description mentions, milestone constraints and recurrence follow TaskCreation; ineligible
+        mentions return `422 mention.recipient-invalid`, invalid milestones return
+        `422 milestone.status-invalid` or `422 milestone.dates-invalid`.
       tags: [tasks]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -679,8 +778,11 @@ paths:
         Lists the tasks of a list the actor sees, filtered and sorted, as
         `GET /v1/lists/{listId}/tasks` says; `assignee=me` is the actor. Internal token: actor
         `user`, organization required.
+        The optional milestone filter is part of the cursor fingerprint and grouped counts;
+        omitting it preserves the existing filter. It does not change unfiltered totals.
       tags: [task-queries]
       parameters:
+        - $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter'
         - $ref: '#/components/parameters/StatusFilter'
         - $ref: '#/components/parameters/PriorityFilter'
         - $ref: '#/components/parameters/AssigneeFilter'
@@ -717,8 +819,11 @@ paths:
         Counts the tasks of a list the actor sees by status, priority or assignee, with the filters
         of `GET /internal/v1/lists/{listId}/tasks`, as `GET /v1/lists/{listId}/task-groups` says.
         Internal token: actor `user`, organization required.
+        The optional milestone filter is part of the cursor fingerprint and grouped counts;
+        omitting it preserves the existing filter. It does not change unfiltered totals.
       tags: [task-queries]
       parameters:
+        - $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter'
         - $ref: '#/components/parameters/GroupBy'
         - $ref: '#/components/parameters/StatusFilter'
         - $ref: '#/components/parameters/PriorityFilter'
@@ -745,6 +850,69 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/ListNotFound'
+  /internal/v1/tasks/bulk-actions:
+    post:
+      operationId: executeBulkTaskActionInternal
+      summary: Apply an atomic bulk task action
+      description: |
+        Applies one explicit action to 1–50 distinct selected keys in a single tenant transaction.
+        Resolve and authorize all keys and optional per-key expected versions, lock and recheck in
+        stable order, then apply the action and write activity and outbox. A stale selected version
+        answers `412 request.version-mismatch`; duplicate or ambiguous selections and more than 50
+        keys answer `400 request.invalid`. The expansion limit is 1,000 affected task rows including
+        subtrees, successors and copies (`422 bulk.expansion-limit-reached`). On any deterministic
+        error nothing changes or emits; `details.key` identifies only an authorized visible task.
+        Status, priority and explicit assign or unassign affect selected tasks, even selected
+        descendants. Move and trash collapse selections already covered by selected ancestors;
+        move carries the live subtree with immutable keys, detaching a moved subtask from its old
+        parent and retaining statuses. Duplicate applies the single-task copy rule per selection.
+        Existing task status, cancellation, milestone, recurrence, archive, tree and role rules
+        apply. A destination that is invisible answers `404 list.not-found`, a visible but
+        uneditable destination `403 access.role-insufficient`. The optional Idempotency-Key replays
+        the recorded response for 24 hours, and conflicting or concurrent reuse has the standard
+        `422 idempotency.key-reused` or `409 idempotency.request-in-progress` problem. Normal task
+        creation, change and lifecycle facts are emitted, never partial facts.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkTaskAction'
+            example:
+              selection:
+                - { taskKey: CAD-482, version: 12 }
+                - { taskKey: CAD-483, version: 3 }
+              action: { type: status, status: done }
+      responses:
+        '200':
+          description: The action committed for all selected tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkTaskResult'
+              example:
+                results:
+                  - { taskKey: CAD-482, version: 13 }
+                  - { taskKey: CAD-483, version: 4 }
+                affectedCount: 2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/BulkTargetNotFound'
+        '409':
+          $ref: '#/components/responses/BulkConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/BulkRefused'
   /internal/v1/tasks/{taskKey}:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
@@ -790,6 +958,21 @@ paths:
         entry. Emits `task.updated.v1` and `task.status-changed.v1` as the public route says. The
         assignee, label, subtask and checklist routes below refuse an archived task the same way.
         Internal token: actor `user`, organization required.
+        Description mentions require If-Match, including spans-only changes. Replacing text clears
+        old spans unless replacements are supplied. Milestone conversion and recurrence follow
+        the shared TaskPatch rules. Entering done with a due date creates at most one root successor
+        in the same list, atomically with resetting recurrence to none, the link and the outbox.
+        Cancellation, an undated completion, a repeated done, creation in done and restore create
+        none. A source that has already spawned cannot be rearmed (`409 recurrence.already-spawned`).
+        Unrepresentable dates answer `422 recurrence.date-out-of-range`. A successor copies the
+        title, Markdown, priority, labels, eligible assignees, ordinary estimate, milestone and
+        unchecked checklist, with a fresh key and todo status. It excludes children, parent,
+        mentions, comments, watcher overrides, dependencies and completion metadata. Start dates
+        move by the due-date delta and milestones retain date alignment. Monthly cadence retains
+        the original day across short months. Fresh watcher defaults apply. A live existing task
+        entering done as a milestone emits milestone.reached.v1, including when the same patch
+        adds the flag. Creation in done, restore, cancellation, repeated done and adding the flag
+        to an already-done task do not; a later genuine transition into done can emit it again.
       tags: [tasks]
       parameters:
         - $ref: '#/components/parameters/IfMatch'
@@ -821,7 +1004,7 @@ paths:
         '404':
           $ref: '#/components/responses/TaskNotFound'
         '409':
-          $ref: '#/components/responses/TaskArchived'
+          $ref: '#/components/responses/TaskRecurrenceConflict'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '422':
@@ -992,6 +1175,68 @@ paths:
           $ref: '#/components/responses/TaskArchived'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/tasks/{taskKey}/duplicate:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: duplicateTaskInternal
+      x-cadenway-strict-empty: true
+      summary: Duplicate a task
+      description: |
+        Duplicates one live task in its own list with ` (copie)` appended, truncating the source
+        portion to fit the existing name limit. It allocates a fresh task key and timestamps and
+        fresh checklist IDs, preserving checklist ticks, milestone, supported status and valid
+        cancellation reason and note. It keeps a live parent when tree depth and capacity permit;
+        a full parent answers `422 task.subtask-limit-reached`. It copies currently assignable
+        users and Markdown as text, without mention spans, children, comments, watcher overrides,
+        dependencies, recurrence, files, time or approvals. A copy in done gets its own completedAt.
+        Requires edit on the list; an archived task refuses changes. If-Match checks the source
+        task version. An optional Idempotency-Key replays the original 201 and Location for 24
+        hours; changed payload and concurrent replay use the standard idempotency problems. Emits
+        the ordinary task creation and assignment facts in the creation transaction.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskDuplicate'
+            example: {}
+      responses:
+        '201':
+          description: The copy was created.
+          headers:
+            Location:
+              description: Path of the new task.
+              schema:
+                type: string
+                examples: ['/internal/v1/tasks/CAD-495']
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskDuplicateConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/TaskDuplicateRefused'
   /internal/v1/tasks/{taskKey}/detail:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
@@ -1022,6 +1267,770 @@ paths:
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
           $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/tasks/{taskKey}/comments:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskCommentsInternal
+      summary: List task comments
+      description: |
+        Lists live comments oldest first by `(createdAt,id)`, with a total excluding deleted comments.
+        The cursor is opaque and bound to the task and ordering. Anyone who sees the task may read.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The requested resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+    post:
+      operationId: createTaskCommentInternal
+      summary: Create a task comment
+      description: |
+        Check the caller's comment or edit role before validating recipients; a caller below the
+        required role receives `403 access.role-insufficient` before `422 mention.recipient-invalid`.
+        A current member, including a guest, with read access to the list is eligible. Mention spans
+        are Unicode code-point offsets into unchanged Markdown and are validated for range,
+        overlap and a displayed token beginning with `@`; invalid spans answer `400 request.invalid`.
+        Unmarked text is not a mention.
+        Ineligible recipients answer `422 mention.recipient-invalid` without identifying them.
+        A `comment` or `edit` role may post. A reply must name a live comment on the same task;
+        otherwise `404 comment.not-found`. Replies are flat. The optional Idempotency-Key records
+        the response and Location for 24 hours; replay has no second effect. The comment and task
+        version, activity and outbox change in the same transaction.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreation'
+            example:
+              body: '@Camille Martin, la maquette est prête.'
+              mentions:
+                - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  start: 0
+                  end: 15
+      responses:
+        '201':
+          description: Created comment.
+          headers:
+            Location:
+              description: Internal path of the created comment.
+              schema:
+                type: string
+                examples:
+                  ['/internal/v1/tasks/CAD-482/comments/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01']
+            ETag:
+              description: The comment version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+              example:
+                id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                taskKey: CAD-482
+                actor: { type: user, id: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31 }
+                body: '@Camille Martin, la maquette est prête.'
+                createdAt: '2026-11-08T10:40:00Z'
+                editedAt: null
+                version: 1
+                mentions:
+                  - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    start: 0
+                    end: 15
+                replyToCommentId: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/CollabCommentNotFound'
+        '409':
+          $ref: '#/components/responses/CollabCreateConflict'
+        '422':
+          $ref: '#/components/responses/CollabCreateRefused'
+  /internal/v1/tasks/{taskKey}/comments/{commentId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/CommentId'
+    get:
+      operationId: getTaskCommentInternal
+      summary: Get a task comment
+      description: |
+        Reads a live comment on a visible task. A deleted, missing or unrelated comment answers
+        `404 comment.not-found`; a deleted reply target leaves only its ID, never quoted content.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      responses:
+        '200':
+          description: The requested resource or page.
+          headers:
+            ETag:
+              description: The comment version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+              example:
+                id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                taskKey: CAD-482
+                actor: { type: user, id: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31 }
+                body: La maquette est prête.
+                createdAt: '2026-11-08T10:40:00Z'
+                editedAt: null
+                version: 1
+                mentions: []
+                replyToCommentId: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/CollabCommentNotFound'
+    patch:
+      operationId: updateTaskCommentInternal
+      summary: Edit a task comment
+      description: |
+        Check the caller's comment or edit role and comment authorship before validating recipients;
+        a caller below the required role receives `403 access.role-insufficient` before
+        `422 mention.recipient-invalid`.
+        A current member, including a guest, with read access to the list is eligible. Mention spans
+        are Unicode code-point offsets into unchanged Markdown and are validated for range,
+        overlap and a displayed token beginning with `@`; invalid spans answer `400 request.invalid`.
+        Unmarked text is not a mention.
+        Ineligible recipients answer `422 mention.recipient-invalid` without identifying them.
+        Requires `comment` or `edit` and the human author; another editor gets
+        `403 comment.author-required`. If-Match is required even for spans alone and uses the
+        comment version. Replacing text clears spans unless replacements are supplied. The task
+        version, activity and outbox change once in the same transaction.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          description: The comment version as returned in its ETag.
+          schema:
+            type: string
+            examples: ['"1"']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentPatch'
+      responses:
+        '200':
+          description: The requested resource or page.
+          headers:
+            ETag:
+              description: The comment version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+              example:
+                id: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+                taskKey: CAD-482
+                actor: { type: user, id: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31 }
+                body: La maquette est prête.
+                createdAt: '2026-11-08T10:40:00Z'
+                editedAt: '2026-11-08T11:00:00Z'
+                version: 2
+                mentions: []
+                replyToCommentId: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CollabAuthor'
+        '404':
+          $ref: '#/components/responses/CollabCommentNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/CommentVersionMismatch'
+        '422':
+          $ref: '#/components/responses/CollabMention'
+    delete:
+      operationId: deleteTaskCommentInternal
+      summary: Delete a task comment
+      description: |
+        Requires `comment` or `edit` and the human author; another editor gets
+        `403 comment.author-required`. If-Match is optional and uses the comment version. Removes
+        text and spans, leaves a content-free tombstone for replies until task purge, and excludes
+        it from pages and counts. The task version, activity and outbox change atomically.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: The comment version as returned in its ETag.
+          schema:
+            type: string
+            examples: ['"1"']
+      responses:
+        '204':
+          description: Override or deletion applied.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CollabAuthor'
+        '404':
+          $ref: '#/components/responses/CollabCommentNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/CommentVersionMismatch'
+  /internal/v1/tasks/{taskKey}/participants:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskParticipantsInternal
+      summary: List eligible task participants
+      description: |
+        Lists current members, including guests, with read access to this task, ordered by user ID.
+        Only `userId` and `memberId` are returned. Requires `comment` or `edit`; a viewer receives
+        `403 access.role-insufficient`. The opaque cursor is bound to the task and ordering.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The requested resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskParticipantPage'
+              example:
+                items:
+                  - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    memberId: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e40
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/tasks/{taskKey}/watchers:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskWatchersInternal
+      summary: List task watchers
+      description: |
+        Lists effective eligible watchers by user ID. The human creator and current eligible
+        assignees are defaults, deduplicated; system and automation creators add no account.
+        Per-user follow and unfollow overrides preserve opt-outs across reassignment. Membership
+        and list visibility are checked on each read and event audience snapshot. A cursor is bound
+        to the task and ordering; total and callerFollows are present on every page.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The requested resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatcherPage'
+              example:
+                items:
+                  - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                nextCursor: null
+                total: 2
+                callerFollows: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/tasks/{taskKey}/watchers/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/WatcherUserId'
+    put:
+      operationId: followTaskWatcherInternal
+      x-cadenway-strict-empty: true
+      summary: Follow a task
+      description: |
+        Check the caller's role and whether the subject is the caller before recipient validation;
+        a caller without the required role receives `403 access.role-insufficient` before
+        `422 watcher.recipient-invalid`.
+        Sets an explicit follow override for this account. `comment` or `edit` may change their own
+        override; only `edit` may change another account. The target must be a current member with
+        task read access; ineligible targets return `422 watcher.recipient-invalid` without details.
+        At most 100 explicit overrides are stored per task, plus defaults; a new override beyond
+        that bound returns `422 watcher.limit-reached`. Repeating the override is a no-op. If-Match
+        and the returned ETag use the task version; a committed change bumps it once.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          description: The requested resource or page.
+          headers:
+            ETag:
+              description: The task version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Watcher'
+              example:
+                userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/CollabWatcherRefused'
+    delete:
+      operationId: unfollowTaskWatcherInternal
+      summary: Unfollow a task
+      description: |
+        Check the caller's role and whether the subject is the caller before recipient validation;
+        a caller without the required role receives `403 access.role-insufficient` before
+        `422 watcher.recipient-invalid`.
+        Sets an explicit unfollow override, including for an account without a default subscription.
+        `comment` or `edit` may change their own override; only `edit` may change another account.
+        The target must be eligible, otherwise `422 watcher.recipient-invalid`. A new override over
+        100 returns `422 watcher.limit-reached`; repeating one is a no-op. If-Match and the returned
+        ETag use the task version; a committed change bumps it once.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Override or deletion applied.
+          headers:
+            ETag:
+              description: The task version.
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/CollabWatcherRefused'
+  /internal/v1/tasks/{taskKey}/dependencies:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskDependenciesInternal
+      summary: List task dependencies
+      description: |
+        Lists edges by creation time and ID. Both endpoints must be readable; edges to an invisible,
+        trashed or archived counterpart and their counts and warnings are hidden. Edges are retained
+        through archive and trash, can reappear on restoration, and are erased on endpoint purge.
+        An archived anchor remains readable and may show visible live counterparts. Dates are
+        advisory: comparing an open blocker's due date with the blocked task's dates never changes
+        either status. The opaque cursor is task-bound.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The requested dependency or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyPage'
+              example:
+                items:
+                  - id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                    blocker:
+                      key: CAD-482
+                      name: Refondre l’écran de connexion SSO
+                      status: progress
+                      cancelReason: null
+                      priority: haute
+                      assignees:
+                        - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                        - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                      dueDate: '2026-11-12'
+                      startDate: '2026-11-11'
+                      estimateMinutes: 480
+                      labels:
+                        - Auth
+                        - Front
+                      parentKey: null
+                      listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      subtaskCounts:
+                        total: 3
+                        closed: 1
+                      checklistCounts:
+                        total: 3
+                        done: 3
+                      completedAt: null
+                      createdAt: '2026-11-03T09:00:00Z'
+                      version: 12
+                    blocked:
+                      key: CAD-483
+                      name: Messages d’erreur et verrouillage
+                      status: progress
+                      cancelReason: null
+                      priority: haute
+                      assignees:
+                        - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                      dueDate: '2026-11-11'
+                      startDate: '2026-11-11'
+                      estimateMinutes: 480
+                      labels:
+                        - Auth
+                        - Front
+                      parentKey: CAD-482
+                      listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                      spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                      subtaskCounts:
+                        total: 3
+                        closed: 1
+                      checklistCounts:
+                        total: 3
+                        done: 3
+                      completedAt: null
+                      createdAt: '2026-11-03T09:00:00Z'
+                      version: 3
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+    post:
+      operationId: createTaskDependencyInternal
+      summary: Create a task dependency
+      description: |
+        Creates a directed blocker-to-blocked edge between tasks in the same organization, including
+        across lists and spaces. Requires edit on both live tasks; an invisible other task answers
+        `404 task.not-found`. Duplicate edges answer `409 dependency.already-exists`; self, direct
+        and transitive cycles answer `422 dependency.cycle`, without disclosing a path. Graph writes
+        are serialized and rechecked under locks, including retained edges; 100 incident edges per
+        task including retained edges are allowed (`422 dependency.limit-reached`). If-Match is the
+        anchor task version. The optional Idempotency-Key replays the creation and Location for 24
+        hours. Each changed task version and its outbox facts commit with the edge.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DependencyCreation'
+            example:
+              otherTaskKey: CAD-483
+              direction: blocks
+      responses:
+        '201':
+          description: The dependency was created.
+          headers:
+            Location:
+              description: Internal path of the dependency under the anchor task.
+              schema:
+                type: string
+                examples:
+                  ['/internal/v1/tasks/CAD-482/dependencies/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01']
+            ETag:
+              description: Version of the anchor task.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dependency'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                blocker:
+                  key: CAD-482
+                  name: Refondre l’écran de connexion SSO
+                  status: progress
+                  cancelReason: null
+                  priority: haute
+                  assignees:
+                    - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                  dueDate: '2026-11-12'
+                  startDate: '2026-11-11'
+                  estimateMinutes: 480
+                  labels:
+                    - Auth
+                    - Front
+                  parentKey: null
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  subtaskCounts:
+                    total: 3
+                    closed: 1
+                  checklistCounts:
+                    total: 3
+                    done: 3
+                  completedAt: null
+                  createdAt: '2026-11-03T09:00:00Z'
+                  version: 12
+                blocked:
+                  key: CAD-483
+                  name: Messages d’erreur et verrouillage
+                  status: progress
+                  cancelReason: null
+                  priority: haute
+                  assignees:
+                    - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                  dueDate: '2026-11-11'
+                  startDate: '2026-11-11'
+                  estimateMinutes: 480
+                  labels:
+                    - Auth
+                    - Front
+                  parentKey: CAD-482
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  subtaskCounts:
+                    total: 3
+                    closed: 1
+                  checklistCounts:
+                    total: 3
+                    done: 3
+                  completedAt: null
+                  createdAt: '2026-11-03T09:00:00Z'
+                  version: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          $ref: '#/components/responses/DependencyConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/DependencyRefused'
+  /internal/v1/tasks/{taskKey}/dependencies/{dependencyId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '#/components/parameters/DependencyId'
+    get:
+      operationId: getTaskDependencyInternal
+      summary: Get a task dependency
+      description: |
+        Reads an edge only when both endpoints are visible and the counterpart is live; otherwise
+        `404 dependency.not-found`. Dates are advisory and never change task status.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      responses:
+        '200':
+          description: The requested dependency or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dependency'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                blocker:
+                  key: CAD-482
+                  name: Refondre l’écran de connexion SSO
+                  status: progress
+                  cancelReason: null
+                  priority: haute
+                  assignees:
+                    - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                  dueDate: '2026-11-12'
+                  startDate: '2026-11-11'
+                  estimateMinutes: 480
+                  labels:
+                    - Auth
+                    - Front
+                  parentKey: null
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  subtaskCounts:
+                    total: 3
+                    closed: 1
+                  checklistCounts:
+                    total: 3
+                    done: 3
+                  completedAt: null
+                  createdAt: '2026-11-03T09:00:00Z'
+                  version: 12
+                blocked:
+                  key: CAD-483
+                  name: Messages d’erreur et verrouillage
+                  status: progress
+                  cancelReason: null
+                  priority: haute
+                  assignees:
+                    - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                  dueDate: '2026-11-11'
+                  startDate: '2026-11-11'
+                  estimateMinutes: 480
+                  labels:
+                    - Auth
+                    - Front
+                  parentKey: CAD-482
+                  listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                  spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                  subtaskCounts:
+                    total: 3
+                    closed: 1
+                  checklistCounts:
+                    total: 3
+                    done: 3
+                  completedAt: null
+                  createdAt: '2026-11-03T09:00:00Z'
+                  version: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/DependencyNotFound'
+    delete:
+      operationId: deleteTaskDependencyInternal
+      summary: Remove a task dependency
+      description: |
+        Removes an edge from either anchor. Requires edit on both live endpoints. Invisible or
+        absent edges answer `404 dependency.not-found`. If-Match and the returned ETag refer to the
+        anchor task; each changed task version and its outbox facts commit with the removal.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The dependency was removed.
+          headers:
+            ETag:
+              description: Version of the anchor task.
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CollabRole'
+        '404':
+          $ref: '#/components/responses/DependencyNotFound'
+        '409':
+          $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/tasks/{taskKey}/dependency-candidates:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listDependencyCandidatesInternal
+      summary: List dependency candidates
+      description: |
+        Lists editable candidates for the requested direction, same list first, then name and key.
+        Requires edit on the anchor and candidates. Search uses the existing task search; unsuitable
+        known endpoints are excluded. The write remains authoritative under concurrency. The opaque
+        cursor is bound to the task, direction, search and order.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [tasks]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+        - $ref: '#/components/parameters/DependencyDirection'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: The requested dependency or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSummaryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/CollabRole'
         '404':
           $ref: '#/components/responses/TaskNotFound'
   /internal/v1/tasks/{taskKey}/subtasks:
@@ -1969,6 +2978,13 @@ paths:
   /internal/v1/trash/entries/{entryId}/restore:
     parameters:
       - $ref: '#/components/parameters/EntryId'
+      - name: reportNotReady
+        in: query
+        required: false
+        description: Report an otherwise restorable entry whose list deletion is still batching.
+        schema:
+          type: boolean
+          default: false
     post:
       operationId: restoreTrashEntryInternal
       summary: Restore a trash entry
@@ -1976,9 +2992,13 @@ paths:
         Brings an entry the actor may restore back to its list, as
         `POST /v1/trash/entries/{entryId}/restore` says: the root detached from a parent that is no
         longer live or can no longer take it, a deleted list and space brought back with it; any
-        other entry answers `404 trash-entry.not-found`. Emits `space.restored.v1` and
-        `list.restored.v1` for what came back with it, then `task.restored.v1` for each task, the
-        root first. Internal token: actor `user`, organization required.
+        other entry answers `404 trash-entry.not-found`. When a space or list returns it emits
+        `space.restored.v1` and `space.access-republished.v1`, or `list.restored.v1` and
+        `list.access-changed.v1`, respectively; then `task.restored.v1` for each task, the
+        root first. While list deletion is still batching, `reportNotReady=true` returns
+        `409 trash-entry.not-restorable-yet` only for an entry the actor could restore afterwards;
+        otherwise the temporary condition remains `404 trash-entry.not-found`. No write occurs.
+        Internal token: actor `user`, organization required.
       tags: [trash]
       requestBody:
         required: true
@@ -2002,6 +3022,8 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/TrashEntryNotFound'
+        '409':
+          $ref: '#/components/responses/TrashEntryNotRestorableYet'
   /internal/v1/trash/empty:
     post:
       operationId: emptyTrashInternal
@@ -2106,6 +3128,701 @@ paths:
           $ref: '#/components/responses/AccessCheckRefused'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+  /internal/v1/spaces/{spaceId}/task-templates:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: listTaskTemplatesInternal
+      summary: List task templates
+      description: |
+        The library is shared within the space and requires an actual space role; a grant only on
+        a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+        is enforced in the owning transaction. Built-in presets are client-side.
+        Ordered by creation time and ID; the opaque cursor is bound to the space and order.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTemplatePage'
+              example:
+                items:
+                  - id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                    spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    name: Connexion SSO
+                    title: Refondre l’écran de connexion SSO
+                    description: Remplacer l’écran actuel par la connexion d’entreprise.
+                    priority: haute
+                    labels:
+                      - Auth
+                      - Front
+                    checklist: []
+                    subtasks:
+                      - Messages d’erreur et verrouillage
+                      - Tests de bout en bout du SSO
+                      - Documenter la connexion SSO
+                    createdAt: '2026-11-08T10:40:00Z'
+                    version: 1
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SpaceNotFound'
+    post:
+      operationId: createTaskTemplateInternal
+      summary: Save a task template
+      description: |
+        The library is shared within the space and requires an actual space role; a grant only on
+        a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+        is enforced in the owning transaction. Built-in presets are client-side.
+        The sourceTaskKey must name a live task in this space; a task in another space answers
+        `404 task.not-found`, as does an invisible task. Requires edit on the space and source list. Captures title, description, priority,
+        labels, checklist texts and direct live child names, without dates, assignees, mentions,
+        recurrence, milestone or watchers. An archived source refuses writes. A restricted source
+        list in an organization-visible space answers `422 template.source-restricted`, preventing
+        the library from widening its audience. `422 template.limit-reached` means the library is
+        full. Later source or template changes never alter previously created tasks. The client
+        submits normal TaskCreation, including its checklist and name-only subtasks.
+        An optional Idempotency-Key replays the original response and Location for 24 hours;
+        a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+        `409 idempotency.request-in-progress`.
+        The change and space.task-template-changed.v1 outbox fact commit together.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskTemplateCreation'
+            example: { sourceTaskKey: CAD-482, name: Connexion SSO }
+      responses:
+        '201':
+          description: Resource created.
+          headers:
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+            Location:
+              description: Path of the created resource, `/internal/v1/spaces/{spaceId}/task-templates/{templateId}`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTemplate'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                name: Connexion SSO
+                title: Refondre l’écran de connexion SSO
+                description: Remplacer l’écran actuel par la connexion d’entreprise.
+                priority: haute
+                labels: [Auth, Front]
+                checklist: []
+                subtasks:
+                  - Messages d’erreur et verrouillage
+                  - Tests de bout en bout du SSO
+                  - Documenter la connexion SSO
+                createdAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/TemplateSourceNotFound'
+        '409':
+          $ref: '#/components/responses/TemplateCreateConflict'
+        '422':
+          $ref: '#/components/responses/TemplateCreateRefused'
+  /internal/v1/spaces/{spaceId}/task-templates/{templateId}:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+      - $ref: '#/components/parameters/TemplateId'
+    get:
+      operationId: getTaskTemplateInternal
+      summary: Get a task template
+      description: |
+        The library is shared within the space and requires an actual space role; a grant only on
+        a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+        is enforced in the owning transaction. Built-in presets are client-side.
+        An unknown or inaccessible scoped template answers `404 template.not-found`.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      responses:
+        '200':
+          description: Resource or page.
+          headers:
+            ETag:
+              description: Version of the resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTemplate'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                name: Connexion SSO
+                title: Refondre l’écran de connexion SSO
+                description: Remplacer l’écran actuel par la connexion d’entreprise.
+                priority: haute
+                labels:
+                  - Auth
+                  - Front
+                checklist: []
+                subtasks:
+                  - Messages d’erreur et verrouillage
+                  - Tests de bout en bout du SSO
+                  - Documenter la connexion SSO
+                createdAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TemplateNotFound'
+    delete:
+      operationId: deleteTaskTemplateInternal
+      summary: Delete a task template
+      description: |
+        The library is shared within the space and requires an actual space role; a grant only on
+        a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+        is enforced in the owning transaction. Built-in presets are client-side.
+        Requires edit on the space. Deletes the template to free library capacity; it never deletes
+        tasks created from it. If-Match, when sent, checks the template version.
+        The change and space.task-template-changed.v1 outbox fact commit together.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Resource deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/TemplateNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/lists/{listId}/saved-views:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: listSavedViewsInternal
+      summary: List saved views
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        New views append in creation order; a duplicate is inserted after its source.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedViewPage'
+              example:
+                items:
+                  - id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                    listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    name: Bugs critiques
+                    icon: bug
+                    configuration:
+                      layout: list
+                      filters:
+                        priority:
+                          - urgente
+                          - haute
+                      sort: dueDate
+                      groupBy: status
+                    createdAt: '2026-11-08T10:40:00Z'
+                    updatedAt: '2026-11-08T10:40:00Z'
+                    version: 1
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+    post:
+      operationId: createSavedViewInternal
+      summary: Create a saved view
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        Stores the explicit configuration; `422 saved-view.limit-reached` means the list is full.
+        Search, milestone, subtask display, collapsed groups, zoom and standard tabs stay local;
+        Feuille-only sort is client presentation and is never sent as a server task sort.
+        An optional Idempotency-Key replays the original response and Location for 24 hours;
+        a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+        `409 idempotency.request-in-progress`.
+        The change and list.saved-view-changed.v1 outbox fact commit together.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavedViewCreation'
+            example:
+              name: Bugs critiques
+              icon: bug
+              configuration:
+                layout: list
+                filters: { priority: [urgente, haute] }
+                sort: dueDate
+                groupBy: status
+      responses:
+        '201':
+          description: Resource created.
+          headers:
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+            Location:
+              description: Path of the created resource, `/internal/v1/lists/{listId}/saved-views/{viewId}`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedView'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                name: Bugs critiques
+                icon: bug
+                configuration:
+                  layout: list
+                  filters: { priority: [urgente, haute] }
+                  sort: dueDate
+                  groupBy: status
+                createdAt: '2026-11-08T10:40:00Z'
+                updatedAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '409':
+          $ref: '#/components/responses/SavedViewCreateConflict'
+        '422':
+          $ref: '#/components/responses/SavedViewCreateRefused'
+  /internal/v1/lists/{listId}/saved-views/{viewId}:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+      - $ref: '#/components/parameters/SavedViewId'
+    get:
+      operationId: getSavedViewInternal
+      summary: Get a saved view
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        A missing, deleted or inaccessible view answers `404 saved-view.not-found`.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [lists]
+      responses:
+        '200':
+          description: Resource or page.
+          headers:
+            ETag:
+              description: Version of the resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedView'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                name: Bugs critiques
+                icon: bug
+                configuration:
+                  layout: list
+                  filters:
+                    priority:
+                      - urgente
+                      - haute
+                  sort: dueDate
+                  groupBy: status
+                createdAt: '2026-11-08T10:40:00Z'
+                updatedAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/SavedViewNotFound'
+    patch:
+      operationId: updateSavedViewInternal
+      summary: Update a saved view
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        Rename and edit use JSON Merge Patch, including nested settings; undeclared members are
+        ignored. Null groupBy clears grouping and is returned as null; null icon clears the icon.
+        If-Match is optional and checks the view version.
+        The change and list.saved-view-changed.v1 outbox fact commit together.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavedViewPatch'
+      responses:
+        '200':
+          description: Resource or page.
+          headers:
+            ETag:
+              description: Version of the resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/SavedViewNotFound'
+        '409':
+          $ref: '#/components/responses/SavedViewWriteConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+    delete:
+      operationId: deleteSavedViewInternal
+      summary: Delete a saved view
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        The deletion completes immediately. A client may create a new view from its snapshot for
+        undo. If-Match is optional and checks the view version.
+        The change and list.saved-view-changed.v1 outbox fact commit together.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Resource deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/SavedViewNotFound'
+        '409':
+          $ref: '#/components/responses/SavedViewWriteConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+  /internal/v1/lists/{listId}/saved-views/{viewId}/duplicate:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+      - $ref: '#/components/parameters/SavedViewId'
+    post:
+      operationId: duplicateSavedViewInternal
+      x-cadenway-strict-empty: true
+      summary: Duplicate a saved view
+      description: |
+        Views are shared within a list: every effective list role may read; edit is required for
+        writes. Archive retains settings and permits reads but blocks writes with
+        `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+        permanently removes its views; restoring a list does not recreate them. Up to 50 views
+        belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+        Creates a new view with a fresh ID and version immediately after the source, appending
+        ` (copie)` to its name after truncating the source portion to the 80-character ceiling.
+        If-Match is optional and checks the source view version. `422 saved-view.limit-reached` means the list
+        is full. The duplicate emits the same creation fact as an ordinary new view.
+        An optional Idempotency-Key replays the original response and Location for 24 hours;
+        a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+        `409 idempotency.request-in-progress`.
+        The change and list.saved-view-changed.v1 outbox fact commit together.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [lists]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavedViewDuplicate'
+            example: {}
+      responses:
+        '201':
+          description: Resource created.
+          headers:
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+            Location:
+              description: Path of the created resource, `/internal/v1/lists/{listId}/saved-views/{viewId}`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedView'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f03
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                name: Bugs critiques (copie)
+                icon: bug
+                configuration:
+                  layout: list
+                  filters:
+                    priority:
+                      - urgente
+                      - haute
+                  sort: dueDate
+                  groupBy: status
+                createdAt: '2026-11-08T10:40:00Z'
+                updatedAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/WriteForbidden'
+        '404':
+          $ref: '#/components/responses/SavedViewNotFound'
+        '409':
+          $ref: '#/components/responses/SavedViewCreateConflict'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/SavedViewCreateRefused'
+  /internal/v1/me/favorites:
+    get:
+      operationId: listFavoritesInternal
+      summary: List favorites
+      description: |
+        Favorites are private to the current user and organization. Any role that can read an active
+        target may favorite it. Only currently readable active targets are returned, in insertion
+        order. Archive or temporary access loss hides a retained favorite; an accessible restored
+        space or list may reappear. Deleted views never return; purge removes dangling favorites.
+        Up to 200 favorites per user and organization are stored.
+        The opaque cursor is bound to the caller, organization and insertion order.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Resource or page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FavoritePage'
+              example: { items: [], nextCursor: null }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+    post:
+      operationId: createFavoriteInternal
+      summary: Create a favorite
+      description: |
+        Favorites are private to the current user and organization. Any role that can read an active
+        target may favorite it. Only currently readable active targets are returned, in insertion
+        order. Archive or temporary access loss hides a retained favorite; an accessible restored
+        space or list may reappear. Deleted views never return; purge removes dangling favorites.
+        Up to 200 favorites per user and organization are stored.
+        A target must be active and visible or the response is `404 favorite.target-not-found`.
+        A duplicate target answers `409 favorite.already-exists`; capacity answers
+        `422 favorite.limit-reached`. No downstream event is emitted for this personal preference.
+        An optional Idempotency-Key replays the original response and Location for 24 hours;
+        a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+        `409 idempotency.request-in-progress`.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FavoriteCreation'
+            example: { kind: list, targetId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12 }
+      responses:
+        '201':
+          description: Resource created.
+          headers:
+            ETag:
+              description: Version of the new resource.
+              schema:
+                type: string
+            Location:
+              description: Path of the created resource, `/internal/v1/me/favorites/{favoriteId}`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Favorite'
+              example:
+                id: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02
+                kind: list
+                targetId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                target:
+                  name: Sprint 14
+                  href: /v1/lists/019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                createdAt: '2026-11-08T10:40:00Z'
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/FavoriteTargetNotFound'
+        '409':
+          $ref: '#/components/responses/FavoriteCreateConflict'
+        '422':
+          $ref: '#/components/responses/FavoriteCreateRefused'
+  /internal/v1/me/favorites/{favoriteId}:
+    parameters:
+      - $ref: '#/components/parameters/FavoriteId'
+    get:
+      operationId: getFavoriteInternal
+      summary: Get a favorite
+      description: |
+        Favorites are private to the current user and organization. Any role that can read an active
+        target may favorite it. Only currently readable active targets are returned, in insertion
+        order. Archive or temporary access loss hides a retained favorite; an accessible restored
+        space or list may reappear. Deleted views never return; purge removes dangling favorites.
+        Up to 200 favorites per user and organization are stored.
+        A missing, hidden or another user’s favorite answers `404 favorite.not-found`.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      responses:
+        '200':
+          description: Resource or page.
+          headers:
+            ETag:
+              description: Version of the resource.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Favorite'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/FavoriteNotFound'
+    delete:
+      operationId: deleteFavoriteInternal
+      summary: Delete a favorite
+      description: |
+        Favorites are private to the current user and organization. Any role that can read an active
+        target may favorite it. Only currently readable active targets are returned, in insertion
+        order. Archive or temporary access loss hides a retained favorite; an accessible restored
+        space or list may reappear. Deleted views never return; purge removes dangling favorites.
+        Up to 200 favorites per user and organization are stored.
+        Deletes the caller's favorite only; a missing, hidden or another user's favorite answers
+        `404 favorite.not-found`. If-Match is optional and checks the favorite version.
+        Internal token: issuer api-gateway, actor user and organization required.
+      tags: [spaces]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Resource deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/FavoriteNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
 components:
   securitySchemes:
     internalToken:
@@ -2116,6 +3833,67 @@ components:
         Internal token of `@cadenway/nest-common`: Ed25519, 60 seconds, `aud` = `task-service`,
         issuer `api-gateway`, or `realtime-gateway` for the access checks.
   parameters:
+    TemplateId:
+      name: templateId
+      in: path
+      required: true
+      description: ID of the template.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01]
+    SavedViewId:
+      name: viewId
+      in: path
+      required: true
+      description: ID of the saved view.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01]
+    FavoriteId:
+      name: favoriteId
+      in: path
+      required: true
+      description: ID of the favorite.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01]
+    DependencyId:
+      name: dependencyId
+      in: path
+      required: true
+      description: ID of a directed dependency edge.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
+    DependencyDirection:
+      name: direction
+      in: query
+      required: true
+      description: Direction of the edge relative to the anchor task.
+      schema:
+        $ref: '#/components/schemas/DependencyDirection'
+    WatcherUserId:
+      name: userId
+      in: path
+      required: true
+      description: Account whose watcher override is changed.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+    CommentId:
+      name: commentId
+      in: path
+      required: true
+      description: ID of the comment on this task.
+      schema:
+        type: string
+        format: uuid
+        examples: [019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01]
     UserId:
       name: userId
       in: path
@@ -2337,6 +4115,732 @@ components:
         status: 422
         code: idempotency.key-reused
   responses:
+    TemplateNotFound:
+      description: '`template.not-found`, `space.not-found`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: template.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: space.not-found
+            problem3:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: organization.not-found
+    TemplateSourceNotFound:
+      description: '`space.not-found`, `task.not-found`, `task.trashed`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: space.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: task.not-found
+            problem3:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: task.trashed
+            problem4:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: organization.not-found
+    TemplateCreateConflict:
+      description: '`task.archived`, `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: task.archived
+            problem2:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: idempotency.request-in-progress
+    TemplateCreateRefused:
+      description: '`template.source-restricted`, `template.limit-reached`, `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: template.source-restricted
+            problem2:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: template.limit-reached
+            problem3:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: idempotency.key-reused
+    SavedViewNotFound:
+      description: '`saved-view.not-found`, `list.not-found`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: saved-view.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: list.not-found
+            problem3:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: organization.not-found
+    SavedViewCreateConflict:
+      description: '`saved-view.list-archived`, `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: saved-view.list-archived
+            problem2:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: idempotency.request-in-progress
+    SavedViewWriteConflict:
+      description: '`saved-view.list-archived`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: saved-view.list-archived
+    SavedViewCreateRefused:
+      description: '`saved-view.limit-reached`, `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: saved-view.limit-reached
+            problem2:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: idempotency.key-reused
+    FavoriteTargetNotFound:
+      description: '`favorite.target-not-found`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: favorite.target-not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: organization.not-found
+    FavoriteNotFound:
+      description: '`favorite.not-found`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: favorite.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: organization.not-found
+    FavoriteCreateConflict:
+      description: '`favorite.already-exists`, `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: favorite.already-exists
+            problem2:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: idempotency.request-in-progress
+    FavoriteCreateRefused:
+      description: '`favorite.limit-reached`, `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: favorite.limit-reached
+            problem2:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: idempotency.key-reused
+    ListDuplicateConflict:
+      description: '`idempotency.request-in-progress`: a request with this key is still running.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            code: idempotency.request-in-progress
+    TaskDuplicateConflict:
+      description: '`task.archived` or `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            archived:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: task.archived
+            requestInProgress:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: idempotency.request-in-progress
+    BulkConflict:
+      description: |
+        `task.archived`, `recurrence.already-spawned`, `idempotency.request-in-progress`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: task.archived
+            problem2:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: recurrence.already-spawned
+            problem3:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: idempotency.request-in-progress
+    BulkTargetNotFound:
+      description: |
+        `task.not-found`, `task.trashed`, `list.not-found`, `organization.not-found`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: task.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: task.trashed
+            problem3:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: list.not-found
+            problem4:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: organization.not-found
+    BulkRefused:
+      description: |
+        `bulk.expansion-limit-reached`, `idempotency.key-reused`, `task.status-hidden`, `task.cancel-reason-required`, `task.cancel-reason-unexpected`, `task.assignee-invalid`, `task.assignee-limit-reached`, `task.subtask-limit-reached`, `task.subtask-depth-exceeded`, `task.start-date-invalid`, `milestone.status-invalid`, `milestone.dates-invalid`, `recurrence.date-out-of-range`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: bulk.expansion-limit-reached
+            problem2:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: idempotency.key-reused
+            problem3:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.status-hidden
+            problem4:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.cancel-reason-required
+            problem5:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.cancel-reason-unexpected
+            problem6:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.assignee-invalid
+            problem7:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.assignee-limit-reached
+            problem8:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.subtask-limit-reached
+            problem9:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.subtask-depth-exceeded
+            problem10:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.start-date-invalid
+            problem11:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: milestone.status-invalid
+            problem12:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: milestone.dates-invalid
+            problem13:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: recurrence.date-out-of-range
+    TaskDuplicateRefused:
+      description: |
+        `task.subtask-limit-reached`, `task.subtask-depth-exceeded`, `task.status-hidden`, `task.cancel-reason-required`, `idempotency.key-reused`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.subtask-limit-reached
+            problem2:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.subtask-depth-exceeded
+            problem3:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.status-hidden
+            problem4:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: task.cancel-reason-required
+            problem5:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: idempotency.key-reused
+    ListDuplicateRefused:
+      description: |
+        `list.duplicate-limit-reached`, `idempotency.key-reused`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: list.duplicate-limit-reached
+            problem2:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: idempotency.key-reused
+    DependencyNotFound:
+      description: '`dependency.not-found`, `task.not-found`, `task.trashed`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: dependency.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: task.not-found
+            problem3:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: task.trashed
+            problem4:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: organization.not-found
+    DependencyConflict:
+      description: '`dependency.already-exists`, `task.archived`, `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: dependency.already-exists
+            problem2:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: task.archived
+            problem3:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: idempotency.request-in-progress
+    DependencyRefused:
+      description: '`dependency.cycle`, `dependency.limit-reached`, `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: dependency.cycle
+            problem2:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: dependency.limit-reached
+            problem3:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: idempotency.key-reused
+    TaskRecurrenceConflict:
+      description: '`task.archived`: a task is archived; `recurrence.already-spawned`: the source already has a successor.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            taskArchived:
+              $ref: '#/components/examples/TaskArchived'
+            alreadySpawned:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: recurrence.already-spawned
+    CommentVersionMismatch:
+      description: '`request.version-mismatch`: If-Match is not the current comment version; `details.version` is.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Precondition Failed
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 2
+    CollabRole:
+      description: '`access.role-insufficient`, `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: access.role-insufficient
+    CollabAuthor:
+      description: '`access.role-insufficient`, `comment.author-required`, `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: access.role-insufficient
+            problem2:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: comment.author-required
+    CollabCommentNotFound:
+      description: '`comment.not-found`, `task.not-found`, `task.trashed`, `organization.not-found`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: comment.not-found
+            problem2:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: task.not-found
+            problem3:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: task.trashed
+            problem4:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: organization.not-found
+    CollabCreateConflict:
+      description: '`task.archived`, `idempotency.request-in-progress`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: task.archived
+            problem2:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: idempotency.request-in-progress
+    CollabMention:
+      description: '`mention.recipient-invalid`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: mention.recipient-invalid
+    CollabCreateRefused:
+      description: '`mention.recipient-invalid`, `idempotency.key-reused`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: mention.recipient-invalid
+            problem2:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: idempotency.key-reused
+    CollabWatcherRefused:
+      description: '`watcher.recipient-invalid`, `watcher.limit-reached`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            problem1:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: watcher.recipient-invalid
+            problem2:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: watcher.limit-reached
     BadRequest:
       description: '`request.invalid`: the request does not match the schema; one `details.issues` entry per issue.'
       content:
@@ -2562,6 +5066,17 @@ components:
                     type: user
                     id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
                   purgeAt: '2026-12-06T16:20:00Z'
+    TrashEntryNotRestorableYet:
+      description: '`trash-entry.not-restorable-yet`: list deletion is still batching.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Trash entry is not restorable yet.
+            status: 409
+            code: trash-entry.not-restorable-yet
     TrashEntryNotFound:
       description: |
         - `trash-entry.not-found`: no entry with this id that the actor may restore;
@@ -2778,6 +5293,9 @@ components:
         `task.list-invalid`, `task.parent-invalid` (`details.parentKey`),
         `task.subtask-depth-exceeded`, `task.subtask-limit-reached`, or, on a creation,
         `idempotency.key-reused`.
+        - `mention.recipient-invalid`: a description mention recipient is ineligible;
+        - `milestone.status-invalid` or `milestone.dates-invalid`: the final milestone is invalid;
+        - `recurrence.date-out-of-range`: the successor date cannot be represented.
       content:
         application/problem+json:
           schema:
@@ -2856,6 +5374,66 @@ components:
             details:
               version: 13
   schemas:
+    Favorite:
+      $ref: '../../components/task.yaml#/components/schemas/Favorite'
+    FavoriteCreation:
+      $ref: '../../components/task.yaml#/components/schemas/FavoriteCreation'
+    FavoritePage:
+      $ref: '../../components/task.yaml#/components/schemas/FavoritePage'
+    SavedView:
+      $ref: '../../components/task.yaml#/components/schemas/SavedView'
+    SavedViewCreation:
+      $ref: '../../components/task.yaml#/components/schemas/SavedViewCreation'
+    SavedViewDuplicate:
+      $ref: '../../components/task.yaml#/components/schemas/SavedViewDuplicate'
+    SavedViewPage:
+      $ref: '../../components/task.yaml#/components/schemas/SavedViewPage'
+    SavedViewPatch:
+      $ref: '../../components/task.yaml#/components/schemas/SavedViewPatch'
+    TaskTemplate:
+      $ref: '../../components/task.yaml#/components/schemas/TaskTemplate'
+    TaskTemplateCreation:
+      $ref: '../../components/task.yaml#/components/schemas/TaskTemplateCreation'
+    TaskTemplatePage:
+      $ref: '../../components/task.yaml#/components/schemas/TaskTemplatePage'
+    ListDuplicate:
+      $ref: '../../components/task.yaml#/components/schemas/ListDuplicate'
+    ListDuplication:
+      $ref: '../../components/task.yaml#/components/schemas/ListDuplication'
+    TaskDuplicate:
+      $ref: '../../components/task.yaml#/components/schemas/TaskDuplicate'
+    BulkTaskAction:
+      $ref: '../../components/task.yaml#/components/schemas/BulkTaskAction'
+    BulkTaskResult:
+      $ref: '../../components/task.yaml#/components/schemas/BulkTaskResult'
+    MilestonePage:
+      $ref: '../../components/task.yaml#/components/schemas/MilestonePage'
+    DependencyDirection:
+      $ref: '../../components/task.yaml#/components/schemas/DependencyDirection'
+    DependencyCreation:
+      $ref: '../../components/task.yaml#/components/schemas/DependencyCreation'
+    Dependency:
+      $ref: '../../components/task.yaml#/components/schemas/Dependency'
+    DependencyPage:
+      $ref: '../../components/task.yaml#/components/schemas/DependencyPage'
+    Mention:
+      $ref: '../../components/task.yaml#/components/schemas/Mention'
+    Comment:
+      $ref: '../../components/task.yaml#/components/schemas/Comment'
+    CommentPage:
+      $ref: '../../components/task.yaml#/components/schemas/CommentPage'
+    CommentCreation:
+      $ref: '../../components/task.yaml#/components/schemas/CommentCreation'
+    CommentPatch:
+      $ref: '../../components/task.yaml#/components/schemas/CommentPatch'
+    TaskParticipant:
+      $ref: '../../components/task.yaml#/components/schemas/TaskParticipant'
+    TaskParticipantPage:
+      $ref: '../../components/task.yaml#/components/schemas/TaskParticipantPage'
+    Watcher:
+      $ref: '../../components/task.yaml#/components/schemas/Watcher'
+    WatcherPage:
+      $ref: '../../components/task.yaml#/components/schemas/WatcherPage'
     Space:
       $ref: '../../components/task.yaml#/components/schemas/Space'
     SpaceCreation:

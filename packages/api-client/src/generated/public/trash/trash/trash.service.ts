@@ -23,6 +23,7 @@ import type {
 import type {
   EmptyRequest,
   ListTrashParams,
+  RestoreTrashEntryParams,
   TrashEmptied,
   TrashEntry,
   TrashEntryPage,
@@ -295,27 +296,39 @@ export class TrashService {
  * the sidebar (`spaceRestored`). An entry the caller may not restore, or that is gone,
  * restored or erased already, answers `404 trash-entry.not-found` ("Déjà restaurée").
  *
- * An action: answers `200` with what came back. Emits `space.restored.v1` and
- * `list.restored.v1` for what came back with it, then `task.restored.v1` for each task of
- * the entry, the root first. Scope `tasks:write` for a personal API token.
+ * While list deletion is still batching, an entry the caller could restore afterwards answers
+ * `404 trash-entry.not-found` by default. With `reportNotReady=true` it instead answers
+ * `409 trash-entry.not-restorable-yet` without writing. Unauthorized, missing, purged and
+ * already restored entries continue to answer `404`.
+ *
+ * An action: answers `200` with what came back. When a space or list returns, it emits its
+ * `space.restored.v1` and `space.access-republished.v1`, or `list.restored.v1` and
+ * `list.access-changed.v1`, respectively; then `task.restored.v1` for each task of the
+ * entry, the root first. Scope `tasks:write` for a personal API token.
  * @summary Restore a trash entry
  */
  restoreTrashEntry<TData = TrashRestored>(entryId: string,
-    emptyRequest: EmptyRequest, options?: HttpClientBodyOptions): Observable<TData>;
+    emptyRequest: EmptyRequest,
+    params?: RestoreTrashEntryParams, options?: HttpClientBodyOptions): Observable<TData>;
  restoreTrashEntry<TData = TrashRestored>(entryId: string,
-    emptyRequest: EmptyRequest, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+    emptyRequest: EmptyRequest,
+    params?: RestoreTrashEntryParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
  restoreTrashEntry<TData = TrashRestored>(entryId: string,
-    emptyRequest: EmptyRequest, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+    emptyRequest: EmptyRequest,
+    params?: RestoreTrashEntryParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
   restoreTrashEntry<TData = TrashRestored>(
     entryId: string,
-    emptyRequest: EmptyRequest, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    emptyRequest: EmptyRequest,
+    params?: RestoreTrashEntryParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
     if (options?.observe === 'events') {
       return this.http.post<TData>(
       `/v1/trash/entries/${entryId}/restore`,
       emptyRequest,{
-        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'events',
-      }
+        params: filteredParams,}
     );
     }
 
@@ -323,18 +336,18 @@ export class TrashService {
       return this.http.post<TData>(
       `/v1/trash/entries/${entryId}/restore`,
       emptyRequest,{
-        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'response',
-      }
+        params: filteredParams,}
     );
     }
 
     return this.http.post<TData>(
       `/v1/trash/entries/${entryId}/restore`,
       emptyRequest,{
-        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
-      }
+        params: filteredParams,}
     );
   }
 /**

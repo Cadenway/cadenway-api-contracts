@@ -21,7 +21,7 @@
     "breaking": "node scripts/breaking.mjs",
     "generate": "pnpm generate:clean && pnpm generate:openapi && pnpm generate:events",
     "generate:clean": "node scripts/clean-generated.mjs",
-    "generate:openapi": "orval",
+    "generate:openapi": "orval && node scripts/postprocess-validators.mjs",
     "generate:events": "node scripts/generate-events.mjs",
     "typecheck": "pnpm -r run typecheck && tsc -p tsconfig.test.json && tsc -p tests/codegen/tsconfig.contracts.json && ngc -p tests/codegen/tsconfig.api-client.json",
     "test": "vitest run --passWithNoTests",

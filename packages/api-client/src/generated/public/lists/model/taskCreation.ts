@@ -3,8 +3,11 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 import type { CancelReasonInput } from './cancelReasonInput';
+import type { ChecklistItemCreation } from './checklistItemCreation';
 import type { EstimateMinutes } from './estimateMinutes';
 import type { LabelName } from './labelName';
+import type { Mention } from './mention';
+import type { Recurrence } from './recurrence';
 import type { SubtaskName } from './subtaskName';
 import type { TaskCreationPriority } from './taskCreationPriority';
 import type { TaskCreationStatus } from './taskCreationStatus';
@@ -16,6 +19,27 @@ import type { TaskName } from './taskName';
  * and `PriorityKey`, with their default.
  */
 export interface TaskCreation {
+  /**
+     * Structured spans in the description; replacing text clears prior spans unless a
+     * replacement array is supplied. Invalid
+     * spans answer `400 request.invalid`, ineligible recipients `422 mention.recipient-invalid`.
+     * @maxItems 20
+     */
+  descriptionMentions?: Mention[];
+  /**
+     * A milestone permits only todo, blocked, done and cancelled. Dated milestones have
+     * equal start and due dates, undated milestones have both null; estimate is null.
+     * Conversion normalizes inherited fields and maps an inherited disallowed status to todo.
+     * Conflicting explicit dates or status answer `422 milestone.dates-invalid` or
+     * `422 milestone.status-invalid`. Removing the flag keeps normalized fields.
+     */
+  milestone?: boolean;
+  recurrence?: Recurrence;
+  /**
+     * Checklist text in order; fresh IDs and unchecked items are created atomically.
+     * @maxItems 100
+     */
+  checklist?: ChecklistItemCreation[];
   name: TaskName;
   description?: TaskDescription | null;
   /** "Statut", one of `StatusKey`; `todo` ("À faire") by default. */

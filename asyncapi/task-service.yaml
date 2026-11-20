@@ -1,5 +1,5 @@
 # Events of task-service: spaces, lists and sprints, and tasks (creation, change, status, assignment),
-# their access (grants, access requests), their archives, the trash and the deletions.
+# their collaboration facts, access, archives, the trash and the deletions.
 asyncapi: 3.0.0
 info:
   title: task-service events
@@ -64,8 +64,17 @@ info:
     `space.updated.v1`, by the owner of the space, and by the switch and the grants of the access
     events.
 
-    **No restricted event.** None carries a secret; they travel on `evt.space.>`, `evt.list.>` and
-    `evt.task.>`, the subjects the NATS user `task` publishes.
+    **Collaboration.** Task-service owns comment, mention, watcher, dependency, milestone,
+    occurrence, template and saved-view facts. The transaction appends each fact to the outbox;
+    consumers reacting to a fact deduplicate by event ID. Projections retain the relevant
+    aggregate version, with separate access and content watermarks where applicable. Ordinary
+    task and list creation, update and lifecycle facts still accompany bulk operations, copies and
+    occurrences. Favorites are personal preferences without a downstream fact. Events contain no
+    Markdown, comment quotes or attachment content. A notification consumer suppresses the actor,
+    deduplicates mention, reply and watcher recipients, and rechecks visibility before delivery.
+
+    **No restricted event.** None carries a secret; they travel on `evt.space.>`, `evt.list.>`,
+    `evt.task.>`, `evt.comment.>` and `evt.milestone.>`, the subjects the NATS user `task` publishes.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -83,9 +92,9 @@ info:
     - repository: cadenway-search-service
       uses: Planned, the creations, changes, access changes, archives, deletions, restorations and purges of spaces, lists and tasks, for the search index and who may find what.
     - repository: cadenway-notification-service
-      uses: Planned, task.assigned.v1 and task.status-changed.v1, for the inbox and the emails; the access requests and their answers, for the notice to the owner of the space and the answer to the requester.
+      uses: Planned, assignments, watched status changes, comment creation and edits, description mention changes and comment deletion for the inbox and emails; access requests and their answers for notices.
     - repository: cadenway-realtime-gateway
-      uses: Planned, every event but the access requests and their answers, to push the changes to the open lists and tasks and to close the rooms a person no longer sees.
+      uses: Planned, collaboration and resource changes to push updates to open lists and tasks and close rooms a person no longer sees; not access requests or their answers.
     - repository: cadenway-automation-service
       uses: Planned, task.created.v1, task.status-changed.v1 and task.assigned.v1, as the triggers of the rules.
     - repository: cadenway-storage-service
@@ -96,6 +105,83 @@ servers:
     protocol: nats
     description: NATS JetStream of each environment, on its internal network.
 channels:
+  commentCreatedV1:
+    address: evt.comment.created.v1
+    description: |
+      A comment was posted. Emitted by task-service. Consumers: none yet; planned, cadenway-notification-service and cadenway-realtime-gateway.
+    messages:
+      commentCreatedV1:
+        $ref: '#/components/messages/commentCreatedV1'
+  commentUpdatedV1:
+    address: evt.comment.updated.v1
+    description: |
+      A comment was edited. Emitted by task-service. Consumers: none yet; planned, cadenway-notification-service and cadenway-realtime-gateway.
+    messages:
+      commentUpdatedV1:
+        $ref: '#/components/messages/commentUpdatedV1'
+  commentDeletedV1:
+    address: evt.comment.deleted.v1
+    description: |
+      A comment was deleted. Emitted by task-service. Consumers: none yet; planned, cadenway-notification-service and cadenway-realtime-gateway.
+    messages:
+      commentDeletedV1:
+        $ref: '#/components/messages/commentDeletedV1'
+  taskDescriptionMentionsChangedV1:
+    address: evt.task.description-mentions-changed.v1
+    description: |
+      The description mention recipients changed. Emitted by task-service. Consumers: none yet; planned, cadenway-notification-service and cadenway-realtime-gateway.
+    messages:
+      taskDescriptionMentionsChangedV1:
+        $ref: '#/components/messages/taskDescriptionMentionsChangedV1'
+  taskWatcherChangedV1:
+    address: evt.task.watcher-changed.v1
+    description: |
+      A watcher override changed. Emitted by task-service. Consumers: none yet; planned, cadenway-realtime-gateway.
+    messages:
+      taskWatcherChangedV1:
+        $ref: '#/components/messages/taskWatcherChangedV1'
+  taskDependencyAddedV1:
+    address: evt.task.dependency-added.v1
+    description: |
+      A directed dependency was added. Emitted by task-service. Consumers: none yet; planned, cadenway-realtime-gateway.
+    messages:
+      taskDependencyAddedV1:
+        $ref: '#/components/messages/taskDependencyAddedV1'
+  taskDependencyRemovedV1:
+    address: evt.task.dependency-removed.v1
+    description: |
+      A directed dependency was removed. Emitted by task-service. Consumers: none yet; planned, cadenway-realtime-gateway.
+    messages:
+      taskDependencyRemovedV1:
+        $ref: '#/components/messages/taskDependencyRemovedV1'
+  milestoneReachedV1:
+    address: evt.milestone.reached.v1
+    description: |
+      A milestone entered done. Emitted by task-service. Consumers: none yet; available for future automation.
+    messages:
+      milestoneReachedV1:
+        $ref: '#/components/messages/milestoneReachedV1'
+  taskOccurrenceCreatedV1:
+    address: evt.task.occurrence-created.v1
+    description: |
+      A recurring task created its successor. Emitted by task-service. Consumers: none yet; planned, cadenway-realtime-gateway.
+    messages:
+      taskOccurrenceCreatedV1:
+        $ref: '#/components/messages/taskOccurrenceCreatedV1'
+  spaceTaskTemplateChangedV1:
+    address: evt.space.task-template-changed.v1
+    description: |
+      A space task template was created or deleted. Emitted by task-service. Consumers: none yet; planned, cadenway-realtime-gateway.
+    messages:
+      spaceTaskTemplateChangedV1:
+        $ref: '#/components/messages/spaceTaskTemplateChangedV1'
+  listSavedViewChangedV1:
+    address: evt.list.saved-view-changed.v1
+    description: |
+      A saved view was created, updated or deleted. Emitted by task-service. Consumers: none yet; planned, cadenway-realtime-gateway.
+    messages:
+      listSavedViewChangedV1:
+        $ref: '#/components/messages/listSavedViewChangedV1'
   spaceCreatedV1:
     address: evt.space.created.v1
     description: |
@@ -170,6 +256,14 @@ channels:
     messages:
       spaceAccessChangedV1:
         $ref: '#/components/messages/spaceAccessChangedV1'
+  spaceAccessRepublishedV1:
+    address: evt.space.access-republished.v1
+    description: |
+      The complete space access snapshot after restoration. Emitted by task-service.
+      Consumers: none yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+    messages:
+      spaceAccessRepublishedV1:
+        $ref: '#/components/messages/spaceAccessRepublishedV1'
   listAccessChangedV1:
     address: evt.list.access-changed.v1
     description: |
@@ -316,6 +410,94 @@ channels:
       taskPurgedV1:
         $ref: '#/components/messages/taskPurgedV1'
 operations:
+  publishCommentCreatedV1:
+    action: send
+    summary: task-service publishes a comment was posted.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/commentCreatedV1'
+    messages:
+      - $ref: '#/channels/commentCreatedV1/messages/commentCreatedV1'
+  publishCommentUpdatedV1:
+    action: send
+    summary: task-service publishes a comment was edited.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/commentUpdatedV1'
+    messages:
+      - $ref: '#/channels/commentUpdatedV1/messages/commentUpdatedV1'
+  publishCommentDeletedV1:
+    action: send
+    summary: task-service publishes a comment was deleted.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/commentDeletedV1'
+    messages:
+      - $ref: '#/channels/commentDeletedV1/messages/commentDeletedV1'
+  publishTaskDescriptionMentionsChangedV1:
+    action: send
+    summary: task-service publishes the description mention recipients changed.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/taskDescriptionMentionsChangedV1'
+    messages:
+      - $ref: '#/channels/taskDescriptionMentionsChangedV1/messages/taskDescriptionMentionsChangedV1'
+  publishTaskWatcherChangedV1:
+    action: send
+    summary: task-service publishes a watcher override changed.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/taskWatcherChangedV1'
+    messages:
+      - $ref: '#/channels/taskWatcherChangedV1/messages/taskWatcherChangedV1'
+  publishTaskDependencyAddedV1:
+    action: send
+    summary: task-service publishes a directed dependency was added.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/taskDependencyAddedV1'
+    messages:
+      - $ref: '#/channels/taskDependencyAddedV1/messages/taskDependencyAddedV1'
+  publishTaskDependencyRemovedV1:
+    action: send
+    summary: task-service publishes a directed dependency was removed.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/taskDependencyRemovedV1'
+    messages:
+      - $ref: '#/channels/taskDependencyRemovedV1/messages/taskDependencyRemovedV1'
+  publishMilestoneReachedV1:
+    action: send
+    summary: task-service publishes a milestone entered done.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/milestoneReachedV1'
+    messages:
+      - $ref: '#/channels/milestoneReachedV1/messages/milestoneReachedV1'
+  publishTaskOccurrenceCreatedV1:
+    action: send
+    summary: task-service publishes a recurring task created its successor.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/taskOccurrenceCreatedV1'
+    messages:
+      - $ref: '#/channels/taskOccurrenceCreatedV1/messages/taskOccurrenceCreatedV1'
+  publishSpaceTaskTemplateChangedV1:
+    action: send
+    summary: task-service publishes a space task template was created or deleted.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/spaceTaskTemplateChangedV1'
+    messages:
+      - $ref: '#/channels/spaceTaskTemplateChangedV1/messages/spaceTaskTemplateChangedV1'
+  publishListSavedViewChangedV1:
+    action: send
+    summary: task-service publishes a saved view was created, updated or deleted.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/listSavedViewChangedV1'
+    messages:
+      - $ref: '#/channels/listSavedViewChangedV1/messages/listSavedViewChangedV1'
   publishSpaceCreatedV1:
     action: send
     summary: task-service publishes the creation of a space.
@@ -388,6 +570,14 @@ operations:
       $ref: '#/channels/spaceAccessChangedV1'
     messages:
       - $ref: '#/channels/spaceAccessChangedV1/messages/spaceAccessChangedV1'
+  publishSpaceAccessRepublishedV1:
+    action: send
+    summary: task-service republishes space access after restoration.
+    description: Sent from the outbox once the restoration is committed.
+    channel:
+      $ref: '#/channels/spaceAccessRepublishedV1'
+    messages:
+      - $ref: '#/channels/spaceAccessRepublishedV1/messages/spaceAccessRepublishedV1'
   publishListAccessChangedV1:
     action: send
     summary: task-service publishes a change of the grants or the switch of a list.
@@ -645,6 +835,967 @@ components:
           role:
             $ref: '#/components/schemas/Role'
   messages:
+    commentCreatedV1:
+      name: comment.created.v1
+      title: Comment created
+      summary: A comment was posted.
+      description: |
+        Emitted in the comment creation transaction. Eligible mentions and effective watchers are
+        snapshotted at commit. Reply IDs are included only for an eligible human reply recipient;
+        the consumer deduplicates recipients and suppresses the actor. No comment text travels.
+
+        Personal data: IDs only.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            commentId,
+            commentVersion,
+            mentionedUserIds,
+            watcherIds,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Task version after the committed change.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Task key.
+          spaceId:
+            type: string
+            format: uuid
+            description: Space containing the task.
+          listId:
+            type: string
+            format: uuid
+            description: List containing the task.
+          commentId:
+            type: string
+            format: uuid
+            description: Comment ID.
+          commentVersion:
+            type: integer
+            minimum: 1
+            description: Comment version after this change.
+          mentionedUserIds:
+            type: array
+            description: Eligible structured mention recipients.
+            items:
+              type: string
+              format: uuid
+          watcherIds:
+            type: array
+            description: Effective eligible watchers at commit.
+            items:
+              type: string
+              format: uuid
+          replyToCommentId:
+            type: string
+            format: uuid
+            description: Live reply target, when an eligible human recipient exists.
+          replyToUserId:
+            type: string
+            format: uuid
+            description: Eligible human recipient of the reply.
+      examples:
+        - name: atelierNord
+          summary: A committed change in Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d40
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 13
+            key: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            commentId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+            commentVersion: 1
+            mentionedUserIds: [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+            watcherIds: [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+            replyToCommentId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b02
+            replyToUserId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+    commentUpdatedV1:
+      name: comment.updated.v1
+      title: Comment updated
+      summary: A comment was edited.
+      description: |
+        Emitted on an author edit, with the added and removed eligible mention recipient sets. The
+        notification consumer uses added recipients, suppresses the actor and rechecks visibility.
+        The Markdown and excerpts never travel.
+
+        Personal data: IDs only.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            commentId,
+            commentVersion,
+            addedMentionUserIds,
+            removedMentionUserIds,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Task version after the committed change.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Task key.
+          spaceId:
+            type: string
+            format: uuid
+            description: Space containing the task.
+          listId:
+            type: string
+            format: uuid
+            description: List containing the task.
+          commentId:
+            type: string
+            format: uuid
+            description: Comment ID.
+          commentVersion:
+            type: integer
+            minimum: 1
+            description: Comment version after this change.
+          addedMentionUserIds:
+            type: array
+            description: Eligible recipients added by the edit.
+            items:
+              type: string
+              format: uuid
+          removedMentionUserIds:
+            type: array
+            description: Eligible recipients removed by the edit.
+            items:
+              type: string
+              format: uuid
+      examples:
+        - name: atelierNord
+          summary: A committed change in Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d41
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 13
+            key: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            commentId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+            commentVersion: 2
+            addedMentionUserIds: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+            removedMentionUserIds: []
+    commentDeletedV1:
+      name: comment.deleted.v1
+      title: Comment deleted
+      summary: A comment was deleted.
+      description: |
+        Emitted on deletion with the final comment version. The notification consumer can withdraw
+        stale comment previews; the event contains no deleted text or quote.
+
+        Personal data: IDs only.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            commentId,
+            commentVersion,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Task version after the committed change.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Task key.
+          spaceId:
+            type: string
+            format: uuid
+            description: Space containing the task.
+          listId:
+            type: string
+            format: uuid
+            description: List containing the task.
+          commentId:
+            type: string
+            format: uuid
+            description: Comment ID.
+          commentVersion:
+            type: integer
+            minimum: 1
+            description: Comment version after this change.
+      examples:
+        - name: atelierNord
+          summary: A committed change in Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d42
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 13
+            key: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            commentId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01
+            commentVersion: 3
+    taskDescriptionMentionsChangedV1:
+      name: task.description-mentions-changed.v1
+      title: Task description mentions changed
+      summary: The description mention recipients changed.
+      description: |
+        Emitted on creation with structured spans, and when the eligible recipient set changes on
+        edit. Raw @ text is not a mention. The notification consumer uses added recipients,
+        suppresses the actor and rechecks current visibility; no Markdown travels.
+
+        Personal data: IDs only.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            addedMentionUserIds,
+            removedMentionUserIds,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Task version after the committed change.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Task key.
+          spaceId:
+            type: string
+            format: uuid
+            description: Space containing the task.
+          listId:
+            type: string
+            format: uuid
+            description: List containing the task.
+          addedMentionUserIds:
+            type: array
+            description: Eligible recipients added.
+            items:
+              type: string
+              format: uuid
+          removedMentionUserIds:
+            type: array
+            description: Eligible recipients removed.
+            items:
+              type: string
+              format: uuid
+      examples:
+        - name: atelierNord
+          summary: A committed change in Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d43
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 13
+            key: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            addedMentionUserIds: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+            removedMentionUserIds: []
+    taskWatcherChangedV1:
+      name: task.watcher-changed.v1
+      title: Task watcher changed
+      summary: A watcher override changed.
+      description: |
+        Emitted when an explicit follow or unfollow override changes. Assignment changes keep their
+        ordinary task facts. Status and comment facts snapshot effective eligible watchers at commit.
+
+        Personal data: IDs only.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            userId,
+            requested,
+            effectiveFollowing,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Task version after the committed change.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Task key.
+          spaceId:
+            type: string
+            format: uuid
+            description: Space containing the task.
+          listId:
+            type: string
+            format: uuid
+            description: List containing the task.
+          userId:
+            type: string
+            format: uuid
+            description: Account whose override changed.
+          requested:
+            type: string
+            enum: [follow, unfollow]
+            description: Requested explicit follow or unfollow.
+          effectiveFollowing:
+            type: boolean
+            description: Effective subscription after the override.
+      examples:
+        - name: atelierNord
+          summary: A committed change in Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d44
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 13
+            key: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+            requested: unfollow
+            effectiveFollowing: false
+    taskDependencyAddedV1:
+      name: task.dependency-added.v1
+      title: Task dependency added
+      summary: A directed dependency was added.
+      description: |
+        Emitted after an edge is committed. The envelope version and blockerVersion are the blocker
+        task version; blockedVersion belongs to the blocked task. Consumer projections retain the
+        appropriate task versions and facts are deduplicated by event ID.
+
+        Personal data: IDs only.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            dependencyId,
+            blockerKey,
+            blockerSpaceId,
+            blockerListId,
+            blockerVersion,
+            blockedKey,
+            blockedSpaceId,
+            blockedListId,
+            blockedVersion,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Task version after the committed change.
+          dependencyId:
+            type: string
+            format: uuid
+            description: Directed dependency ID.
+          blockerKey:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the blocker.
+          blockerSpaceId:
+            type: string
+            format: uuid
+            description: Space of the blocker.
+          blockerListId:
+            type: string
+            format: uuid
+            description: List of the blocker.
+          blockerVersion:
+            type: integer
+            minimum: 1
+            description: Blocker task version; equals envelope version.
+          blockedKey:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the blocked task.
+          blockedSpaceId:
+            type: string
+            format: uuid
+            description: Space of the blocked task.
+          blockedListId:
+            type: string
+            format: uuid
+            description: List of the blocked task.
+          blockedVersion:
+            type: integer
+            minimum: 1
+            description: Blocked task version.
+      examples:
+        - name: atelierNord
+          summary: A committed change in Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d45
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 13
+            dependencyId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+            blockerKey: CAD-482
+            blockerSpaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            blockerListId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            blockerVersion: 13
+            blockedKey: CAD-483
+            blockedSpaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            blockedListId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            blockedVersion: 3
+    taskDependencyRemovedV1:
+      name: task.dependency-removed.v1
+      title: Task dependency removed
+      summary: A directed dependency was removed.
+      description: |
+        Emitted after an edge is removed. The envelope version and blockerVersion are the blocker
+        task version; blockedVersion belongs to the blocked task. Endpoint purge is represented
+        by its existing task.purged.v1 event rather than a removal fact.
+
+        Personal data: IDs only.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            dependencyId,
+            blockerKey,
+            blockerSpaceId,
+            blockerListId,
+            blockerVersion,
+            blockedKey,
+            blockedSpaceId,
+            blockedListId,
+            blockedVersion,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Task version after the committed change.
+          dependencyId:
+            type: string
+            format: uuid
+            description: Directed dependency ID.
+          blockerKey:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the blocker.
+          blockerSpaceId:
+            type: string
+            format: uuid
+            description: Space of the blocker.
+          blockerListId:
+            type: string
+            format: uuid
+            description: List of the blocker.
+          blockerVersion:
+            type: integer
+            minimum: 1
+            description: Blocker task version; equals envelope version.
+          blockedKey:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Key of the blocked task.
+          blockedSpaceId:
+            type: string
+            format: uuid
+            description: Space of the blocked task.
+          blockedListId:
+            type: string
+            format: uuid
+            description: List of the blocked task.
+          blockedVersion:
+            type: integer
+            minimum: 1
+            description: Blocked task version.
+      examples:
+        - name: atelierNord
+          summary: A committed change in Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d46
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 13
+            dependencyId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+            blockerKey: CAD-482
+            blockerSpaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            blockerListId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            blockerVersion: 13
+            blockedKey: CAD-483
+            blockedSpaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            blockedListId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            blockedVersion: 3
+    milestoneReachedV1:
+      name: milestone.reached.v1
+      title: Milestone reached
+      summary: A milestone entered done.
+      description: |
+        Emitted on a genuine transition of a live existing milestone into done, including when the
+        same patch adds the milestone flag. Creation in done, cancellation, restore, repeat done
+        or adding the flag to an already-done task do not emit it. A later genuine transition may
+        emit again. Available to automation or a future notification choice; no delivery is decided.
+
+        Personal data: IDs only; the milestone name is organization content.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            key,
+            spaceId,
+            listId,
+            name,
+            dueDate,
+            completedAt,
+            watcherIds,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Task version after the committed change.
+          key:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Task key.
+          spaceId:
+            type: string
+            format: uuid
+            description: Space containing the task.
+          listId:
+            type: string
+            format: uuid
+            description: List containing the task.
+          name:
+            type: string
+            description: Milestone name.
+          dueDate:
+            type: [string, 'null']
+            format: date
+            description: Milestone due date, or null when undated.
+          completedAt:
+            type: string
+            format: date-time
+            description: Completion instant.
+          watcherIds:
+            type: array
+            description: Effective eligible watcher audience at commit.
+            items:
+              type: string
+              format: uuid
+      examples:
+        - name: atelierNord
+          summary: A committed change in Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d47
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 13
+            key: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            name: Refondre l’écran de connexion SSO
+            dueDate: null
+            completedAt: '2026-11-08T10:40:00Z'
+            watcherIds: [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
+    taskOccurrenceCreatedV1:
+      name: task.occurrence-created.v1
+      title: Task occurrence created
+      summary: A recurring task created its successor.
+      description: |
+        Emitted only when entering done with a due date creates a successor. The envelope version
+        equals predecessorVersion. The successor, predecessor reset to none, link and outbox commit
+        together. Cancellation, undated completion, repeated done, creation in done and restore
+        do not create an occurrence.
+
+        Personal data: IDs only.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            predecessorKey,
+            predecessorVersion,
+            successorKey,
+            spaceId,
+            listId,
+            dueDate,
+            cadence,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Predecessor task version after completion.
+          predecessorKey:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Source task key.
+          predecessorVersion:
+            type: integer
+            minimum: 1
+            description: Source version after completion.
+          successorKey:
+            type: string
+            pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+            description: Fresh successor task key.
+          spaceId:
+            type: string
+            format: uuid
+            description: Space containing both tasks.
+          listId:
+            type: string
+            format: uuid
+            description: List containing both tasks.
+          dueDate:
+            type: string
+            format: date
+            description: Successor due date.
+          cadence:
+            $ref: '../components/task.yaml#/components/schemas/Recurrence'
+      examples:
+        - name: atelierNord
+          summary: A committed change in Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d48
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 13
+            predecessorKey: CAD-482
+            predecessorVersion: 13
+            successorKey: CAD-495
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            dueDate: '2026-11-19'
+            cadence: weekly
+    spaceTaskTemplateChangedV1:
+      name: space.task-template-changed.v1
+      title: Space task template changed
+      summary: A space task template was created or deleted.
+      description: |
+        Emitted on explicit creation or deletion of a space template. Version is the template
+        version. Template ingredients and task descriptions are not included.
+
+        Personal data: IDs only.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, spaceId, templateId, action]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the template after the change.
+          spaceId:
+            type: string
+            format: uuid
+            description: Space containing the template.
+          templateId:
+            type: string
+            format: uuid
+            description: Template ID.
+          action:
+            type: string
+            x-extensible-enum: [created, deleted]
+            description: Change to the template; consumers ignore unknown future actions.
+      examples:
+        - name: atelierNord
+          summary: A committed change in Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d49
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 1
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            templateId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+            action: created
+    listSavedViewChangedV1:
+      name: list.saved-view-changed.v1
+      title: List saved view changed
+      summary: A saved view was created, updated or deleted.
+      description: |
+        Emitted on an explicit view change, with the view version. A duplicate is a creation. Views
+        removed by deletion of the parent list or space are covered by that parent event.
+
+        Personal data: IDs only.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, spaceId, listId, viewId, action]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the transaction.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            description: Version of the saved view after the change.
+          spaceId:
+            type: string
+            format: uuid
+            description: Space containing the list.
+          listId:
+            type: string
+            format: uuid
+            description: List containing the view.
+          viewId:
+            type: string
+            format: uuid
+            description: Saved view ID.
+          action:
+            type: string
+            enum: [created, updated, deleted]
+            description: Change to the view.
+      examples:
+        - name: atelierNord
+          summary: A committed change in Atelier Nord
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d4a
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 2
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            viewId: 019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01
+            action: updated
     spaceCreatedV1:
       name: space.created.v1
       title: Space created
@@ -1135,6 +2286,11 @@ components:
             type: [string, 'null']
             format: date-time
             description: When the task entered `done`; `null` unless its status is `done`.
+          milestone:
+            type: boolean
+            description: Whether the task is a milestone; absent when not reported by an older producer.
+          recurrence:
+            $ref: '../components/task.yaml#/components/schemas/Recurrence'
       examples:
         - name: cad482
           summary: CAD-482 created in Sprint 14
@@ -1160,6 +2316,8 @@ components:
             estimateMinutes: 480
             labels: [Auth, Front]
             completedAt: null
+            milestone: false
+            recurrence: none
     taskUpdatedV1:
       name: task.updated.v1
       title: Task updated
@@ -1171,8 +2329,10 @@ components:
         `{ type: 'system', id: 'task-service' }`). Carries the task after the
         change and `changed`, the members of the task that changed: `name`, `description`,
         `status`, `cancelReason`, `cancelNote`, `priority`, `assigneeIds`, `dueDate`, `startDate`,
-        `estimateMinutes`, `labels`, `listId`, `spaceId`, `parentKey` or `checklist` today. The
-        description, the cancel note and the checklist do not travel.
+        `estimateMinutes`, `labels`, `listId`, `spaceId`, `parentKey`, `checklist`, `comments`,
+        `watchers`, `dependencies`, `milestone`, `recurrence`, `descriptionMentions` or
+        `nextOccurrenceKey`. This set is open. The description, cancel note and checklist do not
+        travel.
 
         Personal data: none beyond the ids.
       headers:
@@ -1265,6 +2425,11 @@ components:
             format: date-time
           changed:
             $ref: '#/components/schemas/Changed'
+          milestone:
+            type: boolean
+            description: Whether the task is a milestone; absent when not reported by an older producer.
+          recurrence:
+            $ref: '../components/task.yaml#/components/schemas/Recurrence'
       examples:
         - name: moved
           summary: CAD-482 moved to the list "Bugs"
@@ -1291,6 +2456,8 @@ components:
             estimateMinutes: 480
             labels: [Auth, Front]
             completedAt: null
+            milestone: false
+            recurrence: none
             changed: [listId]
     taskStatusChangedV1:
       name: task.status-changed.v1
@@ -1301,6 +2468,8 @@ components:
         changes: `previousStatus` before, `status` after. A status set back within the same
         request emits nothing. `cancelReason` and `cancelNote` say why a task was cancelled.
         `actor` is who changed it: a person, or later an automation or the Git integration.
+        `watcherIds`, when present, is the effective eligible watcher audience at commit. Older
+        events omit it; absence produces no watcher delivery.
 
         Personal data: none beyond the ids; the cancel note is content of the organization.
       headers:
@@ -1397,6 +2566,12 @@ components:
           completedAt:
             type: [string, 'null']
             format: date-time
+          watcherIds:
+            type: array
+            description: Effective eligible watcher account IDs at commit; absent when not reported.
+            items:
+              type: string
+              format: uuid
       examples:
         - name: review
           summary: CAD-482 passes from "En cours" to "En revue"
@@ -1425,6 +2600,7 @@ components:
             estimateMinutes: 480
             labels: [Auth, Front]
             completedAt: null
+            watcherIds: [019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31]
     taskAssignedV1:
       name: task.assigned.v1
       title: Task assigned
@@ -1621,6 +2797,64 @@ components:
               - userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
                 role: edit
             changedUserIds: [019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32]
+    spaceAccessRepublishedV1:
+      name: space.access-republished.v1
+      title: Space access republished
+      summary: The access snapshot of a restored space.
+      description: |
+        Emitted on every space restoration, including a space with no grants. Carries the complete
+        grants and changed user IDs, including empty arrays, with the space access version. Access
+        projections use the same access version as `space.access-changed.v1`.
+
+        Personal data: none beyond the IDs.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, spaceId, grants, changedUserIds]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: string
+            format: uuid
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            description: Space access version after the restoration.
+          spaceId:
+            type: string
+            format: uuid
+          grants:
+            $ref: '#/components/schemas/Grants'
+          changedUserIds:
+            type: array
+            description: The people whose access changed; may be empty.
+            items:
+              type: string
+              format: uuid
+      examples:
+        - name: restored
+          summary: Camille Martin restores a space with no grants
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d4b
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: user
+              id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            version: 8
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02
+            grants: []
+            changedUserIds: []
     listAccessChangedV1:
       name: list.access-changed.v1
       title: List access changed
@@ -1629,9 +2863,11 @@ components:
         Emitted when a grant of a list is given, changed or removed, by a person who has `edit` on
         it, by the approval of a request, or when a member leaves the organization (`actor`
         `{ type: 'system', id: 'task-service' }`), and when its switch "Accès de l’organisation"
-        is turned. Carries every grant of the list and the switch after the change, `changed`
+        is turned, and republishes the snapshot on list restoration. Carries every grant of the list and the switch after the change, `changed`
         (`grants`, `organizationAccess` today), `changedUserIds` the people whose grant changed
-        (empty when only the switch did), and the version of the list.
+        (empty when only the switch changed or access is republished on restore), and the version
+        of the list. A restore republish names both `grants` and `organizationAccess` in `changed`
+        because it carries the complete access snapshot.
 
         Personal data: none beyond the ids.
       headers:
@@ -1687,7 +2923,7 @@ components:
             $ref: '#/components/schemas/Changed'
           changedUserIds:
             type: array
-            description: The people whose grant was given, changed or removed; empty when only the switch changed.
+            description: The people whose grant was given, changed or removed; empty for switch-only changes or restoration.
             items:
               type: string
               format: uuid
@@ -1716,6 +2952,20 @@ components:
                 role: comment
             changed: [grants]
             changedUserIds: [019a6f00-1b2c-7d3e-8f4a-5b6c7d8e9f40]
+        - name: restored
+          summary: Camille Martin restores Sprint 14 without changing its grants
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d28
+            occurredAt: '2026-11-08T15:10:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 7
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            organizationAccess: true
+            grants: []
+            changed: [grants, organizationAccess]
+            changedUserIds: []
     spaceAccessRequestedV1:
       name: space.access-requested.v1
       title: Space access requested
@@ -3141,7 +4391,9 @@ components:
         Emitted once per task of a trash entry that comes back, the root first, after the
         `space.restored.v1` and `list.restored.v1` of what came back with it. Carries the task
         after the restoration: `parentKey` is `null` for a root detached from a parent that is no
-        longer live or can no longer take it.
+        longer live or can no longer take it. `archivedAt` and `archivedBy` describe the
+        post-restore archive state when reported: explicit null means live, while absence means
+        the producer did not report the state.
 
         Personal data: none beyond the ids.
       headers:
@@ -3241,6 +4493,15 @@ components:
           completedAt:
             type: [string, 'null']
             format: date-time
+          archivedAt:
+            type: [string, 'null']
+            format: date-time
+            description: Post-restore archive time, or null when live.
+          archivedBy:
+            description: Actor who archived the task, or null when live.
+            anyOf:
+              - $ref: '../components/events.yaml#/components/schemas/Actor'
+              - type: 'null'
       examples:
         - name: cad452
           summary: CAD-452 is back in Sprint 14
@@ -3268,6 +4529,8 @@ components:
             estimateMinutes: null
             labels: [Front]
             completedAt: null
+            archivedAt: null
+            archivedBy: null
     taskPurgedV1:
       name: task.purged.v1
       title: Task purged
