@@ -101,7 +101,8 @@ components:
       description: |
         Appended once, when finalization verifies the uploaded object against its reserved size
         and media type and commits its ready metadata. The actor is the verified account that
-        finalized the upload. Issuing an upload URL or transferring bytes alone emits no fact.
+        finalized the upload, or the system when a verified anonymous intake attachment is bound.
+        Issuing an upload URL or transferring bytes alone emits no fact.
         A successful retry of finalization does not append a second fact for the same file.
       headers:
         $ref: '#/components/schemas/EventHeaders'

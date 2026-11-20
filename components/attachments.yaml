@@ -68,7 +68,10 @@ components:
         fileName: { $ref: '#/components/schemas/AttachmentFileName' }
         contentType: { $ref: '#/components/schemas/AttachmentContentType' }
         sizeBytes: { type: integer, minimum: 1, maximum: 26214400 }
-        authorUserId: { type: string, format: uuid }
+        authorUserId:
+          type: [string, 'null']
+          format: uuid
+          description: Account that attached the file. An attachment from a public intake submission has no account author.
         uploadedAt: { type: string, format: date-time }
         version: { type: integer, minimum: 1 }
     AttachmentPage:

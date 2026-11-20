@@ -31,6 +31,32 @@ export {
   type GetTeamDashboardClientResult,
 } from './generated/public/reports/team-reports/team-reports.service';
 
+// openapi/public/attachments.yaml
+export {
+  AttachmentsService,
+  type CompleteTaskAttachmentUploadClientResult,
+  type DeleteTaskAttachmentClientResult,
+  type GetTaskAttachmentClientResult,
+  type GetTaskAttachmentDownloadClientResult,
+  type ListTaskAttachmentsClientResult,
+  type StartTaskAttachmentUploadClientResult,
+} from './generated/public/attachments/attachments/attachments.service';
+export type { AttachmentContentType } from './generated/public/attachments/model/attachmentContentType';
+export type { AttachmentDownload } from './generated/public/attachments/model/attachmentDownload';
+export type { AttachmentFileName } from './generated/public/attachments/model/attachmentFileName';
+export type { AttachmentId } from './generated/public/attachments/model/attachmentId';
+export type { AttachmentOrTaskNotFoundResponse } from './generated/public/attachments/model/attachmentOrTaskNotFoundResponse';
+export type { AttachmentPage } from './generated/public/attachments/model/attachmentPage';
+export type { AttachmentUpload } from './generated/public/attachments/model/attachmentUpload';
+export type { AttachmentUploadFields } from './generated/public/attachments/model/attachmentUploadFields';
+export type { ListTaskAttachmentsParams } from './generated/public/attachments/model/listTaskAttachmentsParams';
+export type { StartAttachmentUpload } from './generated/public/attachments/model/startAttachmentUpload';
+export type { TaskAttachment } from './generated/public/attachments/model/taskAttachment';
+export type { UploadCompletionConflictResponse } from './generated/public/attachments/model/uploadCompletionConflictResponse';
+export type { UploadContentRefusedResponse } from './generated/public/attachments/model/uploadContentRefusedResponse';
+export type { UploadStartConflictResponse } from './generated/public/attachments/model/uploadStartConflictResponse';
+export type { UploadStartRefusedResponse } from './generated/public/attachments/model/uploadStartRefusedResponse';
+
 // openapi/public/auth.yaml
 export {
   AuthService,
