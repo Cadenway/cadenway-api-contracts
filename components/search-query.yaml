@@ -25,14 +25,6 @@ components:
         maxLength: 200
         pattern: '\S'
       example: SSO
-    SearchCursor:
-      name: cursor
-      in: query
-      description: Opaque continuation from the prior page for this user, organization and query.
-      schema:
-        type: string
-        minLength: 1
-        maxLength: 1024
   headers:
     PrivateNoStore:
       required: true
@@ -52,8 +44,11 @@ components:
           items: { $ref: '#/components/schemas/SearchHit' }
         nextCursor:
           type: [string, 'null']
-          minLength: 1
-          maxLength: 1024
+          allOf:
+            - $ref: './http.yaml#/components/schemas/NextCursor'
+            - type: [string, 'null']
+              minLength: 1
+              maxLength: 1024
           description: Cursor of the next visible page. The final page uses a null value.
     SearchHit:
       oneOf:

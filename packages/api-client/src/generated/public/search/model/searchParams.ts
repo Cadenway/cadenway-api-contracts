@@ -12,11 +12,7 @@ export type SearchParams = {
    * @pattern \S
    */
   q: string;
-  /**
-   * Opaque continuation from the prior page for this user, organization and query.
-   * @minLength 1
-   * @maxLength 1024
-   */
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: string;
   /**
    * Page size.

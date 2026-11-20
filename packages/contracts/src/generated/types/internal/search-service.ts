@@ -93,11 +93,40 @@ export interface SearchPage {
   items: SearchHit[];
   /**
      * Cursor of the next visible page. The final page uses a null value.
-     * @minLength 1
-     * @maxLength 1024
      * @nullable
      */
   nextCursor: string | null;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+/**
+ * Members specific to the code, for example the fields that failed validation.
+ */
+export type ProblemDetails = { [key: string]: unknown };
+
+/**
+ * RFC 9457 problem with the Cadenway extensions `code` and `details`.
+ */
+export interface Problem {
+  /** URI reference that identifies the problem type. */
+  type: string;
+  /** Short summary of the problem type, the same for every occurrence. */
+  title: string;
+  /** HTTP status of the response. */
+  status: number;
+  /** Explanation specific to this occurrence. */
+  detail?: string;
+  /** URI reference that identifies this occurrence. */
+  instance?: string;
+  /** Stable machine code, `<domain>.<reason>`. */
+  code: string;
+  /** Members specific to the code, for example the fields that failed validation. */
+  details?: ProblemDetails;
 }
 
 /**
@@ -155,12 +184,6 @@ export interface TaskTemplate {
   /** @minimum 1 */
   version: number;
 }
-
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
 
 /**
  * Space templates ordered by creation time and ID.
@@ -2335,31 +2358,6 @@ export interface AccessRequestApproval {
 }
 
 /**
- * Members specific to the code, for example the fields that failed validation.
- */
-export type ProblemDetails = { [key: string]: unknown };
-
-/**
- * RFC 9457 problem with the Cadenway extensions `code` and `details`.
- */
-export interface Problem {
-  /** URI reference that identifies the problem type. */
-  type: string;
-  /** Short summary of the problem type, the same for every occurrence. */
-  title: string;
-  /** HTTP status of the response. */
-  status: number;
-  /** Explanation specific to this occurrence. */
-  detail?: string;
-  /** URI reference that identifies this occurrence. */
-  instance?: string;
-  /** Stable machine code, `<domain>.<reason>`. */
-  code: string;
-  /** Members specific to the code, for example the fields that failed validation. */
-  details?: ProblemDetails;
-}
-
-/**
  * `request.invalid` with `details.issues` for a missing, blank or malformed query,
  * an unknown parameter, an invalid page size or a cursor that does not belong to this request.
  * `request.body-too-large` applies when an incoming body exceeds the service size limit.
@@ -2395,11 +2393,7 @@ export type SearchInternalParams = {
    * @pattern \S
    */
   q: string;
-  /**
-   * Opaque continuation from the prior page for this user, organization and query.
-   * @minLength 1
-   * @maxLength 1024
-   */
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: string;
   /**
    * Page size.

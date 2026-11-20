@@ -12,9 +12,10 @@ import * as zod from 'zod';
  * limit. A list's parent space name is included only after confirming current direct
  * access to that space.
  *
- * The opaque cursor is bound to the verified user, selected organization, normalized
- * query and sort order. It is anchored at the last returned match and is present only when
- * another visible match is confirmed. When no visible matches exist, the page has
+ * The opaque cursor contains 1 to 1,024 characters and is bound to the verified user,
+ * selected organization, normalized query and sort order. It is anchored at the last
+ * returned match and is present only when another visible match is confirmed. When no
+ * visible matches exist, the page has
  * an empty `items` array and a null `nextCursor`. If the service cannot establish the
  * complete page and its continuation within the request budget, it returns 503.
  * @summary Search visible tasks and lists
@@ -23,8 +24,6 @@ export const searchQueryQMax = 200;
 
 
 export const searchQueryQRegExp = new RegExp('\\S');
-export const searchQueryCursorMax = 1024;
-
 export const searchQueryLimitDefault = 50;
 export const searchQueryLimitMax = 100;
 
@@ -32,7 +31,7 @@ export const searchQueryLimitMax = 100;
 
 export const SearchQueryParams = zod.object({
   "q": zod.string().min(1).max(searchQueryQMax).regex(searchQueryQRegExp).describe('Case-insensitive literal substring of a task\'s name and key joined with one space,\nor of a list name. Leading and trailing whitespace is ignored.\n'),
-  "cursor": zod.string().min(1).max(searchQueryCursorMax).optional().describe('Opaque continuation from the prior page for this user, organization and query.'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.coerce.number().int().min(1).max(searchQueryLimitMax).default(searchQueryLimitDefault).describe('Page size.')
 })
 
@@ -46,7 +45,7 @@ export const searchResponseItemsItemTwoSpaceNameMax = 80;
 
 export const searchResponseItemsMax = 100;
 
-export const searchResponseNextCursorMax = 1024;
+export const searchResponseNextCursorTwoMax = 1024;
 
 
 
@@ -62,5 +61,5 @@ export const SearchResponse = zod.object({
   "name": zod.string().min(1).max(searchResponseItemsItemTwoNameMax).describe('"Nom", as typed; surrounding spaces are removed, and a name made only of spaces is refused\nwith `400 request.invalid`.\n'),
   "spaceName": zod.string().min(1).max(searchResponseItemsItemTwoSpaceNameMax).optional().describe('"Nom de l’espace", as typed; surrounding spaces are removed, and a name made only of spaces\nis refused with `400 request.invalid`.\n')
 })])).max(searchResponseItemsMax),
-  "nextCursor": zod.string().min(1).max(searchResponseNextCursorMax).nullable().describe('Cursor of the next visible page. The final page uses a null value.')
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.').and(zod.string().min(1).max(searchResponseNextCursorTwoMax).nullable()).nullable().describe('Cursor of the next visible page. The final page uses a null value.')
 })

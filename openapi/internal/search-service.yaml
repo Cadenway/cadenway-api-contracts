@@ -43,9 +43,10 @@ paths:
         continuation before returning the page. If the evidence changes, establish the complete
         page again within the request budget or return `503 search.unavailable`.
 
-        Bind the opaque cursor to the verified user, selected organization, normalized query
-        and sort order. Check visibility again on every page, including the match that justifies
-        a continuation. Anchor a continuation at the last returned match and issue it only after
+        An opaque cursor contains 1 to 1,024 characters. Bind it to the verified user, selected
+        organization, normalized query and sort order. Check visibility again on every page,
+        including the match that justifies a continuation. Anchor a continuation at the last
+        returned match and issue it only after
         confirming another visible match. Return 503 for incomplete or malformed evidence, an
         unavailable index or dependencies, or a scan that cannot establish the complete page
         before the deadline. Logs, traces and problems carry operation metadata with query,
@@ -53,7 +54,7 @@ paths:
       tags: [search]
       parameters:
         - $ref: '../../components/search-query.yaml#/components/parameters/SearchQuery'
-        - $ref: '../../components/search-query.yaml#/components/parameters/SearchCursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
         - $ref: '../../components/http.yaml#/components/parameters/Limit'
       responses:
         '200':

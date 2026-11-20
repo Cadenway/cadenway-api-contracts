@@ -9,8 +9,6 @@ export interface SearchPage {
   items: SearchHit[];
   /**
      * Cursor of the next visible page. The final page uses a null value.
-     * @minLength 1
-     * @maxLength 1024
      * @nullable
      */
   nextCursor: string | null;

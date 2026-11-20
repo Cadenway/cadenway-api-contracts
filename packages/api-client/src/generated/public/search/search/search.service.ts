@@ -157,9 +157,10 @@ export class SearchService {
  * limit. A list's parent space name is included only after confirming current direct
  * access to that space.
  *
- * The opaque cursor is bound to the verified user, selected organization, normalized
- * query and sort order. It is anchored at the last returned match and is present only when
- * another visible match is confirmed. When no visible matches exist, the page has
+ * The opaque cursor contains 1 to 1,024 characters and is bound to the verified user,
+ * selected organization, normalized query and sort order. It is anchored at the last
+ * returned match and is present only when another visible match is confirmed. When no
+ * visible matches exist, the page has
  * an empty `items` array and a null `nextCursor`. If the service cannot establish the
  * complete page and its continuation within the request budget, it returns 503.
  * @summary Search visible tasks and lists

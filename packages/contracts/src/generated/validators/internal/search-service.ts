@@ -18,9 +18,10 @@ import * as zod from 'zod';
  * continuation before returning the page. If the evidence changes, establish the complete
  * page again within the request budget or return `503 search.unavailable`.
  *
- * Bind the opaque cursor to the verified user, selected organization, normalized query
- * and sort order. Check visibility again on every page, including the match that justifies
- * a continuation. Anchor a continuation at the last returned match and issue it only after
+ * An opaque cursor contains 1 to 1,024 characters. Bind it to the verified user, selected
+ * organization, normalized query and sort order. Check visibility again on every page,
+ * including the match that justifies a continuation. Anchor a continuation at the last
+ * returned match and issue it only after
  * confirming another visible match. Return 503 for incomplete or malformed evidence, an
  * unavailable index or dependencies, or a scan that cannot establish the complete page
  * before the deadline. Logs, traces and problems carry operation metadata with query,
@@ -31,8 +32,6 @@ export const searchInternalQueryQMax = 200;
 
 
 export const searchInternalQueryQRegExp = new RegExp('\\S');
-export const searchInternalQueryCursorMax = 1024;
-
 export const searchInternalQueryLimitDefault = 50;
 export const searchInternalQueryLimitMax = 100;
 
@@ -40,7 +39,7 @@ export const searchInternalQueryLimitMax = 100;
 
 export const SearchInternalQueryParams = zod.object({
   "q": zod.string().min(1).max(searchInternalQueryQMax).regex(searchInternalQueryQRegExp).describe('Case-insensitive literal substring of a task\'s name and key joined with one space,\nor of a list name. Leading and trailing whitespace is ignored.\n'),
-  "cursor": zod.string().min(1).max(searchInternalQueryCursorMax).optional().describe('Opaque continuation from the prior page for this user, organization and query.'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.coerce.number().int().min(1).max(searchInternalQueryLimitMax).default(searchInternalQueryLimitDefault).describe('Page size.')
 })
 
@@ -54,7 +53,7 @@ export const searchInternalResponseItemsItemTwoSpaceNameMax = 80;
 
 export const searchInternalResponseItemsMax = 100;
 
-export const searchInternalResponseNextCursorMax = 1024;
+export const searchInternalResponseNextCursorTwoMax = 1024;
 
 
 
@@ -70,5 +69,5 @@ export const SearchInternalResponse = zod.object({
   "name": zod.string().min(1).max(searchInternalResponseItemsItemTwoNameMax).describe('"Nom", as typed; surrounding spaces are removed, and a name made only of spaces is refused\nwith `400 request.invalid`.\n'),
   "spaceName": zod.string().min(1).max(searchInternalResponseItemsItemTwoSpaceNameMax).optional().describe('"Nom de l’espace", as typed; surrounding spaces are removed, and a name made only of spaces\nis refused with `400 request.invalid`.\n')
 })])).max(searchInternalResponseItemsMax),
-  "nextCursor": zod.string().min(1).max(searchInternalResponseNextCursorMax).nullable().describe('Cursor of the next visible page. The final page uses a null value.')
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.').and(zod.string().min(1).max(searchInternalResponseNextCursorTwoMax).nullable()).nullable().describe('Cursor of the next visible page. The final page uses a null value.')
 })

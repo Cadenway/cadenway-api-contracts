@@ -39,9 +39,10 @@ paths:
         limit. A list's parent space name is included only after confirming current direct
         access to that space.
 
-        The opaque cursor is bound to the verified user, selected organization, normalized
-        query and sort order. It is anchored at the last returned match and is present only when
-        another visible match is confirmed. When no visible matches exist, the page has
+        The opaque cursor contains 1 to 1,024 characters and is bound to the verified user,
+        selected organization, normalized query and sort order. It is anchored at the last
+        returned match and is present only when another visible match is confirmed. When no
+        visible matches exist, the page has
         an empty `items` array and a null `nextCursor`. If the service cannot establish the
         complete page and its continuation within the request budget, it returns 503.
       tags: [search]
@@ -49,7 +50,7 @@ paths:
         - sessionCookie: []
       parameters:
         - $ref: '../../components/search-query.yaml#/components/parameters/SearchQuery'
-        - $ref: '../../components/search-query.yaml#/components/parameters/SearchCursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
         - $ref: '../../components/http.yaml#/components/parameters/Limit'
       responses:
         '200':
@@ -61,17 +62,25 @@ paths:
             application/json:
               schema:
                 $ref: '../../components/search-query.yaml#/components/schemas/SearchPage'
-              example:
-                items:
-                  - kind: task
-                    taskKey: CAD-482
-                    name: Refondre l’écran de connexion SSO
-                    status: progress
-                  - kind: list
-                    listId: 019a6f99-3ec0-7c2a-8e4a-2b8d41c98e01
-                    name: Sprint 14
-                    spaceName: Produit
-                nextCursor: null
+              examples:
+                task:
+                  summary: Result for the query SSO
+                  value:
+                    items:
+                      - kind: task
+                        taskKey: CAD-482
+                        name: Refondre l’écran de connexion SSO
+                        status: progress
+                    nextCursor: null
+                list:
+                  summary: Result for the query Sprint 14
+                  value:
+                    items:
+                      - kind: list
+                        listId: 019a6f99-3ec0-7c2a-8e4a-2b8d41c98e01
+                        name: Sprint 14
+                        spaceName: Produit
+                    nextCursor: null
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
