@@ -1,12 +1,12 @@
 # Internal routes of organization-service, called by the API gateway for organizations,
-# members, invitations and the member name lookup for list CSV export.
+# members, invitations and the member name lookup for list CSV export and notifications.
 openapi: 3.1.0
 info:
   title: organization-service internal routes
   version: 1.0.0
   description: |
     What organization-service exposes to the API gateway for organizations, members and
-    invitations, and the member name lookup it uses for CSV export. The service has no
+    invitations, and the member name lookup it uses for CSV export and notifications. The service has no
     public route: the gateway serves `openapi/public/organizations.yaml` and
     `openapi/public/members.yaml` and calls the corresponding internal routes.
 
@@ -83,7 +83,8 @@ info:
     - repository: cadenway-api-gateway
       uses: >-
         Relays the organization and member routes exposed in openapi/public/organizations.yaml
-        and openapi/public/members.yaml, and looks up assignee names for list CSV export.
+        and openapi/public/members.yaml, and looks up names for list CSV export and authorized
+        notification actors.
 servers:
   - url: http://organization-service:3011
     description: organization-service on the internal network of each environment (`ORGANIZATION_SERVICE_URL`).
@@ -341,15 +342,18 @@ paths:
   /internal/v1/member-names/lookup:
     post:
       operationId: lookupMemberNamesInternal
-      summary: Resolve member names for list CSV export
+      summary: Resolve names of current organization members
       description: |
         Returns the directory names of requested accounts that currently belong to the
         organization of the token. All current members, including guests, can be the acting user.
         Read the actor's membership and the requested names in one tenant snapshot. Omit accounts
         outside the organization, departed members and accounts without a directory name.
         Case-equivalent UUIDs and repeated identifiers resolve to at most one result per account.
-        Result order is unspecified. The gateway supplies only assignees from the result of
-        `GET /internal/v1/lists/{listId}/tasks/export` for the same actor and organization.
+        Result order is unspecified. For list CSV export, the gateway supplies only assignees from
+        `GET /internal/v1/lists/{listId}/tasks/export` for the same actor and organization. For
+        notification display, it supplies at most 100 actor IDs from notifications whose subjects
+        it has already authorized for that same actor and organization. The name lookup preserves
+        the active membership requirement for both uses.
 
         Internal token: issuer `api-gateway` only, actor `user` and organization required.
       tags: [members]

@@ -1,0 +1,669 @@
+# Cadenway Notification HTTP contracts.
+openapi: 3.1.0
+info:
+  title: Cadenway notification inbox
+  version: 1.0.0
+  description: |-
+    The inbox belongs to the caller in the current organization. Invitations addressed to a
+    person before membership use the account invitations API. Inbox items contain neither email
+    addresses, delivery data nor the identities of other recipients. Missing, foreign and
+    no-longer-visible notifications share a refusal.
+
+    Account preferences are independent of the selected organization. Mobile preferences are
+    saved, with no push delivery while a mobile application is absent. Do not disturb applies to
+    mobile from 19:00 to 08:00 and throughout the local weekend, except for urgent mentions.
+    In-app and email choices apply independently. Daily digests run on weekdays at 09:00 and
+    weekly digests on Mondays at 09:00 in the account time zone. These times follow the
+    Notifications settings screen. The 08:00 on the sample digest email is illustrative. The
+    `never` setting disables activity email. Security email is independent of these settings.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Relays these operations to notification-service.
+    - repository: cadenway-webapp
+      uses: Calls these operations through the generated Angular client.
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging.
+tags:
+  - name: inbox
+    description: Personal inbox in the selected organization.
+  - name: notification-preferences
+    description: Notification settings of the current account.
+paths:
+  /v1/inbox/notifications:
+    get:
+      operationId: listInboxNotifications
+      summary: List notifications in the inbox
+      description: |-
+        Returns the caller’s notifications in (createdAt, id) descending order. The opaque cursor
+        belongs to the caller, organization and filter. `unreadCount` counts all accessible active
+        unread records independently of this page and its filter. Items whose resource is no longer
+        readable are omitted from both results.
+
+        Session only. The current organization is required.
+      tags:
+        - inbox
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/InboxState'
+      responses:
+        '200':
+          description: Notification page and current unread count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxPage'
+              example:
+                items:
+                  - id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11
+                    kind: mention
+                    actor:
+                      userId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02
+                      name: Inès Robert
+                    task:
+                      taskKey: CAD-482
+                      name: Relecture du parcours SSO
+                    excerpt: '@Camille tu peux relire le parcours SSO avant la démo de jeudi ?'
+                    status: null
+                    createdAt: '2026-11-08T08:48:00Z'
+                    readAt: null
+                    archivedAt: null
+                    version: 1
+                nextCursor: null
+                unreadCount: 1
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/inbox/unread-count:
+    get:
+      operationId: getInboxUnreadCount
+      summary: Read the inbox badge
+      description: |-
+        Counts accessible active unread notifications under the same conditions as the inbox list.
+
+        Session only. The current organization is required.
+      tags:
+        - inbox
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Current unread count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxUnreadCount'
+              example:
+                unreadCount: 1
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/inbox/notifications/read-all:
+    post:
+      operationId: markInboxNotificationsRead
+      summary: Mark all inbox notifications as read
+      description: |-
+        Marks all visible, active unread records for the caller at one instant. Already-read records
+        keep their timestamp. Notifications arriving after the operation’s snapshot remain unread.
+        `markedRead` counts actual changes. `unreadCount` is read in the same transaction.
+
+        Session only. The current organization is required.
+      tags:
+        - inbox
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Update count and resulting badge count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxReadAllResult'
+              example:
+                markedRead: 4
+                unreadCount: 0
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/inbox/notifications/{notificationId}/read:
+    post:
+      operationId: markInboxNotificationRead
+      summary: Mark a notification as read
+      description: |-
+        Sets `readAt` only once. Repeating with the current validator or without a condition
+        preserves the timestamp and version. The caller must own the notification and still be able
+        to read any linked resource.
+
+        Session only. The current organization is required.
+      tags:
+        - inbox
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Notification after marking it as read.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxNotification'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11
+                kind: mention
+                actor:
+                  userId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02
+                  name: Inès Robert
+                task:
+                  taskKey: CAD-482
+                  name: Relecture du parcours SSO
+                excerpt: '@Camille tu peux relire le parcours SSO avant la démo de jeudi ?'
+                status: null
+                createdAt: '2026-11-08T08:48:00Z'
+                readAt: '2026-11-08T09:00:00Z'
+                archivedAt: null
+                version: 2
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/NotificationNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/inbox/notifications/{notificationId}/archive:
+    post:
+      operationId: archiveInboxNotification
+      summary: Archive a notification
+      description: |-
+        Sets `archivedAt` only once. Only `state=archived` lists it. Archiving excludes it from the
+        unread badge and leaves `readAt` unchanged. Repeating with the current validator or without a
+        condition preserves the archive timestamp and version.
+
+        Session only. The current organization is required.
+      tags:
+        - inbox
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Notification after archiving.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxNotification'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11
+                kind: mention
+                actor:
+                  userId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02
+                  name: Inès Robert
+                task:
+                  taskKey: CAD-482
+                  name: Relecture du parcours SSO
+                excerpt: '@Camille tu peux relire le parcours SSO avant la démo de jeudi ?'
+                status: null
+                createdAt: '2026-11-08T08:48:00Z'
+                readAt: null
+                archivedAt: '2026-11-08T09:00:00Z'
+                version: 2
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/NotificationNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/notification-preferences:
+    get:
+      operationId: getNotificationPreferences
+      summary: Read account notification preferences
+      description: |-
+        Reads the account’s preferences independently of the selected organization. Before the first
+        change it returns defaults at version 1 without creating a row.
+
+        Session only. No organization is required.
+      tags:
+        - notification-preferences
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Account preferences.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+              example:
+                channels:
+                  mention:
+                    inApp: true
+                    email: true
+                    mobile: true
+                  assignment:
+                    inApp: true
+                    email: true
+                    mobile: true
+                  comment:
+                    inApp: true
+                    email: false
+                    mobile: false
+                  statusChange:
+                    inApp: true
+                    email: false
+                    mobile: false
+                  dueDate:
+                    inApp: true
+                    email: true
+                    mobile: true
+                  access:
+                    inApp: true
+                    email: true
+                    mobile: false
+                  billing:
+                    inApp: true
+                    email: true
+                    mobile: false
+                digest: daily
+                doNotDisturb: true
+                version: 1
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AccountReadForbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateNotificationPreferences
+      summary: Update account notification preferences
+      description: |-
+        Applies a JSON Merge Patch. Unmentioned channels, channel flags and settings retain their
+        values. Null is invalid because each setting requires a value. A no-op preserves the version.
+        Security emails are independent of these settings.
+
+        Session only. No organization is required.
+      tags:
+        - notification-preferences
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationPreferencesPatch'
+            example:
+              channels:
+                comment:
+                  email: true
+              digest: weekly
+      responses:
+        '200':
+          description: Updated account preferences and version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AccountWriteForbidden'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: Opaque browser session of the caller.
+  parameters:
+    Cursor:
+      $ref: ../../components/http.yaml#/components/parameters/Cursor
+    Limit:
+      $ref: ../../components/http.yaml#/components/parameters/Limit
+    InboxState:
+      name: state
+      in: query
+      description: |-
+        Active includes read and unread. Unread includes only active unread notices. Archived
+        includes archived notices.
+      schema:
+        type: string
+        enum:
+          - active
+          - unread
+          - archived
+        default: active
+    NotificationId:
+      name: notificationId
+      in: path
+      description: Notification identifier.
+      required: true
+      schema:
+        type: string
+        format: uuid
+        examples:
+          - 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11
+    IfMatch:
+      name: If-Match
+      in: header
+      description: Optional strong validator of the current version.
+      schema:
+        type: string
+        examples:
+          - '"2"'
+  headers:
+    ETag:
+      description: |-
+        Strong validator of the returned or current version. It is absent when there is no current
+        representation.
+      schema:
+        type: string
+        examples:
+          - '"2"'
+  responses:
+    InvalidRequest:
+      description: |-
+        `request.invalid`: the request does not match this contract. `details.issues` identifies
+        invalid fields.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+    OrganizationNotFound:
+      description: '`organization.not-found`: no current membership of the selected organization.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    NotificationNotFound:
+      description: |-
+        `notification.not-found`: the record is missing, belongs to another recipient or is
+        inaccessible. `organization.not-found` can also be returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            notification.not-found:
+              value:
+                type: about:blank
+                title: Notification introuvable.
+                status: 404
+                code: notification.not-found
+            organization.not-found:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    VersionMismatch:
+      description: |-
+        `request.version-mismatch`: the validator does not match. `details.version` gives the current
+        version when a representation exists.
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 2
+    Unauthenticated:
+      description: '`auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.session-required:
+              value:
+                type: about:blank
+                title: Connectez-vous pour continuer.
+                status: 401
+                code: auth.session-required
+            auth.session-expired:
+              value:
+                type: about:blank
+                title: Session expirée
+                status: 401
+                code: auth.session-expired
+            auth.api-token-invalid:
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    AccountReadForbidden:
+      description: '`auth.api-token-not-accepted`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Cette requête n’accepte pas de jeton d’API.
+            status: 403
+            code: auth.api-token-not-accepted
+    AccountWriteForbidden:
+      description: '`auth.api-token-not-accepted`, `auth.csrf-rejected`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.api-token-not-accepted:
+              value:
+                type: about:blank
+                title: Cette requête n’accepte pas de jeton d’API.
+                status: 403
+                code: auth.api-token-not-accepted
+            auth.csrf-rejected:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.csrf-rejected
+    OrganizationReadForbidden:
+      description: '`auth.api-token-not-accepted`, `organization.not-selected`, `organization.mfa-required`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.api-token-not-accepted:
+              value:
+                type: about:blank
+                title: Cette requête n’accepte pas de jeton d’API.
+                status: 403
+                code: auth.api-token-not-accepted
+            organization.not-selected:
+              value:
+                type: about:blank
+                title: Choisissez une organisation pour continuer.
+                status: 403
+                code: organization.not-selected
+            organization.mfa-required:
+              value:
+                type: about:blank
+                title:
+                  'Cette organisation exige la vérification en deux étapes : configurez-la depuis
+                  votre compte.'
+                status: 403
+                code: organization.mfa-required
+    OrganizationWriteForbidden:
+      description: |-
+        `auth.api-token-not-accepted`, `auth.csrf-rejected`, `organization.not-selected`,
+        `organization.mfa-required`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.api-token-not-accepted:
+              value:
+                type: about:blank
+                title: Cette requête n’accepte pas de jeton d’API.
+                status: 403
+                code: auth.api-token-not-accepted
+            auth.csrf-rejected:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.csrf-rejected
+            organization.not-selected:
+              value:
+                type: about:blank
+                title: Choisissez une organisation pour continuer.
+                status: 403
+                code: organization.not-selected
+            organization.mfa-required:
+              value:
+                type: about:blank
+                title:
+                  'Cette organisation exige la vérification en deux étapes : configurez-la depuis
+                  votre compte.'
+                status: 403
+                code: organization.mfa-required
+    RateLimited:
+      description: '`rate-limit.exceeded`: wait the seconds in `Retry-After`.'
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: 'Trop de requêtes : réessayez dans un instant.'
+            status: 429
+            code: rate-limit.exceeded
+    Unavailable:
+      description: |-
+        An upstream service cannot answer. Possible codes are `upstream.unavailable`,
+        `upstream.unreachable`, `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`,
+        `upstream.unauthorized` and `upstream.deadline-exceeded`. `details.service` identifies the
+        upstream.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+  schemas:
+    InboxNotification:
+      $ref: ../../components/notification.yaml#/components/schemas/InboxNotification
+    InboxPage:
+      $ref: ../../components/notification.yaml#/components/schemas/InboxPage
+    InboxReadAllResult:
+      $ref: ../../components/notification.yaml#/components/schemas/InboxReadAllResult
+    InboxUnreadCount:
+      $ref: ../../components/notification.yaml#/components/schemas/InboxUnreadCount
+    NotificationPreferences:
+      $ref: ../../components/notification.yaml#/components/schemas/NotificationPreferences
+    NotificationPreferencesPatch:
+      $ref: ../../components/notification.yaml#/components/schemas/NotificationPreferencesPatch

@@ -1,0 +1,345 @@
+# Recipient-scoped inbox, reminder delivery and authorization request facts.
+asyncapi: 3.0.0
+info:
+  title: notification-service events
+  version: 1.0.0
+  description: |
+    notification-service appends these facts through the transactional outbox. Each fact belongs
+    to the organization in its envelope. Delivery may repeat. Consumers deduplicate on the
+    event ID. A version belongs to one notification, reminder or authorization attempt. It does
+    not order a member's whole inbox.
+
+    Task event audiences identify candidates at source commit time. Before creating a notification
+    for a task or firing a task reminder, the producer requires a current decision from the owner
+    of task visibility for that organization, account and resource. The same rule applies to any
+    linked private list or space. Hidden resources produce no delivery. An unavailable or
+    indeterminate proof defers delivery. The authorization events here cover task-linked work.
+    Requests for independent list or space visibility require their own authorized boundary.
+
+    A durable task delivery attempt uses `notification.delivery-authorization-requested.v1` and
+    accepts its one correlated `task.notification-delivery-authorized.v1` decision. The permit
+    gates only the matching redacted internal operation. An asynchronous permit cannot authorize
+    a private task body in a notification, an email or a socket message. Public reads remain
+    filtered through the API gateway using the caller's current authorization.
+
+    Realtime binds a recipient to the current membership in the specified organization and
+    delivers only to that membership's personal room. That authorization and any required
+    resource visibility must be current at delivery. Until it can establish both, it withholds the
+    corresponding browser notice. Fact delivery is independent of the UI's authorized HTTP reads.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-realtime-gateway
+      uses: Planned, notification.created.v1 for personal inbox invalidation and reminder.due.v1 for a personal reminder notice, after current authorization.
+    - repository: cadenway-task-service
+      uses: Planned, notification.delivery-authorization-requested.v1 to decide current task visibility for one durable delivery attempt.
+servers:
+  nats:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream of each environment, on its internal network.
+channels:
+  notificationCreatedV1:
+    address: evt.notification.created.v1
+    description: |
+      An inbox notification was created for one recipient. Emitted by notification-service.
+      Planned consumer: cadenway-realtime-gateway.
+    messages:
+      notificationCreatedV1:
+        $ref: '#/components/messages/notificationCreatedV1'
+  reminderDueV1:
+    address: evt.reminder.due.v1
+    description: |
+      A pending task reminder fired. Emitted by notification-service.
+      Planned consumer: cadenway-realtime-gateway.
+    messages:
+      reminderDueV1:
+        $ref: '#/components/messages/reminderDueV1'
+  notificationDeliveryAuthorizationRequestedV1:
+    address: evt.notification.delivery-authorization-requested.v1
+    description: |
+      A durable task delivery attempt requested a current visibility decision. Emitted by
+      notification-service. Planned consumer: cadenway-task-service.
+    messages:
+      notificationDeliveryAuthorizationRequestedV1:
+        $ref: '#/components/messages/notificationDeliveryAuthorizationRequestedV1'
+operations:
+  publishNotificationCreatedV1:
+    action: send
+    summary: notification-service publishes the creation of one inbox notification.
+    description: |
+      The tenant transaction records the notification, its source-event deduplication and the
+      outbox fact together. At most one is committed per source event and recipient in the
+      organization.
+    channel:
+      $ref: '#/channels/notificationCreatedV1'
+    messages:
+      - $ref: '#/channels/notificationCreatedV1/messages/notificationCreatedV1'
+  publishReminderDueV1:
+    action: send
+    summary: notification-service publishes a firing reminder.
+    description: |
+      The job records the firing state and outbox fact in the same tenant transaction. A repeated,
+      outdated, early or completed schedule makes no new fact. Snoozing can create a later active
+      schedule and that schedule may fire once.
+    channel:
+      $ref: '#/channels/reminderDueV1'
+    messages:
+      - $ref: '#/channels/reminderDueV1/messages/reminderDueV1'
+  publishNotificationDeliveryAuthorizationRequestedV1:
+    action: send
+    summary: notification-service publishes a request for a task delivery authorization decision.
+    description: |
+      Record the pending delivery generation, its immutable authorization correlation and the
+      outbox fact in one tenant transaction. The attempt remains pending until a timely decision
+      is accepted, the operation cancels or supersedes it, or its deadline passes.
+    channel:
+      $ref: '#/channels/notificationDeliveryAuthorizationRequestedV1'
+    messages:
+      - $ref: '#/channels/notificationDeliveryAuthorizationRequestedV1/messages/notificationDeliveryAuthorizationRequestedV1'
+components:
+  schemas:
+    EventHeaders:
+      type: object
+      properties:
+        traceparent:
+          type: string
+          description: W3C Trace Context propagated to the outbox fact.
+  messages:
+    notificationCreatedV1:
+      name: notification.created.v1
+      title: Notification created
+      summary: An inbox notification was created for one recipient.
+      description: |
+        The system actor is notification-service, which created the inbox record. To authorize a
+        realtime invalidation, verify current membership and access to the linked subject for
+        this recipient. A subjectless receipt requires current membership. The personal browser notice is an inbox invalidation
+        without record IDs or a count. The browser obtains its current badge through
+        `GET /v1/inbox/unread-count`, which counts only accessible active unread records. The
+        authorized inbox HTTP responses carry the updated state for read and archive operations.
+
+        Personal data: organization, notification and recipient IDs, an optional redacted
+        resource reference, and the creation time. This fact carries no display text.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            notificationId,
+            recipientId,
+            subject,
+            createdAt,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC commit instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization that owns the inbox record.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            maximum: 1
+            description: The initial version of this notification.
+          notificationId:
+            type: string
+            format: uuid
+            description: The created record in the recipient's inbox.
+          recipientId:
+            type: string
+            format: uuid
+            description: Account of the recipient in the event's organization.
+          subject:
+            description: Resource whose current visibility is required, or null for a subjectless receipt.
+            anyOf:
+              - $ref: '../components/notification.yaml#/components/schemas/NotificationSubjectRef'
+              - type: 'null'
+          createdAt:
+            type: string
+            format: date-time
+            description: UTC creation instant stored on the notification.
+      examples:
+        - name: personal-notification
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d10
+            occurredAt: '2026-11-08T10:40:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: notification-service
+            version: 1
+            notificationId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11
+            recipientId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            subject: { kind: task-key, taskKey: CAD-482 }
+            createdAt: '2026-11-08T10:40:00Z'
+    reminderDueV1:
+      name: reminder.due.v1
+      title: Reminder due
+      summary: A personal task reminder reached its active schedule and fired.
+      description: |
+        The system actor is notification-service. A browser notice carries only the reminder and
+        task IDs after the current membership and task visibility have been established. Before
+        presenting details, the browser refetches the reminder through its authenticated HTTP
+        route. That read reflects a schedule, completion or access change after this fact.
+
+        Personal data: organization, reminder, task and recipient IDs only, plus the firing time.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required: [id, occurredAt, organizationId, actor, version, reminderId, userId, taskId]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC firing instant.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the reminder and its task.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 2
+            maximum: 9007199254740991
+            description: Version of the reminder after recording this firing.
+          reminderId:
+            type: string
+            format: uuid
+            description: ID of the recipient's reminder.
+          userId:
+            type: string
+            format: uuid
+            description: Account of the recipient in the event's organization.
+          taskId:
+            type: string
+            format: uuid
+            description: Stable Task UUID for current visibility verification before delivery.
+      examples:
+        - name: fired-reminder
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d11
+            occurredAt: '2026-11-08T11:00:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: notification-service
+            version: 2
+            reminderId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+    notificationDeliveryAuthorizationRequestedV1:
+      name: notification.delivery-authorization-requested.v1
+      title: Notification delivery authorization requested
+      summary: A durable task delivery attempt requested a current visibility decision.
+      description: |
+        The system actor is notification-service. The pending attempt fixes its organization,
+        intended recipient, subject, generation and future expiry. Every retry of the same
+        fact uses the same event ID and immutable attempt correlation. A replacement attempt,
+        including one made after a timeout, uses a fresh correlation.
+
+        On receipt of `task.notification-delivery-authorized.v1`, find the pending attempt by
+        organization and correlation, then recheck its current application generation. Accept
+        a decision only for that still-pending generation from the authorized Task producer,
+        while both its original expiry and the decision's `validUntil` are in the future.
+        `validUntil` cannot extend the original expiry. A permit must also have a decision
+        instant strictly before `validUntil`. Atomically record the outcome and consume it at
+        most once. Duplicates, a wrong tenant or correlation, and late, cancelled or superseded
+        generations do not deliver or revive work. Missing decisions expire locally.
+
+        The request carries the resource reference and account ID needed by Task. Its correlation exposes
+        no reminder, notification, delivery address, private body or list and space state.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            authorizationRequestId,
+            recipientId,
+            subject,
+            expiresAt,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event ID, the deduplication key for redelivery of this fact.
+          occurredAt:
+            type: string
+            format: date-time
+            description: UTC instant when the attempt was staged.
+          organizationId:
+            type: string
+            format: uuid
+            description: Organization of the intended delivery and the task.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            maximum: 1
+            description: Version of the immutable authorization request.
+          authorizationRequestId:
+            type: string
+            format: uuid
+            description: Opaque UUID v7 correlating one durable attempt and its single Task decision.
+          recipientId:
+            type: string
+            format: uuid
+            description: Account whose current Task visibility must be checked in this organization.
+          subject:
+            description: Task whose current visibility must be checked, identified by ID or key.
+            oneOf:
+              - $ref: '../components/notification.yaml#/components/schemas/NotificationTaskIdSubjectRef'
+              - $ref: '../components/notification.yaml#/components/schemas/NotificationTaskKeySubjectRef'
+          expiresAt:
+            type: string
+            format: date-time
+            description: Exclusive UTC deadline of the authorization attempt.
+      examples:
+        - name: scheduled-task-delivery
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d13
+            occurredAt: '2026-11-08T11:00:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: notification-service
+            version: 1
+            authorizationRequestId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a24
+            recipientId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            subject: { kind: task-id, taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23 }
+            expiresAt: '2026-11-08T11:00:30Z'

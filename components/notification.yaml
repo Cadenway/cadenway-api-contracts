@@ -1,0 +1,312 @@
+# Shared by the public inbox and reminder routes and the notification service.
+openapi: 3.1.0
+info:
+  title: Cadenway shared notification components
+  version: 1.0.0
+  description: Notification inbox items, account preferences and personal task reminders.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    NotificationSubjectRef:
+      description: Stable resource reference for an authorized internal notification lookup.
+      oneOf:
+        - $ref: '#/components/schemas/NotificationTaskIdSubjectRef'
+        - $ref: '#/components/schemas/NotificationTaskKeySubjectRef'
+        - type: object
+          additionalProperties: false
+          required: [kind, listId]
+          properties:
+            kind: { const: list }
+            listId: { type: string, format: uuid }
+        - type: object
+          additionalProperties: false
+          required: [kind, spaceId]
+          properties:
+            kind: { const: space }
+            spaceId: { type: string, format: uuid }
+    NotificationTaskIdSubjectRef:
+      type: object
+      additionalProperties: false
+      required: [kind, taskId]
+      properties:
+        kind: { const: task-id }
+        taskId: { type: string, format: uuid }
+    NotificationTaskKeySubjectRef:
+      type: object
+      additionalProperties: false
+      required: [kind, taskKey]
+      properties:
+        kind: { const: task-key }
+        taskKey: { $ref: './task.yaml#/components/schemas/TaskKey' }
+    InboxNotification:
+      type: object
+      additionalProperties: false
+      required: [id, kind, actor, task, excerpt, status, createdAt, readAt, archivedAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID v7 of the inbox item.
+        kind:
+          type: string
+          x-extensible-enum:
+            [mention, assignment, comment, status-change, due-date, access, billing, approval]
+          description: Notification category. Clients can display unknown categories as generic notifications.
+        actor:
+          description: The associated account, or null when the notification has no visible person.
+          anyOf:
+            - type: object
+              additionalProperties: false
+              required: [userId, name]
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+            - type: 'null'
+        task:
+          description: The task summary, or null when the notification has no visible task.
+          anyOf:
+            - type: object
+              additionalProperties: false
+              required: [taskKey, name]
+              properties:
+                taskKey:
+                  $ref: './task.yaml#/components/schemas/TaskKey'
+                name:
+                  type: string
+            - type: 'null'
+        excerpt:
+          type: [string, 'null']
+          description: Preview text when available.
+        status:
+          description: Task status represented by the notification, when applicable.
+          anyOf:
+            - $ref: './task.yaml#/components/schemas/StatusKey'
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the recipient marked the notification read, or null while unread.
+        archivedAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the recipient archived the notification, or null while in the inbox.
+        version:
+          type: integer
+          minimum: 1
+          description: The version carried by the notification ETag.
+    InboxPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, unreadCount]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/InboxNotification'
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'
+        unreadCount:
+          type: integer
+          minimum: 0
+          description: Unread notifications in the recipient's inbox, across all pages.
+    InboxUnreadCount:
+      type: object
+      additionalProperties: false
+      required: [unreadCount]
+      properties:
+        unreadCount:
+          type: integer
+          minimum: 0
+    InboxReadAllResult:
+      type: object
+      additionalProperties: false
+      required: [markedRead, unreadCount]
+      properties:
+        markedRead:
+          type: integer
+          minimum: 0
+          description: Number of notifications marked read by this request.
+        unreadCount:
+          type: integer
+          minimum: 0
+          description: Remaining unread notifications at the end of the operation.
+    NotificationChannelSettings:
+      type: object
+      additionalProperties: false
+      required: [inApp, email, mobile]
+      properties:
+        inApp: { type: boolean }
+        email: { type: boolean }
+        mobile: { type: boolean }
+    NotificationChannelSettingsPatch:
+      type: object
+      additionalProperties: false
+      description: Only supplied channels change.
+      properties:
+        inApp: { type: boolean }
+        email: { type: boolean }
+        mobile: { type: boolean }
+    NotificationDigest:
+      type: string
+      enum: [each, daily, weekly, never]
+      description: Email cadence for notification categories with email enabled.
+    NotificationPreferences:
+      type: object
+      additionalProperties: false
+      required: [channels, digest, doNotDisturb, version]
+      properties:
+        channels:
+          type: object
+          additionalProperties: false
+          required: [mention, assignment, comment, statusChange, dueDate, access, billing]
+          properties:
+            mention: { $ref: '#/components/schemas/NotificationChannelSettings' }
+            assignment: { $ref: '#/components/schemas/NotificationChannelSettings' }
+            comment: { $ref: '#/components/schemas/NotificationChannelSettings' }
+            statusChange: { $ref: '#/components/schemas/NotificationChannelSettings' }
+            dueDate: { $ref: '#/components/schemas/NotificationChannelSettings' }
+            access: { $ref: '#/components/schemas/NotificationChannelSettings' }
+            billing: { $ref: '#/components/schemas/NotificationChannelSettings' }
+        digest:
+          $ref: '#/components/schemas/NotificationDigest'
+        doNotDisturb:
+          type: boolean
+          description: Whether quiet hours apply to mobile notifications. Urgent mentions can still be delivered.
+        version:
+          type: integer
+          minimum: 1
+          description: The version carried by the preferences ETag.
+      examples:
+        - channels:
+            mention: { inApp: true, email: true, mobile: true }
+            assignment: { inApp: true, email: true, mobile: true }
+            comment: { inApp: true, email: false, mobile: false }
+            statusChange: { inApp: true, email: false, mobile: false }
+            dueDate: { inApp: true, email: true, mobile: true }
+            access: { inApp: true, email: true, mobile: false }
+            billing: { inApp: true, email: true, mobile: false }
+          digest: daily
+          doNotDisturb: true
+          version: 1
+    NotificationPreferencesPatch:
+      type: object
+      additionalProperties: false
+      description: Only supplied preferences and channel flags change.
+      properties:
+        channels:
+          type: object
+          additionalProperties: false
+          properties:
+            mention: { $ref: '#/components/schemas/NotificationChannelSettingsPatch' }
+            assignment: { $ref: '#/components/schemas/NotificationChannelSettingsPatch' }
+            comment: { $ref: '#/components/schemas/NotificationChannelSettingsPatch' }
+            statusChange: { $ref: '#/components/schemas/NotificationChannelSettingsPatch' }
+            dueDate: { $ref: '#/components/schemas/NotificationChannelSettingsPatch' }
+            access: { $ref: '#/components/schemas/NotificationChannelSettingsPatch' }
+            billing: { $ref: '#/components/schemas/NotificationChannelSettingsPatch' }
+        digest:
+          $ref: '#/components/schemas/NotificationDigest'
+        doNotDisturb:
+          type: boolean
+    Reminder:
+      type: object
+      additionalProperties: false
+      required: [id, taskKey, taskName, remindAt, note, firedAt, completedAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID v7 of the personal reminder.
+        taskKey:
+          $ref: './task.yaml#/components/schemas/TaskKey'
+        taskName:
+          type: string
+        remindAt:
+          type: string
+          format: date-time
+          description: Absolute instant scheduled for this reminder.
+        note:
+          $ref: '#/components/schemas/ReminderNote'
+        firedAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the current schedule fired, or null while it is pending delivery.
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the caller completed the reminder, or null while it is open.
+        version:
+          type: integer
+          minimum: 1
+          description: The version carried by the reminder ETag.
+      examples:
+        - id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11
+          taskKey: CAD-488
+          taskName: Page des quotas de l’organisation
+          remindAt: '2026-11-08T14:00:00Z'
+          note: Relancer Léa pour les maquettes
+          firedAt: null
+          completedAt: null
+          version: 1
+    ReminderPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, pendingCount]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Reminder'
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'
+        pendingCount:
+          type: integer
+          minimum: 0
+          description: Open reminders across all pages, including reminders already due.
+    ReminderNote:
+      type: [string, 'null']
+      maxLength: 500
+      description: A private note for the reminder. Null clears the note.
+    TaskReminderSchedule:
+      type: object
+      additionalProperties: false
+      required: [remindAt]
+      properties:
+        remindAt:
+          type: string
+          format: date-time
+          description: Absolute instant for the reminder, after resolving any preset in the caller's time zone.
+        note:
+          $ref: '#/components/schemas/ReminderNote'
+      examples:
+        - remindAt: '2026-11-08T14:00:00Z'
+          note: Relancer Léa pour les maquettes
+    ReminderNotePatch:
+      type: object
+      additionalProperties: false
+      required: [note]
+      properties:
+        note:
+          $ref: '#/components/schemas/ReminderNote'
+    ReminderSnooze:
+      type: object
+      additionalProperties: false
+      required: [remindAt]
+      properties:
+        remindAt:
+          type: string
+          format: date-time
+          description: Absolute instant for the next delivery of this reminder.

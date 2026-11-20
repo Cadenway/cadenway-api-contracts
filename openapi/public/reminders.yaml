@@ -1,0 +1,782 @@
+# Cadenway Notification HTTP contracts.
+openapi: 3.1.0
+info:
+  title: Cadenway task reminders
+  version: 1.0.0
+  description: |-
+    Reminders belong to the caller and selected organization. There is one pending reminder per
+    task and caller. A due reminder remains pending until explicitly completed or deleted. A
+    stale schedule or inaccessible task does not trigger delivery.
+
+    The web application resolves presets to UTC using the account time zone and readable task due
+    date. Presets are one hour from now, today at 15:00, tomorrow at 09:00, the following week at
+    09:00, the day before the due date at 09:00, or a chosen local date and time. Tasks without a
+    due date do not offer the day-before preset. The producer validates new instants against its
+    clock. A reminder never changes the task. A context action on selected tasks uses the same
+    operation for each task.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Relays these operations to notification-service.
+    - repository: cadenway-webapp
+      uses: Calls these operations through the generated Angular client.
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging.
+tags:
+  - name: reminders
+    description: Personal reminders for tasks in the selected organization.
+paths:
+  /v1/reminders:
+    get:
+      operationId: listReminders
+      summary: List pending task reminders
+      description: |-
+        Returns the caller’s incomplete reminders, including overdue reminders, in (remindAt, id)
+        ascending order. The opaque cursor belongs to the caller and organization and resumes
+        after the previous page's last returned position in the current collection. The page and
+        `pendingCount` use the same reminder snapshot for this request. The count includes
+        accessible pending reminders across all pages. Reminders on inaccessible tasks are
+        omitted. If the complete result cannot be verified within the request budget, the
+        response is 503.
+
+        Session only. The current organization is required.
+      tags:
+        - reminders
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Reminder page and current pending count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderPage'
+              example:
+                items:
+                  - id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                    taskKey: CAD-488
+                    taskName: Relecture des maquettes
+                    remindAt: '2026-11-08T14:00:00Z'
+                    note: Relancer Léa pour les maquettes
+                    firedAt: null
+                    completedAt: null
+                    version: 1
+                nextCursor: null
+                pendingCount: 1
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationReadForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/tasks/{taskKey}/reminder:
+    get:
+      operationId: getTaskReminder
+      summary: Read the pending reminder of a task
+      description: |-
+        Returns the caller’s one pending reminder for a readable task. A completed reminder no longer
+        occupies this slot.
+
+        Session only. The current organization is required.
+      tags:
+        - reminders
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/TaskKey'
+      responses:
+        '200':
+          description: Pending reminder.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskKey: CAD-488
+                taskName: Relecture des maquettes
+                remindAt: '2026-11-08T14:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: null
+                version: 1
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationReadForbidden'
+        '404':
+          $ref: '#/components/responses/TaskReminderNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    put:
+      operationId: setTaskReminder
+      summary: Create or reschedule the pending task reminder
+      description: |-
+        Sets the caller’s single pending reminder for a readable task. Concurrent schedules cannot
+        create a second pending reminder. Occupying a new slot answers 201. Updating an occupied slot
+        keeps its ID, answers 200 and resets a prior firing only when the time changes. An omitted or
+        null note clears the note. An exact repeat is a no-op, including after firing. New or changed
+        times must be in the future. Later reminders after a completion have a new ID. If-Match does
+        not match an absent representation.
+
+        Session only. The current organization is required.
+      tags:
+        - reminders
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/TaskKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskReminderSchedule'
+            example:
+              remindAt: '2026-11-08T14:00:00Z'
+              note: Relancer Léa pour les maquettes
+      responses:
+        '200':
+          description: Pending reminder after updating it.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskKey: CAD-488
+                taskName: Relecture des maquettes
+                remindAt: '2026-11-08T14:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: null
+                version: 1
+        '201':
+          description: New pending reminder.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Location:
+              description: URL of the created reminder.
+              schema:
+                type: string
+                format: uri-reference
+                examples:
+                  - /v1/reminders/019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskKey: CAD-488
+                taskName: Relecture des maquettes
+                remindAt: '2026-11-08T14:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: null
+                version: 1
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ScheduleTaskNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/InvalidSchedule'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/reminders/{reminderId}:
+    get:
+      operationId: getReminder
+      summary: Read a reminder by identifier
+      description: |-
+        Returns the caller’s reminder in the organization, including a completed reminder, if its
+        task is still readable.
+
+        Session only. The current organization is required.
+      tags:
+        - reminders
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ReminderId'
+      responses:
+        '200':
+          description: Reminder and current version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskKey: CAD-488
+                taskName: Relecture des maquettes
+                remindAt: '2026-11-08T14:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: null
+                version: 1
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationReadForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateReminderNote
+      summary: Update the reminder note
+      description: |-
+        Applies a JSON Merge Patch to the note on a pending reminder without rescheduling. Null
+        clears the note. An identical note preserves the version.
+
+        Session only. The current organization is required.
+      tags:
+        - reminders
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ReminderId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReminderNotePatch'
+            example:
+              note: null
+      responses:
+        '200':
+          description: Reminder with the changed note.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskKey: CAD-488
+                taskName: Relecture des maquettes
+                remindAt: '2026-11-08T14:00:00Z'
+                note: null
+                firedAt: null
+                completedAt: null
+                version: 2
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '409':
+          $ref: '#/components/responses/AlreadyCompleted'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteReminder
+      summary: Delete a reminder
+      description: |-
+        Removes the caller’s reminder and invalidates its pending schedule. A stale job does nothing.
+        Missing and inaccessible reminders share the same refusal.
+
+        Session only. The current organization is required.
+      tags:
+        - reminders
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ReminderId'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Reminder deleted.
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/reminders/{reminderId}/snooze:
+    post:
+      operationId: snoozeReminder
+      summary: Postpone a reminder
+      description: |-
+        Moves a pending reminder to a future instant, retaining the note and ID. A changed time
+        clears the previous firing and invalidates the previous job. A repeat of the current schedule
+        is a no-op without a stale precondition. Completed reminders cannot be postponed.
+
+        Session only. The current organization is required.
+      tags:
+        - reminders
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ReminderId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReminderSnooze'
+            example:
+              remindAt: '2026-11-09T08:00:00Z'
+      responses:
+        '200':
+          description: Reminder with its new time.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskKey: CAD-488
+                taskName: Relecture des maquettes
+                remindAt: '2026-11-09T08:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: null
+                version: 2
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '409':
+          $ref: '#/components/responses/AlreadyCompleted'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/InvalidSchedule'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/reminders/{reminderId}/complete:
+    post:
+      operationId: completeReminder
+      summary: Mark a reminder as complete
+      description: |-
+        Sets `completedAt` and invalidates its jobs. The reminder no longer appears in the pending
+        list or occupies the per-task slot. A repeat with the current validator or without a
+        condition preserves `completedAt` and the version.
+
+        Session only. The current organization is required.
+      tags:
+        - reminders
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ReminderId'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Completed reminder.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskKey: CAD-488
+                taskName: Relecture des maquettes
+                remindAt: '2026-11-08T14:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: '2026-11-08T13:42:00Z'
+                version: 2
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationWriteForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: Opaque browser session of the caller.
+  parameters:
+    Cursor:
+      $ref: ../../components/http.yaml#/components/parameters/Cursor
+    Limit:
+      $ref: ../../components/http.yaml#/components/parameters/Limit
+    ReminderId:
+      name: reminderId
+      in: path
+      description: Reminder identifier.
+      required: true
+      schema:
+        type: string
+        format: uuid
+        examples:
+          - 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+    TaskKey:
+      name: taskKey
+      in: path
+      description: Key of a readable task.
+      required: true
+      schema:
+        $ref: ../../components/task.yaml#/components/schemas/TaskKey
+    IfMatch:
+      name: If-Match
+      in: header
+      description: Optional strong validator of the current version.
+      schema:
+        type: string
+        examples:
+          - '"2"'
+  headers:
+    ETag:
+      description: |-
+        Strong validator of the returned or current version. It is absent when there is no current
+        representation.
+      schema:
+        type: string
+        examples:
+          - '"2"'
+  responses:
+    InvalidRequest:
+      description: |-
+        `request.invalid`: the request does not match this contract. `details.issues` identifies
+        invalid fields.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+    OrganizationNotFound:
+      description: '`organization.not-found`: no current membership of the selected organization.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    ReminderNotFound:
+      description: |-
+        `reminder.not-found`: the reminder is missing, belongs to another owner or its task is no
+        longer readable. `organization.not-found` can also be returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            reminder.not-found:
+              value:
+                type: about:blank
+                title: Rappel introuvable.
+                status: 404
+                code: reminder.not-found
+            organization.not-found:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    TaskReminderNotFound:
+      description: |-
+        `task.not-found`: the task is missing or inaccessible. `reminder.not-found`: the readable
+        task has no pending reminder. `organization.not-found` can also be returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            task.not-found:
+              value:
+                type: about:blank
+                title: Tâche introuvable.
+                status: 404
+                code: task.not-found
+            reminder.not-found:
+              value:
+                type: about:blank
+                title: Rappel introuvable.
+                status: 404
+                code: reminder.not-found
+            organization.not-found:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    ScheduleTaskNotFound:
+      description: |-
+        `task.not-found`: the task is missing or inaccessible. `organization.not-found` can also be
+        returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            task.not-found:
+              value:
+                type: about:blank
+                title: Tâche introuvable.
+                status: 404
+                code: task.not-found
+            organization.not-found:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    AlreadyCompleted:
+      description: '`reminder.already-completed`: a completed reminder cannot be edited or snoozed.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Ce rappel est déjà terminé.
+            status: 409
+            code: reminder.already-completed
+    VersionMismatch:
+      description: |-
+        `request.version-mismatch`: the validator does not match. `details.version` gives the current
+        version when a representation exists.
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 2
+    InvalidSchedule:
+      description:
+        '`reminder.date-not-in-future`: a new reminder time must be later than the current
+        time.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Choisissez une date et une heure à venir.
+            status: 422
+            code: reminder.date-not-in-future
+    Unauthenticated:
+      description: '`auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.session-required:
+              value:
+                type: about:blank
+                title: Connectez-vous pour continuer.
+                status: 401
+                code: auth.session-required
+            auth.session-expired:
+              value:
+                type: about:blank
+                title: Session expirée
+                status: 401
+                code: auth.session-expired
+            auth.api-token-invalid:
+              value:
+                type: about:blank
+                title: Jeton d’API invalide, expiré ou révoqué.
+                status: 401
+                code: auth.api-token-invalid
+    OrganizationReadForbidden:
+      description: '`auth.api-token-not-accepted`, `organization.not-selected`, `organization.mfa-required`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.api-token-not-accepted:
+              value:
+                type: about:blank
+                title: Cette requête n’accepte pas de jeton d’API.
+                status: 403
+                code: auth.api-token-not-accepted
+            organization.not-selected:
+              value:
+                type: about:blank
+                title: Choisissez une organisation pour continuer.
+                status: 403
+                code: organization.not-selected
+            organization.mfa-required:
+              value:
+                type: about:blank
+                title:
+                  'Cette organisation exige la vérification en deux étapes : configurez-la depuis
+                  votre compte.'
+                status: 403
+                code: organization.mfa-required
+    OrganizationWriteForbidden:
+      description: |-
+        `auth.api-token-not-accepted`, `auth.csrf-rejected`, `organization.not-selected`,
+        `organization.mfa-required`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.api-token-not-accepted:
+              value:
+                type: about:blank
+                title: Cette requête n’accepte pas de jeton d’API.
+                status: 403
+                code: auth.api-token-not-accepted
+            auth.csrf-rejected:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.csrf-rejected
+            organization.not-selected:
+              value:
+                type: about:blank
+                title: Choisissez une organisation pour continuer.
+                status: 403
+                code: organization.not-selected
+            organization.mfa-required:
+              value:
+                type: about:blank
+                title:
+                  'Cette organisation exige la vérification en deux étapes : configurez-la depuis
+                  votre compte.'
+                status: 403
+                code: organization.mfa-required
+    RateLimited:
+      description: '`rate-limit.exceeded`: wait the seconds in `Retry-After`.'
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: 'Trop de requêtes : réessayez dans un instant.'
+            status: 429
+            code: rate-limit.exceeded
+    Unavailable:
+      description: |-
+        An upstream service cannot answer. Possible codes are `upstream.unavailable`,
+        `upstream.unreachable`, `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`,
+        `upstream.unauthorized` and `upstream.deadline-exceeded`. `details.service` identifies the
+        upstream.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+  schemas:
+    Reminder:
+      $ref: ../../components/notification.yaml#/components/schemas/Reminder
+    ReminderNotePatch:
+      $ref: ../../components/notification.yaml#/components/schemas/ReminderNotePatch
+    ReminderPage:
+      $ref: ../../components/notification.yaml#/components/schemas/ReminderPage
+    ReminderSnooze:
+      $ref: ../../components/notification.yaml#/components/schemas/ReminderSnooze
+    TaskReminderSchedule:
+      $ref: ../../components/notification.yaml#/components/schemas/TaskReminderSchedule

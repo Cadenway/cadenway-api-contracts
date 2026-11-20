@@ -1,0 +1,1478 @@
+# Cadenway Notification HTTP contracts.
+openapi: 3.1.0
+info:
+  title: notification-service internal routes
+  version: 1.0.0
+  description: |-
+    The API gateway is the only HTTP caller of these routes. It uses an Ed25519 bearer token with
+    audience `notification-service` and actor `user`. Organization routes require the signed
+    organization and a current membership. Account preferences use the signed actor independently
+    of any organization claim. The browser cannot choose the scope by passing other identifiers.
+
+    The gateway enforces sessions, CSRF and rate limiting. It confirms current membership and
+    resolves each linked subject against Task under the caller's user and organization. It
+    omits denied subjects and enriches only authorized results before public disclosure.
+    Candidate results, references, cursors and generations stay internal. The gateway returns
+    503 when current visibility or a complete result cannot be established within its budget.
+    Notification owns the personal records and binds writes to the linkage checked by the
+    gateway. Workers obtain separate, correlated authorization decisions through events.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Calls these routes through its generated internal client.
+servers:
+  - url: http://notification-service:3016
+    description: Notification service on the internal network.
+security:
+  - internalToken: []
+tags:
+  - name: inbox
+    description: Personal inbox in the selected organization.
+  - name: notification-preferences
+    description: Notification settings of the current account.
+  - name: reminders
+    description: Personal reminders for tasks in the selected organization.
+paths:
+  /internal/v1/inbox/notifications:
+    get:
+      operationId: listInboxNotificationsInternal
+      summary: Scan notification candidates in the inbox
+      description: |-
+        Scans the caller's candidates in (createdAt, id) descending order. The opaque cursor
+        belongs to the caller, organization and filter. The gateway checks linked subjects in
+        bounded Task batches and seeks one visible item beyond the requested page. The cursor
+        after the last consumed candidate lets it resume without losing the visible lookahead.
+        A null subject denotes an eligible owner-only item with generic display.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - inbox
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/InboxState'
+      responses:
+        '200':
+          description: One page of recipient-scoped candidates.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxCandidatePage'
+              example:
+                items:
+                  - record:
+                      id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11
+                      kind: mention
+                      actorUserId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02
+                      subject:
+                        kind: task-key
+                        taskKey: CAD-482
+                      commentId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e13
+                      createdAt: '2026-11-08T08:48:00Z'
+                      readAt: null
+                      archivedAt: null
+                      version: 1
+                    cursorAfter: YmVmb3JlLWxvb2thaGVhZA
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/inbox/unread-subjects:
+    get:
+      operationId: listInboxUnreadSubjectsInternal
+      summary: Scan subject weights for active unread notifications
+      description: |-
+        Groups the caller's active unread records by exact subject and returns the count of records
+        in each group. Ordering and cursor are stable within the generation of the organization
+        and recipient. Each page and generation check use the same Notification snapshot. A
+        changed generation invalidates the cursor. Subjectless candidates form one owner-only
+        group.
+
+        The gateway uses all groups for the badge and for the preparation of read-all. It sums
+        only permitted groups, including the owner-only group. An incomplete scan yields 503
+        from the gateway. The first generation sampled by read-all is its fixed creation cutoff.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - inbox
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Subject weights and the owner generation used for this page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxUnreadSubjectPage'
+              example:
+                generation: '18'
+                items:
+                  - subject:
+                      kind: task-key
+                      taskKey: CAD-482
+                    count: 2
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/InboxGenerationChanged'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/inbox/notifications/read-all:
+    post:
+      operationId: markInboxNotificationsReadInternal
+      summary: Mark all inbox notifications as read
+      description: |-
+        After a full unread-subject scan and current Task authorization, the gateway submits the
+        exact stored subjects it checked, preserving their selector type, the scan generation and
+        the initial creation cutoff.
+        Notification locks the caller's inbox generation and compares it with the scan generation
+        before writing. It marks only active unread rows of the caller whose creation generation
+        is at or below the cutoff and whose subject is in the authorized set or null. Earlier
+        read timestamps are preserved.
+
+        Every creation, read or archive changing the inbox advances its owner generation in the
+        same transaction. Notification records each row's creation generation at insertion.
+        `markedRead` counts changes and `unreadCount` counts remaining active unread rows within the
+        authorized set, including permitted arrivals after the cutoff, in the same transaction.
+        Task decisions describe the Task access snapshots used for this attempt.
+
+        A conflict commits no writes. The gateway can redo its scan and Task checks within a
+        bounded budget and must keep the original cutoff on every attempt. The public operation
+        returns 503 if that budget is exhausted.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - inbox
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InboxReadAllSelection'
+            example:
+              snapshotGeneration: '19'
+              creationCutoff: '18'
+              authorizedSubjects:
+                - kind: task-key
+                  taskKey: CAD-482
+      responses:
+        '200':
+          description: Update count and resulting badge count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxReadAllResult'
+              example:
+                markedRead: 4
+                unreadCount: 0
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/InboxGenerationChanged'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/inbox/notifications/{notificationId}:
+    get:
+      operationId: getInboxNotificationCandidateInternal
+      summary: Read the linkage of an owned inbox notification
+      description: |-
+        Returns the caller's notification identifier and linked subject, or null for an owner-only
+        notification. The gateway resolves the subject before relaying a conditional write.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - inbox
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          description: Owner-scoped linkage for the authorization check.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxCandidateReference'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11
+                subject:
+                  kind: task-key
+                  taskKey: CAD-482
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/NotificationNotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/inbox/notifications/{notificationId}/read:
+    post:
+      operationId: markInboxNotificationReadInternal
+      summary: Mark a notification as read
+      description: |-
+        Sets `readAt` only once. Repeating with the current validator or without a condition
+        preserves the timestamp and version. The gateway supplies the checked subject or null
+        for an owner-only notification. Under the row lock, Notification checks owner and exact
+        linkage before evaluating If-Match. Failed ownership or linkage returns the same 404.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - inbox
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InboxSubjectBinding'
+            example:
+              subject:
+                kind: task-key
+                taskKey: CAD-482
+      responses:
+        '200':
+          description: Notification after marking it as read.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxRecord'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11
+                kind: mention
+                actorUserId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02
+                subject:
+                  kind: task-key
+                  taskKey: CAD-482
+                commentId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e13
+                createdAt: '2026-11-08T08:48:00Z'
+                readAt: '2026-11-08T09:00:00Z'
+                archivedAt: null
+                version: 2
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/NotificationNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/inbox/notifications/{notificationId}/archive:
+    post:
+      operationId: archiveInboxNotificationInternal
+      summary: Archive a notification
+      description: |-
+        Sets `archivedAt` only once. Only `state=archived` lists it. Archiving excludes it from the
+        unread badge and leaves `readAt` unchanged. Repeating with the current validator or without a
+        condition preserves the archive timestamp and version.
+
+        The gateway supplies the checked subject or null for an owner-only notification. Under
+        the row lock, Notification checks owner and exact linkage before evaluating If-Match.
+        Failed ownership or linkage returns the same 404.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - inbox
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InboxSubjectBinding'
+            example:
+              subject:
+                kind: task-key
+                taskKey: CAD-482
+      responses:
+        '200':
+          description: Notification after archiving.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxRecord'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11
+                kind: mention
+                actorUserId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02
+                subject:
+                  kind: task-key
+                  taskKey: CAD-482
+                commentId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e13
+                createdAt: '2026-11-08T08:48:00Z'
+                readAt: null
+                archivedAt: '2026-11-08T09:00:00Z'
+                version: 2
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/NotificationNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/me/notification-preferences:
+    get:
+      operationId: getNotificationPreferencesInternal
+      summary: Read account notification preferences
+      description: |-
+        Reads the account’s preferences independently of the selected organization. Before the first
+        change it returns defaults at version 1 without creating a row.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization not required.
+      tags:
+        - notification-preferences
+      responses:
+        '200':
+          description: Account preferences.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+              example:
+                channels:
+                  mention:
+                    inApp: true
+                    email: true
+                    mobile: true
+                  assignment:
+                    inApp: true
+                    email: true
+                    mobile: true
+                  comment:
+                    inApp: true
+                    email: false
+                    mobile: false
+                  statusChange:
+                    inApp: true
+                    email: false
+                    mobile: false
+                  dueDate:
+                    inApp: true
+                    email: true
+                    mobile: true
+                  access:
+                    inApp: true
+                    email: true
+                    mobile: false
+                  billing:
+                    inApp: true
+                    email: true
+                    mobile: false
+                digest: daily
+                doNotDisturb: true
+                version: 1
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AccountForbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateNotificationPreferencesInternal
+      summary: Update account notification preferences
+      description: |-
+        Applies a JSON Merge Patch. Unmentioned channels, channel flags and settings retain their
+        values. Null is invalid because each setting requires a value. A no-op preserves the version.
+        Security emails are independent of these settings.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization not required.
+      tags:
+        - notification-preferences
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationPreferencesPatch'
+            example:
+              channels:
+                comment:
+                  email: true
+              digest: weekly
+      responses:
+        '200':
+          description: Updated account preferences and version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AccountForbidden'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/reminders:
+    get:
+      operationId: listRemindersInternal
+      summary: Scan pending reminder candidates
+      description: |-
+        Scans the caller's incomplete reminders, including overdue reminders, in (remindAt, id)
+        ascending order. The first page samples the current generation of this organization and
+        recipient. Every candidate and next-page cursor is bound to that owner and generation.
+        Each page checks the cursor's generation and reads its candidates in one Notification
+        snapshot. A changed generation invalidates the cursor.
+
+        Every change to a pending reminder or to the pending set advances the owner generation in
+        the same transaction. This includes creation, rescheduling, snoozing, completion, deletion,
+        changes to notes, and changes to the firing state. No-op writes leave it unchanged.
+
+        The gateway scans from the beginning and uses current Task decisions to count permitted
+        reminder IDs across the whole scan. It selects the permitted page and a permitted lookahead
+        by comparing candidate positions with the public continuation position, if supplied.
+        It then verifies the generation and fetches the selected notes through the reminder record
+        batch, even for an empty page. A generation conflict restarts the full scan and Task
+        checks within a bounded budget while keeping the public continuation position. An
+        incomplete result or exhausted budget produces 503 at the gateway.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - reminders
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One owner-scoped candidate page and its generation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderCandidatePage'
+              example:
+                generation: '18'
+                items:
+                  - id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                    taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+                    remindAt: '2026-11-08T14:00:00Z'
+                    cursorAfter: YmVmb3JlLWxvb2thaGVhZA
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/ReminderGenerationChanged'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/reminders/visible:
+    post:
+      operationId: listVisibleReminderRecordsInternal
+      summary: Fetch the authorized records for a reminder page
+      description: |-
+        Returns the caller's still-pending reminders whose identifiers and stored task identifiers
+        exactly match the pairs checked by the gateway. Notification verifies the submitted scan
+        generation and reads the records in the same snapshot. An empty selection verifies the
+        generation for an empty public page. Results preserve the request order. Missing,
+        completed, foreign and mismatched pairs are omitted.
+
+        The gateway returns its page and count only after this generation check and verification
+        that all selected pairs were returned. A conflict or missing selected record restarts
+        the full scan and Task checks within the bounded budget. This read leaves reminders
+        unchanged.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - reminders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReminderRecordSelection'
+            example:
+              snapshotGeneration: '18'
+              items:
+                - id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                  taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+      responses:
+        '200':
+          description: Matched private records in requested order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderRecordBatch'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '#/components/responses/ReminderGenerationChanged'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/tasks/{taskId}/reminder:
+    get:
+      operationId: getTaskReminderInternal
+      summary: Read the pending reminder of a task
+      description: |-
+        Returns the caller's one pending reminder for the stable task UUID resolved and authorized
+        by the gateway. A completed reminder has released its slot.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - reminders
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Pending reminder.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderRecord'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+                remindAt: '2026-11-08T14:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: null
+                version: 1
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    put:
+      operationId: setTaskReminderInternal
+      summary: Create or reschedule the pending task reminder
+      description: |-
+        Sets the caller's pending reminder for the stable task UUID resolved and authorized by
+        the gateway. Concurrent schedules cannot
+        create a second pending reminder. Occupying a new slot answers 201. Updating an occupied slot
+        keeps its ID, answers 200 and resets a prior firing only when the time changes. An omitted or
+        null note clears the note. An exact repeat is a no-op, including after firing. New or changed
+        times must be in the future. Later reminders after a completion have a new ID. If-Match does
+        not match an absent representation.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - reminders
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskReminderSchedule'
+            example:
+              remindAt: '2026-11-08T14:00:00Z'
+              note: Relancer Léa pour les maquettes
+      responses:
+        '200':
+          description: Pending reminder after updating it.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderRecord'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+                remindAt: '2026-11-08T14:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: null
+                version: 1
+        '201':
+          description: New pending reminder.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Location:
+              description: URL of the created reminder.
+              schema:
+                type: string
+                format: uri-reference
+                examples:
+                  - /internal/v1/reminders/019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderRecord'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+                remindAt: '2026-11-08T14:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: null
+                version: 1
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/InvalidSchedule'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/reminders/{reminderId}/candidate:
+    get:
+      operationId: getReminderCandidateInternal
+      summary: Read the task linkage of an owned reminder
+      description: |-
+        Returns the caller's reminder identifier and stored task UUID, including for a completed
+        reminder. The gateway checks Task visibility before relaying a lookup or mutation.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - reminders
+      parameters:
+        - $ref: '#/components/parameters/ReminderId'
+      responses:
+        '200':
+          description: Owner-scoped reminder linkage for the authorization check.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderCandidateReference'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/reminders/{reminderId}:
+    get:
+      operationId: getReminderInternal
+      summary: Read a reminder by identifier
+      description: |-
+        Returns the caller's reminder in the organization, including a completed reminder, when
+        its linked task matches the UUID checked by the gateway.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - reminders
+      parameters:
+        - $ref: '#/components/parameters/ReminderId'
+        - $ref: '#/components/parameters/AuthorizedTaskId'
+      responses:
+        '200':
+          description: Reminder and current version.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderRecord'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+                remindAt: '2026-11-08T14:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: null
+                version: 1
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateReminderNoteInternal
+      summary: Update the reminder note
+      description: |-
+        Applies a JSON Merge Patch to the note on a pending reminder without rescheduling. Null
+        clears the note. An identical note preserves the version. Under the row lock, ownership
+        and the checked task UUID must match before evaluating If-Match or completion state.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - reminders
+      parameters:
+        - $ref: '#/components/parameters/ReminderId'
+        - $ref: '#/components/parameters/AuthorizedTaskId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReminderNotePatch'
+            example:
+              note: null
+      responses:
+        '200':
+          description: Reminder with the changed note.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderRecord'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+                remindAt: '2026-11-08T14:00:00Z'
+                note: null
+                firedAt: null
+                completedAt: null
+                version: 2
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '409':
+          $ref: '#/components/responses/AlreadyCompleted'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteReminderInternal
+      summary: Delete a reminder
+      description: |-
+        Removes the caller’s reminder and invalidates its pending schedule. A stale job does nothing.
+        Under the row lock, ownership and the checked task UUID must match before evaluating
+        If-Match. Missing, foreign and mismatched reminders share the same refusal.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - reminders
+      parameters:
+        - $ref: '#/components/parameters/ReminderId'
+        - $ref: '#/components/parameters/AuthorizedTaskId'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Reminder deleted.
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/reminders/{reminderId}/snooze:
+    post:
+      operationId: snoozeReminderInternal
+      summary: Postpone a reminder
+      description: |-
+        Moves a pending reminder to a future instant, retaining the note and ID. A changed time
+        clears the previous firing and invalidates the previous job. A repeat of the current schedule
+        is a no-op without a stale precondition. Completed reminders cannot be postponed.
+        Under the row lock, ownership and the checked task UUID must match before evaluating
+        If-Match or completion state.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - reminders
+      parameters:
+        - $ref: '#/components/parameters/ReminderId'
+        - $ref: '#/components/parameters/AuthorizedTaskId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReminderSnooze'
+            example:
+              remindAt: '2026-11-09T08:00:00Z'
+      responses:
+        '200':
+          description: Reminder with its new time.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderRecord'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+                remindAt: '2026-11-09T08:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: null
+                version: 2
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '409':
+          $ref: '#/components/responses/AlreadyCompleted'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/InvalidSchedule'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/reminders/{reminderId}/complete:
+    post:
+      operationId: completeReminderInternal
+      summary: Mark a reminder as complete
+      description: |-
+        Sets `completedAt` and invalidates its jobs. The reminder no longer appears in the pending
+        list or occupies the per-task slot. A repeat with the current validator or without a
+        condition preserves `completedAt` and the version.
+        Under the row lock, ownership and the checked task UUID must match before evaluating
+        If-Match.
+
+        Internal token: issuer `api-gateway`, actor `user`, organization required.
+      tags:
+        - reminders
+      parameters:
+        - $ref: '#/components/parameters/ReminderId'
+        - $ref: '#/components/parameters/AuthorizedTaskId'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Completed reminder.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderRecord'
+              example:
+                id: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+                taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+                remindAt: '2026-11-08T14:00:00Z'
+                note: Relancer Léa pour les maquettes
+                firedAt: null
+                completedAt: '2026-11-08T13:42:00Z'
+                version: 2
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationForbidden'
+        '404':
+          $ref: '#/components/responses/ReminderNotFound'
+        '412':
+          $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short-lived internal token signed by api-gateway.
+  parameters:
+    Cursor:
+      $ref: ../../components/http.yaml#/components/parameters/Cursor
+    Limit:
+      $ref: ../../components/http.yaml#/components/parameters/Limit
+    InboxState:
+      name: state
+      in: query
+      description: |-
+        Active includes read and unread. Unread includes only active unread notices. Archived
+        includes archived notices.
+      schema:
+        type: string
+        enum:
+          - active
+          - unread
+          - archived
+        default: active
+    NotificationId:
+      name: notificationId
+      in: path
+      description: Notification identifier.
+      required: true
+      schema:
+        type: string
+        format: uuid
+        examples:
+          - 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11
+    ReminderId:
+      name: reminderId
+      in: path
+      description: Reminder identifier.
+      required: true
+      schema:
+        type: string
+        format: uuid
+        examples:
+          - 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
+    TaskId:
+      name: taskId
+      in: path
+      description: Stable task UUID resolved and authorized by the gateway.
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+    AuthorizedTaskId:
+      name: authorizedTaskId
+      in: query
+      required: true
+      description: Task UUID from the owner preflight and current Task authorization.
+      schema:
+        type: string
+        format: uuid
+      example: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+    IfMatch:
+      name: If-Match
+      in: header
+      description: Optional strong validator of the current version.
+      schema:
+        type: string
+        examples:
+          - '"2"'
+  headers:
+    ETag:
+      description: |-
+        Strong validator of the returned or current version. It is absent when there is no current
+        representation.
+      schema:
+        type: string
+        examples:
+          - '"2"'
+  responses:
+    InvalidRequest:
+      description: |-
+        `request.invalid`: the request does not match this contract. `details.issues` identifies
+        invalid fields.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+    OrganizationNotFound:
+      description: '`organization.not-found`: no current membership of the selected organization.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    NotificationNotFound:
+      description: |-
+        `notification.not-found`: the record is missing, belongs to another recipient or its
+        linkage does not match. `organization.not-found` can also be returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            notification.not-found:
+              value:
+                type: about:blank
+                title: Notification introuvable.
+                status: 404
+                code: notification.not-found
+            organization.not-found:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    ReminderNotFound:
+      description: |-
+        `reminder.not-found`: the reminder is missing, belongs to another owner or its task does
+        not match. `organization.not-found` can also be returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            reminder.not-found:
+              value:
+                type: about:blank
+                title: Rappel introuvable.
+                status: 404
+                code: reminder.not-found
+            organization.not-found:
+              value:
+                type: about:blank
+                title: Organisation introuvable.
+                status: 404
+                code: organization.not-found
+    InboxGenerationChanged:
+      description: '`notification.inbox-generation-changed`: the owner generation changed during the scan or before commit.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: La boîte de réception a changé.
+            status: 409
+            code: notification.inbox-generation-changed
+    ReminderGenerationChanged:
+      description: '`reminder.generation-changed`: the owner generation changed during the scan or before the record batch.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: La liste des rappels a changé.
+            status: 409
+            code: reminder.generation-changed
+    AlreadyCompleted:
+      description: '`reminder.already-completed`: a completed reminder cannot be edited or snoozed.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Ce rappel est déjà terminé.
+            status: 409
+            code: reminder.already-completed
+    VersionMismatch:
+      description: |-
+        `request.version-mismatch`: the validator does not match. `details.version` gives the current
+        version when a representation exists.
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 2
+    InvalidSchedule:
+      description:
+        '`reminder.date-not-in-future`: a new reminder time must be later than the current
+        time.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Choisissez une date et une heure à venir.
+            status: 422
+            code: reminder.date-not-in-future
+    Unauthenticated:
+      description: '`auth.token-missing` or `auth.token-invalid`: a valid internal token is required.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.token-missing:
+              value:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: auth.token-missing
+            auth.token-invalid:
+              value:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: auth.token-invalid
+    AccountForbidden:
+      description: '`auth.issuer-not-allowed`, `auth.actor-not-allowed`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.issuer-not-allowed:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.issuer-not-allowed
+            auth.actor-not-allowed:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.actor-not-allowed
+    OrganizationForbidden:
+      description: '`auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.issuer-not-allowed:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.issuer-not-allowed
+            auth.actor-not-allowed:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.actor-not-allowed
+            auth.organization-required:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.organization-required
+    Unavailable:
+      description: '`upstream.unavailable`: Notification could not read or persist the owner state.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+  schemas:
+    InboxSubject:
+      description: Exact persisted resource reference, or null for an owner-only generic item.
+      anyOf:
+        - $ref: ../../components/notification.yaml#/components/schemas/NotificationSubjectRef
+        - type: 'null'
+    InboxCandidateReference:
+      type: object
+      additionalProperties: false
+      required: [id, subject]
+      properties:
+        id:
+          type: string
+          format: uuid
+        subject:
+          $ref: '#/components/schemas/InboxSubject'
+    InboxRecord:
+      type: object
+      additionalProperties: false
+      required: [id, kind, subject, actorUserId, createdAt, readAt, archivedAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          minLength: 1
+          description: Notification category used by the gateway to assemble the public item.
+        subject:
+          $ref: '#/components/schemas/InboxSubject'
+        actorUserId:
+          type: [string, 'null']
+          format: uuid
+          description: Account reference for eligible actor enrichment after authorization.
+        commentId:
+          type: string
+          format: uuid
+          description: Optional reference for resolving an excerpt from the owning Task service.
+        status:
+          $ref: ../../components/task.yaml#/components/schemas/StatusKey
+          description: Optional status recorded by the original event.
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type: [string, 'null']
+          format: date-time
+        archivedAt:
+          type: [string, 'null']
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+    InboxCandidatePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [record, cursorAfter]
+            properties:
+              record:
+                $ref: '#/components/schemas/InboxRecord'
+              cursorAfter:
+                $ref: '#/components/schemas/CandidateCursor'
+        nextCursor:
+          $ref: ../../components/http.yaml#/components/schemas/NextCursor
+    CandidateCursor:
+      type: string
+      minLength: 1
+      description: Opaque cursor immediately after this candidate in the owner-scoped scan.
+    InboxGeneration:
+      type: string
+      pattern: '^(0|[1-9][0-9]{0,18})$'
+      description: Nonnegative owner inbox generation in decimal string form.
+    InboxUnreadSubjectPage:
+      type: object
+      additionalProperties: false
+      required: [generation, items, nextCursor]
+      properties:
+        generation:
+          $ref: '#/components/schemas/InboxGeneration'
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [subject, count]
+            properties:
+              subject:
+                $ref: '#/components/schemas/InboxSubject'
+              count:
+                type: integer
+                minimum: 1
+                description: Active unread records in this exact subject group at the scan generation.
+        nextCursor:
+          $ref: ../../components/http.yaml#/components/schemas/NextCursor
+    InboxSubjectBinding:
+      type: object
+      additionalProperties: false
+      required: [subject]
+      properties:
+        subject:
+          $ref: '#/components/schemas/InboxSubject'
+    InboxReadAllSelection:
+      type: object
+      additionalProperties: false
+      required: [snapshotGeneration, creationCutoff, authorizedSubjects]
+      properties:
+        snapshotGeneration:
+          $ref: '#/components/schemas/InboxGeneration'
+          description: Generation of the complete unread-subject scan used for this attempt.
+        creationCutoff:
+          $ref: '#/components/schemas/InboxGeneration'
+          description: Fixed generation observed at the start of the first scan. It must be at most the scan generation.
+        authorizedSubjects:
+          type: array
+          uniqueItems: true
+          description: Exact non-null unread subjects permitted by Task for this attempt.
+          items:
+            $ref: ../../components/notification.yaml#/components/schemas/NotificationSubjectRef
+    InboxReadAllResult:
+      $ref: ../../components/notification.yaml#/components/schemas/InboxReadAllResult
+    NotificationPreferences:
+      $ref: ../../components/notification.yaml#/components/schemas/NotificationPreferences
+    NotificationPreferencesPatch:
+      $ref: ../../components/notification.yaml#/components/schemas/NotificationPreferencesPatch
+    ReminderRecord:
+      type: object
+      additionalProperties: false
+      required: [id, taskId, remindAt, note, firedAt, completedAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        remindAt:
+          type: string
+          format: date-time
+        note:
+          $ref: ../../components/notification.yaml#/components/schemas/ReminderNote
+        firedAt:
+          type: [string, 'null']
+          format: date-time
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+    ReminderCandidateReference:
+      type: object
+      additionalProperties: false
+      required: [id, taskId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+    ReminderGeneration:
+      type: string
+      pattern: '^(0|[1-9][0-9]{0,18})$'
+      description: Nonnegative reminder generation of the organization and recipient in decimal string form.
+    ReminderCandidatePage:
+      type: object
+      additionalProperties: false
+      required: [generation, items, nextCursor]
+      properties:
+        generation:
+          $ref: '#/components/schemas/ReminderGeneration'
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, taskId, remindAt, cursorAfter]
+            properties:
+              id:
+                type: string
+                format: uuid
+              taskId:
+                type: string
+                format: uuid
+              remindAt:
+                type: string
+                format: date-time
+                description: Candidate sort timestamp in this snapshot.
+              cursorAfter:
+                $ref: '#/components/schemas/CandidateCursor'
+        nextCursor:
+          $ref: ../../components/http.yaml#/components/schemas/NextCursor
+    ReminderRecordSelection:
+      type: object
+      additionalProperties: false
+      required: [snapshotGeneration, items]
+      properties:
+        snapshotGeneration:
+          $ref: '#/components/schemas/ReminderGeneration'
+          description: Generation of the complete candidate scan used to select these records.
+        items:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          description: Selected pairs in page order. May be empty for a generation check alone.
+          items:
+            $ref: '#/components/schemas/ReminderCandidateReference'
+    ReminderRecordBatch:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ReminderRecord'
+    ReminderNotePatch:
+      $ref: ../../components/notification.yaml#/components/schemas/ReminderNotePatch
+    ReminderSnooze:
+      $ref: ../../components/notification.yaml#/components/schemas/ReminderSnooze
+    TaskReminderSchedule:
+      $ref: ../../components/notification.yaml#/components/schemas/TaskReminderSchedule

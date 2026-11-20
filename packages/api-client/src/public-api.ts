@@ -57,6 +57,65 @@ export type { UploadContentRefusedResponse } from './generated/public/attachment
 export type { UploadStartConflictResponse } from './generated/public/attachments/model/uploadStartConflictResponse';
 export type { UploadStartRefusedResponse } from './generated/public/attachments/model/uploadStartRefusedResponse';
 
+// openapi/public/inbox.yaml
+export {
+  InboxService,
+  type ArchiveInboxNotificationClientResult,
+  type GetInboxUnreadCountClientResult,
+  type ListInboxNotificationsClientResult,
+  type MarkInboxNotificationReadClientResult,
+  type MarkInboxNotificationsReadClientResult,
+} from './generated/public/inbox/inbox/inbox.service';
+export {
+  NotificationPreferencesService,
+  type GetNotificationPreferencesClientResult,
+  type UpdateNotificationPreferencesClientResult,
+} from './generated/public/inbox/notification-preferences/notification-preferences.service';
+export { InboxStateParameter } from './generated/public/inbox/model/inboxStateParameter';
+export { NotificationDigest } from './generated/public/inbox/model/notificationDigest';
+export type { AccountReadForbiddenResponse } from './generated/public/inbox/model/accountReadForbiddenResponse';
+export type { AccountWriteForbiddenResponse } from './generated/public/inbox/model/accountWriteForbiddenResponse';
+export type { InboxNotification } from './generated/public/inbox/model/inboxNotification';
+export type { InboxNotificationActor } from './generated/public/inbox/model/inboxNotificationActor';
+export type { InboxNotificationTask } from './generated/public/inbox/model/inboxNotificationTask';
+export type { InboxPage } from './generated/public/inbox/model/inboxPage';
+export type { InboxReadAllResult } from './generated/public/inbox/model/inboxReadAllResult';
+export type { InboxUnreadCount } from './generated/public/inbox/model/inboxUnreadCount';
+export type { ListInboxNotificationsParams } from './generated/public/inbox/model/listInboxNotificationsParams';
+export type { NotificationChannelSettings } from './generated/public/inbox/model/notificationChannelSettings';
+export type { NotificationChannelSettingsPatch } from './generated/public/inbox/model/notificationChannelSettingsPatch';
+export type { NotificationNotFoundResponse } from './generated/public/inbox/model/notificationNotFoundResponse';
+export type { NotificationPreferences } from './generated/public/inbox/model/notificationPreferences';
+export type { NotificationPreferencesChannels } from './generated/public/inbox/model/notificationPreferencesChannels';
+export type { NotificationPreferencesPatch } from './generated/public/inbox/model/notificationPreferencesPatch';
+export type { NotificationPreferencesPatchChannels } from './generated/public/inbox/model/notificationPreferencesPatchChannels';
+
+// openapi/public/reminders.yaml
+export {
+  RemindersService,
+  type CompleteReminderClientResult,
+  type DeleteReminderClientResult,
+  type GetReminderClientResult,
+  type GetTaskReminderClientResult,
+  type ListRemindersClientResult,
+  type SetTaskReminderClientResult,
+  type SnoozeReminderClientResult,
+  type UpdateReminderNoteClientResult,
+} from './generated/public/reminders/reminders/reminders.service';
+export type { AlreadyCompletedResponse } from './generated/public/reminders/model/alreadyCompletedResponse';
+export type { InvalidRequestResponse } from './generated/public/reminders/model/invalidRequestResponse';
+export type { InvalidScheduleResponse } from './generated/public/reminders/model/invalidScheduleResponse';
+export type { ListRemindersParams } from './generated/public/reminders/model/listRemindersParams';
+export type { Reminder } from './generated/public/reminders/model/reminder';
+export type { ReminderNote } from './generated/public/reminders/model/reminderNote';
+export type { ReminderNotePatch } from './generated/public/reminders/model/reminderNotePatch';
+export type { ReminderNotFoundResponse } from './generated/public/reminders/model/reminderNotFoundResponse';
+export type { ReminderPage } from './generated/public/reminders/model/reminderPage';
+export type { ReminderSnooze } from './generated/public/reminders/model/reminderSnooze';
+export type { ScheduleTaskNotFoundResponse } from './generated/public/reminders/model/scheduleTaskNotFoundResponse';
+export type { TaskReminderNotFoundResponse } from './generated/public/reminders/model/taskReminderNotFoundResponse';
+export type { TaskReminderSchedule } from './generated/public/reminders/model/taskReminderSchedule';
+
 // openapi/public/auth.yaml
 export {
   AuthService,

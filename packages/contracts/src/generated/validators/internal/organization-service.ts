@@ -244,11 +244,14 @@ export const ListMembersInternalResponse = zod.object({
  * Read the actor's membership and the requested names in one tenant snapshot. Omit accounts
  * outside the organization, departed members and accounts without a directory name.
  * Case-equivalent UUIDs and repeated identifiers resolve to at most one result per account.
- * Result order is unspecified. The gateway supplies only assignees from the result of
- * `GET /internal/v1/lists/{listId}/tasks/export` for the same actor and organization.
+ * Result order is unspecified. For list CSV export, the gateway supplies only assignees from
+ * `GET /internal/v1/lists/{listId}/tasks/export` for the same actor and organization. For
+ * notification display, it supplies at most 100 actor IDs from notifications whose subjects
+ * it has already authorized for that same actor and organization. The name lookup preserves
+ * the active membership requirement for both uses.
  *
  * Internal token: issuer `api-gateway` only, actor `user` and organization required.
- * @summary Resolve member names for list CSV export
+ * @summary Resolve names of current organization members
  */
 export const lookupMemberNamesInternalBodyUserIdsMax = 5000;
 
