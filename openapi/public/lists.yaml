@@ -1,7 +1,7 @@
 # Public routes of lists and sprints: create, list, read, change and delete the lists of a space
-# (name, appearance, sprint dates and goal, the switch "Accès de l’organisation"), read the counts
-# of a list, and read its activity log. Served by cadenway-api-gateway, which calls
-# openapi/internal/task-service.yaml for each of them.
+# (name, appearance, sprint dates and goal, the switch "Accès de l’organisation"), read a list's
+# counts, activity log and reports, and export its tasks. The API gateway calls
+# openapi/internal/task-service.yaml for these operations.
 openapi: 3.1.0
 info:
   title: Cadenway lists and sprints
@@ -56,7 +56,8 @@ info:
     **Custom fields.** Every list uses the active definitions of its space, including a newly
     created list. Its creation does not alter the definitions or assign values to tasks.
 
-    **Later versions** add, without changing what is here: the CSV export and the sprint report.
+    **Reports and export.** The sprint report, workload and task export use the caller's list
+    and task visibility. The list's timesheet is in `openapi/public/time.yaml`.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -65,9 +66,11 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Serves every route, through openapi/internal/task-service.yaml, and checks the scopes of every operation.
+      uses: >-
+        Serves every route through openapi/internal/task-service.yaml, checks the scopes and
+        exposes Content-Disposition for CSV downloads from another origin.
     - repository: cadenway-webapp
-      uses: Calls every route through @cadenway/api-client (dialogs "Créer une liste", "Créer un sprint", "Modifier la liste" and "Modifier le sprint", list header, view "Activité", the switch of "Partager", "Supprimer la liste").
+      uses: Calls every route through @cadenway/api-client for list and sprint dialogs, list headers, sharing, activity, sprint reports, workload and CSV export.
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -460,6 +463,277 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/ListDuplicateRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/sprint-report:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: getSprintReport
+      summary: Read the points, burndown and velocity of a sprint
+      description: |
+        Reads a sprint the caller can see ("Rapport du Sprint 14"). Each contribution requires
+        current task visibility as well as access to the sprint. Only ordinary root tasks that
+        were in the sprint and eligible at the evaluated instant contribute. Milestones and
+        cancelled, archived or trashed tasks are excluded at that instant. A purged task leaves
+        the report history.
+        The designated numeric custom field supplies points, with zero as a valid value. In its
+        absence, an estimate of up to 60, 180, 360 or 600 minutes is worth 1, 2, 3 or 5 points
+        respectively. Larger estimates are worth 8 points and an unset estimate is worth 1.
+
+        Opening commitment uses the sprint's first local midnight. Delivered and remaining
+        points and task counts use the earliest of the server observation, the end of the
+        requested local date and sprint close. Sprint close is the end of its last local day.
+        Later scope changes can change that total. Historical days use their own end-of-day
+        cutoff. The current partial day uses the report observation and future dates have no
+        actual value.
+
+        The burndown pages dates from the first to the last sprint day, oldest first. The cursor
+        binds the sprint, caller, requested date, time zone and server observation instant.
+        A missing baseline or gap yields a null value for any metric it makes unavailable.
+        Ideal points fall evenly from the known opening commitment to zero at close.
+        Projected values require an open sprint and a positive burn rate established by at
+        least two covered end-of-day observations. Velocity contains up to the four most recent
+        readable, completed sprints of the same space whose closing date precedes this sprint's
+        start. It orders them by closing date and ID, oldest first, with unavailable historical
+        values left null. Scope `tasks:read` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/reporting.yaml#/components/parameters/ReportToday'
+        - $ref: '../../components/reporting.yaml#/components/parameters/ReportTimeZone'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Sprint metrics and one page of burndown days.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/reporting.yaml#/components/schemas/SprintReport'
+              example:
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                name: Sprint 14
+                startDate: '2026-11-03'
+                endDate: '2026-11-17'
+                observedAt: '2026-11-08T12:00:00Z'
+                coverageStartedAt: '2026-11-02T00:00:00Z'
+                openingPoints: 40
+                delivered:
+                  points: 13
+                  taskCount: 8
+                  items:
+                    [
+                      {
+                        taskKey: CAD-481,
+                        name: Corriger le libellé du formulaire,
+                        points: 0,
+                        status: done,
+                      },
+                    ]
+                remaining:
+                  points: 29
+                  taskCount: 12
+                  items:
+                    [
+                      {
+                        taskKey: CAD-482,
+                        name: Refondre l’écran de connexion SSO,
+                        points: 5,
+                        status: progress,
+                      },
+                    ]
+                projectedRemainingPoints: 16
+                items:
+                  - date: '2026-11-03'
+                    actualRemainingPoints: 40
+                    idealRemainingPoints: 37.333333333333336
+                    projectedRemainingPoints: null
+                  - date: '2026-11-04'
+                    actualRemainingPoints: 37
+                    idealRemainingPoints: 34.666666666666664
+                    projectedRemainingPoints: null
+                nextCursor: eyJkYXRlIjoiMjAyNi0xMS0wNCJ9
+                velocity:
+                  - listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f13
+                    name: Sprint 13
+                    startDate: '2026-10-20'
+                    endDate: '2026-11-02'
+                    openingPoints: null
+                    deliveredPoints: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/SprintReportNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/workload:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: getListWorkload
+      summary: Read scheduled work for two calendar weeks
+      description: |
+        Reads the filtered live tasks the caller can see in a readable list ("Charge"). Tasks
+        require a due date and a positive estimate. Cancelled, archived and trashed tasks are
+        excluded. With no start date the interval begins on the due date. Allocate each estimate
+        across all Monday–Friday dates in its inclusive interval, then across its assignees for
+        each day.
+        A weekend-only interval uses the preceding working day. A task with no assignee uses
+        the separate unassigned bucket. Whole-minute remainders go to earlier dates and then
+        lower account IDs in ascending order. That allocation preserves the full estimate.
+
+        Return only the 14 days starting at `weekStart` after allocating the whole interval.
+        Include rows with positive allocated minutes in that window. Capacity is 360 minutes
+        per person per weekday and zero on weekends. Totals cover every matching row, across
+        pages. Each page orders rows by assignee account ID (unassigned last) and task key.
+        The opaque cursor binds the caller, list, week and filters. Scope `tasks:read` for a
+        personal API token. Reassignment follows the existing task assignment routes.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/reporting.yaml#/components/parameters/ReportWeekStart'
+        - $ref: '../../components/task.yaml#/components/parameters/StatusFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/PriorityFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/AssigneeFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/LabelFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/Search'
+        - $ref: '../../components/task.yaml#/components/parameters/DueFrom'
+        - $ref: '../../components/task.yaml#/components/parameters/DueTo'
+        - $ref: '../../components/task.yaml#/components/parameters/Level'
+        - $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter'
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Workload totals and one page of task and assignee rows.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/reporting.yaml#/components/schemas/ListWorkloadPage'
+              example:
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                weekStart: '2026-11-02'
+                days:
+                  - { date: '2026-11-02', totalMinutes: 0, dailyCapacityMinutes: 360 }
+                  - { date: '2026-11-03', totalMinutes: 0, dailyCapacityMinutes: 360 }
+                  - { date: '2026-11-04', totalMinutes: 0, dailyCapacityMinutes: 360 }
+                  - { date: '2026-11-05', totalMinutes: 0, dailyCapacityMinutes: 360 }
+                  - { date: '2026-11-06', totalMinutes: 96, dailyCapacityMinutes: 360 }
+                  - { date: '2026-11-07', totalMinutes: 0, dailyCapacityMinutes: 0 }
+                  - { date: '2026-11-08', totalMinutes: 0, dailyCapacityMinutes: 0 }
+                  - { date: '2026-11-09', totalMinutes: 96, dailyCapacityMinutes: 360 }
+                  - { date: '2026-11-10', totalMinutes: 96, dailyCapacityMinutes: 360 }
+                  - { date: '2026-11-11', totalMinutes: 96, dailyCapacityMinutes: 360 }
+                  - { date: '2026-11-12', totalMinutes: 96, dailyCapacityMinutes: 360 }
+                  - { date: '2026-11-13', totalMinutes: 0, dailyCapacityMinutes: 360 }
+                  - { date: '2026-11-14', totalMinutes: 0, dailyCapacityMinutes: 0 }
+                  - { date: '2026-11-15', totalMinutes: 0, dailyCapacityMinutes: 0 }
+                totalMinutes: 480
+                items:
+                  - assignee: { userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+                    taskKey: CAD-482
+                    name: Refondre l’écran de connexion SSO
+                    status: progress
+                    minutesByDay: [0, 0, 0, 0, 48, 0, 0, 48, 48, 48, 48, 0, 0, 0]
+                    totalMinutes: 240
+                  - assignee: { userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b31 }
+                    taskKey: CAD-482
+                    name: Refondre l’écran de connexion SSO
+                    status: progress
+                    minutesByDay: [0, 0, 0, 0, 48, 0, 0, 48, 48, 48, 48, 0, 0, 0]
+                    totalMinutes: 240
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/lists/{listId}/tasks/export:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      operationId: exportListTasks
+      summary: Download the visible list tasks as CSV
+      description: |
+        Exports the filtered rows the caller can see in the list ("Exporter CSV"). It uses the
+        same filters, stable order and root or subtask selection as `GET /v1/lists/{listId}/tasks`.
+        It includes the entire logical result across API pages. An optional Feuille sort
+        chooses a published presentation column or an active custom field ID in this list's
+        space. Its direction defaults to ascending and the ordinary task sort breaks ties.
+        A direction without a column or a custom field unavailable in this space yields
+        `400 request.invalid`.
+
+        The UTF-8 file has semicolon-delimited, quoted fields with embedded quotes doubled.
+        The headers are "Identifiant", "Nom", "Statut", "Priorité", "Assignés", "Échéance"
+        and "Étiquettes", followed by active custom field names in definition order.
+        Status and priority use their French labels. Formula-like untrusted text, including
+        custom header names, is rendered literally when opened in a spreadsheet. The producer
+        checks the 10,000-row limit before sending any CSV bytes, and the gateway relays the
+        file and safe filename. Scope `tasks:read` for a personal API token.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/task.yaml#/components/parameters/StatusFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/PriorityFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/AssigneeFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/LabelFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/Search'
+        - $ref: '../../components/task.yaml#/components/parameters/DueFrom'
+        - $ref: '../../components/task.yaml#/components/parameters/DueTo'
+        - $ref: '../../components/task.yaml#/components/parameters/Level'
+        - $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter'
+        - $ref: '../../components/task.yaml#/components/parameters/TaskSort'
+        - $ref: '#/components/parameters/SheetExportColumn'
+        - $ref: '#/components/parameters/SheetExportDirection'
+      responses:
+        '200':
+          description: The complete CSV file, including headers for an empty result.
+          headers:
+            Content-Disposition:
+              required: true
+              description: Safe attachment basename with the .csv extension, without path segments or control characters.
+              schema:
+                type: string
+                examples: ['attachment; filename="sprint-14.csv"']
+          content:
+            text/csv:
+              schema:
+                type: string
+              example: |
+                "Identifiant";"Nom";"Statut";"Priorité";"Assignés";"Échéance";"Étiquettes";"Points";"Client"
+                "CAD-482";"Refondre l’écran de connexion SSO";"En cours";"Haute";"Camille Martin, Inès Robert";"2026-11-12";"Auth, Front";"5";"Coopérative Lumen"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '422':
+          $ref: '#/components/responses/ExportRowLimitReached'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -1055,6 +1329,20 @@ components:
         `Authorization: Bearer`. It acts with the rights of its user in the organization it was
         created in, within the scopes each operation lists.
   parameters:
+    SheetExportColumn:
+      name: sheetSortColumn
+      in: query
+      required: false
+      description: Feuille column key or an active custom field ID for this list's space.
+      schema:
+        $ref: '../../components/reporting.yaml#/components/schemas/SheetExportColumn'
+    SheetExportDirection:
+      name: sheetSortDirection
+      in: query
+      required: false
+      description: Sheet export sort direction, ascending when omitted. Requires sheetSortColumn.
+      schema:
+        $ref: '../../components/reporting.yaml#/components/schemas/SheetExportDirection'
     SavedViewId:
       name: viewId
       in: path
@@ -1214,6 +1502,33 @@ components:
         status: 429
         code: rate-limit.exceeded
   responses:
+    SprintReportNotFound:
+      description: |
+        `list.not-found` when the list is not a readable sprint. `organization.not-found`
+        follows `ListNotFound`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Sprint introuvable.
+            status: 404
+            code: list.not-found
+    ExportRowLimitReached:
+      description: |
+        `list.export-row-limit-reached` when more than 10,000 readable rows match.
+        `details.maxRows` is the export limit and the response contains no CSV bytes.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: La liste dépasse la limite d’export.
+            status: 422
+            code: list.export-row-limit-reached
+            details: { maxRows: 10000 }
     SavedViewNotFound:
       description: '`saved-view.not-found`, `list.not-found`, `organization.not-found`.'
       content:

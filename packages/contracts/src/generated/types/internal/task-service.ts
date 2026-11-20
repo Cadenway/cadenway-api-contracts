@@ -83,6 +83,541 @@ export interface CustomFieldDefinitionPatch {
 }
 
 /**
+ * Name of the goal, with surrounding whitespace removed.
+ * @minLength 1
+ * @maxLength 300
+ * @pattern \S
+ */
+export type GoalName = string;
+
+/**
+ * Calendar quarter in `YYYY-QN` format.
+ * @pattern ^(?!0000)[0-9]{4}-Q[1-4]$
+ */
+export type GoalQuarter = string;
+
+/**
+ * Percentage before presentation rounding.
+ * @minimum 0
+ * @maximum 100
+ */
+export type GoalProgressPercent = number;
+
+/**
+ * Label of the key result, with surrounding whitespace removed.
+ * @minLength 1
+ * @maxLength 300
+ * @pattern \S
+ */
+export type GoalResultLabel = string;
+
+export interface GoalResultCommon {
+  /** UUID v7 of the key result. */
+  id: string;
+  label: GoalResultLabel;
+  progressPercent: GoalProgressPercent;
+}
+
+export type GoalNumberResultKind = typeof GoalNumberResultKind[keyof typeof GoalNumberResultKind];
+
+
+export const GoalNumberResultKind = {
+  number: 'number',
+} as const;
+
+/**
+ * Clamp `(currentValue - startValue) / (targetValue - startValue)` to the range 0 to 1,
+ * then express it as a percentage. This works for increasing and decreasing targets.
+ * When the start and target are equal, progress is 100 only while the current value
+ * equals the target.
+ */
+export type GoalNumberResult = GoalResultCommon & {
+  kind: GoalNumberResultKind;
+  startValue: number;
+  currentValue: number;
+  targetValue: number;
+};
+
+export type GoalCheckboxResultKind = typeof GoalCheckboxResultKind[keyof typeof GoalCheckboxResultKind];
+
+
+export const GoalCheckboxResultKind = {
+  checkbox: 'checkbox',
+} as const;
+
+/**
+ * Progress is 100 when checked and zero otherwise.
+ */
+export type GoalCheckboxResult = GoalResultCommon & {
+  kind: GoalCheckboxResultKind;
+  checked: boolean;
+};
+
+export type GoalListProgressResultKind = typeof GoalListProgressResultKind[keyof typeof GoalListProgressResultKind];
+
+
+export const GoalListProgressResultKind = {
+  'list-progress': 'list-progress',
+} as const;
+
+/**
+ * Progress is the percentage of eligible tasks in status `done`. Cancelled tasks
+ * are excluded from eligibleTaskCount. An empty eligible population yields zero.
+ */
+export type GoalListProgressResult = GoalResultCommon & {
+  kind: GoalListProgressResultKind;
+  listId: string;
+  /** @minimum 0 */
+  eligibleTaskCount: number;
+  /** @minimum 0 */
+  doneTaskCount: number;
+};
+
+export type GoalMilestoneResultKind = typeof GoalMilestoneResultKind[keyof typeof GoalMilestoneResultKind];
+
+
+export const GoalMilestoneResultKind = {
+  milestone: 'milestone',
+} as const;
+
+/**
+ * Key of a task, the only way a task is named outside task-service: the prefix of the space
+ * it was created in, a dash and a number. A key never changes, also when the task moves to
+ * another space or its space changes prefix, and is never given to another task.
+ * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
+ */
+export type TaskKey = string;
+
+/**
+ * Progress is 100 when the visible milestone is reached and zero otherwise.
+ */
+export type GoalMilestoneResult = GoalResultCommon & {
+  kind: GoalMilestoneResultKind;
+  taskKey: TaskKey;
+  reached: boolean;
+};
+
+/**
+ * A key result whose target, if linked, is currently readable by the caller.
+ */
+export type GoalResult = GoalNumberResult | GoalCheckboxResult | GoalListProgressResult | GoalMilestoneResult;
+
+/**
+ * A goal for a calendar quarter. Progress is the equal-weight average of the
+ * caller's visible results or zero when none are visible. Unreadable linked targets
+ * are omitted from both the results and the average.
+ */
+export interface Goal {
+  /** UUID v7 of the goal. */
+  id: string;
+  name: GoalName;
+  /** Account of the goal owner. */
+  ownerUserId: string;
+  /** Goal deadline as a calendar date. */
+  dueDate: string;
+  /**
+     * The owning space, or null for an organization goal.
+     * @nullable
+     */
+  spaceId: string | null;
+  quarter: GoalQuarter;
+  /** @minimum 1 */
+  version: number;
+  progressPercent: GoalProgressPercent;
+  /**
+     * Achieved at 100 percent. Otherwise on track when progress trails the elapsed
+     * quarter by at most five percentage points, at risk when it trails by at most
+     * twenty points, and behind thereafter. Elapsed progress is zero before the
+     * quarter and 100 after it.
+     */
+  health: string;
+  /** @maxItems 20 */
+  results: GoalResult[];
+}
+
+/**
+ * Totals over every visible goal matching the collection filters, independent of page size.
+ */
+export interface GoalPageSummary {
+  /** @minimum 0 */
+  goalCount: number;
+  expectedProgressPercent: GoalProgressPercent;
+  /** Equal-weight average of goal progress, or zero when no goals are visible. */
+  averageProgressPercent: GoalProgressPercent;
+  /** @minimum 0 */
+  onTrackOrAchievedCount: number;
+  /** @minimum 0 */
+  achievedCount: number;
+  /** @minimum 0 */
+  atRiskOrBehindCount: number;
+}
+
+export interface GoalPage {
+  items: Goal[];
+  nextCursor: NextCursor | null;
+  summary: GoalPageSummary;
+}
+
+export type GoalNumberResultCreationKind = typeof GoalNumberResultCreationKind[keyof typeof GoalNumberResultCreationKind];
+
+
+export const GoalNumberResultCreationKind = {
+  number: 'number',
+} as const;
+
+export interface GoalNumberResultCreation {
+  kind: GoalNumberResultCreationKind;
+  label: GoalResultLabel;
+  startValue: number;
+  currentValue: number;
+  targetValue: number;
+}
+
+export type GoalCheckboxResultCreationKind = typeof GoalCheckboxResultCreationKind[keyof typeof GoalCheckboxResultCreationKind];
+
+
+export const GoalCheckboxResultCreationKind = {
+  checkbox: 'checkbox',
+} as const;
+
+export interface GoalCheckboxResultCreation {
+  kind: GoalCheckboxResultCreationKind;
+  label: GoalResultLabel;
+  checked: boolean;
+}
+
+export type GoalListProgressResultCreationKind = typeof GoalListProgressResultCreationKind[keyof typeof GoalListProgressResultCreationKind];
+
+
+export const GoalListProgressResultCreationKind = {
+  'list-progress': 'list-progress',
+} as const;
+
+export interface GoalListProgressResultCreation {
+  kind: GoalListProgressResultCreationKind;
+  label: GoalResultLabel;
+  listId: string;
+}
+
+export type GoalMilestoneResultCreationKind = typeof GoalMilestoneResultCreationKind[keyof typeof GoalMilestoneResultCreationKind];
+
+
+export const GoalMilestoneResultCreationKind = {
+  milestone: 'milestone',
+} as const;
+
+export interface GoalMilestoneResultCreation {
+  kind: GoalMilestoneResultCreationKind;
+  label: GoalResultLabel;
+  taskKey: TaskKey;
+}
+
+/**
+ * A new key result. A linked list or milestone must be readable by the caller in the
+ * current organization at the time of the write.
+ */
+export type GoalResultCreation = GoalNumberResultCreation | GoalCheckboxResultCreation | GoalListProgressResultCreation | GoalMilestoneResultCreation;
+
+/**
+ * An organization goal when spaceId is omitted or null, or a space goal otherwise.
+ */
+export interface GoalCreation {
+  name: GoalName;
+  ownerUserId: string;
+  dueDate: string;
+  quarter: GoalQuarter;
+  /** @nullable */
+  spaceId?: string | null;
+  /**
+     * Optional key results created atomically with the goal.
+     * @maxItems 20
+     */
+  results?: GoalResultCreation[];
+}
+
+/**
+ * Change goal metadata. Omitted members keep their values. Quarter and scope are fixed.
+ */
+export interface GoalPatch {
+  name?: GoalName;
+  ownerUserId?: string;
+  dueDate?: string;
+}
+
+/**
+ * Update the label of any key result, the current value of a numeric result, or the
+ * checked state of a checkbox. A progress field for the wrong kind is invalid.
+ * Kind and linked target are assigned on creation. Omitted members keep their values.
+ */
+export interface GoalResultPatch {
+  label?: GoalResultLabel;
+  currentValue?: number;
+  checked?: boolean;
+}
+
+/**
+ * Selected number of weeks, including the observation week.
+ */
+export type TeamDashboardWeeksProperty = typeof TeamDashboardWeeksProperty[keyof typeof TeamDashboardWeeksProperty];
+
+
+export const TeamDashboardWeeksProperty = {
+  NUMBER_8: 8,
+  NUMBER_12: 12,
+} as const;
+
+/**
+ * IANA time zone used to assign completion instants to local calendar days.
+ * @minLength 1
+ */
+export type TeamDashboardTimeZone = string;
+
+/**
+ * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
+ * planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
+ * ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
+ * `cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a
+ * status, it never adds or removes a key.
+ */
+export type StatusKey = typeof StatusKey[keyof typeof StatusKey];
+
+
+export const StatusKey = {
+  triage: 'triage',
+  backlog: 'backlog',
+  todo: 'todo',
+  progress: 'progress',
+  review: 'review',
+  testing: 'testing',
+  waiting: 'waiting',
+  blocked: 'blocked',
+  done: 'done',
+  cancelled: 'cancelled',
+} as const;
+
+export interface TeamDashboardStatusCount {
+  status: StatusKey;
+  /** @minimum 1 */
+  count: number;
+}
+
+/**
+ * `RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a
+ * successor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;
+ * monthly clamps to the last day while retaining the chain's original day.
+ */
+export type Recurrence = typeof Recurrence[keyof typeof Recurrence];
+
+
+export const Recurrence = {
+  none: 'none',
+  daily: 'daily',
+  weekly: 'weekly',
+  biweekly: 'biweekly',
+  monthly: 'monthly',
+} as const;
+
+/**
+ * Sparse values keyed by lowercase stable custom field ID. Only active definitions of the readable
+ * task's current space are included. Missing entries have no value. Absence of the member
+ * means the producer has not reported these values. Numeric zero and empty text are values.
+ */
+export interface TaskCustomFieldValues {[key: string]: number | string}
+
+/**
+ * Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera
+ * pas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of
+ * `@cadenway/contracts`. A closed set: another reason would be a breaking change.
+ */
+export type CancelReason = typeof CancelReason[keyof typeof CancelReason];
+
+
+export const CancelReason = {
+  duplicate: 'duplicate',
+  wontdo: 'wontdo',
+  scope: 'scope',
+  obsolete: 'obsolete',
+} as const;
+
+/**
+ * Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`
+ * ("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of
+ * `@cadenway/contracts`. A closed set: another priority would be a breaking change.
+ */
+export type PriorityKey = typeof PriorityKey[keyof typeof PriorityKey];
+
+
+export const PriorityKey = {
+  urgente: 'urgente',
+  haute: 'haute',
+  moyenne: 'moyenne',
+  basse: 'basse',
+} as const;
+
+/**
+ * A person, by account. Only the account id in this version: the web application takes the
+ * name and the initials from the member list. It may name a former member, for example the
+ * owner of a space of the whole organization who left it. Later versions may add members.
+ */
+export interface UserRef {
+  userId: string;
+}
+
+/**
+ * Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.
+ */
+export interface SubtaskCounts {
+  /** @minimum 0 */
+  total: number;
+  /** @minimum 0 */
+  closed: number;
+}
+
+/**
+ * Items of the checklist of a task, and those ticked ("3 / 3").
+ */
+export interface ChecklistCounts {
+  /** @minimum 0 */
+  total: number;
+  /** @minimum 0 */
+  done: number;
+}
+
+/**
+ * A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the
+ * description, the note of the cancellation and the items of the checklist.
+ */
+export interface TaskSummary {
+  /** Whether this task is a milestone; absence means the producer did not report it. */
+  milestone?: boolean;
+  recurrence?: Recurrence;
+  customFieldValues?: TaskCustomFieldValues;
+  key: TaskKey;
+  /** "Nom de la tâche", 300 characters at most. */
+  name: string;
+  status: StatusKey;
+  /** Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`. */
+  cancelReason: CancelReason | null;
+  priority: PriorityKey;
+  /** "Assignés", 20 at most, in the order they were assigned; empty for "Non assignée". */
+  assignees: UserRef[];
+  /**
+     * "Échéance", a calendar date; `null` when there is none.
+     * @nullable
+     */
+  dueDate: string | null;
+  /**
+     * First day of the work, for the Gantt view; `null` when there is none, always `null`
+     * without a due date, and never after the due date.
+     * @nullable
+     */
+  startDate: string | null;
+  /**
+     * "Estimation", in whole minutes, 60,000 at most; `null` when there is none.
+     * @minimum 1
+     * @nullable
+     */
+  estimateMinutes: number | null;
+  /** "Étiquettes", 20 at most, in the order they were added. */
+  labels: string[];
+  /** The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task. */
+  parentKey: TaskKey | null;
+  /** The list of the task; a subtask is always in the list of its parent. */
+  listId: string;
+  /** The space of that list, which may not be the space of the prefix of the key. */
+  spaceId: string;
+  subtaskCounts: SubtaskCounts;
+  checklistCounts: ChecklistCounts;
+  /**
+     * When the task last entered `done`; `null` while its status is not `done`.
+     * @nullable
+     */
+  completedAt: string | null;
+  createdAt: string;
+  /**
+     * Version of the task, also sent as `ETag` by the routes of one task.
+     * @minimum 1
+     */
+  version: number;
+}
+
+export interface TeamDashboardAssigneeCount {
+  /** Account of an assignee present in the visible task population. */
+  userId: string;
+  /**
+     * Open tasks assigned to this user, counted once per task.
+     * @minimum 0
+     */
+  openCount: number;
+}
+
+export interface TeamDashboardCompletionWeek {
+  /** Monday of this week in the requested time zone. */
+  startsOn: string;
+  /**
+     * Eligible tasks that transitioned to `done` during this week, counted once
+     * per task even if a task was reopened and completed again in the same week.
+     * @minimum 0
+     */
+  completedCount: number;
+}
+
+/**
+ * One team dashboard restricted to the caller's visible active task population.
+ */
+export interface TeamDashboard {
+  /** Calendar observation date supplied by the caller in the requested time zone. */
+  today: string;
+  timeZone: TeamDashboardTimeZone;
+  /** Selected number of weeks, including the observation week. */
+  weeks: TeamDashboardWeeksProperty;
+  /** Server observation instant in UTC. */
+  observedAt: string;
+  /**
+     * Visible tasks whose current status category is not closed.
+     * @minimum 0
+     */
+  openCount: number;
+  /**
+     * Visible open tasks whose due date is earlier than today.
+     * @minimum 0
+     */
+  lateCount: number;
+  /**
+     * Visible tasks whose current status key is exactly `blocked`.
+     * @minimum 0
+     */
+  blockedCount: number;
+  /**
+     * Sum of the completion counts for the returned weeks.
+     * @minimum 0
+     */
+  completedCount: number;
+  /** One row per represented status, in canonical status order. */
+  byStatus: TeamDashboardStatusCount[];
+  /**
+     * First ten overdue tasks, ordered by due date and then by task key.
+     * @maxItems 10
+     */
+  overdueTasks: TaskSummary[];
+  /**
+     * Open task count used as the workload reference, six tasks in this delivery.
+     * @minimum 1
+     */
+  assigneeThreshold: number;
+  /** Open task counts for assignees in the visible task population. */
+  assignees: TeamDashboardAssigneeCount[];
+  /**
+     * Exactly the selected number of consecutive weeks in chronological order,
+     * including empty weeks. The observation week ends on the caller's date and
+     * counts only completion instants already observed by the server.
+     * @minItems 8
+     * @maxItems 12
+     */
+  completions: TeamDashboardCompletionWeek[];
+}
+
+/**
  * Current visible target name and public resource path; listId is present for a saved view.
  */
 export type FavoriteTarget = {
@@ -145,44 +680,6 @@ export type LookIconValue = string | null;
  * Layout key; clients may ignore unknown future layouts.
  */
 export type SavedViewLayoutValue = string;
-
-/**
- * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
- * planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
- * ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
- * `cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a
- * status, it never adds or removes a key.
- */
-export type StatusKey = typeof StatusKey[keyof typeof StatusKey];
-
-
-export const StatusKey = {
-  triage: 'triage',
-  backlog: 'backlog',
-  todo: 'todo',
-  progress: 'progress',
-  review: 'review',
-  testing: 'testing',
-  waiting: 'waiting',
-  blocked: 'blocked',
-  done: 'done',
-  cancelled: 'cancelled',
-} as const;
-
-/**
- * Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`
- * ("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of
- * `@cadenway/contracts`. A closed set: another priority would be a breaking change.
- */
-export type PriorityKey = typeof PriorityKey[keyof typeof PriorityKey];
-
-
-export const PriorityKey = {
-  urgente: 'urgente',
-  haute: 'haute',
-  moyenne: 'moyenne',
-  basse: 'basse',
-} as const;
 
 /**
  * Existing task-query filters. `me` is resolved for the person applying the view, not its
@@ -570,14 +1067,6 @@ export interface TaskTemplate {
   version: number;
 }
 
-/**
- * Key of a task, the only way a task is named outside task-service: the prefix of the space
- * it was created in, a dash and a number. A key never changes, also when the task moves to
- * another space or its space changes prefix, and is never given to another task.
- * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
- */
-export type TaskKey = string;
-
 export interface TaskTemplateCreation {
   sourceTaskKey: TaskKey;
   name?: SavedItemName;
@@ -708,21 +1197,6 @@ export type BulkTaskStatusActionType = typeof BulkTaskStatusActionType[keyof typ
 
 export const BulkTaskStatusActionType = {
   status: 'status',
-} as const;
-
-/**
- * Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera
- * pas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of
- * `@cadenway/contracts`. A closed set: another reason would be a breaking change.
- */
-export type CancelReason = typeof CancelReason[keyof typeof CancelReason];
-
-
-export const CancelReason = {
-  duplicate: 'duplicate',
-  wontdo: 'wontdo',
-  scope: 'scope',
-  obsolete: 'obsolete',
 } as const;
 
 /**
@@ -863,116 +1337,6 @@ export interface BulkTaskResult {
      * @minimum 0
      */
   affectedCount: number;
-}
-
-/**
- * `RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a
- * successor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;
- * monthly clamps to the last day while retaining the chain's original day.
- */
-export type Recurrence = typeof Recurrence[keyof typeof Recurrence];
-
-
-export const Recurrence = {
-  none: 'none',
-  daily: 'daily',
-  weekly: 'weekly',
-  biweekly: 'biweekly',
-  monthly: 'monthly',
-} as const;
-
-/**
- * Sparse values keyed by lowercase stable custom field ID. Only active definitions of the readable
- * task's current space are included. Missing entries have no value. Absence of the member
- * means the producer has not reported these values. Numeric zero and empty text are values.
- */
-export interface TaskCustomFieldValues {[key: string]: number | string}
-
-/**
- * A person, by account. Only the account id in this version: the web application takes the
- * name and the initials from the member list. It may name a former member, for example the
- * owner of a space of the whole organization who left it. Later versions may add members.
- */
-export interface UserRef {
-  userId: string;
-}
-
-/**
- * Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.
- */
-export interface SubtaskCounts {
-  /** @minimum 0 */
-  total: number;
-  /** @minimum 0 */
-  closed: number;
-}
-
-/**
- * Items of the checklist of a task, and those ticked ("3 / 3").
- */
-export interface ChecklistCounts {
-  /** @minimum 0 */
-  total: number;
-  /** @minimum 0 */
-  done: number;
-}
-
-/**
- * A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the
- * description, the note of the cancellation and the items of the checklist.
- */
-export interface TaskSummary {
-  /** Whether this task is a milestone; absence means the producer did not report it. */
-  milestone?: boolean;
-  recurrence?: Recurrence;
-  customFieldValues?: TaskCustomFieldValues;
-  key: TaskKey;
-  /** "Nom de la tâche", 300 characters at most. */
-  name: string;
-  status: StatusKey;
-  /** Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`. */
-  cancelReason: CancelReason | null;
-  priority: PriorityKey;
-  /** "Assignés", 20 at most, in the order they were assigned; empty for "Non assignée". */
-  assignees: UserRef[];
-  /**
-     * "Échéance", a calendar date; `null` when there is none.
-     * @nullable
-     */
-  dueDate: string | null;
-  /**
-     * First day of the work, for the Gantt view; `null` when there is none, always `null`
-     * without a due date, and never after the due date.
-     * @nullable
-     */
-  startDate: string | null;
-  /**
-     * "Estimation", in whole minutes, 60,000 at most; `null` when there is none.
-     * @minimum 1
-     * @nullable
-     */
-  estimateMinutes: number | null;
-  /** "Étiquettes", 20 at most, in the order they were added. */
-  labels: string[];
-  /** The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task. */
-  parentKey: TaskKey | null;
-  /** The list of the task; a subtask is always in the list of its parent. */
-  listId: string;
-  /** The space of that list, which may not be the space of the prefix of the key. */
-  spaceId: string;
-  subtaskCounts: SubtaskCounts;
-  checklistCounts: ChecklistCounts;
-  /**
-     * When the task last entered `done`; `null` while its status is not `done`.
-     * @nullable
-     */
-  completedAt: string | null;
-  createdAt: string;
-  /**
-     * Version of the task, also sent as `ETag` by the routes of one task.
-     * @minimum 1
-     */
-  version: number;
 }
 
 export type MilestonePageItemsItem = TaskSummary & {
@@ -2786,6 +3150,441 @@ export interface TaskStatusDurationResult {
 }
 
 /**
+ * Nonnegative points before presentation rounding.
+ * @minimum 0
+ */
+export type ReportPoints = number;
+
+/**
+ * Nonnegative points when the observation is available, or null when it is unavailable.
+ * @minimum 0
+ * @nullable
+ */
+export type ReportAvailablePoints = number | null;
+
+/**
+ * A task included in the observed sprint scope that is still readable by the caller.
+ */
+export interface SprintReportTask {
+  taskKey: TaskKey;
+  name: string;
+  points: ReportPoints;
+  status: StatusKey;
+}
+
+export interface SprintReportBreakdown {
+  points: ReportPoints;
+  /**
+     * Total tasks in this part of the caller-visible scope.
+     * @minimum 0
+     */
+  taskCount: number;
+  /** Up to the first six tasks in task-key order for the drill-down preview. */
+  items: SprintReportTask[];
+}
+
+export interface SprintBurndownDay {
+  /** Calendar date in the requested time zone. */
+  date: string;
+  /**
+     * Actual points remaining at the end of a covered day, or at observedAt for a day
+     * still in progress at that cutoff. Null for an uncovered day or a day after the cutoff.
+     */
+  actualRemainingPoints: (ReportAvailablePoints | null);
+  /** Ideal remaining points from the opening commitment, or null if it is unavailable. */
+  idealRemainingPoints: (ReportAvailablePoints | null);
+  /** Forecast points remaining for this date, or null without a supported forecast. */
+  projectedRemainingPoints: (ReportAvailablePoints | null);
+}
+
+/**
+ * Scope and observed points of a real, readable, earlier sprint in the same space.
+ */
+export interface SprintVelocityPoint {
+  listId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  /** Opening commitment for this prior sprint, or null without coverage. */
+  openingPoints: (ReportAvailablePoints | null);
+  /** Points delivered at the previous sprint's close, or null without coverage. */
+  deliveredPoints: (ReportAvailablePoints | null);
+}
+
+/**
+ * Visible ordinary root tasks contribute only while eligible for the evaluated observation.
+ * The report also checks current task visibility and excludes purged tasks entirely.
+ * Archived, trashed, cancelled and milestone tasks are excluded at observations when they
+ * are ineligible. Scope changes can make delivered and remaining points differ in sum
+ * from the opening commitment.
+ * The designated numeric points field contributes its stored value, including zero.
+ * Otherwise estimate bands up to 60, 180, 360 and 600 minutes yield 1, 2, 3 and 5 points.
+ * Estimates above 600 yield 8 points. An unset estimate yields one point.
+ */
+export interface SprintReport {
+  listId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  /**
+     * Observation cutoff in UTC. It is the earliest of server time, the end of the
+     * requested local date in timeZone, and sprint close.
+     */
+  observedAt: string;
+  /**
+     * Start of reliable history in UTC, or null if it is unavailable.
+     * @nullable
+     */
+  coverageStartedAt: string | null;
+  /** Commitment at sprint opening, or null if the opening cannot be reconstructed. */
+  openingPoints: (ReportAvailablePoints | null);
+  /** Done tasks at the observation or sprint close, or null if that scope is unavailable. */
+  delivered: SprintReportBreakdown | null;
+  /** Remaining tasks at that same observation, or null if that scope is unavailable. */
+  remaining: SprintReportBreakdown | null;
+  /** Forecast at the sprint end, or null until enough covered observations establish a rate. */
+  projectedRemainingPoints: (ReportAvailablePoints | null);
+  /** Days in chronological order, including uncovered dates with null actuals. */
+  items: SprintBurndownDay[];
+  nextCursor: NextCursor | null;
+  /**
+     * Up to four earlier readable completed sprints in the same space, ordered chronologically.
+     * @maxItems 4
+     */
+  velocity: SprintVelocityPoint[];
+}
+
+export interface ReportingDayMinutes {
+  /** Date in the returned reporting window. */
+  date: string;
+  /**
+     * Sum across all visible rows for this date, independent of pagination.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+/**
+ * Per-person capacity of 360 minutes on weekdays and zero on weekends.
+ */
+export type ListWorkloadDayDailyCapacityMinutes = typeof ListWorkloadDayDailyCapacityMinutes[keyof typeof ListWorkloadDayDailyCapacityMinutes];
+
+
+export const ListWorkloadDayDailyCapacityMinutes = {
+  NUMBER_0: 0,
+  NUMBER_360: 360,
+} as const;
+
+export type ListWorkloadDay = ReportingDayMinutes & {
+  /** Per-person capacity of 360 minutes on weekdays and zero on weekends. */
+  dailyCapacityMinutes: ListWorkloadDayDailyCapacityMinutes;
+};
+
+/**
+ * One task's allocation to an assignee or the unassigned bucket in this window.
+ */
+export interface ListWorkloadRow {
+  /** Assignee account, or null for the unassigned bucket. */
+  assignee: UserRef | null;
+  taskKey: TaskKey;
+  name: string;
+  status: StatusKey;
+  /**
+     * Whole minutes per date aligned with the days of the page.
+     * @minItems 14
+     * @maxItems 14
+     * @items.minimum 0
+     */
+  minutesByDay: number[];
+  /**
+     * Sum of this row's allocations within the returned window.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+/**
+ * Workload for the filtered live list over two calendar weeks. Only noncancelled tasks
+ * with a due date and a positive estimate contribute. Split each estimate over the
+ * weekdays of its full task interval then across its assignees. If only the due date is
+ * set it defines the interval. If the interval contains only weekend dates, use the
+ * preceding working day. Allocate all estimated minutes with stable remainder handling
+ * before selecting the requested date window and page.
+ */
+export interface ListWorkloadPage {
+  listId: string;
+  /** Monday of the first week. */
+  weekStart: string;
+  /**
+     * All fourteen calendar days in order, including weekends with zero capacity.
+     * @minItems 14
+     * @maxItems 14
+     */
+  days: ListWorkloadDay[];
+  /**
+     * Allocated minutes in the visible window across all rows.
+     * @minimum 0
+     */
+  totalMinutes: number;
+  items: ListWorkloadRow[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * One author's recorded minutes by work date for one currently visible live task.
+ */
+export interface ListTimesheetRow {
+  /** Stable account reference, including former members with the usual display fallback. */
+  author: UserRef;
+  taskKey: TaskKey;
+  name: string;
+  status: StatusKey;
+  /**
+     * Whole minutes aligned with the seven dates of the timesheet.
+     * @minItems 7
+     * @maxItems 7
+     * @items.minimum 0
+     */
+  minutesByDay: number[];
+  /**
+     * Sum of the author's recorded minutes for this task in the week.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+/**
+ * One Monday-to-Sunday timesheet over the task time entries for the selected list.
+ * Entries follow their task when it moves. Archived and trashed tasks contribute
+ * no entries while in those states. The reported day is the stored work date.
+ */
+export interface ListTimesheetPage {
+  listId: string;
+  /** Monday of the reported week. */
+  weekStart: string;
+  /**
+     * All seven calendar days in order, with totals across authors and tasks.
+     * @minItems 7
+     * @maxItems 7
+     */
+  days: ReportingDayMinutes[];
+  /**
+     * Recorded minutes across all visible tasks and authors in the week.
+     * @minimum 0
+     */
+  totalMinutes: number;
+  /** Rows ordered by author account and task key, including across page boundaries. */
+  items: ListTimesheetRow[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * Existing sheet column or stable ID of a custom field.
+ */
+export type SheetExportColumn = SavedViewSheetColumn | CustomFieldId;
+
+/**
+ * Order of the selected sheet column in the CSV export.
+ */
+export type SheetExportDirection = typeof SheetExportDirection[keyof typeof SheetExportDirection];
+
+
+export const SheetExportDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+/**
+ * Form heading supplied by a list editor. The service trims surrounding whitespace.
+ * @minLength 1
+ * @maxLength 300
+ */
+export type IntakeFormTitle = string;
+
+/**
+ * Introductory plain text supplied by a list editor, or null when absent.
+ * @maxLength 500
+ * @nullable
+ */
+export type IntakeFormDescription = string | null;
+
+/**
+ * Whether the submission accepts this field and requires a value.
+ */
+export type IntakeFieldMode = typeof IntakeFieldMode[keyof typeof IntakeFieldMode];
+
+
+export const IntakeFieldMode = {
+  disabled: 'disabled',
+  optional: 'optional',
+  required: 'required',
+} as const;
+
+/**
+ * Policy for the configurable fields. The title is required for every submission.
+ */
+export interface IntakeFormFields {
+  description: IntakeFieldMode;
+  priority: IntakeFieldMode;
+  dueDate: IntakeFieldMode;
+  contactEmail: IntakeFieldMode;
+}
+
+/**
+ * Partial changes to the configurable fields. Omitted modes retain their values.
+ */
+export interface IntakeFormFieldsPatch {
+  description?: IntakeFieldMode;
+  priority?: IntakeFieldMode;
+  dueDate?: IntakeFieldMode;
+  contactEmail?: IntakeFieldMode;
+}
+
+/**
+ * UUID of the eligible account assigned to new tasks, or null for no assignment.
+ * @nullable
+ */
+export type IntakeDefaultAssigneeId = string | null;
+
+/**
+ * Current form settings visible to an editor of the owning list.
+ */
+export interface IntakeFormConfiguration {
+  title: IntakeFormTitle;
+  description: IntakeFormDescription | null;
+  fields: IntakeFormFields;
+  defaultStatus: StatusKey;
+  defaultAssigneeId: IntakeDefaultAssigneeId | null;
+  /**
+     * Opaque key of the current publication, or null when the form is disabled.
+     * @nullable
+     * @pattern ^[A-Za-z0-9_-]{43}$
+     */
+  publicKey: string | null;
+  /**
+     * Configuration version used for conditional changes.
+     * @minimum 1
+     */
+  version: number;
+}
+
+/**
+ * Merge patch of the editable settings. Null clears the introduction or default assignee.
+ */
+export interface IntakeFormPatch {
+  title?: IntakeFormTitle;
+  description?: IntakeFormDescription | null;
+  fields?: IntakeFormFieldsPatch;
+  defaultStatus?: StatusKey;
+  defaultAssigneeId?: IntakeDefaultAssigneeId | null;
+}
+
+/**
+ * Public projection of the settings deliberately provided for display.
+ */
+export interface PublicIntakeForm {
+  title: IntakeFormTitle;
+  description: IntakeFormDescription | null;
+  fields: IntakeFormFields;
+}
+
+/**
+ * Address submitted by the applicant and stored separately from the task.
+ * @maxLength 254
+ */
+export type IntakeContactEmail = string;
+
+/**
+ * The service validates configurable fields against the current publication after resolving
+ * the form key. Disabled fields must be omitted. Required fields must contain a value.
+ */
+export interface IntakeSubmission {
+  title: TaskName;
+  description?: TaskDescription | null;
+  priority?: PriorityKey;
+  /** Requested due date in calendar days. */
+  dueDate?: string;
+  contactEmail?: IntakeContactEmail;
+}
+
+/**
+ * Acknowledgement returned after committing the submission.
+ */
+export interface IntakeReceipt {
+  /**
+     * Opaque identifier of this acknowledgement.
+     * @pattern ^[A-Za-z0-9_-]{43}$
+     */
+  receipt: string;
+}
+
+/**
+ * Contact data visible to a current list editor for this task.
+ */
+export interface TaskIntakeContact {
+  /** Address supplied with the intake submission, or null when absent. */
+  contactEmail: IntakeContactEmail | null;
+}
+
+/**
+ * Number of calendar weeks, including the observation week.
+ */
+export type TeamDashboardWeeks = typeof TeamDashboardWeeks[keyof typeof TeamDashboardWeeks];
+
+
+export const TeamDashboardWeeks = {
+  NUMBER_8: 8,
+  NUMBER_12: 12,
+} as const;
+
+/**
+ * `list.not-found` when the list is not a readable sprint. `organization.not-found`
+ * follows `ListNotFound`.
+ */
+export type SprintReportNotFoundResponse = Problem;
+
+/**
+ * `list.export-row-limit-reached` when more than 10,000 readable rows match.
+ * `details.maxRows` is the export limit and the response contains no CSV bytes.
+ */
+export type ExportRowLimitReachedResponse = Problem;
+
+/**
+ * Current list form configuration.
+ */
+export type IntakeConfigurationResponse = IntakeFormConfiguration;
+
+/**
+ * `auth.issuer-not-allowed` or `auth.actor-not-allowed` for an applicant call.
+ */
+export type IntakeApplicantAccessRefusedResponse = Problem;
+
+/**
+ * `intake-form.not-found`: generic response for a key without a valid active publication.
+ */
+export type PublicIntakeNotFoundResponse = Problem;
+
+/**
+ * `intake-form.list-archived`: editing or publishing an archived list’s form is refused.
+ */
+export type IntakeListArchivedResponse = Problem;
+
+/**
+ * `intake-form.defaults-invalid`: the configured status or assignee is invalid for this list.
+ */
+export type IntakeDefaultsInvalidResponse = Problem;
+
+/**
+ * `idempotency.request-in-progress`: a request with this key on this publication still runs.
+ */
+export type IntakeSubmissionInProgressResponse = Problem;
+
+/**
+ * `idempotency.key-reused`: this key was used before with another body on the same publication.
+ */
+export type IntakeSubmissionRefusedResponse = Problem;
+
+/**
  * `time-entry.author-required` when an editor tries to delete another actor's entry.
  * `access.role-insufficient`, `auth.issuer-not-allowed`, `auth.actor-not-allowed` and
  * `auth.organization-required` are defined in `WriteForbidden`.
@@ -2850,6 +3649,54 @@ export type OnboardingChecklistUnavailableResponse = Problem;
  * - `idempotency.request-in-progress`: a matching request with this key is still running.
  */
 export type OnboardingFinishConflictResponse = Problem;
+
+/**
+ * - `organization.role-forbidden`: only an owner or admin writes organization goals.
+ * - `access.role-insufficient`: the caller sees the space without `edit`.
+ *   `details.role` and `details.requiredRole` describe the effective and required roles.
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`:
+ *   see the internal token.
+ */
+export type GoalWriteForbiddenResponse = Problem;
+
+/**
+ * - `goal.not-found`: the goal is unknown or hidden in the current organization.
+ * - `organization.not-found`: the organization is unknown or the caller is no longer a member.
+ */
+export type GoalNotFoundResponse = Problem;
+
+/**
+ * - `goal.not-found`: the parent goal is unknown or hidden.
+ * - `goal.result-not-found`: the result is unknown, belongs to another goal or links an unavailable target.
+ * - `organization.not-found`: the organization is unknown or the caller is no longer a member.
+ */
+export type GoalResultNotFoundResponse = Problem;
+
+/**
+ * - `goal.owner-ineligible`: the selected owner cannot read the goal's scope.
+ * - `goal.due-date-outside-quarter`: the due date falls outside the quarter.
+ * - `goal.result-target-invalid`: an initial target is unavailable or unsuitable.
+ * - `idempotency.key-reused`: the key was used with another request.
+ */
+export type GoalCreationRefusedResponse = Problem;
+
+/**
+ * - `goal.owner-ineligible`: the selected owner cannot read the goal's scope.
+ * - `goal.due-date-outside-quarter`: the due date falls outside the quarter.
+ */
+export type GoalChangeRefusedResponse = Problem;
+
+/**
+ * - `goal.result-target-invalid`: the supplied target is unknown, unavailable or unsuitable.
+ * - `goal.result-limit-reached`: the goal already has 20 stored results.
+ * - `idempotency.key-reused`: the key was used with another request.
+ */
+export type GoalResultCreationRefusedResponse = Problem;
+
+/**
+ * `goal.result-patch-invalid`: the merge patch writes a member unsupported by the current kind.
+ */
+export type GoalResultChangeRefusedResponse = Problem;
 
 /**
  * `template.not-found`, `space.not-found`, `organization.not-found`.
@@ -3269,6 +4116,28 @@ export type ChecklistItemRefusedResponse = Problem;
  */
 export type VersionMismatchResponse = Problem;
 
+export type SheetExportColumnParameter = SheetExportColumn;
+
+export type SheetExportDirectionParameter = SheetExportDirection;
+
+/**
+ * The caller's calendar day. Expected goal progress is
+ * `100 * clamp((today - quarterStart) / (quarterEnd - quarterStart), 0, 1)`,
+ * using calendar days. Compare expected and actual percentages before display rounding.
+ */
+export type GoalTodayParameter = string;
+
+/**
+ * Strong ETag of the goal aggregate underlying the change.
+ */
+export type GoalIfMatchParameter = string;
+
+export type GoalQuarterParameter = GoalQuarter;
+
+export type TeamDashboardTimeZoneParameter = TeamDashboardTimeZone;
+
+export type TeamDashboardWeeksParameter = TeamDashboardWeeks;
+
 export type DependencyDirectionParameter = DependencyDirection;
 
 /**
@@ -3290,6 +4159,11 @@ export type ListIdFilterParameter = string;
  * `"<version>"` the change was made from.
  */
 export type IfMatchParameter = string;
+
+/**
+ * Strong ETag of the current form settings.
+ */
+export type RequiredIntakeIfMatchParameter = string;
 
 /**
  * Key of the creation, as the client sent it to the gateway.
@@ -3450,6 +4324,175 @@ export type ListListsInternalParams = {
    */
   limit?: number;
 };
+
+export type GetSprintReportInternalParams = {
+  /** Requested local date for the report observation, interpreted in timeZone. */
+  today: TaskWorkDate;
+  /**
+   * IANA time zone used for the report's calendar-day boundaries.
+   * @minLength 1
+   */
+  timeZone: string;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type GetListWorkloadInternalParams = {
+  /** Monday of the requested reporting window, as a calendar date. */
+  weekStart: TaskWorkDate;
+  /**
+   * Statuses to keep, separated by commas.
+   * @minItems 1
+   * @maxItems 10
+   */
+  status?: StatusKey[];
+  /**
+   * Priorities to keep, separated by commas.
+   * @minItems 1
+   * @maxItems 4
+   */
+  priority?: PriorityKey[];
+  /**
+   * Assignees to keep, separated by commas: account ids, `me` for the caller, `none` for the
+   * tasks nobody is assigned.
+   * @minItems 1
+   * @maxItems 20
+   * @items.pattern ^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+   */
+  assignee?: string[];
+  /**
+   * Labels to keep, separated by commas, without regard to case.
+   * @minItems 1
+   * @maxItems 20
+   * @items.minLength 1
+   * @items.maxLength 32
+   */
+  label?: string[];
+  /**
+   * Text to find, without regard to case or accents.
+   * @minLength 1
+   * @maxLength 100
+   */
+  search?: string;
+  /** Keep the tasks due on or after this date. */
+  dueFrom?: string;
+  /** Keep the tasks due on or before this date. */
+  dueTo?: string;
+  /** `roots` for the top-level tasks only, `all` for the subtasks too. */
+  level?: GetListWorkloadInternalLevel;
+  /** Keep only milestones when true, or only ordinary tasks when false; absent leaves both. */
+  milestone?: boolean;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type GetListWorkloadInternalLevel = typeof GetListWorkloadInternalLevel[keyof typeof GetListWorkloadInternalLevel];
+
+
+export const GetListWorkloadInternalLevel = {
+  roots: 'roots',
+  all: 'all',
+} as const;
+
+export type GetListTimesheetInternalParams = {
+  /** Monday of the requested reporting window, as a calendar date. */
+  weekStart: TaskWorkDate;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ExportListTasksInternalParams = {
+  /**
+   * Statuses to keep, separated by commas.
+   * @minItems 1
+   * @maxItems 10
+   */
+  status?: StatusKey[];
+  /**
+   * Priorities to keep, separated by commas.
+   * @minItems 1
+   * @maxItems 4
+   */
+  priority?: PriorityKey[];
+  /**
+   * Assignees to keep, separated by commas: account ids, `me` for the caller, `none` for the
+   * tasks nobody is assigned.
+   * @minItems 1
+   * @maxItems 20
+   * @items.pattern ^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+   */
+  assignee?: string[];
+  /**
+   * Labels to keep, separated by commas, without regard to case.
+   * @minItems 1
+   * @maxItems 20
+   * @items.minLength 1
+   * @items.maxLength 32
+   */
+  label?: string[];
+  /**
+   * Text to find, without regard to case or accents.
+   * @minLength 1
+   * @maxLength 100
+   */
+  search?: string;
+  /** Keep the tasks due on or after this date. */
+  dueFrom?: string;
+  /** Keep the tasks due on or before this date. */
+  dueTo?: string;
+  /** `roots` for the top-level tasks only, `all` for the subtasks too. */
+  level?: ExportListTasksInternalLevel;
+  /** Keep only milestones when true, or only ordinary tasks when false; absent leaves both. */
+  milestone?: boolean;
+  /** Order of the tasks; a leading `-` reverses it. */
+  sort?: ExportListTasksInternalSort;
+  /** Existing sheet column or stable ID of a custom field. */
+  sheetSortColumn?: SheetExportColumnParameter;
+  /** Order of the selected sheet column in the CSV export. */
+  sheetSortDirection?: SheetExportDirectionParameter;
+};
+
+export type ExportListTasksInternalLevel = typeof ExportListTasksInternalLevel[keyof typeof ExportListTasksInternalLevel];
+
+
+export const ExportListTasksInternalLevel = {
+  roots: 'roots',
+  all: 'all',
+} as const;
+
+export type ExportListTasksInternalSort = typeof ExportListTasksInternalSort[keyof typeof ExportListTasksInternalSort];
+
+
+export const ExportListTasksInternalSort = {
+  manual: 'manual',
+  '-manual': '-manual',
+  dueDate: 'dueDate',
+  '-dueDate': '-dueDate',
+  priority: 'priority',
+  '-priority': '-priority',
+  name: 'name',
+  '-name': '-name',
+  createdAt: 'createdAt',
+  '-createdAt': '-createdAt',
+} as const;
 
 export type GetListCountsInternalParams = {
   /**
@@ -3863,5 +4906,69 @@ export type ListListCustomFieldsInternalParams = {
    * @maximum 100
    */
   limit?: number;
+};
+
+export type ListGoalsInternalParams = {
+  /**
+   * Calendar quarter in `YYYY-QN` format.
+   * @pattern ^(?!0000)[0-9]{4}-Q[1-4]$
+   */
+  quarter: GoalQuarterParameter;
+  /**
+   * The caller's calendar day. Expected goal progress is
+   * `100 * clamp((today - quarterStart) / (quarterEnd - quarterStart), 0, 1)`,
+   * using calendar days. Compare expected and actual percentages before display rounding.
+   */
+  today: GoalTodayParameter;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type CreateGoalInternalParams = {
+  /**
+   * The caller's calendar day. Expected goal progress is
+   * `100 * clamp((today - quarterStart) / (quarterEnd - quarterStart), 0, 1)`,
+   * using calendar days. Compare expected and actual percentages before display rounding.
+   */
+  today: GoalTodayParameter;
+};
+
+export type GetGoalInternalParams = {
+  /**
+   * The caller's calendar day. Expected goal progress is
+   * `100 * clamp((today - quarterStart) / (quarterEnd - quarterStart), 0, 1)`,
+   * using calendar days. Compare expected and actual percentages before display rounding.
+   */
+  today: GoalTodayParameter;
+};
+
+export type UpdateGoalInternalParams = {
+  /**
+   * The caller's calendar day. Expected goal progress is
+   * `100 * clamp((today - quarterStart) / (quarterEnd - quarterStart), 0, 1)`,
+   * using calendar days. Compare expected and actual percentages before display rounding.
+   */
+  today: GoalTodayParameter;
+};
+
+export type GetTeamDashboardInternalParams = {
+  /**
+   * The date of the caller, in their time zone, which task-service does not know: the late
+   * tasks, the tasks due that day and the current sprints are counted against it.
+   */
+  today: TodayParameter;
+  /**
+   * IANA time zone used to assign completion instants to local calendar days.
+   * @minLength 1
+   */
+  timeZone: TeamDashboardTimeZoneParameter;
+  /** Number of calendar weeks, including the observation week. */
+  weeks?: TeamDashboardWeeksParameter;
 };
 

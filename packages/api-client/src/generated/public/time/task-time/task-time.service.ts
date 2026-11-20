@@ -21,7 +21,9 @@ import type {
 } from 'rxjs';
 
 import type {
+  GetListTimesheetParams,
   ListTaskTimeEntriesParams,
+  ListTimesheetPage,
   TaskStatusDurationResult,
   TaskTimeEntry,
   TaskTimeEntryCreation,
@@ -154,6 +156,56 @@ function filterParams(
 @Injectable({ providedIn: 'root' })
 export class TaskTimeService {
   private readonly http = inject(HttpClient);
+/**
+ * Summarizes the same time entries as task detail for currently visible live tasks in a
+ * readable list ("Feuille de temps"). The window begins on `weekStart` and includes
+ * Monday through Sunday, according to each entry's stored work date.
+ * Entries follow their task across a move and are omitted while the task is archived
+ * or trashed. Removing an entry removes its minutes from the next read.
+ *
+ * Each flat row summarizes one author and task by date. A former member's entries retain
+ * their author account reference and use the existing user display fallback.
+ * Totals cover every matching row, across pages. Rows are ordered by author account ID
+ * and task key. The opaque cursor binds the caller, list and requested week. Scope
+ * `tasks:read` for a personal API token.
+ * @summary Read recorded work for one calendar week of a list
+ */
+ getListTimesheet<TData = ListTimesheetPage>(listId: string,
+    params: GetListTimesheetParams, options?: HttpClientBodyOptions): Observable<TData>;
+ getListTimesheet<TData = ListTimesheetPage>(listId: string,
+    params: GetListTimesheetParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getListTimesheet<TData = ListTimesheetPage>(listId: string,
+    params: GetListTimesheetParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getListTimesheet<TData = ListTimesheetPage>(
+    listId: string,
+    params: GetListTimesheetParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/timesheet`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/lists/${listId}/timesheet`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/lists/${listId}/timesheet`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
 /**
  * Lists entries in descending `(createdAt,id)` order. The opaque cursor is bound to
  * the task and ordering. The total count and total minutes cover all entries on this
@@ -395,6 +447,7 @@ export class TaskTimeService {
   }
 };
 
+export type GetListTimesheetClientResult = NonNullable<ListTimesheetPage>
 export type ListTaskTimeEntriesClientResult = NonNullable<TaskTimeEntryPage>
 export type CreateTaskTimeEntryClientResult = NonNullable<TaskTimeEntry>
 export type GetTaskTimeEntryClientResult = NonNullable<TaskTimeEntry>

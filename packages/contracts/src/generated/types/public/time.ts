@@ -3,37 +3,6 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
-
-/**
- * Members specific to the code, for example the fields that failed validation.
- */
-export type ProblemDetails = { [key: string]: unknown };
-
-/**
- * RFC 9457 problem with the Cadenway extensions `code` and `details`.
- */
-export interface Problem {
-  /** URI reference that identifies the problem type. */
-  type: string;
-  /** Short summary of the problem type, the same for every occurrence. */
-  title: string;
-  /** HTTP status of the response. */
-  status: number;
-  /** Explanation specific to this occurrence. */
-  detail?: string;
-  /** URI reference that identifies this occurrence. */
-  instance?: string;
-  /** Stable machine code, `<domain>.<reason>`. */
-  code: string;
-  /** Members specific to the code, for example the fields that failed validation. */
-  details?: ProblemDetails;
-}
-
-/**
  * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
  */
 export type TimeEntryId = string;
@@ -84,6 +53,12 @@ export interface TaskTimeEntry {
   /** Server creation instant in UTC. */
   createdAt: string;
 }
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
 
 export interface TaskTimeEntryPage {
   items: TaskTimeEntry[];
@@ -2415,6 +2390,282 @@ export interface AccessRequestApproval {
 }
 
 /**
+ * Members specific to the code, for example the fields that failed validation.
+ */
+export type ProblemDetails = { [key: string]: unknown };
+
+/**
+ * RFC 9457 problem with the Cadenway extensions `code` and `details`.
+ */
+export interface Problem {
+  /** URI reference that identifies the problem type. */
+  type: string;
+  /** Short summary of the problem type, the same for every occurrence. */
+  title: string;
+  /** HTTP status of the response. */
+  status: number;
+  /** Explanation specific to this occurrence. */
+  detail?: string;
+  /** URI reference that identifies this occurrence. */
+  instance?: string;
+  /** Stable machine code, `<domain>.<reason>`. */
+  code: string;
+  /** Members specific to the code, for example the fields that failed validation. */
+  details?: ProblemDetails;
+}
+
+/**
+ * Nonnegative points before presentation rounding.
+ * @minimum 0
+ */
+export type ReportPoints = number;
+
+/**
+ * Nonnegative points when the observation is available, or null when it is unavailable.
+ * @minimum 0
+ * @nullable
+ */
+export type ReportAvailablePoints = number | null;
+
+/**
+ * A task included in the observed sprint scope that is still readable by the caller.
+ */
+export interface SprintReportTask {
+  taskKey: TaskKey;
+  name: string;
+  points: ReportPoints;
+  status: StatusKey;
+}
+
+export interface SprintReportBreakdown {
+  points: ReportPoints;
+  /**
+     * Total tasks in this part of the caller-visible scope.
+     * @minimum 0
+     */
+  taskCount: number;
+  /** Up to the first six tasks in task-key order for the drill-down preview. */
+  items: SprintReportTask[];
+}
+
+export interface SprintBurndownDay {
+  /** Calendar date in the requested time zone. */
+  date: string;
+  /**
+     * Actual points remaining at the end of a covered day, or at observedAt for a day
+     * still in progress at that cutoff. Null for an uncovered day or a day after the cutoff.
+     */
+  actualRemainingPoints: (ReportAvailablePoints | null);
+  /** Ideal remaining points from the opening commitment, or null if it is unavailable. */
+  idealRemainingPoints: (ReportAvailablePoints | null);
+  /** Forecast points remaining for this date, or null without a supported forecast. */
+  projectedRemainingPoints: (ReportAvailablePoints | null);
+}
+
+/**
+ * Scope and observed points of a real, readable, earlier sprint in the same space.
+ */
+export interface SprintVelocityPoint {
+  listId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  /** Opening commitment for this prior sprint, or null without coverage. */
+  openingPoints: (ReportAvailablePoints | null);
+  /** Points delivered at the previous sprint's close, or null without coverage. */
+  deliveredPoints: (ReportAvailablePoints | null);
+}
+
+/**
+ * Visible ordinary root tasks contribute only while eligible for the evaluated observation.
+ * The report also checks current task visibility and excludes purged tasks entirely.
+ * Archived, trashed, cancelled and milestone tasks are excluded at observations when they
+ * are ineligible. Scope changes can make delivered and remaining points differ in sum
+ * from the opening commitment.
+ * The designated numeric points field contributes its stored value, including zero.
+ * Otherwise estimate bands up to 60, 180, 360 and 600 minutes yield 1, 2, 3 and 5 points.
+ * Estimates above 600 yield 8 points. An unset estimate yields one point.
+ */
+export interface SprintReport {
+  listId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  /**
+     * Observation cutoff in UTC. It is the earliest of server time, the end of the
+     * requested local date in timeZone, and sprint close.
+     */
+  observedAt: string;
+  /**
+     * Start of reliable history in UTC, or null if it is unavailable.
+     * @nullable
+     */
+  coverageStartedAt: string | null;
+  /** Commitment at sprint opening, or null if the opening cannot be reconstructed. */
+  openingPoints: (ReportAvailablePoints | null);
+  /** Done tasks at the observation or sprint close, or null if that scope is unavailable. */
+  delivered: SprintReportBreakdown | null;
+  /** Remaining tasks at that same observation, or null if that scope is unavailable. */
+  remaining: SprintReportBreakdown | null;
+  /** Forecast at the sprint end, or null until enough covered observations establish a rate. */
+  projectedRemainingPoints: (ReportAvailablePoints | null);
+  /** Days in chronological order, including uncovered dates with null actuals. */
+  items: SprintBurndownDay[];
+  nextCursor: NextCursor | null;
+  /**
+     * Up to four earlier readable completed sprints in the same space, ordered chronologically.
+     * @maxItems 4
+     */
+  velocity: SprintVelocityPoint[];
+}
+
+export interface ReportingDayMinutes {
+  /** Date in the returned reporting window. */
+  date: string;
+  /**
+     * Sum across all visible rows for this date, independent of pagination.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+/**
+ * Per-person capacity of 360 minutes on weekdays and zero on weekends.
+ */
+export type ListWorkloadDayDailyCapacityMinutes = typeof ListWorkloadDayDailyCapacityMinutes[keyof typeof ListWorkloadDayDailyCapacityMinutes];
+
+
+export const ListWorkloadDayDailyCapacityMinutes = {
+  NUMBER_0: 0,
+  NUMBER_360: 360,
+} as const;
+
+export type ListWorkloadDay = ReportingDayMinutes & {
+  /** Per-person capacity of 360 minutes on weekdays and zero on weekends. */
+  dailyCapacityMinutes: ListWorkloadDayDailyCapacityMinutes;
+};
+
+/**
+ * One task's allocation to an assignee or the unassigned bucket in this window.
+ */
+export interface ListWorkloadRow {
+  /** Assignee account, or null for the unassigned bucket. */
+  assignee: UserRef | null;
+  taskKey: TaskKey;
+  name: string;
+  status: StatusKey;
+  /**
+     * Whole minutes per date aligned with the days of the page.
+     * @minItems 14
+     * @maxItems 14
+     * @items.minimum 0
+     */
+  minutesByDay: number[];
+  /**
+     * Sum of this row's allocations within the returned window.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+/**
+ * Workload for the filtered live list over two calendar weeks. Only noncancelled tasks
+ * with a due date and a positive estimate contribute. Split each estimate over the
+ * weekdays of its full task interval then across its assignees. If only the due date is
+ * set it defines the interval. If the interval contains only weekend dates, use the
+ * preceding working day. Allocate all estimated minutes with stable remainder handling
+ * before selecting the requested date window and page.
+ */
+export interface ListWorkloadPage {
+  listId: string;
+  /** Monday of the first week. */
+  weekStart: string;
+  /**
+     * All fourteen calendar days in order, including weekends with zero capacity.
+     * @minItems 14
+     * @maxItems 14
+     */
+  days: ListWorkloadDay[];
+  /**
+     * Allocated minutes in the visible window across all rows.
+     * @minimum 0
+     */
+  totalMinutes: number;
+  items: ListWorkloadRow[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * One author's recorded minutes by work date for one currently visible live task.
+ */
+export interface ListTimesheetRow {
+  /** Stable account reference, including former members with the usual display fallback. */
+  author: UserRef;
+  taskKey: TaskKey;
+  name: string;
+  status: StatusKey;
+  /**
+     * Whole minutes aligned with the seven dates of the timesheet.
+     * @minItems 7
+     * @maxItems 7
+     * @items.minimum 0
+     */
+  minutesByDay: number[];
+  /**
+     * Sum of the author's recorded minutes for this task in the week.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+/**
+ * One Monday-to-Sunday timesheet over the task time entries for the selected list.
+ * Entries follow their task when it moves. Archived and trashed tasks contribute
+ * no entries while in those states. The reported day is the stored work date.
+ */
+export interface ListTimesheetPage {
+  listId: string;
+  /** Monday of the reported week. */
+  weekStart: string;
+  /**
+     * All seven calendar days in order, with totals across authors and tasks.
+     * @minItems 7
+     * @maxItems 7
+     */
+  days: ReportingDayMinutes[];
+  /**
+     * Recorded minutes across all visible tasks and authors in the week.
+     * @minimum 0
+     */
+  totalMinutes: number;
+  /** Rows ordered by author account and task key, including across page boundaries. */
+  items: ListTimesheetRow[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * Existing sheet column or stable ID of a custom field.
+ */
+export type SheetExportColumn = SavedViewSheetColumn | CustomFieldId;
+
+/**
+ * Order of the selected sheet column in the CSV export.
+ */
+export type SheetExportDirection = typeof SheetExportDirection[keyof typeof SheetExportDirection];
+
+
+export const SheetExportDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+/**
+ * `list.not-found` for an unknown, unreadable or deleted list, or
+ * `organization.not-found` for a missing membership.
+ */
+export type TimesheetListNotFoundResponse = Problem;
+
+/**
  * `request.invalid`: the request is invalid. `details.issues` identifies the invalid parameters or fields.
  */
 export type BadRequestResponse = Problem;
@@ -2487,6 +2738,19 @@ export type UnavailableResponse = Problem;
  * Client-chosen key. Sending the same request again within 24 hours replays the original response.
  */
 export type IdempotencyKeyParameter = string;
+
+export type GetListTimesheetParams = {
+  /** Monday of the requested reporting window, as a calendar date. */
+  weekStart: TaskWorkDate;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
 
 export type ListTaskTimeEntriesParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */

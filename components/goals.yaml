@@ -1,0 +1,265 @@
+# The public and internal goal routes use the same resource and write inputs.
+openapi: 3.1.0
+info:
+  title: Cadenway shared goal components
+  version: 1.0.0
+  description: Quarter-bound goals, key results and caller-visible progress.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    GoalQuarter:
+      type: string
+      pattern: '^(?!0000)[0-9]{4}-Q[1-4]$'
+      description: Calendar quarter in `YYYY-QN` format.
+      examples: [2026-Q4]
+    GoalName:
+      type: string
+      minLength: 1
+      maxLength: 300
+      pattern: '\S'
+      description: Name of the goal, with surrounding whitespace removed.
+      examples: [Lancer le SSO pour les entreprises]
+    GoalResultLabel:
+      type: string
+      minLength: 1
+      maxLength: 300
+      pattern: '\S'
+      description: Label of the key result, with surrounding whitespace removed.
+      examples: [Organisations clientes connectées en SSO]
+    GoalProgressPercent:
+      type: number
+      minimum: 0
+      maximum: 100
+      description: Percentage before presentation rounding.
+    GoalResultCommon:
+      type: object
+      required: [id, label, progressPercent]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID v7 of the key result.
+        label: { $ref: '#/components/schemas/GoalResultLabel' }
+        progressPercent: { $ref: '#/components/schemas/GoalProgressPercent' }
+    GoalNumberResult:
+      description: |
+        Clamp `(currentValue - startValue) / (targetValue - startValue)` to the range 0 to 1,
+        then express it as a percentage. This works for increasing and decreasing targets.
+        When the start and target are equal, progress is 100 only while the current value
+        equals the target.
+      allOf:
+        - $ref: '#/components/schemas/GoalResultCommon'
+        - type: object
+          required: [kind, startValue, currentValue, targetValue]
+          properties:
+            kind: { type: string, enum: [number] }
+            startValue: { type: number }
+            currentValue: { type: number }
+            targetValue: { type: number }
+    GoalCheckboxResult:
+      description: Progress is 100 when checked and zero otherwise.
+      allOf:
+        - $ref: '#/components/schemas/GoalResultCommon'
+        - type: object
+          required: [kind, checked]
+          properties:
+            kind: { type: string, enum: [checkbox] }
+            checked: { type: boolean }
+    GoalListProgressResult:
+      description: |
+        Progress is the percentage of eligible tasks in status `done`. Cancelled tasks
+        are excluded from eligibleTaskCount. An empty eligible population yields zero.
+      allOf:
+        - $ref: '#/components/schemas/GoalResultCommon'
+        - type: object
+          required: [kind, listId, eligibleTaskCount, doneTaskCount]
+          properties:
+            kind: { type: string, enum: [list-progress] }
+            listId: { type: string, format: uuid }
+            eligibleTaskCount: { type: integer, minimum: 0 }
+            doneTaskCount: { type: integer, minimum: 0 }
+    GoalMilestoneResult:
+      description: Progress is 100 when the visible milestone is reached and zero otherwise.
+      allOf:
+        - $ref: '#/components/schemas/GoalResultCommon'
+        - type: object
+          required: [kind, taskKey, reached]
+          properties:
+            kind: { type: string, enum: [milestone] }
+            taskKey: { $ref: './task.yaml#/components/schemas/TaskKey' }
+            reached: { type: boolean }
+    GoalResult:
+      description: A key result whose target, if linked, is currently readable by the caller.
+      oneOf:
+        - $ref: '#/components/schemas/GoalNumberResult'
+        - $ref: '#/components/schemas/GoalCheckboxResult'
+        - $ref: '#/components/schemas/GoalListProgressResult'
+        - $ref: '#/components/schemas/GoalMilestoneResult'
+    GoalNumberResultCreation:
+      type: object
+      additionalProperties: false
+      required: [kind, label, startValue, currentValue, targetValue]
+      properties:
+        kind: { type: string, enum: [number] }
+        label: { $ref: '#/components/schemas/GoalResultLabel' }
+        startValue: { type: number }
+        currentValue: { type: number }
+        targetValue: { type: number }
+    GoalCheckboxResultCreation:
+      type: object
+      additionalProperties: false
+      required: [kind, label, checked]
+      properties:
+        kind: { type: string, enum: [checkbox] }
+        label: { $ref: '#/components/schemas/GoalResultLabel' }
+        checked: { type: boolean }
+    GoalListProgressResultCreation:
+      type: object
+      additionalProperties: false
+      required: [kind, label, listId]
+      properties:
+        kind: { type: string, enum: [list-progress] }
+        label: { $ref: '#/components/schemas/GoalResultLabel' }
+        listId: { type: string, format: uuid }
+    GoalMilestoneResultCreation:
+      type: object
+      additionalProperties: false
+      required: [kind, label, taskKey]
+      properties:
+        kind: { type: string, enum: [milestone] }
+        label: { $ref: '#/components/schemas/GoalResultLabel' }
+        taskKey: { $ref: './task.yaml#/components/schemas/TaskKey' }
+    GoalResultCreation:
+      description: |
+        A new key result. A linked list or milestone must be readable by the caller in the
+        current organization at the time of the write.
+      oneOf:
+        - $ref: '#/components/schemas/GoalNumberResultCreation'
+        - $ref: '#/components/schemas/GoalCheckboxResultCreation'
+        - $ref: '#/components/schemas/GoalListProgressResultCreation'
+        - $ref: '#/components/schemas/GoalMilestoneResultCreation'
+    GoalResultPatch:
+      type: object
+      additionalProperties: false
+      description: |
+        Update the label of any key result, the current value of a numeric result, or the
+        checked state of a checkbox. A progress field for the wrong kind is invalid.
+        Kind and linked target are assigned on creation. Omitted members keep their values.
+      properties:
+        label: { $ref: '#/components/schemas/GoalResultLabel' }
+        currentValue: { type: number }
+        checked: { type: boolean }
+    Goal:
+      type: object
+      description: |
+        A goal for a calendar quarter. Progress is the equal-weight average of the
+        caller's visible results or zero when none are visible. Unreadable linked targets
+        are omitted from both the results and the average.
+      required:
+        [
+          id,
+          name,
+          ownerUserId,
+          dueDate,
+          spaceId,
+          quarter,
+          version,
+          progressPercent,
+          health,
+          results,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID v7 of the goal.
+        name: { $ref: '#/components/schemas/GoalName' }
+        ownerUserId:
+          type: string
+          format: uuid
+          description: Account of the goal owner.
+        dueDate:
+          type: string
+          format: date
+          description: Goal deadline as a calendar date.
+          examples: ['2026-12-31']
+        spaceId:
+          type: [string, 'null']
+          format: uuid
+          description: The owning space, or null for an organization goal.
+        quarter: { $ref: '#/components/schemas/GoalQuarter' }
+        version: { type: integer, minimum: 1 }
+        progressPercent: { $ref: '#/components/schemas/GoalProgressPercent' }
+        health:
+          type: string
+          x-extensible-enum: [achieved, on-track, at-risk, behind]
+          description: |
+            Achieved at 100 percent. Otherwise on track when progress trails the elapsed
+            quarter by at most five percentage points, at risk when it trails by at most
+            twenty points, and behind thereafter. Elapsed progress is zero before the
+            quarter and 100 after it.
+        results:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/GoalResult' }
+    GoalCreation:
+      type: object
+      additionalProperties: false
+      description: An organization goal when spaceId is omitted or null, or a space goal otherwise.
+      required: [name, ownerUserId, dueDate, quarter]
+      properties:
+        name: { $ref: '#/components/schemas/GoalName' }
+        ownerUserId: { type: string, format: uuid }
+        dueDate: { type: string, format: date }
+        quarter: { $ref: '#/components/schemas/GoalQuarter' }
+        spaceId: { type: [string, 'null'], format: uuid }
+        results:
+          type: array
+          maxItems: 20
+          description: Optional key results created atomically with the goal.
+          items: { $ref: '#/components/schemas/GoalResultCreation' }
+    GoalPatch:
+      type: object
+      additionalProperties: false
+      description: Change goal metadata. Omitted members keep their values. Quarter and scope are fixed.
+      properties:
+        name: { $ref: '#/components/schemas/GoalName' }
+        ownerUserId: { type: string, format: uuid }
+        dueDate: { type: string, format: date }
+    GoalPageSummary:
+      type: object
+      description: Totals over every visible goal matching the collection filters, independent of page size.
+      required:
+        [
+          goalCount,
+          expectedProgressPercent,
+          averageProgressPercent,
+          onTrackOrAchievedCount,
+          achievedCount,
+          atRiskOrBehindCount,
+        ]
+      properties:
+        goalCount: { type: integer, minimum: 0 }
+        expectedProgressPercent:
+          $ref: '#/components/schemas/GoalProgressPercent'
+        averageProgressPercent:
+          description: Equal-weight average of goal progress, or zero when no goals are visible.
+          allOf:
+            - $ref: '#/components/schemas/GoalProgressPercent'
+        onTrackOrAchievedCount: { type: integer, minimum: 0 }
+        achievedCount: { type: integer, minimum: 0 }
+        atRiskOrBehindCount: { type: integer, minimum: 0 }
+    GoalPage:
+      type: object
+      required: [items, nextCursor, summary]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Goal' }
+        nextCursor: { $ref: './http.yaml#/components/schemas/NextCursor' }
+        summary: { $ref: '#/components/schemas/GoalPageSummary' }

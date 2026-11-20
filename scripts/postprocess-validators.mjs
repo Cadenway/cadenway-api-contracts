@@ -107,6 +107,27 @@ for (const root of ROOTS) {
           `.refine((value) => Array.from(value).length <= ${operation}BodyNoteMax, { message: 'At most 500 Unicode code points' })`,
         );
     }
+    // Intake writes must refuse unknown routing, identity, and field settings at the boundary.
+    if (root.name === 'contracts' && ['public/intake', 'internal/task-service'].includes(spec)) {
+      const suffix = spec === 'public/intake' ? '' : 'Internal';
+      for (const operation of ['UpdateIntakeFormConfiguration', 'SubmitPublicIntakeForm']) {
+        const name = `${operation}${suffix}Body`;
+        const start = generated.indexOf(`export const ${name} = zod.object({`);
+        const end = generated.indexOf('\nexport const ', start + 1);
+        if (start < 0 || end < 0)
+          throw new Error(`${source}: missing intake request validator ${name}`);
+        const body = generated.slice(start, end);
+        if (
+          operation === 'UpdateIntakeFormConfiguration' &&
+          !body.includes('"fields": zod.object({')
+        )
+          throw new Error(`${source}: missing intake field settings validator ${name}`);
+        generated =
+          generated.slice(0, start) +
+          body.replaceAll('zod.object({', 'zod.strictObject({') +
+          generated.slice(end);
+      }
+    }
     // Reviewer IDs identify accounts, so differently cased UUIDs must not name the same reviewer.
     if (
       root.name === 'contracts' &&
@@ -224,6 +245,54 @@ for (const root of ROOTS) {
           );
         }
       }
+    }
+    // Goal request objects and each nested result have closed schemas.
+    if (
+      root.name === 'contracts' &&
+      (spec === 'public/goals' || spec === 'internal/task-service')
+    ) {
+      const suffix = spec === 'public/goals' ? '' : 'Internal';
+      for (const operation of [
+        'CreateGoal',
+        'UpdateGoal',
+        'CreateGoalResult',
+        'UpdateGoalResult',
+      ]) {
+        const name = `${operation}${suffix}Body`;
+        const start = generated.indexOf(`export const ${name} = `);
+        const end = generated.indexOf('\nexport const ', start + 1);
+        if (start < 0 || end < 0)
+          throw new Error(`${source}: missing goal request validator ${name}`);
+        const body = generated.slice(start, end);
+        if (!body.includes('zod.object({'))
+          throw new Error(`${source}: missing goal request objects ${name}`);
+        generated =
+          generated.slice(0, start) +
+          body.replaceAll('zod.object({', 'zod.strictObject({') +
+          generated.slice(end);
+      }
+    }
+    // HTTP query strings carry numeric dashboard options as text.
+    if (
+      root.name === 'contracts' &&
+      (spec === 'public/reports' || spec === 'internal/task-service')
+    ) {
+      const suffix = spec === 'public/reports' ? '' : 'Internal';
+      const name = `GetTeamDashboard${suffix}QueryParams`;
+      const defaultName = `getTeamDashboard${suffix}QueryWeeksDefault`;
+      const start = generated.indexOf(`export const ${name} = zod.object({`);
+      const end = generated.indexOf('\nexport const ', start + 1);
+      if (start < 0 || end < 0)
+        throw new Error(`${source}: missing dashboard query validator ${name}`);
+      let query = generated.slice(start, end);
+      const weeks = `zod.union([zod.literal(8),zod.literal(12)]).default(${defaultName})`;
+      if (!query.includes(weeks))
+        throw new Error(`${source}: missing dashboard weeks validator ${name}`);
+      query = query.replace(
+        weeks,
+        `zod.preprocess((value) => value === '8' ? 8 : value === '12' ? 12 : value, ${weeks})`,
+      );
+      generated = generated.slice(0, start) + query + generated.slice(end);
     }
     // Saved names use JSON Schema code-point length, not UTF-16 code units.
     if (

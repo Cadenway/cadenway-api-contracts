@@ -960,6 +960,307 @@ export const DuplicateListInternalResponse = zod.object({
 
 
 /**
+ * Implements the visibility, historical eligibility, point calculation, cutoff and
+ * pagination of `GET /v1/lists/{listId}/sprint-report`. It uses a current-state rollout
+ * baseline and durable membership, eligibility, point inputs and status transitions
+ * recorded with their task writes. The observation and the complete page use the same
+ * view of the data. Internal token from api-gateway with a user actor and organization
+ * required.
+ * @summary Read the points, burndown and velocity of a sprint
+ */
+export const GetSprintReportInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const getSprintReportInternalQueryTodayRegExp = new RegExp('^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$');
+
+export const getSprintReportInternalQueryLimitDefault = 50;
+export const getSprintReportInternalQueryLimitMax = 100;
+
+
+
+export const GetSprintReportInternalQueryParams = zod.object({
+  "today": zod.iso.date().regex(getSprintReportInternalQueryTodayRegExp).describe('Requested local date for the report observation, interpreted in timeZone.'),
+  "timeZone": zod.string().min(1).describe('IANA time zone used for the report\'s calendar-day boundaries.'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(getSprintReportInternalQueryLimitMax).default(getSprintReportInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const getSprintReportInternalResponseOpeningPointsOneMin = 0;
+
+export const getSprintReportInternalResponseDeliveredOnePointsMin = 0;
+
+export const getSprintReportInternalResponseDeliveredOneTaskCountMin = 0;
+
+export const getSprintReportInternalResponseDeliveredOneItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getSprintReportInternalResponseDeliveredOneItemsItemPointsMin = 0;
+
+export const getSprintReportInternalResponseRemainingOnePointsMin = 0;
+
+export const getSprintReportInternalResponseRemainingOneTaskCountMin = 0;
+
+export const getSprintReportInternalResponseRemainingOneItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getSprintReportInternalResponseRemainingOneItemsItemPointsMin = 0;
+
+export const getSprintReportInternalResponseProjectedRemainingPointsOneMin = 0;
+
+export const getSprintReportInternalResponseItemsItemActualRemainingPointsOneMin = 0;
+
+export const getSprintReportInternalResponseItemsItemIdealRemainingPointsOneMin = 0;
+
+export const getSprintReportInternalResponseItemsItemProjectedRemainingPointsOneMin = 0;
+
+export const getSprintReportInternalResponseVelocityItemOpeningPointsOneMin = 0;
+
+export const getSprintReportInternalResponseVelocityItemDeliveredPointsOneMin = 0;
+
+export const getSprintReportInternalResponseVelocityMax = 4;
+
+
+
+export const GetSprintReportInternalResponse = zod.object({
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "startDate": zod.iso.date(),
+  "endDate": zod.iso.date(),
+  "observedAt": zod.iso.datetime({"offset":true}).describe('Observation cutoff in UTC. It is the earliest of server time, the end of the\nrequested local date in timeZone, and sprint close.\n'),
+  "coverageStartedAt": zod.iso.datetime({"offset":true}).nullable().describe('Start of reliable history in UTC, or null if it is unavailable.'),
+  "openingPoints": zod.number().min(getSprintReportInternalResponseOpeningPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Commitment at sprint opening, or null if the opening cannot be reconstructed.'),
+  "delivered": zod.union([zod.object({
+  "points": zod.number().min(getSprintReportInternalResponseDeliveredOnePointsMin).describe('Nonnegative points before presentation rounding.'),
+  "taskCount": zod.int().min(getSprintReportInternalResponseDeliveredOneTaskCountMin).describe('Total tasks in this part of the caller-visible scope.'),
+  "items": zod.array(zod.object({
+  "taskKey": zod.string().regex(getSprintReportInternalResponseDeliveredOneItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "points": zod.number().min(getSprintReportInternalResponseDeliveredOneItemsItemPointsMin).describe('Nonnegative points before presentation rounding.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
+}).describe('A task included in the observed sprint scope that is still readable by the caller.')).describe('Up to the first six tasks in task-key order for the drill-down preview.')
+}),zod.null()]).describe('Done tasks at the observation or sprint close, or null if that scope is unavailable.'),
+  "remaining": zod.union([zod.object({
+  "points": zod.number().min(getSprintReportInternalResponseRemainingOnePointsMin).describe('Nonnegative points before presentation rounding.'),
+  "taskCount": zod.int().min(getSprintReportInternalResponseRemainingOneTaskCountMin).describe('Total tasks in this part of the caller-visible scope.'),
+  "items": zod.array(zod.object({
+  "taskKey": zod.string().regex(getSprintReportInternalResponseRemainingOneItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "points": zod.number().min(getSprintReportInternalResponseRemainingOneItemsItemPointsMin).describe('Nonnegative points before presentation rounding.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
+}).describe('A task included in the observed sprint scope that is still readable by the caller.')).describe('Up to the first six tasks in task-key order for the drill-down preview.')
+}),zod.null()]).describe('Remaining tasks at that same observation, or null if that scope is unavailable.'),
+  "projectedRemainingPoints": zod.number().min(getSprintReportInternalResponseProjectedRemainingPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Forecast at the sprint end, or null until enough covered observations establish a rate.'),
+  "items": zod.array(zod.object({
+  "date": zod.iso.date().describe('Calendar date in the requested time zone.'),
+  "actualRemainingPoints": zod.number().min(getSprintReportInternalResponseItemsItemActualRemainingPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Actual points remaining at the end of a covered day, or at observedAt for a day\nstill in progress at that cutoff. Null for an uncovered day or a day after the cutoff.\n'),
+  "idealRemainingPoints": zod.number().min(getSprintReportInternalResponseItemsItemIdealRemainingPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Ideal remaining points from the opening commitment, or null if it is unavailable.'),
+  "projectedRemainingPoints": zod.number().min(getSprintReportInternalResponseItemsItemProjectedRemainingPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Forecast points remaining for this date, or null without a supported forecast.')
+})).describe('Days in chronological order, including uncovered dates with null actuals.'),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "velocity": zod.array(zod.object({
+  "listId": zod.uuid(),
+  "name": zod.string(),
+  "startDate": zod.iso.date(),
+  "endDate": zod.iso.date(),
+  "openingPoints": zod.number().min(getSprintReportInternalResponseVelocityItemOpeningPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Opening commitment for this prior sprint, or null without coverage.'),
+  "deliveredPoints": zod.number().min(getSprintReportInternalResponseVelocityItemDeliveredPointsOneMin).nullable().describe('Nonnegative points when the observation is available, or null when it is unavailable.').describe('Points delivered at the previous sprint\'s close, or null without coverage.')
+}).describe('Scope and observed points of a real, readable, earlier sprint in the same space.')).max(getSprintReportInternalResponseVelocityMax).describe('Up to four earlier readable completed sprints in the same space, ordered chronologically.')
+}).describe('Visible ordinary root tasks contribute only while eligible for the evaluated observation.\nThe report also checks current task visibility and excludes purged tasks entirely.\nArchived, trashed, cancelled and milestone tasks are excluded at observations when they\nare ineligible. Scope changes can make delivered and remaining points differ in sum\nfrom the opening commitment.\nThe designated numeric points field contributes its stored value, including zero.\nOtherwise estimate bands up to 60, 180, 360 and 600 minutes yield 1, 2, 3 and 5 points.\nEstimates above 600 yield 8 points. An unset estimate yields one point.\n')
+
+
+/**
+ * Implements the visibility, filters, full-interval allocation and pagination of
+ * `GET /v1/lists/{listId}/workload`. The window totals include all matching rows before
+ * pagination. Internal token from api-gateway with a user actor and organization required.
+ * @summary Read scheduled work for two calendar weeks
+ */
+export const GetListWorkloadInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const getListWorkloadInternalQueryWeekStartRegExp = new RegExp('^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$');
+export const getListWorkloadInternalQueryStatusMax = 10;
+
+export const getListWorkloadInternalQueryPriorityMax = 4;
+
+export const getListWorkloadInternalQueryAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const getListWorkloadInternalQueryAssigneeMax = 20;
+
+export const getListWorkloadInternalQueryLabelItemMax = 32;
+
+export const getListWorkloadInternalQueryLabelMax = 20;
+
+export const getListWorkloadInternalQuerySearchMax = 100;
+
+export const getListWorkloadInternalQueryLevelDefault = `roots`;
+export const getListWorkloadInternalQueryLimitDefault = 50;
+export const getListWorkloadInternalQueryLimitMax = 100;
+
+
+
+export const GetListWorkloadInternalQueryParams = zod.object({
+  "weekStart": zod.iso.date().regex(getListWorkloadInternalQueryWeekStartRegExp).describe('Monday of the requested reporting window, as a calendar date.'),
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(getListWorkloadInternalQueryStatusMax).optional().describe('Statuses to keep, separated by commas.'),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(getListWorkloadInternalQueryPriorityMax).optional().describe('Priorities to keep, separated by commas.'),
+  "assignee": zod.array(zod.string().regex(getListWorkloadInternalQueryAssigneeItemRegExp)).min(1).max(getListWorkloadInternalQueryAssigneeMax).optional().describe('Assignees to keep, separated by commas: account ids, `me` for the caller, `none` for the\ntasks nobody is assigned.\n'),
+  "label": zod.array(zod.string().min(1).max(getListWorkloadInternalQueryLabelItemMax)).min(1).max(getListWorkloadInternalQueryLabelMax).optional().describe('Labels to keep, separated by commas, without regard to case.'),
+  "search": zod.string().min(1).max(getListWorkloadInternalQuerySearchMax).optional().describe('Text to find, without regard to case or accents.'),
+  "dueFrom": zod.iso.date().optional().describe('Keep the tasks due on or after this date.'),
+  "dueTo": zod.iso.date().optional().describe('Keep the tasks due on or before this date.'),
+  "level": zod.enum(['roots', 'all']).default(getListWorkloadInternalQueryLevelDefault).describe('`roots` for the top-level tasks only, `all` for the subtasks too.'),
+  "milestone": zod.preprocess((value) => value === 'true' ? true : value === 'false' ? false : value, zod.boolean()).optional().describe('Keep only milestones when true, or only ordinary tasks when false; absent leaves both.'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(getListWorkloadInternalQueryLimitMax).default(getListWorkloadInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const getListWorkloadInternalResponseDaysItemOneTotalMinutesMin = 0;
+
+export const getListWorkloadInternalResponseDaysMin = 14;
+export const getListWorkloadInternalResponseDaysMax = 14;
+
+export const getListWorkloadInternalResponseTotalMinutesMin = 0;
+
+export const getListWorkloadInternalResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getListWorkloadInternalResponseItemsItemMinutesByDayItemMin = 0;
+
+export const getListWorkloadInternalResponseItemsItemMinutesByDayMin = 14;
+export const getListWorkloadInternalResponseItemsItemMinutesByDayMax = 14;
+
+export const getListWorkloadInternalResponseItemsItemTotalMinutesMin = 0;
+
+
+
+export const GetListWorkloadInternalResponse = zod.object({
+  "listId": zod.uuid(),
+  "weekStart": zod.iso.date().describe('Monday of the first week.'),
+  "days": zod.array(zod.object({
+  "date": zod.iso.date().describe('Date in the returned reporting window.'),
+  "totalMinutes": zod.int().min(getListWorkloadInternalResponseDaysItemOneTotalMinutesMin).describe('Sum across all visible rows for this date, independent of pagination.')
+}).and(zod.object({
+  "dailyCapacityMinutes": zod.union([zod.literal(0),zod.literal(360)]).describe('Per-person capacity of 360 minutes on weekdays and zero on weekends.')
+}))).min(getListWorkloadInternalResponseDaysMin).max(getListWorkloadInternalResponseDaysMax).describe('All fourteen calendar days in order, including weekends with zero capacity.'),
+  "totalMinutes": zod.int().min(getListWorkloadInternalResponseTotalMinutesMin).describe('Allocated minutes in the visible window across all rows.'),
+  "items": zod.array(zod.object({
+  "assignee": zod.union([zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n'),zod.null()]).describe('Assignee account, or null for the unassigned bucket.'),
+  "taskKey": zod.string().regex(getListWorkloadInternalResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "minutesByDay": zod.array(zod.int().min(getListWorkloadInternalResponseItemsItemMinutesByDayItemMin)).min(getListWorkloadInternalResponseItemsItemMinutesByDayMin).max(getListWorkloadInternalResponseItemsItemMinutesByDayMax).describe('Whole minutes per date aligned with the days of the page.'),
+  "totalMinutes": zod.int().min(getListWorkloadInternalResponseItemsItemTotalMinutesMin).describe('Sum of this row\'s allocations within the returned window.')
+}).describe('One task\'s allocation to an assignee or the unassigned bucket in this window.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('Workload for the filtered live list over two calendar weeks. Only noncancelled tasks\nwith a due date and a positive estimate contribute. Split each estimate over the\nweekdays of its full task interval then across its assignees. If only the due date is\nset it defines the interval. If the interval contains only weekend dates, use the\npreceding working day. Allocate all estimated minutes with stable remainder handling\nbefore selecting the requested date window and page.\n')
+
+
+/**
+ * Implements the visibility, source entries, weekly aggregation and pagination of
+ * `GET /v1/lists/{listId}/timesheet`. Internal token from api-gateway with a user actor
+ * and organization required.
+ * @summary Read recorded work for one calendar week of a list
+ */
+export const GetListTimesheetInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const getListTimesheetInternalQueryWeekStartRegExp = new RegExp('^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$');
+export const getListTimesheetInternalQueryLimitDefault = 50;
+export const getListTimesheetInternalQueryLimitMax = 100;
+
+
+
+export const GetListTimesheetInternalQueryParams = zod.object({
+  "weekStart": zod.iso.date().regex(getListTimesheetInternalQueryWeekStartRegExp).describe('Monday of the requested reporting window, as a calendar date.'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(getListTimesheetInternalQueryLimitMax).default(getListTimesheetInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const getListTimesheetInternalResponseDaysItemTotalMinutesMin = 0;
+
+export const getListTimesheetInternalResponseDaysMin = 7;
+export const getListTimesheetInternalResponseDaysMax = 7;
+
+export const getListTimesheetInternalResponseTotalMinutesMin = 0;
+
+export const getListTimesheetInternalResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getListTimesheetInternalResponseItemsItemMinutesByDayItemMin = 0;
+
+export const getListTimesheetInternalResponseItemsItemMinutesByDayMin = 7;
+export const getListTimesheetInternalResponseItemsItemMinutesByDayMax = 7;
+
+export const getListTimesheetInternalResponseItemsItemTotalMinutesMin = 0;
+
+
+
+export const GetListTimesheetInternalResponse = zod.object({
+  "listId": zod.uuid(),
+  "weekStart": zod.iso.date().describe('Monday of the reported week.'),
+  "days": zod.array(zod.object({
+  "date": zod.iso.date().describe('Date in the returned reporting window.'),
+  "totalMinutes": zod.int().min(getListTimesheetInternalResponseDaysItemTotalMinutesMin).describe('Sum across all visible rows for this date, independent of pagination.')
+})).min(getListTimesheetInternalResponseDaysMin).max(getListTimesheetInternalResponseDaysMax).describe('All seven calendar days in order, with totals across authors and tasks.'),
+  "totalMinutes": zod.int().min(getListTimesheetInternalResponseTotalMinutesMin).describe('Recorded minutes across all visible tasks and authors in the week.'),
+  "items": zod.array(zod.object({
+  "author": zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n').describe('Stable account reference, including former members with the usual display fallback.'),
+  "taskKey": zod.string().regex(getListTimesheetInternalResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "minutesByDay": zod.array(zod.int().min(getListTimesheetInternalResponseItemsItemMinutesByDayItemMin)).min(getListTimesheetInternalResponseItemsItemMinutesByDayMin).max(getListTimesheetInternalResponseItemsItemMinutesByDayMax).describe('Whole minutes aligned with the seven dates of the timesheet.'),
+  "totalMinutes": zod.int().min(getListTimesheetInternalResponseItemsItemTotalMinutesMin).describe('Sum of the author\'s recorded minutes for this task in the week.')
+}).describe('One author\'s recorded minutes by work date for one currently visible live task.')).describe('Rows ordered by author account and task key, including across page boundaries.'),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('One Monday-to-Sunday timesheet over the task time entries for the selected list.\nEntries follow their task when it moves. Archived and trashed tasks contribute\nno entries while in those states. The reported day is the stored work date.\n')
+
+
+/**
+ * Implements the visibility, filters, sorting and literal spreadsheet encoding of
+ * `GET /v1/lists/{listId}/tasks/export`. Select the rows and ordered column definitions
+ * in one consistent tenant read. Enforce the 10,000-row bound before starting the
+ * response. The gateway relays the complete file, charset and safe filename. Internal
+ * token from api-gateway with a user actor and organization required.
+ * @summary Download the visible list tasks as CSV
+ */
+export const ExportListTasksInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const exportListTasksInternalQueryStatusMax = 10;
+
+export const exportListTasksInternalQueryPriorityMax = 4;
+
+export const exportListTasksInternalQueryAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const exportListTasksInternalQueryAssigneeMax = 20;
+
+export const exportListTasksInternalQueryLabelItemMax = 32;
+
+export const exportListTasksInternalQueryLabelMax = 20;
+
+export const exportListTasksInternalQuerySearchMax = 100;
+
+export const exportListTasksInternalQueryLevelDefault = `roots`;
+export const exportListTasksInternalQuerySortDefault = `manual`;
+export const exportListTasksInternalQuerySheetSortColumnTwoRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+
+
+export const ExportListTasksInternalQueryParams = zod.object({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(exportListTasksInternalQueryStatusMax).optional().describe('Statuses to keep, separated by commas.'),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(exportListTasksInternalQueryPriorityMax).optional().describe('Priorities to keep, separated by commas.'),
+  "assignee": zod.array(zod.string().regex(exportListTasksInternalQueryAssigneeItemRegExp)).min(1).max(exportListTasksInternalQueryAssigneeMax).optional().describe('Assignees to keep, separated by commas: account ids, `me` for the caller, `none` for the\ntasks nobody is assigned.\n'),
+  "label": zod.array(zod.string().min(1).max(exportListTasksInternalQueryLabelItemMax)).min(1).max(exportListTasksInternalQueryLabelMax).optional().describe('Labels to keep, separated by commas, without regard to case.'),
+  "search": zod.string().min(1).max(exportListTasksInternalQuerySearchMax).optional().describe('Text to find, without regard to case or accents.'),
+  "dueFrom": zod.iso.date().optional().describe('Keep the tasks due on or after this date.'),
+  "dueTo": zod.iso.date().optional().describe('Keep the tasks due on or before this date.'),
+  "level": zod.enum(['roots', 'all']).default(exportListTasksInternalQueryLevelDefault).describe('`roots` for the top-level tasks only, `all` for the subtasks too.'),
+  "milestone": zod.preprocess((value) => value === 'true' ? true : value === 'false' ? false : value, zod.boolean()).optional().describe('Keep only milestones when true, or only ordinary tasks when false; absent leaves both.'),
+  "sort": zod.enum(['manual', '-manual', 'dueDate', '-dueDate', 'priority', '-priority', 'name', '-name', 'createdAt', '-createdAt']).default(exportListTasksInternalQuerySortDefault).describe('Order of the tasks; a leading `-` reverses it.'),
+  "sheetSortColumn": zod.union([zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.'),zod.uuid().regex(exportListTasksInternalQuerySheetSortColumnTwoRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.')]).optional().describe('Feuille column key or an active custom field ID for this list\'s space.'),
+  "sheetSortDirection": zod.enum(['asc', 'desc']).optional().describe('Sheet export sort direction, ascending when omitted. Requires sheetSortColumn.')
+})
+
+export const ExportListTasksInternalResponse = zod.unknown()
+
+
+/**
  * Returns a list the actor sees with the counts of its top-level tasks, as
  * `GET /v1/lists/{listId}/counts` says. Internal token: actor `user`, organization required.
  * @summary Read the counts of a list
@@ -6816,3 +7117,1238 @@ export const ListListCustomFieldsInternalResponse = zod.object({
 }).describe('An active definition of a custom column in a space.')),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
 })
+
+
+/**
+ * Returns goals the caller can currently read, in `(createdAt, id)` descending order. The cursor belongs to
+ * the caller, organization, quarter and `today` of the request. `summary` describes all readable goals of
+ * that quarter before paging, using the same visible results as the returned goals.
+ * @summary List the visible goals for a quarter
+ */
+export const listGoalsInternalQueryQuarterRegExp = new RegExp('^(?!0000)[0-9]{4}-Q[1-4]$');
+export const listGoalsInternalQueryLimitDefault = 50;
+export const listGoalsInternalQueryLimitMax = 100;
+
+
+
+export const ListGoalsInternalQueryParams = zod.object({
+  "quarter": zod.string().regex(listGoalsInternalQueryQuarterRegExp).describe('Calendar quarter whose goals are requested.'),
+  "today": zod.iso.date().describe('The caller\'s calendar day. Expected goal progress is\n`100 * clamp((today - quarterStart) / (quarterEnd - quarterStart), 0, 1)`,\nusing calendar days. Compare expected and actual percentages before display rounding.\n'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listGoalsInternalQueryLimitMax).default(listGoalsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listGoalsInternalResponseItemsItemNameMax = 300;
+
+
+export const listGoalsInternalResponseItemsItemNameRegExp = new RegExp('\\S');
+export const listGoalsInternalResponseItemsItemQuarterRegExp = new RegExp('^(?!0000)[0-9]{4}-Q[1-4]$');
+
+export const listGoalsInternalResponseItemsItemProgressPercentMin = 0;
+export const listGoalsInternalResponseItemsItemProgressPercentMax = 100;
+
+export const listGoalsInternalResponseItemsItemResultsItemOneOneLabelMax = 300;
+
+
+export const listGoalsInternalResponseItemsItemResultsItemOneOneLabelRegExp = new RegExp('\\S');
+export const listGoalsInternalResponseItemsItemResultsItemOneOneProgressPercentMin = 0;
+export const listGoalsInternalResponseItemsItemResultsItemOneOneProgressPercentMax = 100;
+
+export const listGoalsInternalResponseItemsItemResultsItemTwoOneLabelMax = 300;
+
+
+export const listGoalsInternalResponseItemsItemResultsItemTwoOneLabelRegExp = new RegExp('\\S');
+export const listGoalsInternalResponseItemsItemResultsItemTwoOneProgressPercentMin = 0;
+export const listGoalsInternalResponseItemsItemResultsItemTwoOneProgressPercentMax = 100;
+
+export const listGoalsInternalResponseItemsItemResultsItemThreeOneLabelMax = 300;
+
+
+export const listGoalsInternalResponseItemsItemResultsItemThreeOneLabelRegExp = new RegExp('\\S');
+export const listGoalsInternalResponseItemsItemResultsItemThreeOneProgressPercentMin = 0;
+export const listGoalsInternalResponseItemsItemResultsItemThreeOneProgressPercentMax = 100;
+
+export const listGoalsInternalResponseItemsItemResultsItemThreeTwoEligibleTaskCountMin = 0;
+
+export const listGoalsInternalResponseItemsItemResultsItemThreeTwoDoneTaskCountMin = 0;
+
+export const listGoalsInternalResponseItemsItemResultsItemFourOneLabelMax = 300;
+
+
+export const listGoalsInternalResponseItemsItemResultsItemFourOneLabelRegExp = new RegExp('\\S');
+export const listGoalsInternalResponseItemsItemResultsItemFourOneProgressPercentMin = 0;
+export const listGoalsInternalResponseItemsItemResultsItemFourOneProgressPercentMax = 100;
+
+export const listGoalsInternalResponseItemsItemResultsItemFourTwoTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listGoalsInternalResponseItemsItemResultsMax = 20;
+
+export const listGoalsInternalResponseSummaryGoalCountMin = 0;
+
+export const listGoalsInternalResponseSummaryExpectedProgressPercentMin = 0;
+export const listGoalsInternalResponseSummaryExpectedProgressPercentMax = 100;
+
+export const listGoalsInternalResponseSummaryAverageProgressPercentOneMin = 0;
+export const listGoalsInternalResponseSummaryAverageProgressPercentOneMax = 100;
+
+export const listGoalsInternalResponseSummaryOnTrackOrAchievedCountMin = 0;
+
+export const listGoalsInternalResponseSummaryAchievedCountMin = 0;
+
+export const listGoalsInternalResponseSummaryAtRiskOrBehindCountMin = 0;
+
+
+
+export const ListGoalsInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid().describe('UUID v7 of the goal.'),
+  "name": zod.string().min(1).max(listGoalsInternalResponseItemsItemNameMax).regex(listGoalsInternalResponseItemsItemNameRegExp).describe('Name of the goal, with surrounding whitespace removed.'),
+  "ownerUserId": zod.uuid().describe('Account of the goal owner.'),
+  "dueDate": zod.iso.date().describe('Goal deadline as a calendar date.'),
+  "spaceId": zod.uuid().nullable().describe('The owning space, or null for an organization goal.'),
+  "quarter": zod.string().regex(listGoalsInternalResponseItemsItemQuarterRegExp).describe('Calendar quarter in `YYYY-QN` format.'),
+  "version": zod.int().min(1),
+  "progressPercent": zod.number().min(listGoalsInternalResponseItemsItemProgressPercentMin).max(listGoalsInternalResponseItemsItemProgressPercentMax).describe('Percentage before presentation rounding.'),
+  "health": zod.string().describe('Achieved at 100 percent. Otherwise on track when progress trails the elapsed\nquarter by at most five percentage points, at risk when it trails by at most\ntwenty points, and behind thereafter. Elapsed progress is zero before the\nquarter and 100 after it.\n'),
+  "results": zod.array(zod.union([zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(listGoalsInternalResponseItemsItemResultsItemOneOneLabelMax).regex(listGoalsInternalResponseItemsItemResultsItemOneOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(listGoalsInternalResponseItemsItemResultsItemOneOneProgressPercentMin).max(listGoalsInternalResponseItemsItemResultsItemOneOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['number']),
+  "startValue": zod.number(),
+  "currentValue": zod.number(),
+  "targetValue": zod.number()
+})).describe('Clamp `(currentValue - startValue) / (targetValue - startValue)` to the range 0 to 1,\nthen express it as a percentage. This works for increasing and decreasing targets.\nWhen the start and target are equal, progress is 100 only while the current value\nequals the target.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(listGoalsInternalResponseItemsItemResultsItemTwoOneLabelMax).regex(listGoalsInternalResponseItemsItemResultsItemTwoOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(listGoalsInternalResponseItemsItemResultsItemTwoOneProgressPercentMin).max(listGoalsInternalResponseItemsItemResultsItemTwoOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['checkbox']),
+  "checked": zod.boolean()
+})).describe('Progress is 100 when checked and zero otherwise.'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(listGoalsInternalResponseItemsItemResultsItemThreeOneLabelMax).regex(listGoalsInternalResponseItemsItemResultsItemThreeOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(listGoalsInternalResponseItemsItemResultsItemThreeOneProgressPercentMin).max(listGoalsInternalResponseItemsItemResultsItemThreeOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['list-progress']),
+  "listId": zod.uuid(),
+  "eligibleTaskCount": zod.int().min(listGoalsInternalResponseItemsItemResultsItemThreeTwoEligibleTaskCountMin),
+  "doneTaskCount": zod.int().min(listGoalsInternalResponseItemsItemResultsItemThreeTwoDoneTaskCountMin)
+})).describe('Progress is the percentage of eligible tasks in status `done`. Cancelled tasks\nare excluded from eligibleTaskCount. An empty eligible population yields zero.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(listGoalsInternalResponseItemsItemResultsItemFourOneLabelMax).regex(listGoalsInternalResponseItemsItemResultsItemFourOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(listGoalsInternalResponseItemsItemResultsItemFourOneProgressPercentMin).max(listGoalsInternalResponseItemsItemResultsItemFourOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['milestone']),
+  "taskKey": zod.string().regex(listGoalsInternalResponseItemsItemResultsItemFourTwoTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "reached": zod.boolean()
+})).describe('Progress is 100 when the visible milestone is reached and zero otherwise.')]).describe('A key result whose target, if linked, is currently readable by the caller.')).max(listGoalsInternalResponseItemsItemResultsMax)
+}).describe('A goal for a calendar quarter. Progress is the equal-weight average of the\ncaller\'s visible results or zero when none are visible. Unreadable linked targets\nare omitted from both the results and the average.\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "summary": zod.object({
+  "goalCount": zod.int().min(listGoalsInternalResponseSummaryGoalCountMin),
+  "expectedProgressPercent": zod.number().min(listGoalsInternalResponseSummaryExpectedProgressPercentMin).max(listGoalsInternalResponseSummaryExpectedProgressPercentMax).describe('Percentage before presentation rounding.'),
+  "averageProgressPercent": zod.number().min(listGoalsInternalResponseSummaryAverageProgressPercentOneMin).max(listGoalsInternalResponseSummaryAverageProgressPercentOneMax).describe('Percentage before presentation rounding.').describe('Equal-weight average of goal progress, or zero when no goals are visible.'),
+  "onTrackOrAchievedCount": zod.int().min(listGoalsInternalResponseSummaryOnTrackOrAchievedCountMin),
+  "achievedCount": zod.int().min(listGoalsInternalResponseSummaryAchievedCountMin),
+  "atRiskOrBehindCount": zod.int().min(listGoalsInternalResponseSummaryAtRiskOrBehindCountMin)
+}).describe('Totals over every visible goal matching the collection filters, independent of page size.')
+})
+
+
+/**
+ * Creates the goal and all supplied initial key results in a single write. `spaceId` sets the scope
+ * and stays fixed. With `spaceId` omitted or `null`, an organization owner or admin creates an
+ * organization goal. Otherwise the caller needs effective `edit` on the space itself. The owner
+ * must be a current member eligible to read the selected scope. The due date falls within the
+ * selected quarter. An optional idempotency key replays the original response for 24 hours.
+ * @summary Create a goal
+ */
+export const CreateGoalInternalQueryParams = zod.object({
+  "today": zod.iso.date().describe('The caller\'s calendar day. Expected goal progress is\n`100 * clamp((today - quarterStart) / (quarterEnd - quarterStart), 0, 1)`,\nusing calendar days. Compare expected and actual percentages before display rounding.\n')
+})
+
+export const createGoalInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateGoalInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createGoalInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.')
+})
+
+export const createGoalInternalBodyNameMax = 300;
+
+
+export const createGoalInternalBodyNameRegExp = new RegExp('\\S');
+export const createGoalInternalBodyQuarterRegExp = new RegExp('^(?!0000)[0-9]{4}-Q[1-4]$');
+export const createGoalInternalBodyResultsItemOneLabelMax = 300;
+
+
+export const createGoalInternalBodyResultsItemOneLabelRegExp = new RegExp('\\S');
+export const createGoalInternalBodyResultsItemTwoLabelMax = 300;
+
+
+export const createGoalInternalBodyResultsItemTwoLabelRegExp = new RegExp('\\S');
+export const createGoalInternalBodyResultsItemThreeLabelMax = 300;
+
+
+export const createGoalInternalBodyResultsItemThreeLabelRegExp = new RegExp('\\S');
+export const createGoalInternalBodyResultsItemFourLabelMax = 300;
+
+
+export const createGoalInternalBodyResultsItemFourLabelRegExp = new RegExp('\\S');
+export const createGoalInternalBodyResultsItemFourTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const createGoalInternalBodyResultsMax = 20;
+
+
+
+export const CreateGoalInternalBody = zod.strictObject({
+  "name": zod.string().min(1).max(createGoalInternalBodyNameMax).regex(createGoalInternalBodyNameRegExp).describe('Name of the goal, with surrounding whitespace removed.'),
+  "ownerUserId": zod.uuid(),
+  "dueDate": zod.iso.date(),
+  "quarter": zod.string().regex(createGoalInternalBodyQuarterRegExp).describe('Calendar quarter in `YYYY-QN` format.'),
+  "spaceId": zod.uuid().nullish(),
+  "results": zod.array(zod.union([zod.strictObject({
+  "kind": zod.enum(['number']),
+  "label": zod.string().min(1).max(createGoalInternalBodyResultsItemOneLabelMax).regex(createGoalInternalBodyResultsItemOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "startValue": zod.number(),
+  "currentValue": zod.number(),
+  "targetValue": zod.number()
+}),zod.strictObject({
+  "kind": zod.enum(['checkbox']),
+  "label": zod.string().min(1).max(createGoalInternalBodyResultsItemTwoLabelMax).regex(createGoalInternalBodyResultsItemTwoLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "checked": zod.boolean()
+}),zod.strictObject({
+  "kind": zod.enum(['list-progress']),
+  "label": zod.string().min(1).max(createGoalInternalBodyResultsItemThreeLabelMax).regex(createGoalInternalBodyResultsItemThreeLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "listId": zod.uuid()
+}),zod.strictObject({
+  "kind": zod.enum(['milestone']),
+  "label": zod.string().min(1).max(createGoalInternalBodyResultsItemFourLabelMax).regex(createGoalInternalBodyResultsItemFourLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "taskKey": zod.string().regex(createGoalInternalBodyResultsItemFourTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n')
+})]).describe('A new key result. A linked list or milestone must be readable by the caller in the\ncurrent organization at the time of the write.\n')).max(createGoalInternalBodyResultsMax).optional().describe('Optional key results created atomically with the goal.')
+}).describe('An organization goal when spaceId is omitted or null, or a space goal otherwise.')
+
+export const createGoalInternalResponseNameMax = 300;
+
+
+export const createGoalInternalResponseNameRegExp = new RegExp('\\S');
+export const createGoalInternalResponseQuarterRegExp = new RegExp('^(?!0000)[0-9]{4}-Q[1-4]$');
+
+export const createGoalInternalResponseProgressPercentMin = 0;
+export const createGoalInternalResponseProgressPercentMax = 100;
+
+export const createGoalInternalResponseResultsItemOneOneLabelMax = 300;
+
+
+export const createGoalInternalResponseResultsItemOneOneLabelRegExp = new RegExp('\\S');
+export const createGoalInternalResponseResultsItemOneOneProgressPercentMin = 0;
+export const createGoalInternalResponseResultsItemOneOneProgressPercentMax = 100;
+
+export const createGoalInternalResponseResultsItemTwoOneLabelMax = 300;
+
+
+export const createGoalInternalResponseResultsItemTwoOneLabelRegExp = new RegExp('\\S');
+export const createGoalInternalResponseResultsItemTwoOneProgressPercentMin = 0;
+export const createGoalInternalResponseResultsItemTwoOneProgressPercentMax = 100;
+
+export const createGoalInternalResponseResultsItemThreeOneLabelMax = 300;
+
+
+export const createGoalInternalResponseResultsItemThreeOneLabelRegExp = new RegExp('\\S');
+export const createGoalInternalResponseResultsItemThreeOneProgressPercentMin = 0;
+export const createGoalInternalResponseResultsItemThreeOneProgressPercentMax = 100;
+
+export const createGoalInternalResponseResultsItemThreeTwoEligibleTaskCountMin = 0;
+
+export const createGoalInternalResponseResultsItemThreeTwoDoneTaskCountMin = 0;
+
+export const createGoalInternalResponseResultsItemFourOneLabelMax = 300;
+
+
+export const createGoalInternalResponseResultsItemFourOneLabelRegExp = new RegExp('\\S');
+export const createGoalInternalResponseResultsItemFourOneProgressPercentMin = 0;
+export const createGoalInternalResponseResultsItemFourOneProgressPercentMax = 100;
+
+export const createGoalInternalResponseResultsItemFourTwoTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const createGoalInternalResponseResultsMax = 20;
+
+
+
+export const CreateGoalInternalResponse = zod.object({
+  "id": zod.uuid().describe('UUID v7 of the goal.'),
+  "name": zod.string().min(1).max(createGoalInternalResponseNameMax).regex(createGoalInternalResponseNameRegExp).describe('Name of the goal, with surrounding whitespace removed.'),
+  "ownerUserId": zod.uuid().describe('Account of the goal owner.'),
+  "dueDate": zod.iso.date().describe('Goal deadline as a calendar date.'),
+  "spaceId": zod.uuid().nullable().describe('The owning space, or null for an organization goal.'),
+  "quarter": zod.string().regex(createGoalInternalResponseQuarterRegExp).describe('Calendar quarter in `YYYY-QN` format.'),
+  "version": zod.int().min(1),
+  "progressPercent": zod.number().min(createGoalInternalResponseProgressPercentMin).max(createGoalInternalResponseProgressPercentMax).describe('Percentage before presentation rounding.'),
+  "health": zod.string().describe('Achieved at 100 percent. Otherwise on track when progress trails the elapsed\nquarter by at most five percentage points, at risk when it trails by at most\ntwenty points, and behind thereafter. Elapsed progress is zero before the\nquarter and 100 after it.\n'),
+  "results": zod.array(zod.union([zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(createGoalInternalResponseResultsItemOneOneLabelMax).regex(createGoalInternalResponseResultsItemOneOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(createGoalInternalResponseResultsItemOneOneProgressPercentMin).max(createGoalInternalResponseResultsItemOneOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['number']),
+  "startValue": zod.number(),
+  "currentValue": zod.number(),
+  "targetValue": zod.number()
+})).describe('Clamp `(currentValue - startValue) / (targetValue - startValue)` to the range 0 to 1,\nthen express it as a percentage. This works for increasing and decreasing targets.\nWhen the start and target are equal, progress is 100 only while the current value\nequals the target.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(createGoalInternalResponseResultsItemTwoOneLabelMax).regex(createGoalInternalResponseResultsItemTwoOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(createGoalInternalResponseResultsItemTwoOneProgressPercentMin).max(createGoalInternalResponseResultsItemTwoOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['checkbox']),
+  "checked": zod.boolean()
+})).describe('Progress is 100 when checked and zero otherwise.'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(createGoalInternalResponseResultsItemThreeOneLabelMax).regex(createGoalInternalResponseResultsItemThreeOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(createGoalInternalResponseResultsItemThreeOneProgressPercentMin).max(createGoalInternalResponseResultsItemThreeOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['list-progress']),
+  "listId": zod.uuid(),
+  "eligibleTaskCount": zod.int().min(createGoalInternalResponseResultsItemThreeTwoEligibleTaskCountMin),
+  "doneTaskCount": zod.int().min(createGoalInternalResponseResultsItemThreeTwoDoneTaskCountMin)
+})).describe('Progress is the percentage of eligible tasks in status `done`. Cancelled tasks\nare excluded from eligibleTaskCount. An empty eligible population yields zero.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(createGoalInternalResponseResultsItemFourOneLabelMax).regex(createGoalInternalResponseResultsItemFourOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(createGoalInternalResponseResultsItemFourOneProgressPercentMin).max(createGoalInternalResponseResultsItemFourOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['milestone']),
+  "taskKey": zod.string().regex(createGoalInternalResponseResultsItemFourTwoTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "reached": zod.boolean()
+})).describe('Progress is 100 when the visible milestone is reached and zero otherwise.')]).describe('A key result whose target, if linked, is currently readable by the caller.')).max(createGoalInternalResponseResultsMax)
+}).describe('A goal for a calendar quarter. Progress is the equal-weight average of the\ncaller\'s visible results or zero when none are visible. Unreadable linked targets\nare omitted from both the results and the average.\n')
+
+
+/**
+ * Returns the goal and the results whose linked targets the caller can currently read. Progress and
+ * health use exactly this visible result set. The version identifies the stored goal aggregate and
+ * changes only after a write.
+ * @summary Read a goal and its visible results
+ */
+export const GetGoalInternalParams = zod.object({
+  "goalId": zod.uuid().describe('UUID of the goal.')
+})
+
+export const GetGoalInternalQueryParams = zod.object({
+  "today": zod.iso.date().describe('The caller\'s calendar day. Expected goal progress is\n`100 * clamp((today - quarterStart) / (quarterEnd - quarterStart), 0, 1)`,\nusing calendar days. Compare expected and actual percentages before display rounding.\n')
+})
+
+export const getGoalInternalResponseNameMax = 300;
+
+
+export const getGoalInternalResponseNameRegExp = new RegExp('\\S');
+export const getGoalInternalResponseQuarterRegExp = new RegExp('^(?!0000)[0-9]{4}-Q[1-4]$');
+
+export const getGoalInternalResponseProgressPercentMin = 0;
+export const getGoalInternalResponseProgressPercentMax = 100;
+
+export const getGoalInternalResponseResultsItemOneOneLabelMax = 300;
+
+
+export const getGoalInternalResponseResultsItemOneOneLabelRegExp = new RegExp('\\S');
+export const getGoalInternalResponseResultsItemOneOneProgressPercentMin = 0;
+export const getGoalInternalResponseResultsItemOneOneProgressPercentMax = 100;
+
+export const getGoalInternalResponseResultsItemTwoOneLabelMax = 300;
+
+
+export const getGoalInternalResponseResultsItemTwoOneLabelRegExp = new RegExp('\\S');
+export const getGoalInternalResponseResultsItemTwoOneProgressPercentMin = 0;
+export const getGoalInternalResponseResultsItemTwoOneProgressPercentMax = 100;
+
+export const getGoalInternalResponseResultsItemThreeOneLabelMax = 300;
+
+
+export const getGoalInternalResponseResultsItemThreeOneLabelRegExp = new RegExp('\\S');
+export const getGoalInternalResponseResultsItemThreeOneProgressPercentMin = 0;
+export const getGoalInternalResponseResultsItemThreeOneProgressPercentMax = 100;
+
+export const getGoalInternalResponseResultsItemThreeTwoEligibleTaskCountMin = 0;
+
+export const getGoalInternalResponseResultsItemThreeTwoDoneTaskCountMin = 0;
+
+export const getGoalInternalResponseResultsItemFourOneLabelMax = 300;
+
+
+export const getGoalInternalResponseResultsItemFourOneLabelRegExp = new RegExp('\\S');
+export const getGoalInternalResponseResultsItemFourOneProgressPercentMin = 0;
+export const getGoalInternalResponseResultsItemFourOneProgressPercentMax = 100;
+
+export const getGoalInternalResponseResultsItemFourTwoTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getGoalInternalResponseResultsMax = 20;
+
+
+
+export const GetGoalInternalResponse = zod.object({
+  "id": zod.uuid().describe('UUID v7 of the goal.'),
+  "name": zod.string().min(1).max(getGoalInternalResponseNameMax).regex(getGoalInternalResponseNameRegExp).describe('Name of the goal, with surrounding whitespace removed.'),
+  "ownerUserId": zod.uuid().describe('Account of the goal owner.'),
+  "dueDate": zod.iso.date().describe('Goal deadline as a calendar date.'),
+  "spaceId": zod.uuid().nullable().describe('The owning space, or null for an organization goal.'),
+  "quarter": zod.string().regex(getGoalInternalResponseQuarterRegExp).describe('Calendar quarter in `YYYY-QN` format.'),
+  "version": zod.int().min(1),
+  "progressPercent": zod.number().min(getGoalInternalResponseProgressPercentMin).max(getGoalInternalResponseProgressPercentMax).describe('Percentage before presentation rounding.'),
+  "health": zod.string().describe('Achieved at 100 percent. Otherwise on track when progress trails the elapsed\nquarter by at most five percentage points, at risk when it trails by at most\ntwenty points, and behind thereafter. Elapsed progress is zero before the\nquarter and 100 after it.\n'),
+  "results": zod.array(zod.union([zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(getGoalInternalResponseResultsItemOneOneLabelMax).regex(getGoalInternalResponseResultsItemOneOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(getGoalInternalResponseResultsItemOneOneProgressPercentMin).max(getGoalInternalResponseResultsItemOneOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['number']),
+  "startValue": zod.number(),
+  "currentValue": zod.number(),
+  "targetValue": zod.number()
+})).describe('Clamp `(currentValue - startValue) / (targetValue - startValue)` to the range 0 to 1,\nthen express it as a percentage. This works for increasing and decreasing targets.\nWhen the start and target are equal, progress is 100 only while the current value\nequals the target.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(getGoalInternalResponseResultsItemTwoOneLabelMax).regex(getGoalInternalResponseResultsItemTwoOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(getGoalInternalResponseResultsItemTwoOneProgressPercentMin).max(getGoalInternalResponseResultsItemTwoOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['checkbox']),
+  "checked": zod.boolean()
+})).describe('Progress is 100 when checked and zero otherwise.'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(getGoalInternalResponseResultsItemThreeOneLabelMax).regex(getGoalInternalResponseResultsItemThreeOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(getGoalInternalResponseResultsItemThreeOneProgressPercentMin).max(getGoalInternalResponseResultsItemThreeOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['list-progress']),
+  "listId": zod.uuid(),
+  "eligibleTaskCount": zod.int().min(getGoalInternalResponseResultsItemThreeTwoEligibleTaskCountMin),
+  "doneTaskCount": zod.int().min(getGoalInternalResponseResultsItemThreeTwoDoneTaskCountMin)
+})).describe('Progress is the percentage of eligible tasks in status `done`. Cancelled tasks\nare excluded from eligibleTaskCount. An empty eligible population yields zero.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(getGoalInternalResponseResultsItemFourOneLabelMax).regex(getGoalInternalResponseResultsItemFourOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(getGoalInternalResponseResultsItemFourOneProgressPercentMin).max(getGoalInternalResponseResultsItemFourOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['milestone']),
+  "taskKey": zod.string().regex(getGoalInternalResponseResultsItemFourTwoTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "reached": zod.boolean()
+})).describe('Progress is 100 when the visible milestone is reached and zero otherwise.')]).describe('A key result whose target, if linked, is currently readable by the caller.')).max(getGoalInternalResponseResultsMax)
+}).describe('A goal for a calendar quarter. Progress is the equal-weight average of the\ncaller\'s visible results or zero when none are visible. Unreadable linked targets\nare omitted from both the results and the average.\n')
+
+
+/**
+ * Applies a merge patch to the name, owner or due date, using the current goal's scope to authorize
+ * the write. The owner must remain eligible to read that scope and the due date must fall in the
+ * goal's immutable quarter. When provided, `If-Match` checks the version of the goal.
+ * @summary Update a goal
+ */
+export const UpdateGoalInternalParams = zod.object({
+  "goalId": zod.uuid().describe('UUID of the goal.')
+})
+
+export const UpdateGoalInternalQueryParams = zod.object({
+  "today": zod.iso.date().describe('The caller\'s calendar day. Expected goal progress is\n`100 * clamp((today - quarterStart) / (quarterEnd - quarterStart), 0, 1)`,\nusing calendar days. Compare expected and actual percentages before display rounding.\n')
+})
+
+export const UpdateGoalInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('Strong ETag of the goal aggregate underlying the change.')
+})
+
+export const updateGoalInternalBodyNameMax = 300;
+
+
+export const updateGoalInternalBodyNameRegExp = new RegExp('\\S');
+
+
+export const UpdateGoalInternalBody = zod.strictObject({
+  "name": zod.string().min(1).max(updateGoalInternalBodyNameMax).regex(updateGoalInternalBodyNameRegExp).optional().describe('Name of the goal, with surrounding whitespace removed.'),
+  "ownerUserId": zod.uuid().optional(),
+  "dueDate": zod.iso.date().optional()
+}).describe('Change goal metadata. Omitted members keep their values. Quarter and scope are fixed.')
+
+export const updateGoalInternalResponseNameMax = 300;
+
+
+export const updateGoalInternalResponseNameRegExp = new RegExp('\\S');
+export const updateGoalInternalResponseQuarterRegExp = new RegExp('^(?!0000)[0-9]{4}-Q[1-4]$');
+
+export const updateGoalInternalResponseProgressPercentMin = 0;
+export const updateGoalInternalResponseProgressPercentMax = 100;
+
+export const updateGoalInternalResponseResultsItemOneOneLabelMax = 300;
+
+
+export const updateGoalInternalResponseResultsItemOneOneLabelRegExp = new RegExp('\\S');
+export const updateGoalInternalResponseResultsItemOneOneProgressPercentMin = 0;
+export const updateGoalInternalResponseResultsItemOneOneProgressPercentMax = 100;
+
+export const updateGoalInternalResponseResultsItemTwoOneLabelMax = 300;
+
+
+export const updateGoalInternalResponseResultsItemTwoOneLabelRegExp = new RegExp('\\S');
+export const updateGoalInternalResponseResultsItemTwoOneProgressPercentMin = 0;
+export const updateGoalInternalResponseResultsItemTwoOneProgressPercentMax = 100;
+
+export const updateGoalInternalResponseResultsItemThreeOneLabelMax = 300;
+
+
+export const updateGoalInternalResponseResultsItemThreeOneLabelRegExp = new RegExp('\\S');
+export const updateGoalInternalResponseResultsItemThreeOneProgressPercentMin = 0;
+export const updateGoalInternalResponseResultsItemThreeOneProgressPercentMax = 100;
+
+export const updateGoalInternalResponseResultsItemThreeTwoEligibleTaskCountMin = 0;
+
+export const updateGoalInternalResponseResultsItemThreeTwoDoneTaskCountMin = 0;
+
+export const updateGoalInternalResponseResultsItemFourOneLabelMax = 300;
+
+
+export const updateGoalInternalResponseResultsItemFourOneLabelRegExp = new RegExp('\\S');
+export const updateGoalInternalResponseResultsItemFourOneProgressPercentMin = 0;
+export const updateGoalInternalResponseResultsItemFourOneProgressPercentMax = 100;
+
+export const updateGoalInternalResponseResultsItemFourTwoTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const updateGoalInternalResponseResultsMax = 20;
+
+
+
+export const UpdateGoalInternalResponse = zod.object({
+  "id": zod.uuid().describe('UUID v7 of the goal.'),
+  "name": zod.string().min(1).max(updateGoalInternalResponseNameMax).regex(updateGoalInternalResponseNameRegExp).describe('Name of the goal, with surrounding whitespace removed.'),
+  "ownerUserId": zod.uuid().describe('Account of the goal owner.'),
+  "dueDate": zod.iso.date().describe('Goal deadline as a calendar date.'),
+  "spaceId": zod.uuid().nullable().describe('The owning space, or null for an organization goal.'),
+  "quarter": zod.string().regex(updateGoalInternalResponseQuarterRegExp).describe('Calendar quarter in `YYYY-QN` format.'),
+  "version": zod.int().min(1),
+  "progressPercent": zod.number().min(updateGoalInternalResponseProgressPercentMin).max(updateGoalInternalResponseProgressPercentMax).describe('Percentage before presentation rounding.'),
+  "health": zod.string().describe('Achieved at 100 percent. Otherwise on track when progress trails the elapsed\nquarter by at most five percentage points, at risk when it trails by at most\ntwenty points, and behind thereafter. Elapsed progress is zero before the\nquarter and 100 after it.\n'),
+  "results": zod.array(zod.union([zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(updateGoalInternalResponseResultsItemOneOneLabelMax).regex(updateGoalInternalResponseResultsItemOneOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(updateGoalInternalResponseResultsItemOneOneProgressPercentMin).max(updateGoalInternalResponseResultsItemOneOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['number']),
+  "startValue": zod.number(),
+  "currentValue": zod.number(),
+  "targetValue": zod.number()
+})).describe('Clamp `(currentValue - startValue) / (targetValue - startValue)` to the range 0 to 1,\nthen express it as a percentage. This works for increasing and decreasing targets.\nWhen the start and target are equal, progress is 100 only while the current value\nequals the target.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(updateGoalInternalResponseResultsItemTwoOneLabelMax).regex(updateGoalInternalResponseResultsItemTwoOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(updateGoalInternalResponseResultsItemTwoOneProgressPercentMin).max(updateGoalInternalResponseResultsItemTwoOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['checkbox']),
+  "checked": zod.boolean()
+})).describe('Progress is 100 when checked and zero otherwise.'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(updateGoalInternalResponseResultsItemThreeOneLabelMax).regex(updateGoalInternalResponseResultsItemThreeOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(updateGoalInternalResponseResultsItemThreeOneProgressPercentMin).max(updateGoalInternalResponseResultsItemThreeOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['list-progress']),
+  "listId": zod.uuid(),
+  "eligibleTaskCount": zod.int().min(updateGoalInternalResponseResultsItemThreeTwoEligibleTaskCountMin),
+  "doneTaskCount": zod.int().min(updateGoalInternalResponseResultsItemThreeTwoDoneTaskCountMin)
+})).describe('Progress is the percentage of eligible tasks in status `done`. Cancelled tasks\nare excluded from eligibleTaskCount. An empty eligible population yields zero.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(updateGoalInternalResponseResultsItemFourOneLabelMax).regex(updateGoalInternalResponseResultsItemFourOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(updateGoalInternalResponseResultsItemFourOneProgressPercentMin).max(updateGoalInternalResponseResultsItemFourOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['milestone']),
+  "taskKey": zod.string().regex(updateGoalInternalResponseResultsItemFourTwoTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "reached": zod.boolean()
+})).describe('Progress is 100 when the visible milestone is reached and zero otherwise.')]).describe('A key result whose target, if linked, is currently readable by the caller.')).max(updateGoalInternalResponseResultsMax)
+}).describe('A goal for a calendar quarter. Progress is the equal-weight average of the\ncaller\'s visible results or zero when none are visible. Unreadable linked targets\nare omitted from both the results and the average.\n')
+
+
+/**
+ * Deletes the goal and its results in one write. Linked lists and milestone tasks stay available.
+ * When provided, `If-Match` checks the version of the goal.
+ * @summary Delete a goal
+ */
+export const DeleteGoalInternalParams = zod.object({
+  "goalId": zod.uuid().describe('UUID of the goal.')
+})
+
+export const DeleteGoalInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('Strong ETag of the goal aggregate underlying the change.')
+})
+
+export const DeleteGoalInternalResponse = zod.void()
+
+
+/**
+ * Adds a result to a writable goal. A linked list or milestone task must be readable by the
+ * caller in the same organization. Each goal holds at most 20 stored results. `If-Match`
+ * checks the goal's version, and an optional idempotency key replays the original response for
+ * 24 hours.
+ * @summary Add a result to a goal
+ */
+export const CreateGoalResultInternalParams = zod.object({
+  "goalId": zod.uuid().describe('UUID of the goal.')
+})
+
+export const createGoalResultInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateGoalResultInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('Strong ETag of the goal aggregate underlying the change.'),
+  "Idempotency-Key": zod.string().min(1).max(createGoalResultInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.')
+})
+
+export const createGoalResultInternalBodyOneLabelMax = 300;
+
+
+export const createGoalResultInternalBodyOneLabelRegExp = new RegExp('\\S');
+export const createGoalResultInternalBodyTwoLabelMax = 300;
+
+
+export const createGoalResultInternalBodyTwoLabelRegExp = new RegExp('\\S');
+export const createGoalResultInternalBodyThreeLabelMax = 300;
+
+
+export const createGoalResultInternalBodyThreeLabelRegExp = new RegExp('\\S');
+export const createGoalResultInternalBodyFourLabelMax = 300;
+
+
+export const createGoalResultInternalBodyFourLabelRegExp = new RegExp('\\S');
+export const createGoalResultInternalBodyFourTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const CreateGoalResultInternalBody = zod.union([zod.strictObject({
+  "kind": zod.enum(['number']),
+  "label": zod.string().min(1).max(createGoalResultInternalBodyOneLabelMax).regex(createGoalResultInternalBodyOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "startValue": zod.number(),
+  "currentValue": zod.number(),
+  "targetValue": zod.number()
+}),zod.strictObject({
+  "kind": zod.enum(['checkbox']),
+  "label": zod.string().min(1).max(createGoalResultInternalBodyTwoLabelMax).regex(createGoalResultInternalBodyTwoLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "checked": zod.boolean()
+}),zod.strictObject({
+  "kind": zod.enum(['list-progress']),
+  "label": zod.string().min(1).max(createGoalResultInternalBodyThreeLabelMax).regex(createGoalResultInternalBodyThreeLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "listId": zod.uuid()
+}),zod.strictObject({
+  "kind": zod.enum(['milestone']),
+  "label": zod.string().min(1).max(createGoalResultInternalBodyFourLabelMax).regex(createGoalResultInternalBodyFourLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "taskKey": zod.string().regex(createGoalResultInternalBodyFourTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n')
+})]).describe('A new key result. A linked list or milestone must be readable by the caller in the\ncurrent organization at the time of the write.\n')
+
+export const createGoalResultInternalResponseOneOneLabelMax = 300;
+
+
+export const createGoalResultInternalResponseOneOneLabelRegExp = new RegExp('\\S');
+export const createGoalResultInternalResponseOneOneProgressPercentMin = 0;
+export const createGoalResultInternalResponseOneOneProgressPercentMax = 100;
+
+export const createGoalResultInternalResponseTwoOneLabelMax = 300;
+
+
+export const createGoalResultInternalResponseTwoOneLabelRegExp = new RegExp('\\S');
+export const createGoalResultInternalResponseTwoOneProgressPercentMin = 0;
+export const createGoalResultInternalResponseTwoOneProgressPercentMax = 100;
+
+export const createGoalResultInternalResponseThreeOneLabelMax = 300;
+
+
+export const createGoalResultInternalResponseThreeOneLabelRegExp = new RegExp('\\S');
+export const createGoalResultInternalResponseThreeOneProgressPercentMin = 0;
+export const createGoalResultInternalResponseThreeOneProgressPercentMax = 100;
+
+export const createGoalResultInternalResponseThreeTwoEligibleTaskCountMin = 0;
+
+export const createGoalResultInternalResponseThreeTwoDoneTaskCountMin = 0;
+
+export const createGoalResultInternalResponseFourOneLabelMax = 300;
+
+
+export const createGoalResultInternalResponseFourOneLabelRegExp = new RegExp('\\S');
+export const createGoalResultInternalResponseFourOneProgressPercentMin = 0;
+export const createGoalResultInternalResponseFourOneProgressPercentMax = 100;
+
+export const createGoalResultInternalResponseFourTwoTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const CreateGoalResultInternalResponse = zod.union([zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(createGoalResultInternalResponseOneOneLabelMax).regex(createGoalResultInternalResponseOneOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(createGoalResultInternalResponseOneOneProgressPercentMin).max(createGoalResultInternalResponseOneOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['number']),
+  "startValue": zod.number(),
+  "currentValue": zod.number(),
+  "targetValue": zod.number()
+})).describe('Clamp `(currentValue - startValue) / (targetValue - startValue)` to the range 0 to 1,\nthen express it as a percentage. This works for increasing and decreasing targets.\nWhen the start and target are equal, progress is 100 only while the current value\nequals the target.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(createGoalResultInternalResponseTwoOneLabelMax).regex(createGoalResultInternalResponseTwoOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(createGoalResultInternalResponseTwoOneProgressPercentMin).max(createGoalResultInternalResponseTwoOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['checkbox']),
+  "checked": zod.boolean()
+})).describe('Progress is 100 when checked and zero otherwise.'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(createGoalResultInternalResponseThreeOneLabelMax).regex(createGoalResultInternalResponseThreeOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(createGoalResultInternalResponseThreeOneProgressPercentMin).max(createGoalResultInternalResponseThreeOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['list-progress']),
+  "listId": zod.uuid(),
+  "eligibleTaskCount": zod.int().min(createGoalResultInternalResponseThreeTwoEligibleTaskCountMin),
+  "doneTaskCount": zod.int().min(createGoalResultInternalResponseThreeTwoDoneTaskCountMin)
+})).describe('Progress is the percentage of eligible tasks in status `done`. Cancelled tasks\nare excluded from eligibleTaskCount. An empty eligible population yields zero.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(createGoalResultInternalResponseFourOneLabelMax).regex(createGoalResultInternalResponseFourOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(createGoalResultInternalResponseFourOneProgressPercentMin).max(createGoalResultInternalResponseFourOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['milestone']),
+  "taskKey": zod.string().regex(createGoalResultInternalResponseFourTwoTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "reached": zod.boolean()
+})).describe('Progress is 100 when the visible milestone is reached and zero otherwise.')]).describe('A key result whose target, if linked, is currently readable by the caller.')
+
+
+/**
+ * Returns a result on a readable goal. A linked result is returned only while its current target
+ * is readable. The ETag identifies the parent goal's stored version.
+ * @summary Read a goal result
+ */
+export const GetGoalResultInternalParams = zod.object({
+  "goalId": zod.uuid().describe('UUID of the goal.'),
+  "resultId": zod.uuid().describe('UUID of the key result within the goal.')
+})
+
+export const getGoalResultInternalResponseOneOneLabelMax = 300;
+
+
+export const getGoalResultInternalResponseOneOneLabelRegExp = new RegExp('\\S');
+export const getGoalResultInternalResponseOneOneProgressPercentMin = 0;
+export const getGoalResultInternalResponseOneOneProgressPercentMax = 100;
+
+export const getGoalResultInternalResponseTwoOneLabelMax = 300;
+
+
+export const getGoalResultInternalResponseTwoOneLabelRegExp = new RegExp('\\S');
+export const getGoalResultInternalResponseTwoOneProgressPercentMin = 0;
+export const getGoalResultInternalResponseTwoOneProgressPercentMax = 100;
+
+export const getGoalResultInternalResponseThreeOneLabelMax = 300;
+
+
+export const getGoalResultInternalResponseThreeOneLabelRegExp = new RegExp('\\S');
+export const getGoalResultInternalResponseThreeOneProgressPercentMin = 0;
+export const getGoalResultInternalResponseThreeOneProgressPercentMax = 100;
+
+export const getGoalResultInternalResponseThreeTwoEligibleTaskCountMin = 0;
+
+export const getGoalResultInternalResponseThreeTwoDoneTaskCountMin = 0;
+
+export const getGoalResultInternalResponseFourOneLabelMax = 300;
+
+
+export const getGoalResultInternalResponseFourOneLabelRegExp = new RegExp('\\S');
+export const getGoalResultInternalResponseFourOneProgressPercentMin = 0;
+export const getGoalResultInternalResponseFourOneProgressPercentMax = 100;
+
+export const getGoalResultInternalResponseFourTwoTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const GetGoalResultInternalResponse = zod.union([zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(getGoalResultInternalResponseOneOneLabelMax).regex(getGoalResultInternalResponseOneOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(getGoalResultInternalResponseOneOneProgressPercentMin).max(getGoalResultInternalResponseOneOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['number']),
+  "startValue": zod.number(),
+  "currentValue": zod.number(),
+  "targetValue": zod.number()
+})).describe('Clamp `(currentValue - startValue) / (targetValue - startValue)` to the range 0 to 1,\nthen express it as a percentage. This works for increasing and decreasing targets.\nWhen the start and target are equal, progress is 100 only while the current value\nequals the target.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(getGoalResultInternalResponseTwoOneLabelMax).regex(getGoalResultInternalResponseTwoOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(getGoalResultInternalResponseTwoOneProgressPercentMin).max(getGoalResultInternalResponseTwoOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['checkbox']),
+  "checked": zod.boolean()
+})).describe('Progress is 100 when checked and zero otherwise.'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(getGoalResultInternalResponseThreeOneLabelMax).regex(getGoalResultInternalResponseThreeOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(getGoalResultInternalResponseThreeOneProgressPercentMin).max(getGoalResultInternalResponseThreeOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['list-progress']),
+  "listId": zod.uuid(),
+  "eligibleTaskCount": zod.int().min(getGoalResultInternalResponseThreeTwoEligibleTaskCountMin),
+  "doneTaskCount": zod.int().min(getGoalResultInternalResponseThreeTwoDoneTaskCountMin)
+})).describe('Progress is the percentage of eligible tasks in status `done`. Cancelled tasks\nare excluded from eligibleTaskCount. An empty eligible population yields zero.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(getGoalResultInternalResponseFourOneLabelMax).regex(getGoalResultInternalResponseFourOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(getGoalResultInternalResponseFourOneProgressPercentMin).max(getGoalResultInternalResponseFourOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['milestone']),
+  "taskKey": zod.string().regex(getGoalResultInternalResponseFourTwoTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "reached": zod.boolean()
+})).describe('Progress is 100 when the visible milestone is reached and zero otherwise.')]).describe('A key result whose target, if linked, is currently readable by the caller.')
+
+
+/**
+ * Applies a merge patch to a result the caller can read on a writable goal. Every kind accepts a
+ * label. Only a number accepts `currentValue`, and only a checkbox accepts `checked`. The kind,
+ * numeric endpoints and linked target are fixed. Use result deletion and creation to replace a
+ * link. A linked target must stay readable through the write. `If-Match` checks the goal's
+ * version.
+ * @summary Update a goal result
+ */
+export const UpdateGoalResultInternalParams = zod.object({
+  "goalId": zod.uuid().describe('UUID of the goal.'),
+  "resultId": zod.uuid().describe('UUID of the key result within the goal.')
+})
+
+export const UpdateGoalResultInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('Strong ETag of the goal aggregate underlying the change.')
+})
+
+export const updateGoalResultInternalBodyLabelMax = 300;
+
+
+export const updateGoalResultInternalBodyLabelRegExp = new RegExp('\\S');
+
+
+export const UpdateGoalResultInternalBody = zod.strictObject({
+  "label": zod.string().min(1).max(updateGoalResultInternalBodyLabelMax).regex(updateGoalResultInternalBodyLabelRegExp).optional().describe('Label of the key result, with surrounding whitespace removed.'),
+  "currentValue": zod.number().optional(),
+  "checked": zod.boolean().optional()
+}).describe('Update the label of any key result, the current value of a numeric result, or the\nchecked state of a checkbox. A progress field for the wrong kind is invalid.\nKind and linked target are assigned on creation. Omitted members keep their values.\n')
+
+export const updateGoalResultInternalResponseOneOneLabelMax = 300;
+
+
+export const updateGoalResultInternalResponseOneOneLabelRegExp = new RegExp('\\S');
+export const updateGoalResultInternalResponseOneOneProgressPercentMin = 0;
+export const updateGoalResultInternalResponseOneOneProgressPercentMax = 100;
+
+export const updateGoalResultInternalResponseTwoOneLabelMax = 300;
+
+
+export const updateGoalResultInternalResponseTwoOneLabelRegExp = new RegExp('\\S');
+export const updateGoalResultInternalResponseTwoOneProgressPercentMin = 0;
+export const updateGoalResultInternalResponseTwoOneProgressPercentMax = 100;
+
+export const updateGoalResultInternalResponseThreeOneLabelMax = 300;
+
+
+export const updateGoalResultInternalResponseThreeOneLabelRegExp = new RegExp('\\S');
+export const updateGoalResultInternalResponseThreeOneProgressPercentMin = 0;
+export const updateGoalResultInternalResponseThreeOneProgressPercentMax = 100;
+
+export const updateGoalResultInternalResponseThreeTwoEligibleTaskCountMin = 0;
+
+export const updateGoalResultInternalResponseThreeTwoDoneTaskCountMin = 0;
+
+export const updateGoalResultInternalResponseFourOneLabelMax = 300;
+
+
+export const updateGoalResultInternalResponseFourOneLabelRegExp = new RegExp('\\S');
+export const updateGoalResultInternalResponseFourOneProgressPercentMin = 0;
+export const updateGoalResultInternalResponseFourOneProgressPercentMax = 100;
+
+export const updateGoalResultInternalResponseFourTwoTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const UpdateGoalResultInternalResponse = zod.union([zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(updateGoalResultInternalResponseOneOneLabelMax).regex(updateGoalResultInternalResponseOneOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(updateGoalResultInternalResponseOneOneProgressPercentMin).max(updateGoalResultInternalResponseOneOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['number']),
+  "startValue": zod.number(),
+  "currentValue": zod.number(),
+  "targetValue": zod.number()
+})).describe('Clamp `(currentValue - startValue) / (targetValue - startValue)` to the range 0 to 1,\nthen express it as a percentage. This works for increasing and decreasing targets.\nWhen the start and target are equal, progress is 100 only while the current value\nequals the target.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(updateGoalResultInternalResponseTwoOneLabelMax).regex(updateGoalResultInternalResponseTwoOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(updateGoalResultInternalResponseTwoOneProgressPercentMin).max(updateGoalResultInternalResponseTwoOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['checkbox']),
+  "checked": zod.boolean()
+})).describe('Progress is 100 when checked and zero otherwise.'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(updateGoalResultInternalResponseThreeOneLabelMax).regex(updateGoalResultInternalResponseThreeOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(updateGoalResultInternalResponseThreeOneProgressPercentMin).max(updateGoalResultInternalResponseThreeOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['list-progress']),
+  "listId": zod.uuid(),
+  "eligibleTaskCount": zod.int().min(updateGoalResultInternalResponseThreeTwoEligibleTaskCountMin),
+  "doneTaskCount": zod.int().min(updateGoalResultInternalResponseThreeTwoDoneTaskCountMin)
+})).describe('Progress is the percentage of eligible tasks in status `done`. Cancelled tasks\nare excluded from eligibleTaskCount. An empty eligible population yields zero.\n'),zod.object({
+  "id": zod.uuid().describe('UUID v7 of the key result.'),
+  "label": zod.string().min(1).max(updateGoalResultInternalResponseFourOneLabelMax).regex(updateGoalResultInternalResponseFourOneLabelRegExp).describe('Label of the key result, with surrounding whitespace removed.'),
+  "progressPercent": zod.number().min(updateGoalResultInternalResponseFourOneProgressPercentMin).max(updateGoalResultInternalResponseFourOneProgressPercentMax).describe('Percentage before presentation rounding.')
+}).and(zod.object({
+  "kind": zod.enum(['milestone']),
+  "taskKey": zod.string().regex(updateGoalResultInternalResponseFourTwoTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "reached": zod.boolean()
+})).describe('Progress is 100 when the visible milestone is reached and zero otherwise.')]).describe('A key result whose target, if linked, is currently readable by the caller.')
+
+
+/**
+ * Removes a readable result from a writable goal. A linked target must stay readable
+ * through the write. `If-Match` checks the goal's version.
+ * @summary Delete a goal result
+ */
+export const DeleteGoalResultInternalParams = zod.object({
+  "goalId": zod.uuid().describe('UUID of the goal.'),
+  "resultId": zod.uuid().describe('UUID of the key result within the goal.')
+})
+
+export const DeleteGoalResultInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('Strong ETag of the goal aggregate underlying the change.')
+})
+
+export const DeleteGoalResultInternalResponse = zod.void()
+
+
+/**
+ * Computes the dashboard in one read of the caller's visible live tasks in readable live lists.
+ * Open statuses have category `open` or `active`. Late tasks are open and due before `today`.
+ * The blocked counter uses exactly `blocked`, and the status distribution covers every visible
+ * live task. The overdue preview keeps the first ten tasks by due date and key. The workload
+ * counts each open task against each of its current visible assignees, with a six-task threshold.
+ *
+ * The selected 8 or 12 calendar weeks start on Monday in `timeZone` and include the week of `today`.
+ * Each bucket counts a visible live task once if a durable activity entry records its transition to
+ * `done` during the covered week. A task currently reopened still counts for its recorded completion.
+ * Every bucket stops at `observedAt` at the latest. The current week also stops at the end of
+ * `today` in `timeZone`. The total completed count is the sum of the week counts. Historical
+ * occurrences of tasks that the caller cannot currently read are absent from every counter
+ * and drill-down.
+ * @summary Read the dashboard of visible team work
+ */
+
+export const getTeamDashboardInternalQueryWeeksDefault = 8;
+
+export const GetTeamDashboardInternalQueryParams = zod.object({
+  "today": zod.iso.date().describe('The date of the caller, in their time zone, which task-service does not know: the late\ntasks, the tasks due that day and the current sprints are counted against it.\n'),
+  "timeZone": zod.string().min(1).describe('IANA time-zone identifier used to bucket completion activity.'),
+  "weeks": zod.preprocess((value) => value === '8' ? 8 : value === '12' ? 12 : value, zod.union([zod.literal(8),zod.literal(12)]).default(getTeamDashboardInternalQueryWeeksDefault)).describe('Number of weeks including the week of today.')
+})
+
+
+export const getTeamDashboardInternalResponseOpenCountMin = 0;
+
+export const getTeamDashboardInternalResponseLateCountMin = 0;
+
+export const getTeamDashboardInternalResponseBlockedCountMin = 0;
+
+export const getTeamDashboardInternalResponseCompletedCountMin = 0;
+
+
+export const getTeamDashboardInternalResponseOverdueTasksItemKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const getTeamDashboardInternalResponseOverdueTasksItemParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getTeamDashboardInternalResponseOverdueTasksItemSubtaskCountsTotalMin = 0;
+
+export const getTeamDashboardInternalResponseOverdueTasksItemSubtaskCountsClosedMin = 0;
+
+export const getTeamDashboardInternalResponseOverdueTasksItemChecklistCountsTotalMin = 0;
+
+export const getTeamDashboardInternalResponseOverdueTasksItemChecklistCountsDoneMin = 0;
+
+
+export const getTeamDashboardInternalResponseOverdueTasksMax = 10;
+
+
+export const getTeamDashboardInternalResponseAssigneesItemOpenCountMin = 0;
+
+export const getTeamDashboardInternalResponseCompletionsItemCompletedCountMin = 0;
+
+export const getTeamDashboardInternalResponseCompletionsMin = 8;
+export const getTeamDashboardInternalResponseCompletionsMax = 12;
+
+
+
+export const GetTeamDashboardInternalResponse = zod.object({
+  "today": zod.iso.date().describe('Calendar observation date supplied by the caller in the requested time zone.'),
+  "timeZone": zod.string().min(1).describe('IANA time zone used to assign completion instants to local calendar days.'),
+  "weeks": zod.union([zod.literal(8),zod.literal(12)]).describe('Selected number of weeks, including the observation week.'),
+  "observedAt": zod.iso.datetime({"offset":true}).describe('Server observation instant in UTC.'),
+  "openCount": zod.int().min(getTeamDashboardInternalResponseOpenCountMin).describe('Visible tasks whose current status category is not closed.'),
+  "lateCount": zod.int().min(getTeamDashboardInternalResponseLateCountMin).describe('Visible open tasks whose due date is earlier than today.'),
+  "blockedCount": zod.int().min(getTeamDashboardInternalResponseBlockedCountMin).describe('Visible tasks whose current status key is exactly `blocked`.'),
+  "completedCount": zod.int().min(getTeamDashboardInternalResponseCompletedCountMin).describe('Sum of the completion counts for the returned weeks.'),
+  "byStatus": zod.array(zod.object({
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "count": zod.int().min(1)
+})).describe('One row per represented status, in canonical status order.'),
+  "overdueTasks": zod.array(zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "customFieldValues": zod.record(zod.string().regex(new RegExp("^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")), zod.union([zod.number(),zod.string()])).optional().describe('Sparse values keyed by lowercase stable custom field ID. Only active definitions of the readable\ntask\'s current space are included. Missing entries have no value. Absence of the member\nmeans the producer has not reported these values. Numeric zero and empty text are values.\n'),
+  "key": zod.string().regex(getTeamDashboardInternalResponseOverdueTasksItemKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(getTeamDashboardInternalResponseOverdueTasksItemParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(getTeamDashboardInternalResponseOverdueTasksItemSubtaskCountsTotalMin),
+  "closed": zod.int().min(getTeamDashboardInternalResponseOverdueTasksItemSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(getTeamDashboardInternalResponseOverdueTasksItemChecklistCountsTotalMin),
+  "done": zod.int().min(getTeamDashboardInternalResponseOverdueTasksItemChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n')).max(getTeamDashboardInternalResponseOverdueTasksMax).describe('First ten overdue tasks, ordered by due date and then by task key.'),
+  "assigneeThreshold": zod.int().min(1).describe('Open task count used as the workload reference, six tasks in this delivery.'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid().describe('Account of an assignee present in the visible task population.'),
+  "openCount": zod.int().min(getTeamDashboardInternalResponseAssigneesItemOpenCountMin).describe('Open tasks assigned to this user, counted once per task.')
+})).describe('Open task counts for assignees in the visible task population.'),
+  "completions": zod.array(zod.object({
+  "startsOn": zod.iso.date().describe('Monday of this week in the requested time zone.'),
+  "completedCount": zod.int().min(getTeamDashboardInternalResponseCompletionsItemCompletedCountMin).describe('Eligible tasks that transitioned to `done` during this week, counted once\nper task even if a task was reopened and completed again in the same week.\n')
+})).min(getTeamDashboardInternalResponseCompletionsMin).max(getTeamDashboardInternalResponseCompletionsMax).describe('Exactly the selected number of consecutive weeks in chronological order,\nincluding empty weeks. The observation week ends on the caller\'s date and\ncounts only completion instants already observed by the server.\n')
+}).describe('One team dashboard restricted to the caller\'s visible active task population.')
+
+
+/**
+ * Requires current list `edit`. Initializing the draft saves version 1, an unpublished
+ * form, `triage` when available with `todo` as fallback, and no assignee.
+ * Settings can be read during archive. Internal token: api-gateway, user and organization.
+ * @summary Read the intake configuration of a list
+ */
+export const GetIntakeFormConfigurationInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const getIntakeFormConfigurationInternalResponseTitleMax = 300;
+
+export const getIntakeFormConfigurationInternalResponseDescriptionMax = 500;
+
+export const getIntakeFormConfigurationInternalResponsePublicKeyRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+
+
+
+export const GetIntakeFormConfigurationInternalResponse = zod.object({
+  "title": zod.string().min(1).max(getIntakeFormConfigurationInternalResponseTitleMax).describe('Form heading supplied by a list editor. The service trims surrounding whitespace.'),
+  "description": zod.string().max(getIntakeFormConfigurationInternalResponseDescriptionMax).nullable().describe('Introductory plain text supplied by a list editor, or null when absent.'),
+  "fields": zod.object({
+  "description": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "priority": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "dueDate": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.')
+}).describe('Policy for the configurable fields. The title is required for every submission.'),
+  "defaultStatus": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "defaultAssigneeId": zod.uuid().nullable().describe('UUID of the eligible account assigned to new tasks, or null for no assignment.'),
+  "publicKey": zod.string().regex(getIntakeFormConfigurationInternalResponsePublicKeyRegExp).nullable().describe('Opaque key of the current publication, or null when the form is disabled.'),
+  "version": zod.int().min(1).describe('Configuration version used for conditional changes.')
+}).describe('Current form settings visible to an editor of the owning list.')
+
+
+/**
+ * Requires current `edit` on an active list and the strong form `ETag` in `If-Match`.
+ * Validate the status and assignee, and commit editable settings and version together.
+ * An unchanged patch keeps the version and an active publication keeps its key.
+ * Internal token: api-gateway, user and organization.
+ * @summary Change intake settings
+ */
+export const UpdateIntakeFormConfigurationInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const UpdateIntakeFormConfigurationInternalHeader = zod.object({
+  "If-Match": zod.string().describe('Strong ETag of the current form settings.')
+})
+
+export const updateIntakeFormConfigurationInternalBodyTitleMax = 300;
+
+export const updateIntakeFormConfigurationInternalBodyDescriptionMax = 500;
+
+
+
+export const UpdateIntakeFormConfigurationInternalBody = zod.strictObject({
+  "title": zod.string().min(1).max(updateIntakeFormConfigurationInternalBodyTitleMax).optional().describe('Form heading supplied by a list editor. The service trims surrounding whitespace.'),
+  "description": zod.string().max(updateIntakeFormConfigurationInternalBodyDescriptionMax).nullish().describe('Introductory plain text supplied by a list editor, or null when absent.'),
+  "fields": zod.strictObject({
+  "description": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.'),
+  "priority": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.'),
+  "dueDate": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.'),
+  "contactEmail": zod.enum(['disabled', 'optional', 'required']).optional().describe('Whether the submission accepts this field and requires a value.')
+}).optional().describe('Partial changes to the configurable fields. Omitted modes retain their values.'),
+  "defaultStatus": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).optional().describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "defaultAssigneeId": zod.uuid().nullish().describe('UUID of the eligible account assigned to new tasks, or null for no assignment.')
+}).describe('Merge patch of the editable settings. Null clears the introduction or default assignee.')
+
+export const updateIntakeFormConfigurationInternalResponseTitleMax = 300;
+
+export const updateIntakeFormConfigurationInternalResponseDescriptionMax = 500;
+
+export const updateIntakeFormConfigurationInternalResponsePublicKeyRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+
+
+
+export const UpdateIntakeFormConfigurationInternalResponse = zod.object({
+  "title": zod.string().min(1).max(updateIntakeFormConfigurationInternalResponseTitleMax).describe('Form heading supplied by a list editor. The service trims surrounding whitespace.'),
+  "description": zod.string().max(updateIntakeFormConfigurationInternalResponseDescriptionMax).nullable().describe('Introductory plain text supplied by a list editor, or null when absent.'),
+  "fields": zod.object({
+  "description": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "priority": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "dueDate": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.')
+}).describe('Policy for the configurable fields. The title is required for every submission.'),
+  "defaultStatus": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "defaultAssigneeId": zod.uuid().nullable().describe('UUID of the eligible account assigned to new tasks, or null for no assignment.'),
+  "publicKey": zod.string().regex(updateIntakeFormConfigurationInternalResponsePublicKeyRegExp).nullable().describe('Opaque key of the current publication, or null when the form is disabled.'),
+  "version": zod.int().min(1).describe('Configuration version used for conditional changes.')
+}).describe('Current form settings visible to an editor of the owning list.')
+
+
+/**
+ * Requires current `edit` on an active list. Validate the defaults under the publication
+ * lock. Publish a fresh key when disabled. A repeat with unchanged valid settings
+ * preserves the current key and version. Internal token: api-gateway, user and organization.
+ * @summary Publish an intake form
+ */
+export const PublishIntakeFormInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const PublishIntakeFormInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const publishIntakeFormInternalResponseTitleMax = 300;
+
+export const publishIntakeFormInternalResponseDescriptionMax = 500;
+
+export const publishIntakeFormInternalResponsePublicKeyRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+
+
+
+export const PublishIntakeFormInternalResponse = zod.object({
+  "title": zod.string().min(1).max(publishIntakeFormInternalResponseTitleMax).describe('Form heading supplied by a list editor. The service trims surrounding whitespace.'),
+  "description": zod.string().max(publishIntakeFormInternalResponseDescriptionMax).nullable().describe('Introductory plain text supplied by a list editor, or null when absent.'),
+  "fields": zod.object({
+  "description": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "priority": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "dueDate": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.')
+}).describe('Policy for the configurable fields. The title is required for every submission.'),
+  "defaultStatus": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "defaultAssigneeId": zod.uuid().nullable().describe('UUID of the eligible account assigned to new tasks, or null for no assignment.'),
+  "publicKey": zod.string().regex(publishIntakeFormInternalResponsePublicKeyRegExp).nullable().describe('Opaque key of the current publication, or null when the form is disabled.'),
+  "version": zod.int().min(1).describe('Configuration version used for conditional changes.')
+}).describe('Current form settings visible to an editor of the owning list.')
+
+
+/**
+ * Requires current list `edit`, including on archived lists. Revoke the key in the
+ * same transaction as the version change and retain the settings. An already disabled
+ * form keeps its version. Internal token: api-gateway, user and organization.
+ * @summary Disable a published intake form
+ */
+export const DisableIntakeFormInternalParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list.')
+})
+
+export const DisableIntakeFormInternalHeader = zod.object({
+  "If-Match": zod.string().optional().describe('`"<version>"` the change was made from.')
+})
+
+export const DisableIntakeFormInternalResponse = zod.void()
+
+
+/**
+ * Requires current `edit` on the task's list. Read the contact separately from the
+ * task projection and return null when absent. Internal token: api-gateway, user
+ * and organization.
+ * @summary Read a requester's contact email
+ */
+export const getTaskIntakeContactInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const GetTaskIntakeContactInternalParams = zod.object({
+  "taskKey": zod.string().regex(getTaskIntakeContactInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const getTaskIntakeContactInternalResponseContactEmailOneMax = 254;
+
+
+
+export const GetTaskIntakeContactInternalResponse = zod.object({
+  "contactEmail": zod.union([zod.email().max(getTaskIntakeContactInternalResponseContactEmailOneMax).describe('Address submitted by the applicant and stored separately from the task.'),zod.null()]).describe('Address supplied with the intake submission, or null when absent.')
+}).describe('Contact data visible to a current list editor for this task.')
+
+
+/**
+ * The key resolves the tenant and list. Verify that the publication and defaults
+ * remain valid on an active list and return only the applicant projection.
+ * Archive suspends the publication. Deletion and disable revoke its key.
+ * Internal token: api-gateway and actor system, without an organization.
+ * @summary Read the published applicant form
+ */
+export const GetPublicIntakeFormInternalParams = zod.object({
+  "publicKey": zod.string().describe('Opaque publication key. A key with an invalid shape is handled as unknown.')
+})
+
+export const getPublicIntakeFormInternalResponseTitleMax = 300;
+
+export const getPublicIntakeFormInternalResponseDescriptionMax = 500;
+
+
+
+export const GetPublicIntakeFormInternalResponse = zod.object({
+  "title": zod.string().min(1).max(getPublicIntakeFormInternalResponseTitleMax).describe('Form heading supplied by a list editor. The service trims surrounding whitespace.'),
+  "description": zod.string().max(getPublicIntakeFormInternalResponseDescriptionMax).nullable().describe('Introductory plain text supplied by a list editor, or null when absent.'),
+  "fields": zod.object({
+  "description": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "priority": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "dueDate": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.'),
+  "contactEmail": zod.enum(['disabled', 'optional', 'required']).describe('Whether the submission accepts this field and requires a value.')
+}).describe('Policy for the configurable fields. The title is required for every submission.')
+}).describe('Public projection of the settings deliberately provided for display.')
+
+
+/**
+ * Internal token: api-gateway and actor system, without an organization. Resolve the
+ * tenant and list by key. Recheck the publication, list, status and assignee under the
+ * write locks before applying the form's fields and normal task creation rules.
+ * Store contact separately in the same transaction as the task and its ordinary
+ * outbox events. Idempotency is scoped to the publication and returns the original
+ * opaque receipt on a matching replay within 24 hours while the publication stays valid.
+ * @summary Submit a request through a published form
+ */
+export const SubmitPublicIntakeFormInternalParams = zod.object({
+  "publicKey": zod.string().describe('Opaque publication key. A key with an invalid shape is handled as unknown.')
+})
+
+export const submitPublicIntakeFormInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const SubmitPublicIntakeFormInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(submitPublicIntakeFormInternalHeaderIdempotencyKeyMax).optional().describe('Key of the creation, as the client sent it to the gateway.')
+})
+
+export const submitPublicIntakeFormInternalBodyTitleMax = 300;
+
+export const submitPublicIntakeFormInternalBodyDescriptionMax = 50000;
+
+export const submitPublicIntakeFormInternalBodyContactEmailMax = 254;
+
+
+
+export const SubmitPublicIntakeFormInternalBody = zod.strictObject({
+  "title": zod.string().min(1).max(submitPublicIntakeFormInternalBodyTitleMax).describe('"Nom de la tâche", as typed; surrounding spaces are removed, and a name made only of spaces\nis refused with `400 request.invalid`.\n'),
+  "description": zod.string().max(submitPublicIntakeFormInternalBodyDescriptionMax).nullish().describe('"Description", Markdown; `null` when there is none.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).optional().describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "dueDate": zod.iso.date().optional().describe('Requested due date in calendar days.'),
+  "contactEmail": zod.email().max(submitPublicIntakeFormInternalBodyContactEmailMax).optional().describe('Address submitted by the applicant and stored separately from the task.')
+}).describe('The service validates configurable fields against the current publication after resolving\nthe form key. Disabled fields must be omitted. Required fields must contain a value.\n')
+
+export const submitPublicIntakeFormInternalResponseReceiptRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+
+
+export const SubmitPublicIntakeFormInternalResponse = zod.object({
+  "receipt": zod.string().regex(submitPublicIntakeFormInternalResponseReceiptRegExp).describe('Opaque identifier of this acknowledgement.')
+}).describe('Acknowledgement returned after committing the submission.')

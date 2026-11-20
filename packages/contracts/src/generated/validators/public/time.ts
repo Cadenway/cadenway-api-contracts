@@ -5,6 +5,75 @@
 import * as zod from 'zod';
 
 /**
+ * Summarizes the same time entries as task detail for currently visible live tasks in a
+ * readable list ("Feuille de temps"). The window begins on `weekStart` and includes
+ * Monday through Sunday, according to each entry's stored work date.
+ * Entries follow their task across a move and are omitted while the task is archived
+ * or trashed. Removing an entry removes its minutes from the next read.
+ *
+ * Each flat row summarizes one author and task by date. A former member's entries retain
+ * their author account reference and use the existing user display fallback.
+ * Totals cover every matching row, across pages. Rows are ordered by author account ID
+ * and task key. The opaque cursor binds the caller, list and requested week. Scope
+ * `tasks:read` for a personal API token.
+ * @summary Read recorded work for one calendar week of a list
+ */
+export const GetListTimesheetParams = zod.object({
+  "listId": zod.uuid().describe('ID of the list.')
+})
+
+export const getListTimesheetQueryWeekStartRegExp = new RegExp('^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$');
+export const getListTimesheetQueryLimitDefault = 50;
+export const getListTimesheetQueryLimitMax = 100;
+
+
+
+export const GetListTimesheetQueryParams = zod.object({
+  "weekStart": zod.iso.date().regex(getListTimesheetQueryWeekStartRegExp).describe('Monday of the requested reporting window, as a calendar date.'),
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(getListTimesheetQueryLimitMax).default(getListTimesheetQueryLimitDefault).describe('Page size.')
+})
+
+export const getListTimesheetResponseDaysItemTotalMinutesMin = 0;
+
+export const getListTimesheetResponseDaysMin = 7;
+export const getListTimesheetResponseDaysMax = 7;
+
+export const getListTimesheetResponseTotalMinutesMin = 0;
+
+export const getListTimesheetResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getListTimesheetResponseItemsItemMinutesByDayItemMin = 0;
+
+export const getListTimesheetResponseItemsItemMinutesByDayMin = 7;
+export const getListTimesheetResponseItemsItemMinutesByDayMax = 7;
+
+export const getListTimesheetResponseItemsItemTotalMinutesMin = 0;
+
+
+
+export const GetListTimesheetResponse = zod.object({
+  "listId": zod.uuid(),
+  "weekStart": zod.iso.date().describe('Monday of the reported week.'),
+  "days": zod.array(zod.object({
+  "date": zod.iso.date().describe('Date in the returned reporting window.'),
+  "totalMinutes": zod.int().min(getListTimesheetResponseDaysItemTotalMinutesMin).describe('Sum across all visible rows for this date, independent of pagination.')
+})).min(getListTimesheetResponseDaysMin).max(getListTimesheetResponseDaysMax).describe('All seven calendar days in order, with totals across authors and tasks.'),
+  "totalMinutes": zod.int().min(getListTimesheetResponseTotalMinutesMin).describe('Recorded minutes across all visible tasks and authors in the week.'),
+  "items": zod.array(zod.object({
+  "author": zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n').describe('Stable account reference, including former members with the usual display fallback.'),
+  "taskKey": zod.string().regex(getListTimesheetResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "minutesByDay": zod.array(zod.int().min(getListTimesheetResponseItemsItemMinutesByDayItemMin)).min(getListTimesheetResponseItemsItemMinutesByDayMin).max(getListTimesheetResponseItemsItemMinutesByDayMax).describe('Whole minutes aligned with the seven dates of the timesheet.'),
+  "totalMinutes": zod.int().min(getListTimesheetResponseItemsItemTotalMinutesMin).describe('Sum of the author\'s recorded minutes for this task in the week.')
+}).describe('One author\'s recorded minutes by work date for one currently visible live task.')).describe('Rows ordered by author account and task key, including across page boundaries.'),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('One Monday-to-Sunday timesheet over the task time entries for the selected list.\nEntries follow their task when it moves. Archived and trashed tasks contribute\nno entries while in those states. The reported day is the stored work date.\n')
+
+
+/**
  * Lists entries in descending `(createdAt,id)` order. The opaque cursor is bound to
  * the task and ordering. The total count and total minutes cover all entries on this
  * task, before pagination. Subtasks have their own entries and totals.
