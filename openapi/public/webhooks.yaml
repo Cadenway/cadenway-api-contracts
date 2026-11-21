@@ -1,0 +1,260 @@
+openapi: 3.1.0
+info:
+  title: Cadenway Git webhooks
+  version: 1.0.0
+  description: |
+    GitHub and GitLab call these routes over HTTPS without a Cadenway session or API token.
+    The gateway relays only the documented provider headers, the receiver identifier and the
+    original body to integration-service under a signed system token with no organization.
+    Integration authenticates the provider and decides whether the delivery applies.
+
+    A supported and authorized delivery is acknowledged only after its duplicate record and
+    accepted work commit together. An authenticated replay of the same delivery or an
+    authenticated event intentionally ignored by the receiver also answers 204. A 204
+    reports receipt and does not imply that a Git link or Task change has completed.
+    Problem bodies omit credential, tenant, repository and payload values. Logs and trace
+    attributes omit raw provider bodies and provider authentication headers.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Enforces the public receiver, preserves provider bytes and headers, and relays to Integration.
+servers:
+  - url: https://api.cadenway.com
+    description: Public Cadenway API.
+tags:
+  - name: webhooks
+    description: Inbound Git provider delivery.
+paths:
+  /v1/webhooks/github:
+    post:
+      operationId: receiveGitHubWebhook
+      summary: Receive a signed GitHub webhook delivery
+      description: |
+        The gateway forwards the original bytes and headers. Integration verifies the SHA-256
+        HMAC over the raw JSON body before decoding it or inspecting provider identifiers.
+        It uses the signed payload's installation and repository identifiers, as applicable,
+        to find the active mapping. It checks the event header against the payload before
+        processing a supported event.
+
+        The delivery key is scoped to this receiver and provider, using `X-GitHub-Delivery`.
+        A pull request opened in `atelier-nord/cadenway-web` from
+        `cad-482-ecran-connexion-sso` is an example of a delivery that can initiate Task work.
+      externalDocs:
+        url: https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
+      tags: [webhooks]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BindingId'
+        - $ref: '#/components/parameters/GitHubDelivery'
+        - $ref: '#/components/parameters/GitHubEvent'
+        - $ref: '#/components/parameters/GitHubSignature'
+      requestBody:
+        $ref: '#/components/requestBodies/RawDelivery'
+      responses:
+        '204':
+          $ref: '#/components/responses/Accepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/webhooks/gitlab:
+    post:
+      operationId: receiveGitLabWebhook
+      summary: Receive a signed GitLab webhook delivery
+      description: |
+        The gateway forwards the original bytes and headers. Integration verifies the Standard
+        Webhooks signing token signature over the delivery ID, timestamp and raw JSON body.
+        It requires the timestamp to be within five minutes of the current time. Only
+        signing-token webhooks are supported.
+        An `X-Gitlab-Token` header does not authenticate this operation.
+
+        The delivery key is scoped to this receiver and provider, using `webhook-id`.
+        Integration verifies the event against the authenticated payload and resolves the project
+        under the GitLab instance configured for this receiver.
+      externalDocs:
+        url: https://docs.gitlab.com/user/project/integrations/webhooks/#signing-tokens
+      tags: [webhooks]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BindingId'
+        - $ref: '#/components/parameters/GitLabDelivery'
+        - $ref: '#/components/parameters/GitLabEvent'
+        - $ref: '#/components/parameters/GitLabTimestamp'
+        - $ref: '#/components/parameters/GitLabSignature'
+      requestBody:
+        $ref: '#/components/requestBodies/RawDelivery'
+      responses:
+        '204':
+          $ref: '#/components/responses/Accepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  parameters:
+    BindingId:
+      name: bindingId
+      in: query
+      required: true
+      description: Opaque receiver registration UUIDv7 supplied once in the registered URL. It identifies provider configuration and carries no authority.
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      example: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01
+    GitHubDelivery:
+      name: X-GitHub-Delivery
+      in: header
+      required: true
+      description: Provider delivery UUID. GitHub sends the same value for a redelivery.
+      schema:
+        type: string
+        format: uuid
+    GitHubEvent:
+      name: X-GitHub-Event
+      in: header
+      required: true
+      description: GitHub event name.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+      example: pull_request
+    GitHubSignature:
+      name: X-Hub-Signature-256
+      in: header
+      required: true
+      description: GitHub HMAC-SHA256 signature of the raw body, with the sha256 prefix.
+      schema:
+        type: string
+        pattern: '^sha256=[a-f0-9]{64}$'
+    GitLabDelivery:
+      name: webhook-id
+      in: header
+      required: true
+      description: Provider message UUID, consistent across retries.
+      schema:
+        type: string
+        format: uuid
+    GitLabEvent:
+      name: X-Gitlab-Event
+      in: header
+      required: true
+      description: GitLab event name.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+      example: Merge Request Hook
+    GitLabTimestamp:
+      name: webhook-timestamp
+      in: header
+      required: true
+      description: Unix time in seconds, preserved as sent because it is part of the signed input.
+      schema:
+        type: string
+        pattern: '^[0-9]{1,12}$'
+    GitLabSignature:
+      name: webhook-signature
+      in: header
+      required: true
+      description: Space-separated signatures. Integration verifies a supported v1 signature for this receiver.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 4096
+  requestBodies:
+    RawDelivery:
+      required: true
+      description: |
+        The original, uncompressed UTF-8 JSON delivery, at most 1,048,576 bytes.
+        Capture, limit and forward the request as bytes. Integration reads the JSON after
+        signature verification. These routes do not accept a JSON re-serialization,
+        base64 wrapper or form data.
+      content:
+        application/json:
+          schema:
+            type: string
+            format: binary
+  headers:
+    PrivateNoStore:
+      description: These deliveries and their responses are private and never cached.
+      required: true
+      schema:
+        type: string
+        const: 'private, no-store'
+    RetryAfter:
+      description: Seconds the provider should wait before trying the delivery again.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    Accepted:
+      description: Authenticated delivery accepted durably, already accepted, or intentionally ignored.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+    BadRequest:
+      description: |
+        `request.invalid` for an invalid, unknown or repeated query parameter, invalid delivery
+        or event header, or invalid media type.
+        `request.body-too-large` when the original bytes exceed the route limit.
+        `http.bad-request` for unsupported content encoding.
+        `webhook.invalid-delivery` when an authenticated delivery has invalid provider JSON
+        or a previously accepted delivery ID is presented with different authenticated bytes.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unauthenticated:
+      description: |
+        `webhook.authentication-failed` is the same refusal for an unknown, disabled or mismatched
+        receiver, or missing, invalid or stale provider authentication.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    RateLimited:
+      description: |
+        `rate-limit.exceeded` when the gateway's public delivery limit is exceeded.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unavailable:
+      description: |
+        `integration.unavailable` when Integration cannot confirm acceptance. A relay failure can use
+        `upstream.failed`, `upstream.unauthorized`, `upstream.unreachable`, `upstream.timeout`,
+        `upstream.unavailable`, `upstream.circuit-open` or `upstream.deadline-exceeded`.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
