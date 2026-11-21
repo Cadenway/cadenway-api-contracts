@@ -1144,9 +1144,8 @@ components:
       description: |
         Who made a change: a person (`user`, `id` is the account), an automation rule
         (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
-        example `task-service` when a removed member leaves the assignees). Later versions add
-        actor types (the public intake form of the mockup, "Formulaire public") and members (the
-        Git provider): a client shows an unknown type as is.
+        example `task-service` when a removed member leaves the assignees). A client can show an
+        unknown type as is. Git activity can identify the verified provider.
       properties:
         type:
           type: string
@@ -1155,6 +1154,10 @@ components:
           type: string
           minLength: 1
           examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30]
+        provider:
+          type: string
+          x-extensible-enum: [github, gitlab]
+          description: Verified provider for Git activity. Other actors and earlier Git activity omit it.
     UserRef:
       type: object
       required: [userId]
