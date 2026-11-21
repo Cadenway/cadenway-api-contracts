@@ -8,10 +8,12 @@ info:
     `notification-service` and actor `user`. Organization routes require the signed organization
     and a current membership. Account preferences use the signed actor independently of any
     organization claim. The browser cannot choose the scope by passing other identifiers.
+    Public-site submission routes use the gateway's system actor with no organization claim.
 
-    The gateway enforces sessions, CSRF and rate limiting. It confirms current membership and
-    resolves each linked subject against Task under the caller's user and organization. It
-    omits denied subjects and enriches only authorized results before public disclosure.
+    For authenticated requests the gateway enforces sessions, CSRF and rate limiting. It confirms
+    current membership for organization routes and resolves linked subjects against Task under
+    the caller's user and organization. It omits denied subjects and enriches only authorized
+    results before public disclosure.
     Candidate results, references, cursors and generations stay internal. The gateway returns
     503 when current visibility or a complete result cannot be established within its budget.
     Notification owns the personal records and binds writes to the linkage checked by the
@@ -27,7 +29,7 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Calls the user routes through its generated internal client.
+      uses: Calls the user and public-site submission routes through its generated internal client.
     - repository: cadenway-automation-service
       uses: Submits rule notification commands through its generated internal client.
 servers:
@@ -42,6 +44,8 @@ tags:
     description: Notification settings of the current account.
   - name: reminders
     description: Personal reminders for tasks in the selected organization.
+  - name: site
+    description: Durable receipt of anonymous public-site submissions.
 paths:
   /internal/v1/inbox/automation-notifications:
     post:
@@ -1025,6 +1029,88 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /internal/v1/contact-submissions:
+    post:
+      operationId: submitContactFormInternal
+      x-cadenway-strict-body: true
+      summary: Record a public-site message for support delivery
+      description: |-
+        Internal token: issuer `api-gateway`, actor `{type: system, id: api-gateway}`.
+        Contact submissions have no organization or account association.
+
+        Notification commits the submission and one durable delivery intent together. The worker
+        sends the message as plain text to the support address configured by Notification. The
+        user's validated address can be used only as Reply-To. The sender, recipient and mail
+        subject are server-controlled, with a subject label selected from the supported categories.
+        Notification sends no automatic mail to the submitted address and publishes no form data
+        to the event bus. Log and trace metadata contains no body, address or idempotency key.
+
+        The gateway forwards the idempotency key unchanged. For 24 hours after acceptance, the
+        same key and validated payload replay the empty receipt without creating a new delivery
+        intent. A concurrent request holding that key returns 409. Reuse for a different payload
+        returns 422. Acceptance is durable and does not wait for SMTP.
+      tags: [site]
+      parameters:
+        - $ref: '../../components/public-site.yaml#/components/parameters/ContactIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/public-site.yaml#/components/schemas/PublicContactSubmission'
+            example:
+              email: camille.martin@ateliernord.fr
+              subject: login
+              message: Je ne parviens plus à me connecter à mon compte.
+      responses:
+        '202':
+          $ref: '#/components/responses/SiteFormAccepted'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AccountForbidden'
+        '409':
+          $ref: '#/components/responses/ContactSubmissionInProgress'
+        '422':
+          $ref: '#/components/responses/ContactSubmissionKeyReused'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/newsletter-subscriptions:
+    post:
+      operationId: subscribeToNewsletterInternal
+      x-cadenway-strict-body: true
+      summary: Record a public-site newsletter signup
+      description: |-
+        Internal token: issuer `api-gateway`, actor `{type: system, id: api-gateway}`.
+        Newsletter signups have no organization or account association.
+
+        Notification records the mailbox and sign-up time. Lowercase the domain and preserve
+        the local part when comparing mailboxes. The unique mailbox constraint applies even to
+        concurrent requests. An existing record is left as is, including its subscription state.
+        Both a new record and a replay answer with the same empty receipt. The operation sends
+        no email and publishes no address. Acceptance follows durable storage.
+      tags: [site]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/public-site.yaml#/components/schemas/NewsletterSubscription'
+            example:
+              email: vous@exemple.fr
+      responses:
+        '202':
+          $ref: '#/components/responses/SiteFormAccepted'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AccountForbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
     internalToken:
@@ -1263,6 +1349,30 @@ components:
             title: Service Unavailable
             status: 503
             code: upstream.unavailable
+    SiteFormAccepted:
+      description: The public-site submission is recorded. The response has no body.
+    ContactSubmissionInProgress:
+      description: '`idempotency.request-in-progress`: a request using this key is still running.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            code: idempotency.request-in-progress
+    ContactSubmissionKeyReused:
+      description: '`idempotency.key-reused`: the key already represents a different contact submission.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: idempotency.key-reused
     InvalidRequest:
       description: |-
         `request.invalid`: the request does not match this contract. `details.issues` identifies
