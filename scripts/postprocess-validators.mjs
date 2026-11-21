@@ -89,6 +89,20 @@ for (const root of ROOTS) {
           }
           generated = generated.slice(0, start) + query + generated.slice(end);
         }
+        if (operation['x-cadenway-raw-body'] === true) {
+          const schema = operation.requestBody?.content?.['application/json']?.schema;
+          if (schema?.type !== 'string' || schema.format !== 'binary') {
+            throw new Error(`${source}: raw body marker requires a binary JSON body`);
+          }
+          const name = `${operation.operationId[0].toUpperCase()}${operation.operationId.slice(1)}Body`;
+          const original = `export const ${name} = zod.instanceof(Blob)`;
+          if (!generated.includes(original))
+            throw new Error(`${source}: missing raw body validator ${name}`);
+          generated = generated.replace(
+            original,
+            `export const ${name} = zod.union([zod.instanceof(Uint8Array), zod.instanceof(Blob)])`,
+          );
+        }
         const strictEmpty = operation['x-cadenway-strict-empty'] === true;
         if (!strictEmpty && operation['x-cadenway-strict-body'] !== true) continue;
         const schema = operation.requestBody?.content?.['application/json']?.schema;
