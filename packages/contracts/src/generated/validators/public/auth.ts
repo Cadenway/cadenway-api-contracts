@@ -178,6 +178,149 @@ export const VerifySignUpResponse = zod.object({
 
 
 /**
+ * Accepts a social provider (Google, GitHub, Microsoft or GitLab) or a work email address
+ * for SAML. Identity selects the authorization endpoint from server configuration. A work
+ * email only selects a configured SAML connection for its verified organization domain;
+ * this step neither looks up nor discloses the account that uses the address. The caller
+ * supplies no provider URL or return destination. The browser navigates to the returned
+ * HTTPS URL. The new flow replaces the previous browser binding, clears any previous
+ * continuation cookie and does not open a session.
+ * Requires an allowed Origin and application/json. No session needed. Scopes: none.
+ * @summary Start federated sign-in in this browser
+ */
+export const startFederatedSignInBodyOneRememberMeDefault = false;
+export const startFederatedSignInBodyTwoEmailMax = 254;
+
+export const startFederatedSignInBodyTwoRememberMeDefault = false;
+
+export const StartFederatedSignInBody = zod.union([zod.object({
+  "provider": zod.enum(['google', 'github', 'microsoft', 'gitlab']),
+  "rememberMe": zod.boolean().default(startFederatedSignInBodyOneRememberMeDefault)
+}),zod.object({
+  "provider": zod.literal("saml"),
+  "email": zod.email().max(startFederatedSignInBodyTwoEmailMax),
+  "rememberMe": zod.boolean().default(startFederatedSignInBodyTwoRememberMeDefault)
+})])
+
+export const startFederatedSignInResponseAuthorizationUrlMax = 8192;
+
+
+export const startFederatedSignInResponseAuthorizationUrlRegExp = new RegExp('^https:/');
+
+
+export const StartFederatedSignInResponse = zod.object({
+  "authorizationUrl": zod.url().max(startFederatedSignInResponseAuthorizationUrlMax).regex(startFederatedSignInResponseAuthorizationUrlRegExp)
+})
+
+
+/**
+ * The provider returns one state and either one authorization code or an error, never both.
+ * Recognized optional provider parameters are discarded; duplicated security parameters
+ * are refused. The gateway sends only the required fields and the opaque browser binding to
+ * Identity. Identity verifies the state belongs to this browser, provider and callback,
+ * then authenticates the provider response. It consumes a matched state once, including
+ * during a provider denial. The callback opens no session and never exposes a secret to the
+ * web application. All responses have private, no-store caching and no-referrer policy.
+ * No session needed. Scopes: none.
+ * @summary Receive an OAuth provider's browser callback
+ */
+export const CompleteOAuthSignInParams = zod.object({
+  "provider": zod.enum(['google', 'github', 'microsoft', 'gitlab']).describe('The social provider registered for this callback path.')
+})
+
+export const completeOAuthSignInQueryStateMin = 32;
+export const completeOAuthSignInQueryStateMax = 80;
+
+
+export const completeOAuthSignInQueryStateRegExp = new RegExp('^[A-Za-z0-9_-]+$');
+export const completeOAuthSignInQueryCodeMax = 4096;
+
+export const completeOAuthSignInQueryErrorMax = 128;
+
+
+
+export const CompleteOAuthSignInQueryParams = zod.object({
+  "state": zod.string().min(completeOAuthSignInQueryStateMin).max(completeOAuthSignInQueryStateMax).regex(completeOAuthSignInQueryStateRegExp).describe('Opaque correlation issued by Identity and returned unchanged by the provider.'),
+  "code": zod.string().min(1).max(completeOAuthSignInQueryCodeMax).optional().describe('Single-use provider authorization code. Present only on success. Never logged.'),
+  "error": zod.string().min(1).max(completeOAuthSignInQueryErrorMax).optional().describe('Provider error identifier. Present only on failure and never relayed to the web application.')
+})
+
+export const CompleteOAuthSignInResponse = zod.void()
+
+
+/**
+ * SAML 2.0 Web Browser SSO assertion consumer for the HTTP POST binding. This provider
+ * callback accepts a form from the identity provider instead of JSON from an allowed Origin.
+ * It never authenticates through the session cookie. Identity verifies the browser binding,
+ * the one-use RelayState, and the provider assertion against the configured trust and the
+ * original request. Unsolicited responses are refused. The raw form and decoded assertion
+ * are bounded before processing. The callback opens no session. All responses have
+ * private, no-store caching and no-referrer policy. No session needed. Scopes: none.
+ * @summary Receive a SAML identity provider's browser callback
+ */
+export const completeSamlSignInBodySAMLResponseMin = 4;
+export const completeSamlSignInBodySAMLResponseMax = 262144;
+
+export const completeSamlSignInBodyRelayStateMin = 32;
+export const completeSamlSignInBodyRelayStateMax = 80;
+
+
+export const completeSamlSignInBodyRelayStateRegExp = new RegExp('^[A-Za-z0-9_-]+$');
+
+
+export const CompleteSamlSignInBody = zod.object({
+  "SAMLResponse": zod.string().min(completeSamlSignInBodySAMLResponseMin).max(completeSamlSignInBodySAMLResponseMax),
+  "RelayState": zod.string().min(completeSamlSignInBodyRelayStateMin).max(completeSamlSignInBodyRelayStateMax).regex(completeSamlSignInBodyRelayStateRegExp)
+})
+
+export const CompleteSamlSignInResponse = zod.void()
+
+
+/**
+ * After the redirect, submits an empty JSON object from an allowed Origin with the
+ * HttpOnly continuation cookie. A short-lived, single-use receipt authorizes only this
+ * operation. The gateway clears it, never copies it into JSON, and applies private,
+ * no-store caching on all outcomes. Identity resolves the previously linked account
+ * from the verified external subject, applies current account and organization policies
+ * and uses the ordinary sign-in session and two-step flow. Neither an email claim nor a
+ * provider's multi-factor assertion bypasses Cadenway's two-step verification. An
+ * already trusted device may be used according to the existing policy. Only a 200
+ * establishes the Cadenway session. No session needed. Scopes: none.
+ * @summary Complete a federated sign-in in the initiating browser
+ */
+export const FinishFederatedSignInBody = zod.object({
+
+}).describe('Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.')
+
+export const finishFederatedSignInResponseUserEmailMax = 254;
+
+export const finishFederatedSignInResponseUserTimeZoneMax = 64;
+
+
+
+
+export const FinishFederatedSignInResponse = zod.object({
+  "user": zod.object({
+  "id": zod.uuid(),
+  "name": zod.string().describe('Full name ("Nom complet"); the web application derives the initials from it.'),
+  "email": zod.email().max(finishFederatedSignInResponseUserEmailMax).describe('Email address, compared without regard to case.'),
+  "language": zod.string().describe('BCP 47 language tag of the account, used for its emails. `fr` by default.'),
+  "displayName": zod.string().nullable().describe('"Nom affiché", used for the mentions (`@camille`); `null` until the person chooses one.\n'),
+  "jobTitle": zod.string().nullable().describe('"Poste (facultatif)"; `null` when there is none.'),
+  "avatarId": zod.uuid().nullish().describe('Current opaque avatar reference or null. Read the image with GET /v1/me/avatar.'),
+  "timeZone": zod.string().min(1).max(finishFederatedSignInResponseUserTimeZoneMax).describe('IANA time zone name of the account ("Fuseau horaire"), `Europe/Paris` until the person\nchooses another.\n'),
+  "passwordChangedAt": zod.iso.datetime({"offset":true}).optional().describe('When the password was last set: at the sign-up, by `PUT /v1/me/password` or by a reset.\nThe "Mot de passe" row shows it ("Modifié le 12 août 2026."). Always present once the\ngateway and identity-service run this version of the contracts.\n'),
+  "version": zod.int().min(1).describe('Version of the account, also sent as `ETag`. A change of the profile, avatar, password,\naddress, two-step verification or scheduled deletion makes it the next one.\n')
+}),
+  "session": zod.object({
+  "id": zod.uuid().describe('Id of the session; not its token.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('When the session ends at the latest: 30 days after the sign-in with `rememberMe`. It\nalso ends after the inactivity the policy of its current organization sets, 12 hours\nby default.\n')
+}),
+  "deletionCancelled": zod.boolean().optional().describe('`true` when this sign-in cancelled the scheduled deletion of the account\n(`POST /v1/me/deletion`): the web application tells the person (new copy: "La\nsuppression de votre compte est annulée."). Absent or `false` otherwise.\n')
+})
+
+
+/**
  * Checks an address and its password. On success a session is opened and the gateway sets the
  * session cookie; `rememberMe` ("Rester connecté pendant 30 jours") makes the cookie
  * persistent.

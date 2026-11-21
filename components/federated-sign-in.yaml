@@ -1,0 +1,85 @@
+openapi: 3.1.0
+info:
+  title: Cadenway shared federated sign-in components
+  version: 1.0.0
+  description: OAuth and SAML browser sign-in transport shared by the gateway and Identity.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    OAuthSignInProvider:
+      type: string
+      enum: [google, github, microsoft, gitlab]
+    FederatedSignInStart:
+      oneOf:
+        - $ref: '#/components/schemas/OAuthSignInStart'
+        - $ref: '#/components/schemas/SamlSignInStart'
+    OAuthSignInStart:
+      type: object
+      additionalProperties: false
+      required: [provider]
+      properties:
+        provider:
+          $ref: '#/components/schemas/OAuthSignInProvider'
+        rememberMe:
+          type: boolean
+          default: false
+    SamlSignInStart:
+      type: object
+      additionalProperties: false
+      required: [provider, email]
+      properties:
+        provider:
+          type: string
+          const: saml
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        rememberMe:
+          type: boolean
+          default: false
+    FederatedAuthorization:
+      type: object
+      additionalProperties: false
+      required: [authorizationUrl]
+      properties:
+        authorizationUrl:
+          $ref: '#/components/schemas/FederatedAuthorizationUrl'
+    FederatedAuthorizationUrl:
+      type: string
+      format: uri
+      maxLength: 8192
+      pattern: '^https://'
+    FederatedState:
+      type: string
+      minLength: 32
+      maxLength: 80
+      pattern: '^[A-Za-z0-9_-]+$'
+    OAuthAuthorizationCode:
+      type: string
+      minLength: 1
+      maxLength: 4096
+    OAuthAuthorizationError:
+      type: string
+      minLength: 1
+      maxLength: 128
+    SamlSignInCallback:
+      type: object
+      additionalProperties: false
+      required: [SAMLResponse, RelayState]
+      properties:
+        SAMLResponse:
+          $ref: '#/components/schemas/SamlEncodedResponse'
+          description: Original Base64 form field under the name prescribed by the SAML HTTP POST binding.
+        RelayState:
+          $ref: '#/components/schemas/FederatedState'
+    SamlEncodedResponse:
+      type: string
+      minLength: 4
+      maxLength: 262144
+      contentEncoding: base64

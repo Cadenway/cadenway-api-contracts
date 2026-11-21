@@ -892,6 +892,70 @@ export interface SecurityKeyAddition {
   credential: SecurityKeyAttestation;
 }
 
+export type OAuthSignInProvider = typeof OAuthSignInProvider[keyof typeof OAuthSignInProvider];
+
+
+export const OAuthSignInProvider = {
+  google: 'google',
+  github: 'github',
+  microsoft: 'microsoft',
+  gitlab: 'gitlab',
+} as const;
+
+export interface OAuthSignInStart {
+  provider: OAuthSignInProvider;
+  rememberMe?: boolean;
+}
+
+export interface SamlSignInStart {
+  provider: 'saml';
+  /** @maxLength 254 */
+  email: string;
+  rememberMe?: boolean;
+}
+
+export type FederatedSignInStart = OAuthSignInStart | SamlSignInStart;
+
+/**
+ * @maxLength 8192
+ * @pattern ^https://
+ */
+export type FederatedAuthorizationUrl = string;
+
+export interface FederatedAuthorization {
+  authorizationUrl: FederatedAuthorizationUrl;
+}
+
+/**
+ * @minLength 32
+ * @maxLength 80
+ * @pattern ^[A-Za-z0-9_-]+$
+ */
+export type FederatedState = string;
+
+/**
+ * @minLength 1
+ * @maxLength 4096
+ */
+export type OAuthAuthorizationCode = string;
+
+/**
+ * @minLength 1
+ * @maxLength 128
+ */
+export type OAuthAuthorizationError = string;
+
+/**
+ * @minLength 4
+ * @maxLength 262144
+ */
+export type SamlEncodedResponse = string;
+
+export interface SamlSignInCallback {
+  SAMLResponse: SamlEncodedResponse;
+  RelayState: FederatedState;
+}
+
 /**
  * Members specific to the code, for example the fields that failed validation.
  */
@@ -916,6 +980,28 @@ export interface Problem {
   /** Members specific to the code, for example the fields that failed validation. */
   details?: ProblemDetails;
 }
+
+/**
+ * Provider response verified. Navigate to the configured web application to finish sign-in.
+ */
+export type FederatedSignInContinuationResponse = void;
+
+/**
+ * A session is open. Its token is available only as the usual session cookie.
+ */
+export type FederatedSignedInResponse = SignedIn;
+
+/**
+ * Two-step verification is required. No session is issued and the receipt cookie expires.
+ */
+export type FederatedChallengeIssuedResponse = SignInChallenge;
+
+/**
+ * `auth.federated-sign-in-refused`: the sign-in cannot proceed. The response does not
+ * disclose account existence, the provider's reason, organization configuration, or
+ * the validity of a submitted credential.
+ */
+export type FederatedSignInRefusedResponse = Problem;
 
 /**
  * Signed in. The body describes the session; the token itself is only in the cookie.
@@ -1246,6 +1332,15 @@ export type SecurityKeyRegistrationRefusedResponse = Problem;
  * `security-key.not-found`: no security key with this id belongs to the account.
  */
 export type SecurityKeyNotFoundResponse = Problem;
+
+export type CompleteOAuthSignInParams = {
+  /** Opaque correlation issued by Identity and returned unchanged by the provider. */
+  state: FederatedState;
+  /** Single-use provider authorization code. Present only on success. Never logged. */
+  code?: OAuthAuthorizationCode;
+  /** Provider error identifier. Present only on failure and never relayed to the web application. */
+  error?: OAuthAuthorizationError;
+};
 
 export type ListSessionsParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */

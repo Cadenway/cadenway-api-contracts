@@ -1,4 +1,4 @@
-# Public routes of authentication: sign-up, email verification, sign-in by password or by email
+# Public routes of authentication: sign-up, email verification, federated sign-in, sign-in by password or by email
 # code and its two-step challenge, sign-out, password reset and recent re-authentication, the
 # current user and its profile, and the security of the account (password, address, two-step
 # verification, open sessions, deletion). Served by cadenway-api-gateway, which calls
@@ -45,8 +45,9 @@ info:
     30 jours") makes the gateway set a second cookie, `__Host-cw_trusted_device`
     (`Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=2592000`): for 30 days the sign-ins of that
     account from this browser skip the challenge. The cookie holds an opaque token of the account,
-    which identity-service keeps hashed; the gateway sends it to identity-service on the two
-    sign-ins only and never logs it. It is `SameSite=Strict`: the web application and the API are
+    which identity-service keeps hashed; the gateway sends it to identity-service only during
+    password sign-in, email-code verification or federated sign-in completion and never logs it.
+    It is `SameSite=Strict`: the web application and the API are
     one site, and no other site ever needs it. A browser trusts one account at a time: trusting another one
     replaces the cookie. A password change or reset, closing the other sessions, turning two-step
     verification off and scheduling the deletion of the account forget every trusted device of the
@@ -61,7 +62,8 @@ info:
     with that token alone and its cookie is ignored. The routes without a session (`security: []`)
     and the sign-out ignore any bearer token: the sign-out always closes the session of the cookie.
 
-    **Cross-site requests.** Every request with an unsafe method on these routes, signed in or not,
+    **Cross-site requests.** Except for the SAML provider callback described below, every request
+    with an unsafe method on these routes, signed in or not,
     carries an `Origin` equal to one of the gateway's allowed origins (the web application, the
     website) and, for a `POST`, a `PUT` or a `PATCH`, `Content-Type: application/json`; a bodiless
     `DELETE` passes on its `Origin` alone. The gateway refuses any other request before the route
@@ -70,6 +72,15 @@ info:
     JSON Merge Patch (RFC 7396) sent as `application/json`, for the same reason. The other
     documents apply the same rule to the requests the cookie authenticates. A request
     authenticated by a personal API token carries no ambient credential and needs no `Origin`.
+
+    **Federated sign-in.** The browser starts the flow with JSON and an allowed Origin, then
+    navigates to the returned authorization URL. OAuth providers return by GET and the SAML
+    identity provider sends a form POST. Only that SAML POST accepts a cross-site form and does
+    not use an existing session as proof. Both callbacks require a one-use server-issued state
+    and the matching browser binding. The callback redirects to a fixed web application page
+    without putting a Cadenway session token, provider credential or two-step challenge in the
+    redirect. The page completes sign-in with JSON and an allowed Origin. A provider assertion,
+    code, state, browser binding or receipt is never logged or echoed in an error.
 
     **Account enumeration.** Only the sign-up and the change of address say whether an address is
     taken: the sign-up as the mockup does, the change of address only to a signed-in person who
@@ -374,6 +385,179 @@ paths:
           $ref: '#/components/responses/CrossSiteRefused'
         '422':
           $ref: '#/components/responses/SignUpVerificationRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/sign-in/federated/start:
+    post:
+      operationId: startFederatedSignIn
+      summary: Start federated sign-in in this browser
+      description: |
+        Accepts a social provider (Google, GitHub, Microsoft or GitLab) or a work email address
+        for SAML. Identity selects the authorization endpoint from server configuration. A work
+        email only selects a configured SAML connection for its verified organization domain;
+        this step neither looks up nor discloses the account that uses the address. The caller
+        supplies no provider URL or return destination. The browser navigates to the returned
+        HTTPS URL. The new flow replaces the previous browser binding, clears any previous
+        continuation cookie and does not open a session.
+        Requires an allowed Origin and application/json. No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/federated-sign-in.yaml#/components/schemas/FederatedSignInStart'
+            examples:
+              google:
+                summary: The Google button on the sign-in screen
+                value:
+                  provider: google
+              atelierNord:
+                summary: Atelier Nord's company sign-in
+                value:
+                  provider: saml
+                  email: camille.martin@ateliernord.fr
+      responses:
+        '200':
+          description: Navigate to the authorization endpoint. All responses on this route are private and uncacheable.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/FederatedNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/FederatedBindingCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/federated-sign-in.yaml#/components/schemas/FederatedAuthorization'
+              example:
+                authorizationUrl: https://accounts.example.test/authorize
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
+        '422':
+          $ref: '#/components/responses/FederatedSignInRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/sign-in/federated/providers/{provider}/callback:
+    get:
+      operationId: completeOAuthSignIn
+      summary: Receive an OAuth provider's browser callback
+      description: |
+        The provider returns one state and either one authorization code or an error, never both.
+        Recognized optional provider parameters are discarded; duplicated security parameters
+        are refused. The gateway sends only the required fields and the opaque browser binding to
+        Identity. Identity verifies the state belongs to this browser, provider and callback,
+        then authenticates the provider response. It consumes a matched state once, including
+        during a provider denial. The callback opens no session and never exposes a secret to the
+        web application. All responses have private, no-store caching and no-referrer policy.
+        No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: The social provider registered for this callback path.
+          schema:
+            $ref: '../../components/federated-sign-in.yaml#/components/schemas/OAuthSignInProvider'
+        - name: state
+          in: query
+          required: true
+          description: Opaque correlation issued by Identity and returned unchanged by the provider.
+          schema:
+            $ref: '../../components/federated-sign-in.yaml#/components/schemas/FederatedState'
+        - name: code
+          in: query
+          description: Single-use provider authorization code. Present only on success. Never logged.
+          schema:
+            $ref: '../../components/federated-sign-in.yaml#/components/schemas/OAuthAuthorizationCode'
+        - name: error
+          in: query
+          description: Provider error identifier. Present only on failure and never relayed to the web application.
+          schema:
+            $ref: '../../components/federated-sign-in.yaml#/components/schemas/OAuthAuthorizationError'
+      responses:
+        '303':
+          $ref: '#/components/responses/FederatedSignInContinuation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/FederatedSignInRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/sign-in/federated/saml/callback:
+    post:
+      operationId: completeSamlSignIn
+      summary: Receive a SAML identity provider's browser callback
+      description: |
+        SAML 2.0 Web Browser SSO assertion consumer for the HTTP POST binding. This provider
+        callback accepts a form from the identity provider instead of JSON from an allowed Origin.
+        It never authenticates through the session cookie. Identity verifies the browser binding,
+        the one-use RelayState, and the provider assertion against the configured trust and the
+        original request. Unsolicited responses are refused. The raw form and decoded assertion
+        are bounded before processing. The callback opens no session. All responses have
+        private, no-store caching and no-referrer policy. No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '../../components/federated-sign-in.yaml#/components/schemas/SamlSignInCallback'
+      responses:
+        '303':
+          $ref: '#/components/responses/FederatedSignInContinuation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/FederatedSignInRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/auth/sign-in/federated/finish:
+    post:
+      operationId: finishFederatedSignIn
+      summary: Complete a federated sign-in in the initiating browser
+      description: |
+        After the redirect, submits an empty JSON object from an allowed Origin with the
+        HttpOnly continuation cookie. A short-lived, single-use receipt authorizes only this
+        operation. The gateway clears it, never copies it into JSON, and applies private,
+        no-store caching on all outcomes. Identity resolves the previously linked account
+        from the verified external subject, applies current account and organization policies
+        and uses the ordinary sign-in session and two-step flow. Neither an email claim nor a
+        provider's multi-factor assertion bypasses Cadenway's two-step verification. An
+        already trusted device may be used according to the existing policy. Only a 200
+        establishes the Cadenway session. No session needed. Scopes: none.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyRequest'
+            example: {}
+      responses:
+        '200':
+          $ref: '#/components/responses/FederatedSignedIn'
+        '202':
+          $ref: '#/components/responses/FederatedChallengeIssued'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/CrossSiteRefused'
+        '422':
+          $ref: '#/components/responses/FederatedSignInRefused'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -2045,6 +2229,30 @@ components:
         SameSite=Lax` and checked with identity-service on every request. The web application sends
         it with `withCredentials` and never reads it.
   headers:
+    FederatedNoStore:
+      description: The response is private and cannot be stored.
+      schema:
+        type: string
+        const: private, no-store
+    FederatedBindingCookie:
+      description: |
+        Sets a short-lived opaque browser binding in `__Host-cw_federated_flow`
+        (`Path=/; Secure; HttpOnly; SameSite=None` for the cross-site SAML form POST, and
+        `SameSite=Lax` for OAuth). It expires with the server-side flow, within 10 minutes.
+        It cannot authenticate any other route. Also expires any previous continuation cookie.
+      schema:
+        type: string
+    FederatedContinuationCookies:
+      description: |
+        Sets `__Host-cw_federated_receipt` (`Path=/; Secure; HttpOnly; SameSite=Lax`,
+        expires in at most two minutes) and expires the original flow cookie. The receipt
+        only authorizes the finish POST from an allowed Origin.
+      schema:
+        type: string
+    ClearFederatedReceiptCookie:
+      description: Expires the federated receipt cookie with the same attributes and `Max-Age=0`.
+      schema:
+        type: string
     SetSessionCookie:
       description: |
         `__Host-cw_session=<token>; Path=/; Secure; HttpOnly; SameSite=Lax`, plus
@@ -2081,6 +2289,65 @@ components:
       schema:
         type: string
   responses:
+    FederatedSignInContinuation:
+      description: Provider response verified. Navigate to the configured web application to finish sign-in.
+      headers:
+        Location:
+          description: The fixed allowlisted web application continuation URL, with no query or fragment.
+          schema:
+            type: string
+            format: uri
+            examples: [https://app.example.test/auth/federated/continue]
+        Set-Cookie:
+          $ref: '#/components/headers/FederatedContinuationCookies'
+        Cache-Control:
+          $ref: '#/components/headers/FederatedNoStore'
+        Referrer-Policy:
+          description: Prevents forwarding the provider callback URL as a referrer.
+          schema:
+            type: string
+            const: no-referrer
+    FederatedSignedIn:
+      description: A session is open. Its token is available only as the usual session cookie.
+      headers:
+        Set-Cookie:
+          description: Sets the session cookie as on password sign-in and expires the one-use receipt cookie.
+          schema:
+            type: string
+        Cache-Control:
+          $ref: '#/components/headers/FederatedNoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SignedIn'
+    FederatedChallengeIssued:
+      description: Two-step verification is required. No session is issued and the receipt cookie expires.
+      headers:
+        Set-Cookie:
+          $ref: '#/components/headers/ClearFederatedReceiptCookie'
+        Cache-Control:
+          $ref: '#/components/headers/FederatedNoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SignInChallenge'
+          examples:
+            camilleMartin:
+              $ref: '#/components/examples/SignInChallenge'
+    FederatedSignInRefused:
+      description: |
+        `auth.federated-sign-in-refused`: the sign-in cannot proceed. The response does not
+        disclose account existence, the provider's reason, organization configuration, or
+        the validity of a submitted credential.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: La connexion via ce fournisseur a échoué.
+            status: 422
+            code: auth.federated-sign-in-refused
     SignedIn:
       description: Signed in. The body describes the session; the token itself is only in the cookie.
       headers:
