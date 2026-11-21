@@ -373,6 +373,9 @@ export class TasksService {
  * - `If-Match` is optional (`412 request.version-mismatch`), but required to change
  *   `description`, a long text: without it, `400 request.invalid` with an issue on the
  *   header.
+ * - `If-Organization-Match` optionally pins the change to the caller's expected organization.
+ *   The gateway checks it before forwarding the change. `If-Match` still checks the task
+ *   version within the verified organization.
  * - It needs `edit` on the list of the task, and on the list it moves to
  *   (`403 access.role-insufficient`). An archived task answers `409 task.archived`, and so
  *   does an archived parent, `details.key` naming the archived task.
@@ -500,10 +503,16 @@ export class TasksService {
  * base task read fails the detail as a whole. Later versions may add parts for attachments
  * and development links.
  *
- * `ETag` is the version of the task. Scope `tasks:read` for a personal API token.
+ * `ETag` is the version to send in `If-Match` when editing the task. A successful read
+ * returns the detail with `Cache-Control: private, no-store`. The gateway ignores
+ * `If-None-Match` and `If-Modified-Since` on this route, since task versions can coincide
+ * across organizations.
+ * Scope `tasks:read` for a personal API token.
  * The gateway also reads the first comment page from task-service. A comments-only upstream
  * failure omits `comments` and adds `comments` to `partial`; a visibility denial fails closed.
  * A base failure retains the existing whole-detail error.
+ * `If-Organization-Match` optionally pins the read to the caller's expected organization.
+ * The gateway checks it before reading the task or any part of its detail.
  * @summary Read the detail of a task
  */
  getTaskDetail<TData = TaskDetail>(taskKey: string, options?: HttpClientBodyOptions): Observable<TData>;

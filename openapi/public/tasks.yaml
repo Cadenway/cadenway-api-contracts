@@ -105,9 +105,16 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Serves every route, through openapi/internal/task-service.yaml, composes the detail of a task and checks the scopes of every operation.
+      uses: >-
+        Serves every route through openapi/internal/task-service.yaml, composes task detail and
+        checks scopes. Allows If-Organization-Match in CORS preflight and checks it against the
+        verified organization before calling task-service for task detail or update.
     - repository: cadenway-webapp
-      uses: Calls every route through @cadenway/api-client (list, board and Gantt views, "Créer une tâche", the task detail, "Mes tâches", "Accueil", first launch and "Bien démarrer").
+      uses: >-
+        Calls every route through @cadenway/api-client (list, board and Gantt views, "Créer une tâche",
+        the task detail, "Mes tâches", "Accueil", first launch and "Bien démarrer"). Sends
+        If-Organization-Match on task detail reads and edits tied to an organization already shown
+        in the app, and reloads the organization context after organization.context-changed.
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -541,6 +548,9 @@ paths:
         - `If-Match` is optional (`412 request.version-mismatch`), but required to change
           `description`, a long text: without it, `400 request.invalid` with an issue on the
           header.
+        - `If-Organization-Match` optionally pins the change to the caller's expected organization.
+          The gateway checks it before forwarding the change. `If-Match` still checks the task
+          version within the verified organization.
         - It needs `edit` on the list of the task, and on the list it moves to
           (`403 access.role-insufficient`). An archived task answers `409 task.archived`, and so
           does an archived parent, `details.key` naming the archived task.
@@ -573,6 +583,7 @@ paths:
         - apiToken: [tasks:write]
       parameters:
         - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       requestBody:
         required: true
         content:
@@ -622,7 +633,7 @@ paths:
         '409':
           $ref: '#/components/responses/TaskRecurrenceConflict'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/TaskUpdatePreconditionFailed'
         '422':
           $ref: '#/components/responses/TaskChangeRefused'
         '429':
@@ -714,20 +725,30 @@ paths:
         base task read fails the detail as a whole. Later versions may add parts for attachments
         and development links.
 
-        `ETag` is the version of the task. Scope `tasks:read` for a personal API token.
+        `ETag` is the version to send in `If-Match` when editing the task. A successful read
+        returns the detail with `Cache-Control: private, no-store`. The gateway ignores
+        `If-None-Match` and `If-Modified-Since` on this route, since task versions can coincide
+        across organizations.
+        Scope `tasks:read` for a personal API token.
         The gateway also reads the first comment page from task-service. A comments-only upstream
         failure omits `comments` and adds `comments` to `partial`; a visibility denial fails closed.
         A base failure retains the existing whole-detail error.
+        `If-Organization-Match` optionally pins the read to the caller's expected organization.
+        The gateway checks it before reading the task or any part of its detail.
       tags: [tasks]
       security:
         - sessionCookie: []
         - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       responses:
         '200':
           description: The detail of the task.
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
+            Cache-Control:
+              $ref: '#/components/headers/TaskDetailNoStore'
           content:
             application/json:
               schema:
@@ -848,6 +869,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -3111,6 +3134,22 @@ components:
       schema:
         type: string
         examples: ['"12"']
+    IfOrganizationMatch:
+      name: If-Organization-Match
+      in: header
+      required: false
+      description: |
+        The UUIDv7 of the organization the caller expects, compared without regard to hex case.
+        The verified session or API token determines the organization for the request. The gateway
+        uses this header only to check that organization before calling task-service. A mismatch
+        answers `412 organization.context-changed`. Omit the header to use the verified context
+        without an organization precondition. Send exactly one UUIDv7: repeated, comma-separated
+        or malformed values answer `400 request.invalid` with an issue on this header.
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$'
+        examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f]
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -3165,6 +3204,12 @@ components:
       description: Version of the task, `"<version>"`.
       schema:
         type: string
+    TaskDetailNoStore:
+      description: The response is private and cannot be stored.
+      required: true
+      schema:
+        type: string
+        const: private, no-store
     TaskLocation:
       description: '`/v1/tasks/<key>`, where the task reads.'
       schema:
@@ -3179,6 +3224,13 @@ components:
         type: integer
         minimum: 1
   examples:
+    OrganizationContextChanged:
+      summary: The verified organization differs from the expected Atelier Nord context
+      value:
+        type: about:blank
+        title: L’organisation active a changé.
+        status: 412
+        code: organization.context-changed
     MentionRecipientInvalid:
       summary: Le destinataire de la mention est indisponible.
       value:
@@ -4467,6 +4519,43 @@ components:
             code: request.version-mismatch
             details:
               version: 13
+    OrganizationContextChanged:
+      description: |
+        `organization.context-changed`: `If-Organization-Match` differs from the organization
+        verified for this request. The problem omits `details` and gives no information about the
+        organizations or the task.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/TaskDetailNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationContextChanged:
+              $ref: '#/components/examples/OrganizationContextChanged'
+    TaskUpdatePreconditionFailed:
+      description: |
+        - `organization.context-changed`: `If-Organization-Match` differs from the organization
+          verified for this request. The problem omits `details` and gives no information about
+          the organizations or the task. The response has `Cache-Control: private, no-store`.
+        - `request.version-mismatch`: `If-Match` differs from the current task version, given in
+          `details.version`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationContextChanged:
+              $ref: '#/components/examples/OrganizationContextChanged'
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 13
     RateLimited:
       description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
       headers:

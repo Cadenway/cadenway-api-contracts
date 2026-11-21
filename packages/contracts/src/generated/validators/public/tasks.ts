@@ -597,6 +597,9 @@ export const GetTaskResponse = zod.object({
  * - `If-Match` is optional (`412 request.version-mismatch`), but required to change
  *   `description`, a long text: without it, `400 request.invalid` with an issue on the
  *   header.
+ * - `If-Organization-Match` optionally pins the change to the caller's expected organization.
+ *   The gateway checks it before forwarding the change. `If-Match` still checks the task
+ *   version within the verified organization.
  * - It needs `edit` on the list of the task, and on the list it moves to
  *   (`403 access.role-insufficient`). An archived task answers `409 task.archived`, and so
  *   does an archived parent, `details.key` naming the archived task.
@@ -632,8 +635,12 @@ export const UpdateTaskParams = zod.object({
   "taskKey": zod.string().regex(updateTaskPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const updateTaskHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const UpdateTaskHeader = zod.object({
-  "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.')
+  "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.'),
+  "If-Organization-Match": zod.uuid().regex(updateTaskHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before calling task-service. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const updateTaskBodyCustomFieldValuesTwoMax = 500;
@@ -875,10 +882,16 @@ export const DuplicateTaskResponse = zod.object({
  * base task read fails the detail as a whole. Later versions may add parts for attachments
  * and development links.
  *
- * `ETag` is the version of the task. Scope `tasks:read` for a personal API token.
+ * `ETag` is the version to send in `If-Match` when editing the task. A successful read
+ * returns the detail with `Cache-Control: private, no-store`. The gateway ignores
+ * `If-None-Match` and `If-Modified-Since` on this route, since task versions can coincide
+ * across organizations.
+ * Scope `tasks:read` for a personal API token.
  * The gateway also reads the first comment page from task-service. A comments-only upstream
  * failure omits `comments` and adds `comments` to `partial`; a visibility denial fails closed.
  * A base failure retains the existing whole-detail error.
+ * `If-Organization-Match` optionally pins the read to the caller's expected organization.
+ * The gateway checks it before reading the task or any part of its detail.
  * @summary Read the detail of a task
  */
 export const getTaskDetailPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -886,6 +899,13 @@ export const getTaskDetailPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]
 
 export const GetTaskDetailParams = zod.object({
   "taskKey": zod.string().regex(getTaskDetailPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const getTaskDetailHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetTaskDetailHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getTaskDetailHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before calling task-service. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const getTaskDetailResponseCommentsItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
