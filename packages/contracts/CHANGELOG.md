@@ -1,5 +1,13 @@
 # @cadenway/contracts
 
+## 0.31.0
+
+### Minor Changes
+
+- fb1bb34: Define internal commands for automatic comments and inbox notifications. Task rechecks current
+  rule-author authority and recipient visibility. The comment contract describes moderation of
+  rule-authored comments.
+
 ## 0.30.0
 
 ### Minor Changes
