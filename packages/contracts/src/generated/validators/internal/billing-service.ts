@@ -73,7 +73,7 @@ export const StartBillingCheckoutInternalBody = zod.strictObject({
   "plan": zod.enum(['team']).describe('The Team plan is available through self-service checkout.')
 })
 
-export const startBillingCheckoutInternalResponseUrlRegExp = new RegExp('^https:/');
+export const startBillingCheckoutInternalResponseUrlRegExp = new RegExp('^https:[/][/]');
 
 
 export const StartBillingCheckoutInternalResponse = zod.object({
@@ -106,7 +106,7 @@ export const listBillingInvoicesInternalResponseItemsItemTotalMinorUnitsMin = -9
 export const listBillingInvoicesInternalResponseItemsItemTotalMinorUnitsMax = 9007199254740991;
 
 export const listBillingInvoicesInternalResponseItemsItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
-export const listBillingInvoicesInternalResponseItemsItemPdfUrlRegExp = new RegExp('^https:/');
+export const listBillingInvoicesInternalResponseItemsItemPdfUrlRegExp = new RegExp('^https:[/][/]');
 export const listBillingInvoicesInternalResponseItemsMax = 100;
 
 
