@@ -1,5 +1,13 @@
 # @cadenway/api-client
 
+## 0.25.1
+
+### Patch Changes
+
+- fb1bb34: Define internal commands for automatic comments and inbox notifications. Task rechecks current
+  rule-author authority and recipient visibility. The comment contract describes moderation of
+  rule-authored comments.
+
 ## 0.25.0
 
 ### Minor Changes
