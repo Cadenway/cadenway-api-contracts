@@ -24,6 +24,10 @@ info:
     | Public route | Internal call |
     | --- | --- |
     | `POST /v1/auth/sign-in-methods` | `POST /internal/v1/auth/sign-in-methods` |
+    | `POST /v1/auth/sign-in/federated/start` | `POST /internal/v1/auth/sign-in/federated/start` |
+    | `GET /v1/auth/sign-in/federated/providers/{provider}/callback` | `POST /internal/v1/auth/sign-in/federated/oauth/callback` |
+    | `POST /v1/auth/sign-in/federated/saml/callback` | `POST /internal/v1/auth/sign-in/federated/saml/callback` |
+    | `POST /v1/auth/sign-in/federated/finish` | `POST /internal/v1/auth/sign-in/federated/finish` |
     | `POST /v1/auth/sign-up` | `POST /internal/v1/auth/sign-up` |
     | `POST /v1/auth/sign-up/code` | `POST /internal/v1/auth/sign-up/code` |
     | `POST /v1/auth/sign-up/verification` | `POST /internal/v1/auth/sign-up/verification` |
@@ -80,6 +84,16 @@ info:
     token, a trusted device token, the secret of an authenticator app and the backup codes are
     secrets too: they travel in bodies only and are never logged; identity-service keeps the
     tokens and the backup codes hashed and the secret of the app encrypted.
+
+    **Federated sign-in.** Identity owns the short-lived provider flow, browser binding and
+    one-use continuation receipt. The gateway identifies its four calls as `anonymous` without
+    an organization, forwards credentials only in bodies, maps provider refusals to the one
+    public problem and never copies provider diagnostics to the browser. It maps
+    `auth.federated-unavailable` to the public `upstream.unavailable` for identity-service.
+    The gateway sets or clears the dedicated browser cookies and selects the fixed webapp
+    continuation URL.
+    No request supplies provider endpoint addresses or OAuth redirect URIs. Provider credentials,
+    state, proofs, cookies and receipt are excluded from logs, traces and error details.
 
     **Two-step challenge.** For an account with two-step verification, the right password of
     `POST /internal/v1/auth/sign-in` and the right code of
@@ -264,6 +278,156 @@ paths:
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
           $ref: '#/components/responses/InternalAccessRefused'
+  /internal/v1/auth/sign-in/federated/start:
+    post:
+      operationId: startFederatedSignInInternal
+      x-cadenway-strict-body: true
+      summary: Start federated sign-in and create its browser binding
+      description: |
+        Generates an expiring flow and a browser binding. For SAML, a work email selects the
+        configured connection of its verified organization domain, without using the address
+        as an account identifier. For OAuth the provider selects a configured client,
+        authorization endpoint, issuer and redirect URI. Use authorization code and S256
+        PKCE for all social providers and a nonce for Google, Microsoft and GitLab OIDC.
+        GitHub supplies identity from its authenticated user endpoint. Keep verifiers and
+        nonce server-side, and retain only digests of one-use opaque browser credentials.
+        Internal token: actor `anonymous`, no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/federated-sign-in.yaml#/components/schemas/FederatedSignInStart'
+            example:
+              provider: saml
+              email: camille.martin@ateliernord.fr
+      responses:
+        '200':
+          description: The authorization URL and the opaque browser binding that the gateway sets in its flow cookie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederatedFlowStarted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '422':
+          $ref: '#/components/responses/FederatedSignInRefused'
+        '503':
+          $ref: '#/components/responses/FederatedAuthorityUnavailable'
+  /internal/v1/auth/sign-in/federated/oauth/callback:
+    post:
+      operationId: completeOAuthSignInInternal
+      x-cadenway-strict-body: true
+      summary: Validate an OAuth callback and issue a continuation receipt
+      description: |
+        Validates the exact fields of the closed response variant before claiming state. An
+        authorized response carries only its outcome and code, and a denied response carries
+        only its outcome and error. Unknown fields and mixed outcomes are refused.
+        Atomically claims the unexpired state only when the provider and browser binding match.
+        A matched state is consumed once, including on provider refusal. Identity exchanges
+        a code once with the original verifier and exact registered redirect URI. For OIDC, it
+        validates the ID token signature and claims including issuer, audience, expiration,
+        nonce and stable subject against the configured client and provider. For GitHub it
+        resolves the stable user ID through the configured authenticated user API. Provider
+        access tokens are short-lived inputs for this flow and are never returned to Gateway.
+        Success issues only a continuation receipt and does not create a Cadenway session.
+        Internal token: actor `anonymous`, no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FederatedOAuthCallback'
+      responses:
+        '200':
+          $ref: '#/components/responses/FederatedContinuationIssued'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '422':
+          $ref: '#/components/responses/FederatedSignInRefused'
+        '503':
+          $ref: '#/components/responses/FederatedAuthorityUnavailable'
+  /internal/v1/auth/sign-in/federated/saml/callback:
+    post:
+      operationId: completeSamlSignInInternal
+      x-cadenway-strict-body: true
+      summary: Validate a SAML assertion and issue a continuation receipt
+      description: |
+        Atomically claims the unexpired RelayState only when the original SAML flow and browser
+        binding match. Accepts only an SP-initiated response from the organization connection
+        bound to the flow. Verify a trusted signature over the assertion used, the configured
+        issuer, SP audience, destination and recipient, validity window, response and bearer
+        InResponseTo, and the uniqueness of the accepted assertion ID for its validity window.
+        Process bounded XML without resolving external resources. Select the stable linked
+        subject from this verified issuer and assertion. No assertion attribute links accounts
+        by email. Success returns only a receipt; no Cadenway session is created.
+        Internal token: actor `anonymous`, no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FederatedSamlCallback'
+      responses:
+        '200':
+          $ref: '#/components/responses/FederatedContinuationIssued'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '422':
+          $ref: '#/components/responses/FederatedSignInRefused'
+        '503':
+          $ref: '#/components/responses/FederatedAuthorityUnavailable'
+  /internal/v1/auth/sign-in/federated/finish:
+    post:
+      operationId: finishFederatedSignInInternal
+      x-cadenway-strict-body: true
+      summary: Redeem a federated receipt using the ordinary session and two-step flow
+      description: |
+        Consumes the unexpired receipt once and proves the account through the existing link for
+        the verified provider, issuer and subject. SAML additionally requires an active
+        membership in the organization bound to the flow. A revoked link, disabled account or
+        now-disallowed method cannot open a session. The receipt preserves the chosen
+        `rememberMe` and never substitutes for Cadenway's applicable two-step challenge.
+        A previously trusted Cadenway device keeps its existing behavior. Any session that opens
+        uses the usual token, lifetime, organization policy and new-device reporting.
+        Internal token: actor `anonymous`, no organization.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FederatedSignInFinish'
+      responses:
+        '200':
+          $ref: '#/components/responses/SessionIssued'
+        '202':
+          $ref: '#/components/responses/ChallengeIssued'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '422':
+          $ref: '#/components/responses/FederatedSignInRefused'
+        '503':
+          $ref: '#/components/responses/FederatedAuthorityUnavailable'
   /internal/v1/auth/sign-up:
     post:
       operationId: signUpInternal
@@ -2844,6 +3008,38 @@ components:
           everyone: 7
         version: 2
   responses:
+    FederatedContinuationIssued:
+      description: Identity verified the provider response and issued an opaque one-use receipt.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/FederatedReceipt'
+    FederatedSignInRefused:
+      description: |
+        `auth.federated-sign-in-refused`: no eligible federated sign-in can proceed.
+        No credential, account identifier or provider diagnostic is returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: auth.federated-sign-in-refused
+    FederatedAuthorityUnavailable:
+      description: |
+        `auth.federated-unavailable`: a configured provider or Identity's sign-in authority
+        is temporarily unavailable. A new flow is needed after a matched state was consumed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: auth.federated-unavailable
     ProfileMediaReservationConflict:
       description: |
         `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
@@ -3703,6 +3899,95 @@ components:
                 status: 404
                 code: session.not-found
   schemas:
+    FederatedBrowserBinding:
+      type: string
+      minLength: 32
+      maxLength: 128
+      pattern: '^[A-Za-z0-9_-]+$'
+      description: Opaque, single-flow browser credential generated by Identity.
+    FederatedFlowStarted:
+      type: object
+      additionalProperties: false
+      required: [authorizationUrl, browserBinding, expiresAt]
+      properties:
+        authorizationUrl:
+          $ref: '../../components/federated-sign-in.yaml#/components/schemas/FederatedAuthorizationUrl'
+        browserBinding:
+          $ref: '#/components/schemas/FederatedBrowserBinding'
+        expiresAt:
+          type: string
+          format: date-time
+          description: Expiration of the flow and browser binding, at most ten minutes after issue.
+    FederatedOAuthCallback:
+      type: object
+      additionalProperties: false
+      required: [provider, state, browserBinding, response]
+      properties:
+        provider:
+          $ref: '../../components/federated-sign-in.yaml#/components/schemas/OAuthSignInProvider'
+        state:
+          $ref: '../../components/federated-sign-in.yaml#/components/schemas/FederatedState'
+        browserBinding:
+          $ref: '#/components/schemas/FederatedBrowserBinding'
+        response:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [outcome, code]
+              properties:
+                outcome:
+                  type: string
+                  const: authorized
+                code:
+                  $ref: '../../components/federated-sign-in.yaml#/components/schemas/OAuthAuthorizationCode'
+            - type: object
+              additionalProperties: false
+              required: [outcome, error]
+              properties:
+                outcome:
+                  type: string
+                  const: denied
+                error:
+                  $ref: '../../components/federated-sign-in.yaml#/components/schemas/OAuthAuthorizationError'
+    FederatedSamlCallback:
+      type: object
+      additionalProperties: false
+      required: [samlResponse, relayState, browserBinding]
+      properties:
+        samlResponse:
+          $ref: '../../components/federated-sign-in.yaml#/components/schemas/SamlEncodedResponse'
+        relayState:
+          $ref: '../../components/federated-sign-in.yaml#/components/schemas/FederatedState'
+        browserBinding:
+          $ref: '#/components/schemas/FederatedBrowserBinding'
+    FederatedReceiptToken:
+      type: string
+      minLength: 32
+      maxLength: 128
+      pattern: '^[A-Za-z0-9_-]+$'
+      description: Opaque, single-use receipt issued after a verified provider response.
+    FederatedReceipt:
+      type: object
+      additionalProperties: false
+      required: [receipt, expiresAt]
+      properties:
+        receipt:
+          $ref: '#/components/schemas/FederatedReceiptToken'
+        expiresAt:
+          type: string
+          format: date-time
+          description: At most two minutes after issue.
+    FederatedSignInFinish:
+      type: object
+      additionalProperties: false
+      required: [receipt, client]
+      properties:
+        receipt:
+          $ref: '#/components/schemas/FederatedReceiptToken'
+        client:
+          $ref: '#/components/schemas/Client'
+        trustedDeviceToken:
+          $ref: '#/components/schemas/TrustedDeviceToken'
     RealtimeTicketIssuance:
       type: object
       required: [sessionId]

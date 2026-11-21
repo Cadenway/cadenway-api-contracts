@@ -1,0 +1,5 @@
+# Provider callbacks complete with a browser redirect to the Webapp.
+openapi/public/auth.yaml:
+  operation-2xx-response:
+    - '#/paths/~1v1~1auth~1sign-in~1federated~1providers~1{provider}~1callback/get/responses'
+    - '#/paths/~1v1~1auth~1sign-in~1federated~1saml~1callback/post/responses'

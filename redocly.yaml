@@ -59,6 +59,11 @@ apis:
     rules:
       no-empty-servers: off
       no-unused-components: off
+  shared-federated-sign-in:
+    root: components/federated-sign-in.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
   shared-automation:
     root: components/automation.yaml
     rules:

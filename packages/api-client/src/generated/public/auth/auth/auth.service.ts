@@ -29,7 +29,14 @@ import type {
   CodeRequest,
   CodeSent,
   CodeVerification,
+  CompleteOAuthSignInParams,
   CurrentUser,
+  EmptyRequest,
+  FederatedAuthorization,
+  FederatedChallengeIssuedResponse,
+  FederatedSignInStart,
+  FederatedSignedInResponse,
+  OAuthSignInProvider,
   PasswordResetCompleted,
   PasswordResetConfirmation,
   PasswordResetLink,
@@ -40,6 +47,7 @@ import type {
   ProfilePatch,
   ReauthenticationRequest,
   RecentAuthentication,
+  SamlSignInCallback,
   SecurityKeyAnswer,
   SecurityKeyAssertionOptions,
   SignInChallenge,
@@ -95,7 +103,78 @@ type HttpClientObserveOptions = HttpClientOptions & {
   readonly observe?: 'body' | 'events' | 'response';
 };
 
+type AngularHttpParamValue = string | number | boolean | Array<string | number | boolean>;
+type AngularHttpParamValueWithNullable = AngularHttpParamValue | null;
 
+function filterParams(
+  params: Record<string, unknown>,
+  requiredNullableKeys?: ReadonlySet<string>,
+  preserveRequiredNullables?: false,
+  passthroughKeys?: undefined,
+): Record<string, AngularHttpParamValue>;
+function filterParams(
+  params: Record<string, unknown>,
+  requiredNullableKeys: ReadonlySet<string> | undefined,
+  preserveRequiredNullables: true,
+  passthroughKeys?: undefined,
+): Record<string, AngularHttpParamValueWithNullable>;
+function filterParams(
+  params: Record<string, unknown>,
+  requiredNullableKeys: ReadonlySet<string> | undefined,
+  preserveRequiredNullables: boolean | undefined,
+  passthroughKeys: ReadonlySet<string>,
+): Record<string, unknown>;
+function filterParams(
+  params: Record<string, unknown>,
+  requiredNullableKeys: ReadonlySet<string> = new Set(),
+  preserveRequiredNullables = false,
+  passthroughKeys: ReadonlySet<string> = new Set(),
+): Record<string, unknown> {
+  const filteredParams: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (passthroughKeys.has(key)) {
+      if (value !== undefined) {
+        filteredParams[key] = value;
+      }
+      continue;
+    }
+    if (Array.isArray(value)) {
+      const filtered = value
+        .filter(
+          (item) =>
+            item != null &&
+            (typeof item === 'string' ||
+              typeof item === 'number' ||
+              typeof item === 'boolean' ||
+              (item instanceof Date && !Number.isNaN(item.getTime()))),
+        )
+        .map((item) =>
+          item instanceof Date ? item.toISOString() : item,
+        ) as Array<string | number | boolean>;
+      if (filtered.length) {
+        filteredParams[key] = filtered;
+      }
+    } else if (value === null && requiredNullableKeys.has(key)) {
+      // With a paramsSerializer (preserveRequiredNullables) the literal null
+      // is passed through for it to consume; without one, emit an empty
+      // string so the required key still reaches the wire as `?key=`
+      // instead of being silently dropped. See #3712.
+      filteredParams[key] = preserveRequiredNullables ? null : '';
+    } else if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      // useDates produces Date query params; serialize to ISO so they reach
+      // the wire instead of being dropped by the primitive check below. See #3856.
+      filteredParams[key] = value.toISOString();
+    } else if (
+      value != null &&
+      (typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean')
+    ) {
+      filteredParams[key] = value;
+    }
+  }
+  return filteredParams;
+}
 
 
 
@@ -301,6 +380,190 @@ export class AuthService {
     return this.http.post<TData>(
       `/v1/auth/sign-up/verification`,
       signUpVerification,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Accepts a social provider (Google, GitHub, Microsoft or GitLab) or a work email address
+ * for SAML. Identity selects the authorization endpoint from server configuration. A work
+ * email only selects a configured SAML connection for its verified organization domain;
+ * this step neither looks up nor discloses the account that uses the address. The caller
+ * supplies no provider URL or return destination. The browser navigates to the returned
+ * HTTPS URL. The new flow replaces the previous browser binding, clears any previous
+ * continuation cookie and does not open a session.
+ * Requires an allowed Origin and application/json. No session needed. Scopes: none.
+ * @summary Start federated sign-in in this browser
+ */
+ startFederatedSignIn<TData = FederatedAuthorization>(federatedSignInStart: FederatedSignInStart, options?: HttpClientBodyOptions): Observable<TData>;
+ startFederatedSignIn<TData = FederatedAuthorization>(federatedSignInStart: FederatedSignInStart, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ startFederatedSignIn<TData = FederatedAuthorization>(federatedSignInStart: FederatedSignInStart, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  startFederatedSignIn<TData = FederatedAuthorization>(
+    federatedSignInStart: FederatedSignInStart, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/federated/start`,
+      federatedSignInStart,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/federated/start`,
+      federatedSignInStart,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/sign-in/federated/start`,
+      federatedSignInStart,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * The gateway checks the raw provider query for exactly one state and exactly one of
+ * authorization code or error. It refuses duplicate security parameters and unknown
+ * fields, discards recognized optional provider parameters and sends the required fields
+ * and opaque browser binding to Identity. Identity verifies the state belongs to this browser,
+ * provider and callback, then authenticates the provider response. It consumes a matched state once, including
+ * during a provider denial. The callback opens no session and never exposes a secret to the
+ * web application. All responses have private, no-store caching and no-referrer policy.
+ * No session needed. Scopes: none.
+ * @summary Receive an OAuth provider's browser callback
+ */
+ completeOAuthSignIn<TData = unknown>(provider: OAuthSignInProvider,
+    params: CompleteOAuthSignInParams, options?: HttpClientBodyOptions): Observable<TData>;
+ completeOAuthSignIn<TData = unknown>(provider: OAuthSignInProvider,
+    params: CompleteOAuthSignInParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ completeOAuthSignIn<TData = unknown>(provider: OAuthSignInProvider,
+    params: CompleteOAuthSignInParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  completeOAuthSignIn<TData = unknown>(
+    provider: OAuthSignInProvider,
+    params: CompleteOAuthSignInParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/auth/sign-in/federated/providers/${provider}/callback`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/auth/sign-in/federated/providers/${provider}/callback`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/auth/sign-in/federated/providers/${provider}/callback`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * SAML 2.0 Web Browser SSO assertion consumer for the HTTP POST binding. This provider
+ * callback accepts a form from the identity provider instead of JSON from an allowed Origin.
+ * The gateway checks the raw form for exactly one `SAMLResponse` and one `RelayState`
+ * and refuses duplicate or unknown fields before forwarding.
+ * It never authenticates through the session cookie. Identity verifies the browser binding,
+ * the one-use RelayState, and the provider assertion against the configured trust and the
+ * original request. Unsolicited responses are refused. The raw form and decoded assertion
+ * are bounded before processing. The callback opens no session. All responses have
+ * private, no-store caching and no-referrer policy. No session needed. Scopes: none.
+ * @summary Receive a SAML identity provider's browser callback
+ */
+ completeSamlSignIn<TData = unknown>(samlSignInCallback: SamlSignInCallback, options?: HttpClientBodyOptions): Observable<TData>;
+ completeSamlSignIn<TData = unknown>(samlSignInCallback: SamlSignInCallback, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ completeSamlSignIn<TData = unknown>(samlSignInCallback: SamlSignInCallback, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  completeSamlSignIn<TData = unknown>(
+    samlSignInCallback: SamlSignInCallback, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {const formUrlEncoded = new URLSearchParams();
+formUrlEncoded.append(`SAMLResponse`, samlSignInCallback.SAMLResponse);
+formUrlEncoded.append(`RelayState`, samlSignInCallback.RelayState);
+
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/federated/saml/callback`,
+      formUrlEncoded,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/federated/saml/callback`,
+      formUrlEncoded,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/sign-in/federated/saml/callback`,
+      formUrlEncoded,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * After the redirect, submits an empty JSON object from an allowed Origin with the
+ * HttpOnly continuation cookie. A short-lived, single-use receipt authorizes only this
+ * operation. The gateway clears it, never copies it into JSON, and applies private,
+ * no-store caching on all outcomes. Identity resolves the previously linked account
+ * from the verified external subject, applies current account and organization policies
+ * and uses the ordinary sign-in session and two-step flow. Neither an email claim nor a
+ * provider's multi-factor assertion bypasses Cadenway's two-step verification. An
+ * already trusted device may be used according to the existing policy. Only a 200
+ * establishes the Cadenway session. No session needed. Scopes: none.
+ * @summary Complete a federated sign-in in the initiating browser
+ */
+ finishFederatedSignIn<TData = FederatedSignedInResponse | FederatedChallengeIssuedResponse>(emptyRequest: EmptyRequest, options?: HttpClientBodyOptions): Observable<TData>;
+ finishFederatedSignIn<TData = FederatedSignedInResponse | FederatedChallengeIssuedResponse>(emptyRequest: EmptyRequest, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ finishFederatedSignIn<TData = FederatedSignedInResponse | FederatedChallengeIssuedResponse>(emptyRequest: EmptyRequest, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  finishFederatedSignIn<TData = FederatedSignedInResponse | FederatedChallengeIssuedResponse>(
+    emptyRequest: EmptyRequest, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/federated/finish`,
+      emptyRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/auth/sign-in/federated/finish`,
+      emptyRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/auth/sign-in/federated/finish`,
+      emptyRequest,{
         ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
       }
@@ -1058,6 +1321,10 @@ export type DiscoverSignInMethodsClientResult = NonNullable<SignInMethods>
 export type SignUpClientResult = NonNullable<CodeSent>
 export type ResendSignUpCodeClientResult = NonNullable<CodeSent>
 export type VerifySignUpClientResult = NonNullable<SignedInResponse>
+export type StartFederatedSignInClientResult = NonNullable<FederatedAuthorization>
+export type CompleteOAuthSignInClientResult = NonNullable<unknown>
+export type CompleteSamlSignInClientResult = NonNullable<unknown>
+export type FinishFederatedSignInClientResult = NonNullable<FederatedSignedInResponse | FederatedChallengeIssuedResponse>
 export type SignInWithPasswordClientResult = NonNullable<SignedInResponse | ChallengeIssuedResponse>
 export type RequestSignInCodeClientResult = NonNullable<CodeSent>
 export type SignInWithCodeClientResult = NonNullable<SignedInResponse | ChallengeIssuedResponse>

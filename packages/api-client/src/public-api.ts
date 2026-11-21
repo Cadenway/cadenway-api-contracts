@@ -268,6 +268,8 @@ export {
   type ResendSignUpCodeClientResult,
   type SignInWithCodeClientResult,
   type SignInWithPasswordClientResult,
+  type StartFederatedSignInClientResult,
+  type FinishFederatedSignInClientResult,
   type SignOutClientResult,
   type SignUpClientResult,
   type UpdateCurrentUserClientResult,
@@ -319,6 +321,9 @@ export type { CodeVerification } from './generated/public/auth/model/codeVerific
 export type { CredentialsRefusedResponse } from './generated/public/auth/model/credentialsRefusedResponse';
 export type { CrossSiteRefusedResponse } from './generated/public/auth/model/crossSiteRefusedResponse';
 export type { CurrentUser } from './generated/public/auth/model/currentUser';
+export type { FederatedAuthorization } from './generated/public/auth/model/federatedAuthorization';
+export type { FederatedSignInStart } from './generated/public/auth/model/federatedSignInStart';
+export type { OAuthSignInProvider } from './generated/public/auth/model/oAuthSignInProvider';
 export type { DeletionScheduled } from './generated/public/auth/model/deletionScheduled';
 export type { Device } from './generated/public/auth/model/device';
 export type { Email } from './generated/public/auth/model/email';
