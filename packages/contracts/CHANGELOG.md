@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.30.0
+
+### Minor Changes
+
+- 9f66bfc: Define public and internal endpoints for support requests and newsletter sign-ups and expose the public Angular client.
+
 ## 0.29.0
 
 ### Minor Changes
