@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.33.0
+
+### Minor Changes
+
+- 30e80ad: Add the federated browser sign-in contract for Google, GitHub, Microsoft, GitLab and SAML.
+
 ## 0.32.0
 
 ### Minor Changes
