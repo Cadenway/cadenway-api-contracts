@@ -3395,7 +3395,6 @@ export const GitTaskActionReceiptDisposition = {
 
 export interface GitTaskActionReceipt {
   disposition: GitTaskActionReceiptDisposition;
-  replayed: boolean;
   taskId: GitTaskActionResourceId;
   listId: GitTaskActionResourceId;
   spaceId: GitTaskActionResourceId;
@@ -3449,8 +3448,6 @@ export const TaskActionReceiptDisposition = {
 export interface TaskActionReceipt {
   /** A committed Task write or a completed command with no change, including when replayed. */
   disposition: TaskActionReceiptDisposition;
-  /** True when returning the receipt for the same command without running the write again. */
-  replayed: boolean;
 }
 
 /**

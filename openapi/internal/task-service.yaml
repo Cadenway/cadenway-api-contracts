@@ -6523,6 +6523,11 @@ components:
     ActorId:
       $ref: '../../components/task.yaml#/components/parameters/ActorId'
   headers:
+    TaskActionReplayed:
+      description: Present with the value true when returning the recorded response without running the command again.
+      schema:
+        type: string
+        const: 'true'
     SearchProjectionNoStore:
       required: true
       description: Prevents caches from storing search projection data.
@@ -6657,6 +6662,8 @@ components:
         The Git command disposition and the minimal task identity and placement authorized by
         Task when it recorded this command. A replay makes no version, activity or event changes.
       headers:
+        Idempotent-Replayed:
+          $ref: '#/components/headers/TaskActionReplayed'
         Cache-Control:
           required: true
           description: Prevents caching the command receipt.
@@ -6669,7 +6676,6 @@ components:
             $ref: '#/components/schemas/GitTaskActionReceipt'
           example:
             disposition: applied
-            replayed: false
             taskId: 019a7001-1a2b-7c3d-8e4f-5a6b7c8d9e01
             listId: 019a7002-1a2b-7c3d-8e4f-5a6b7c8d9e01
             spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
@@ -6678,6 +6684,8 @@ components:
         The first or recorded disposition, without task or resource properties. A no-op commits
         only the receipt. A replay makes no version, activity or event changes.
       headers:
+        Idempotent-Replayed:
+          $ref: '#/components/headers/TaskActionReplayed'
         Cache-Control:
           required: true
           description: Prevents caching the command receipt.
@@ -6690,11 +6698,9 @@ components:
             $ref: '#/components/schemas/TaskActionReceipt'
           examples:
             applied:
-              value: { disposition: applied, replayed: false }
+              value: { disposition: applied }
             noOp:
-              value: { disposition: no_op, replayed: false }
-            replay:
-              value: { disposition: applied, replayed: true }
+              value: { disposition: no_op }
     TaskActionTargetUnavailable:
       description: |
         `task.not-found` for a missing, inactive, cross-tenant or unauthorized target, including
@@ -9657,12 +9663,10 @@ components:
     GitTaskActionReceipt:
       type: object
       additionalProperties: false
-      required: [disposition, replayed, taskId, listId, spaceId]
+      required: [disposition, taskId, listId, spaceId]
       properties:
         disposition:
           $ref: '#/components/schemas/TaskActionReceipt/properties/disposition'
-        replayed:
-          $ref: '#/components/schemas/TaskActionReceipt/properties/replayed'
         taskId:
           $ref: '#/components/schemas/GitTaskActionResourceId'
         listId:
@@ -9708,12 +9712,9 @@ components:
     TaskActionReceipt:
       type: object
       additionalProperties: false
-      required: [disposition, replayed]
+      required: [disposition]
       properties:
         disposition:
           type: string
           enum: [applied, no_op]
           description: A committed Task write or a completed command with no change, including when replayed.
-        replayed:
-          type: boolean
-          description: True when returning the receipt for the same command without running the write again.

@@ -2469,7 +2469,6 @@ export const applyGitTaskStatusActionInternalResponseSpaceIdRegExp = new RegExp(
 
 export const ApplyGitTaskStatusActionInternalResponse = zod.object({
   "disposition": zod.enum(['applied', 'no_op']).describe('A committed Task write or a completed command with no change, including when replayed.'),
-  "replayed": zod.boolean().describe('True when returning the receipt for the same command without running the write again.'),
   "taskId": zod.uuid().regex(applyGitTaskStatusActionInternalResponseTaskIdRegExp).describe('UUIDv7 of a resource verified by Task for a Git command.'),
   "listId": zod.uuid().regex(applyGitTaskStatusActionInternalResponseListIdRegExp).describe('UUIDv7 of a resource verified by Task for a Git command.'),
   "spaceId": zod.uuid().regex(applyGitTaskStatusActionInternalResponseSpaceIdRegExp).describe('UUIDv7 of a resource verified by Task for a Git command.')
@@ -2526,8 +2525,7 @@ export const ApplyAutomationTaskActionInternalBody = zod.union([zod.strictObject
 })])
 
 export const ApplyAutomationTaskActionInternalResponse = zod.object({
-  "disposition": zod.enum(['applied', 'no_op']).describe('A committed Task write or a completed command with no change, including when replayed.'),
-  "replayed": zod.boolean().describe('True when returning the receipt for the same command without running the write again.')
+  "disposition": zod.enum(['applied', 'no_op']).describe('A committed Task write or a completed command with no change, including when replayed.')
 })
 
 
