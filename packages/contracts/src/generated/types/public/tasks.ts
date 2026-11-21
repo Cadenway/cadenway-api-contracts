@@ -2992,6 +2992,22 @@ export type ChecklistItemRefusedResponse = Problem;
 export type VersionMismatchResponse = Problem;
 
 /**
+ * `organization.context-changed`: `If-Organization-Match` differs from the organization
+ * verified for this request. The problem omits `details` and gives no information about the
+ * organizations or the task.
+ */
+export type OrganizationContextChangedResponse = Problem;
+
+/**
+ * - `organization.context-changed`: `If-Organization-Match` differs from the organization
+ *   verified for this request. The problem omits `details` and gives no information about
+ *   the organizations or the task. The response has `Cache-Control: private, no-store`.
+ * - `request.version-mismatch`: `If-Match` differs from the current task version, given in
+ *   `details.version`.
+ */
+export type TaskUpdatePreconditionFailedResponse = Problem;
+
+/**
  * `rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.
  */
 export type RateLimitedResponse = Problem;
@@ -3014,6 +3030,16 @@ export type ApprovalIfMatchParameter = string;
  * `"<version>"` of the task the change was made from, as the `ETag` gave it.
  */
 export type IfMatchParameter = string;
+
+/**
+ * The UUIDv7 of the organization the caller expects, compared without regard to hex case.
+ * The verified session or API token determines the organization for the request. The gateway
+ * uses this header only to check that organization before calling task-service. A mismatch
+ * answers `412 organization.context-changed`. Omit the header to use the verified context
+ * without an organization precondition. Send exactly one UUIDv7: repeated, comma-separated
+ * or malformed values answer `400 request.invalid` with an issue on this header.
+ */
+export type IfOrganizationMatchParameter = string;
 
 /**
  * Key of this creation, chosen by the client, a UUID for example; the same key with the same
