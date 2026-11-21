@@ -1,5 +1,11 @@
 # @cadenway/api-client
 
+## 0.20.0
+
+### Minor Changes
+
+- b29f638: Add the current organization billing subscription and usage contracts for seats, guests and verified attachments. Define the Billing source projections, the quota threshold event and the Organization authority for notification recipient lookup.
+
 ## 0.19.0
 
 ### Minor Changes
