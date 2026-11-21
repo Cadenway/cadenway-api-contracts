@@ -172,6 +172,18 @@ export interface AutomationCommentAction {
  */
 export type AutomationAction = AutomationAssignAction | AutomationPriorityAction | AutomationNotifyAction | AutomationCommentAction;
 
+/**
+ * UUIDv7 of the user whose authority Automation recorded when creating the rule.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type AutomationRuleAuthorUserId = string;
+
+/**
+ * UUIDv7 of the account selected by the rule's notification action.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type AutomationNotificationRecipientUserId = string;
+
 export interface AutomationRuleCreate {
   trigger: AutomationTrigger;
   action: AutomationAction;

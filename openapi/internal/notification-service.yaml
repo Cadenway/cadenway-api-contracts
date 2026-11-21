@@ -4,12 +4,11 @@ info:
   title: notification-service internal routes
   version: 1.0.0
   description: |-
-    The API gateway is the only HTTP caller of these routes. It uses an Ed25519 bearer token with
-    audience `notification-service`. Organization routes require actor `user`, the signed
-    organization and a current membership. Account preferences use the signed user actor
-    independently of any organization claim. The browser cannot choose the scope by passing
-    other identifiers. Public-site submission routes use the gateway's system actor with
-    no organization claim.
+    The API gateway calls the user routes with an Ed25519 bearer token with audience
+    `notification-service` and actor `user`. Organization routes require the signed organization
+    and a current membership. Account preferences use the signed actor independently of any
+    organization claim. The browser cannot choose the scope by passing other identifiers.
+    Public-site submission routes use the gateway's system actor with no organization claim.
 
     For authenticated requests the gateway enforces sessions, CSRF and rate limiting. It confirms
     current membership for organization routes and resolves linked subjects against Task under
@@ -19,6 +18,9 @@ info:
     503 when current visibility or a complete result cannot be established within its budget.
     Notification owns the personal records and binds writes to the linkage checked by the
     gateway. Workers obtain separate, correlated authorization decisions through events.
+
+    Automation can submit the dedicated notification command using its own signed rule actor
+    and organization. Notification checks current Task authority before applying the command.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -27,7 +29,9 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Calls these routes through its generated internal client.
+      uses: Calls the user and public-site submission routes through its generated internal client.
+    - repository: cadenway-automation-service
+      uses: Submits rule notification commands through its generated internal client.
 servers:
   - url: http://notification-service:3016
     description: Notification service on the internal network.
@@ -43,6 +47,68 @@ tags:
   - name: site
     description: Durable receipt of anonymous public-site submissions.
 paths:
+  /internal/v1/inbox/automation-notifications:
+    post:
+      operationId: createAutomationNotificationInternal
+      x-cadenway-strict-body: true
+      summary: Apply an enabled rule's inbox notification action
+      description: |-
+        Requires the signed `automation-service` issuer, `notification-service` audience,
+        `automation` actor with the rule UUIDv7, and organization. Automation validates the
+        triggering Task event and takes the task key and organization from that event. It
+        submits the author and recipient of the current enabled rule in that organization.
+
+        Notification calls Task's `authorizeAutomationNotificationInternal` for this task key,
+        author and recipient before it resolves the idempotency key or creates a notice. The
+        call uses a Notification-signed token with `task-service` audience, `system` actor
+        `notification-service` and the same signed organization. Task checks that the task and
+        its parents are active, the rule author currently has edit authority, and the recipient
+        is an active member with current read access. Notification neither caches this decision
+        nor uses it for another command. It returns a generic `404` after denial or `503` when
+        current authority cannot be established, without creating the notice or revealing a
+        previous receipt. Both failures omit identifiers and Task error details. Every response
+        carries `Cache-Control: private, no-store`.
+
+        On the initial authorized execution, Notification uses the recipient's current
+        `statusChange.inApp` preference for this task activity. A disabled preference records
+        `no_op`. An enabled preference records `applied` with one personal inbox item of kind
+        `automation`, linked to the checked task key and without an account actor or copied task
+        content. Distinct rule commands on the same triggering event have distinct inbox source
+        identities. The gateway checks current Task access when reading and counting linked
+        notices. Notification commits the receipt, notice and any inbox generation change together.
+        Replays return the recorded disposition after a fresh authorization check, without
+        repeating the write. This action uses only the existing in-app channel.
+      tags:
+        - inbox
+      parameters:
+        - $ref: '#/components/parameters/AutomationNotificationIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutomationNotificationCommand'
+            example:
+              taskKey: CAD-482
+              ruleAuthorUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+              recipientUserId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+      responses:
+        '200':
+          $ref: '#/components/responses/AutomationNotificationReceipt'
+        '400':
+          $ref: '#/components/responses/AutomationNotificationInvalidRequest'
+        '401':
+          $ref: '#/components/responses/AutomationNotificationUnauthenticated'
+        '403':
+          $ref: '#/components/responses/AutomationNotificationForbidden'
+        '404':
+          $ref: '#/components/responses/AutomationNotificationTargetNotFound'
+        '409':
+          $ref: '#/components/responses/AutomationNotificationInProgress'
+        '422':
+          $ref: '#/components/responses/AutomationNotificationKeyReused'
+        '503':
+          $ref: '#/components/responses/AutomationNotificationUnavailable'
   /internal/v1/inbox/notifications:
     get:
       operationId: listInboxNotificationsInternal
@@ -1051,8 +1117,23 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Short-lived internal token signed by api-gateway.
+      description: Short-lived internal token signed by the caller allowed for the operation.
   parameters:
+    AutomationNotificationIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |-
+        Opaque key derived from the triggering event and command identity. Automation reserves
+        a distinct key per command and reuses it on retries and event redelivery. Notification
+        scopes it to the signed organization and rule and binds it to the operation and request
+        body. It retains receipts for at least 24 hours. Automation keeps durable deduplication
+        and stops resending a submitted command before the receipt retention guarantee expires.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        examples: [p6-019a701b-2b3c-7d4e-8f5a-6b7c8d9e0f12]
     Cursor:
       $ref: ../../components/http.yaml#/components/parameters/Cursor
     Limit:
@@ -1117,6 +1198,12 @@ components:
         examples:
           - '"2"'
   headers:
+    PrivateNoStore:
+      required: true
+      description: Private response that must never be cached.
+      schema:
+        type: string
+        const: 'private, no-store'
     ETag:
       description: |-
         Strong validator of the returned or current version. It is absent when there is no current
@@ -1126,6 +1213,142 @@ components:
         examples:
           - '"2"'
   responses:
+    AutomationNotificationReceipt:
+      description: Recorded execution outcome after current Task authorization.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AutomationNotificationReceipt'
+          examples:
+            applied:
+              value: { disposition: applied }
+            notification-disabled:
+              value: { disposition: no_op }
+    AutomationNotificationInvalidRequest:
+      description: |-
+        `request.invalid`: the request does not match this contract. `details.issues` identifies
+        invalid fields.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            code: request.invalid
+    AutomationNotificationUnauthenticated:
+      description: '`auth.token-missing` or `auth.token-invalid`: a valid internal token is required.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.token-missing:
+              value:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: auth.token-missing
+            auth.token-invalid:
+              value:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: auth.token-invalid
+    AutomationNotificationForbidden:
+      description: '`auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            auth.issuer-not-allowed:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.issuer-not-allowed
+            auth.actor-not-allowed:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.actor-not-allowed
+            auth.organization-required:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: auth.organization-required
+    AutomationNotificationTargetNotFound:
+      description: '`notification.not-found`: the requested command target cannot be used.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Notification introuvable.
+            status: 404
+            code: notification.not-found
+    AutomationNotificationInProgress:
+      description: '`idempotency.request-in-progress`: a request using the same key is still running.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            code: idempotency.request-in-progress
+    AutomationNotificationKeyReused:
+      description: '`idempotency.key-reused`: the same key is already bound to another request.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: idempotency.key-reused
+    AutomationNotificationUnavailable:
+      description: '`upstream.unavailable`: the command could not be completed or confirmed.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
     SiteFormAccepted:
       description: The public-site submission is recorded. The response has no body.
     ContactSubmissionInProgress:
@@ -1355,6 +1578,27 @@ components:
             status: 503
             code: upstream.unavailable
   schemas:
+    AutomationNotificationCommand:
+      type: object
+      additionalProperties: false
+      required: [taskKey, ruleAuthorUserId, recipientUserId]
+      properties:
+        taskKey:
+          $ref: ../../components/task.yaml#/components/schemas/TaskKey
+          description: Task key carried by the triggering Task event.
+        ruleAuthorUserId:
+          $ref: '../../components/automation.yaml#/components/schemas/AutomationRuleAuthorUserId'
+        recipientUserId:
+          $ref: '../../components/automation.yaml#/components/schemas/AutomationNotificationRecipientUserId'
+    AutomationNotificationReceipt:
+      type: object
+      additionalProperties: false
+      required: [disposition]
+      properties:
+        disposition:
+          type: string
+          enum: [applied, no_op]
+          description: Whether a notice was created or the recipient's preference suppressed it.
     InboxSubject:
       description: Exact persisted resource reference, or null for an owner-only generic item.
       anyOf:
