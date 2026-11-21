@@ -5,6 +5,9 @@
 import type { Problem } from './problem';
 
 /**
- * `task.archived` when the target task or its list is archived, `attachment.upload-expired` for an expired pending reservation, or `attachment.upload-not-ready` when the temporary object has not arrived.
+ * `task.archived` when the target task or its list is archived, `attachment.upload-expired`
+ * for an expired pending reservation, `attachment.upload-not-ready` when the temporary
+ * object has not arrived, or `attachment.storage-quota-exceeded` when adding the verified
+ * object would exceed the organization's plan limit.
  */
 export type UploadCompletionConflictResponse = Problem;
