@@ -81,6 +81,77 @@ export interface BillingSubscription {
 }
 
 /**
+ * The Team plan is available through self-service checkout.
+ */
+export type BillingCheckoutRequestPlan = typeof BillingCheckoutRequestPlan[keyof typeof BillingCheckoutRequestPlan];
+
+
+export const BillingCheckoutRequestPlan = {
+  team: 'team',
+} as const;
+
+export interface BillingCheckoutRequest {
+  /** The Team plan is available through self-service checkout. */
+  plan: BillingCheckoutRequestPlan;
+}
+
+export interface BillingCheckoutSession {
+  /**
+     * Temporary URL returned by Stripe for the hosted checkout.
+     * @pattern ^https://
+     */
+  url: string;
+}
+
+export interface BillingInvoice {
+  /**
+     * Issued invoice number displayed to the organization.
+     * @minLength 1
+     */
+  number: string;
+  /** Start of the invoiced period in UTC. */
+  periodStart: string;
+  /** End of the invoiced period in UTC. */
+  periodEnd: string;
+  /**
+     * Actual invoice total in the currency's smallest unit, including taxes and discounts.
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  totalMinorUnits: number;
+  /**
+     * ISO 4217 currency code.
+     * @pattern ^[A-Z]{3}$
+     */
+  currency: string;
+  /** Current status of the issued invoice. */
+  status: string;
+  /**
+     * Download URL from Stripe when the invoice PDF is available.
+     * @nullable
+     * @pattern ^https://
+     */
+  pdfUrl: string | null;
+}
+
+export interface BillingInvoicePage {
+  /** @maxItems 100 */
+  items: BillingInvoice[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
+ * actor type or ID, or `auth.organization-not-allowed` for an organization claim.
+ */
+export type StripeWebhookForbiddenResponse = Problem;
+
+/**
+ * `billing.unavailable` when Billing cannot complete the operation.
+ */
+export type PaymentUnavailableResponse = Problem;
+
+/**
  * `request.invalid` with `details.issues` for an unknown query parameter or an invalid
  * request body. `request.body-too-large` applies when the request exceeds the service body
  * limit.
@@ -101,4 +172,15 @@ export type ForbiddenResponse = Problem;
  * `billing.unavailable` when the subscription or a required usage baseline is unavailable.
  */
 export type UnavailableResponse = Problem;
+
+export type ListBillingInvoicesInternalParams = {
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: string & string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
 

@@ -3,8 +3,8 @@ info:
   title: billing-service internal routes
   version: 1.0.0
   description: |
-    Reads organization subscriptions and measured usage. Billing derives the actor and
-    organization from the signed gateway token.
+    Serves organization subscriptions, measured usage, hosted Checkout, invoices and verified
+    Stripe event deliveries. Billing derives the request scope from the signed gateway token.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -13,7 +13,7 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Relays authorized subscription reads via the generated internal client.
+      uses: Relays authorized organization billing operations and raw Stripe deliveries.
 servers:
   - url: http://billing-service:3012
     description: Billing service on the internal network.
@@ -21,7 +21,7 @@ security:
   - internalToken: []
 tags:
   - name: billing
-    description: Subscription and measured usage for the signed organization.
+    description: Subscriptions, usage, payment operations and provider deliveries.
 paths:
   /internal/v1/billing/subscription:
     get:
@@ -70,14 +70,144 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /internal/v1/billing/checkout:
+    post:
+      operationId: startBillingCheckoutInternal
+      summary: Start hosted Checkout for the signed organization
+      description: |
+        Requires an api-gateway token with a user actor, an organization and the billing-service
+        audience. The gateway confirms the current owner role before relaying every call.
+        Billing looks up the Team price and return destinations from its own configuration and
+        determines the seat quantity from current organization state.
+
+        The action returns a Stripe Checkout URL. A verified Stripe event determines the
+        subscription change. Replay the original response for 24 hours for the same actor,
+        organization, key and equivalent body. Retrying an uncertain Stripe call must reuse
+        the same provider request identity.
+      tags: [billing]
+      parameters:
+        - $ref: '../../components/billing-payments.yaml#/components/parameters/BillingCheckoutIdempotencyKey'
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/billing-payments.yaml#/components/schemas/BillingCheckoutRequest'
+      responses:
+        '200':
+          description: Hosted Checkout URL for the signed organization.
+          headers:
+            Cache-Control:
+              $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/billing-payments.yaml#/components/schemas/BillingCheckoutSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '../../components/billing-payments.yaml#/components/responses/BillingCheckoutConflict'
+        '422':
+          $ref: '../../components/billing-payments.yaml#/components/responses/BillingCheckoutKeyReused'
+        '503':
+          $ref: '#/components/responses/PaymentUnavailable'
+  /internal/v1/billing/invoices:
+    get:
+      operationId: listBillingInvoicesInternal
+      summary: List issued invoices for the signed organization
+      description: |
+        Requires an api-gateway token with a user actor, an organization and the billing-service
+        audience. The gateway confirms the current owner role before relaying each page request.
+        Billing reads only the Stripe customer linked to the organization in the signed token.
+        An organization without a linked customer has an empty history. Sort by newest creation
+        first. The cursor is bound to this organization and its linked Stripe customer.
+      tags: [billing]
+      parameters:
+        - $ref: '../../components/billing.yaml#/components/parameters/BillingCursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of issued invoices for the signed organization.
+          headers:
+            Cache-Control:
+              $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/billing-payments.yaml#/components/schemas/BillingInvoicePage'
+        '400':
+          $ref: '../../components/billing-payments.yaml#/components/responses/BillingInvoiceBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/PaymentUnavailable'
+  /internal/v1/billing/webhooks/stripe:
+    post:
+      operationId: receiveStripeBillingWebhookInternal
+      summary: Verify and accept a Stripe billing delivery
+      description: |
+        Requires a signed api-gateway token with the billing-service audience, a system actor
+        whose ID is api-gateway, and no organization claim. Billing verifies the timestamp
+        and signature over the original Stripe bytes before interpreting the event.
+
+        Resolve the organization through Billing's provider records. Record the supported
+        verified event durably before acknowledging it and deduplicate by Stripe event ID.
+        Reconcile with current provider state on retries and reordered events. A verified event
+        of an unsupported type is acknowledged without changing state.
+      tags: [billing]
+      parameters:
+        - $ref: '../../components/billing-payments.yaml#/components/parameters/StripeSignature'
+      requestBody:
+        $ref: '../../components/billing-payments.yaml#/components/requestBodies/StripeWebhook'
+      responses:
+        '204':
+          description: Verified delivery accepted, already recorded, or intentionally ignored.
+          headers:
+            Cache-Control:
+              $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+        '400':
+          $ref: '../../components/billing-payments.yaml#/components/responses/StripeWebhookBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/StripeWebhookForbidden'
+        '503':
+          $ref: '#/components/responses/PaymentUnavailable'
 components:
   securitySchemes:
     internalToken:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Signed API gateway token with a user actor, organization and billing-service audience.
+      description: Signed API gateway token with the billing-service audience and route-specific actor and organization claims.
   responses:
+    StripeWebhookForbidden:
+      description: |
+        `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
+        actor type or ID, or `auth.organization-not-allowed` for an organization claim.
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    PaymentUnavailable:
+      description: '`billing.unavailable` when Billing cannot complete the operation.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     BadRequest:
       description: |
         `request.invalid` with `details.issues` for an unknown query parameter or an invalid
