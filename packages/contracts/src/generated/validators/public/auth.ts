@@ -214,11 +214,11 @@ export const StartFederatedSignInResponse = zod.object({
 
 
 /**
- * The provider returns one state and either one authorization code or an error, never both.
- * Recognized optional provider parameters are discarded; duplicated security parameters
- * are refused. The gateway sends only the required fields and the opaque browser binding to
- * Identity. Identity verifies the state belongs to this browser, provider and callback,
- * then authenticates the provider response. It consumes a matched state once, including
+ * The gateway checks the raw provider query for exactly one state and exactly one of
+ * authorization code or error. It refuses duplicate security parameters and unknown
+ * fields, discards recognized optional provider parameters and sends the required fields
+ * and opaque browser binding to Identity. Identity verifies the state belongs to this browser,
+ * provider and callback, then authenticates the provider response. It consumes a matched state once, including
  * during a provider denial. The callback opens no session and never exposes a secret to the
  * web application. All responses have private, no-store caching and no-referrer policy.
  * No session needed. Scopes: none.
@@ -251,6 +251,8 @@ export const CompleteOAuthSignInResponse = zod.void()
 /**
  * SAML 2.0 Web Browser SSO assertion consumer for the HTTP POST binding. This provider
  * callback accepts a form from the identity provider instead of JSON from an allowed Origin.
+ * The gateway checks the raw form for exactly one `SAMLResponse` and one `RelayState`
+ * and refuses duplicate or unknown fields before forwarding.
  * It never authenticates through the session cookie. Identity verifies the browser binding,
  * the one-use RelayState, and the provider assertion against the configured trust and the
  * original request. Unsolicited responses are refused. The raw form and decoded assertion

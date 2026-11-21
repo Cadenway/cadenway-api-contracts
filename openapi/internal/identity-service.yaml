@@ -325,6 +325,9 @@ paths:
       x-cadenway-strict-body: true
       summary: Validate an OAuth callback and issue a continuation receipt
       description: |
+        Validates the exact fields of the closed response variant before claiming state. An
+        authorized response carries only its outcome and code, and a denied response carries
+        only its outcome and error. Unknown fields and mixed outcomes are refused.
         Atomically claims the unexpired state only when the provider and browser binding match.
         A matched state is consumed once, including on provider refusal. Identity exchanges
         a code once with the original verifier and exact registered redirect URI. For OIDC, it

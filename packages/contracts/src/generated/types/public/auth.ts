@@ -1004,6 +1004,54 @@ export type FederatedChallengeIssuedResponse = SignInChallenge;
 export type FederatedSignInRefusedResponse = Problem;
 
 /**
+ * `request.invalid`: the request does not match the schema. `details.issues` names the invalid members.
+ */
+export type FederatedBadRequestResponse = Problem;
+
+/**
+ * `auth.csrf-rejected`: the gateway refused the request because its Origin or JSON media type
+ * did not meet the cross-site request policy.
+ */
+export type FederatedCrossSiteRefusedResponse = Problem;
+
+/**
+ * `rate-limit.exceeded`: the gateway refuses more requests from this client for now.
+ */
+export type FederatedRateLimitedResponse = Problem;
+
+/**
+ * identity-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+ * `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+ * `upstream.deadline-exceeded`, with `details.service`.
+ */
+export type FederatedUnavailableResponse = Problem;
+
+/**
+ * `request.invalid`: the callback path, query or form is invalid. `details.issues` names
+ * the invalid members without echoing provider data.
+ */
+export type FederatedCallbackBadRequestResponse = Problem;
+
+/**
+ * `auth.federated-sign-in-refused`: the sign-in cannot proceed. The response does not
+ * disclose account existence, the provider's reason, organization configuration, or
+ * the validity of a submitted credential.
+ */
+export type FederatedCallbackRefusedResponse = Problem;
+
+/**
+ * `rate-limit.exceeded`: the gateway refuses more callbacks from this client for now.
+ */
+export type FederatedCallbackRateLimitedResponse = Problem;
+
+/**
+ * identity-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+ * `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+ * `upstream.deadline-exceeded`, with `details.service`.
+ */
+export type FederatedCallbackUnavailableResponse = Problem;
+
+/**
  * Signed in. The body describes the session; the token itself is only in the cookie.
  */
 export type SignedInResponse = SignedIn;
