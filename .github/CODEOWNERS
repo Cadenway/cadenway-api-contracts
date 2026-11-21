@@ -8,9 +8,11 @@
 # Public and internal routes.
 /openapi/ @Cadenway/maintainers
 /openapi/internal/automation-service.yaml @Cadenway/maintainers
+/openapi/internal/integration-service.yaml @Cadenway/maintainers
 /openapi/public/automations.yaml @Cadenway/maintainers
 /openapi/public/profile-media.yaml @Cadenway/maintainers
 /openapi/public/realtime.yaml @Cadenway/maintainers
+/openapi/public/webhooks.yaml @Cadenway/maintainers
 
 # Events.
 /asyncapi/ @Cadenway/maintainers
