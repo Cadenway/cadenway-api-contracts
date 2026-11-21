@@ -92,10 +92,16 @@ export const GetBillingEntitlementInternalResponse = zod.union([zod.object({
  * Billing looks up the Team price and return destinations from its own configuration and
  * determines the seat quantity from current organization state.
  *
- * The action returns a Stripe Checkout URL. A verified Stripe event determines the
- * subscription change. Replay the original response for 24 hours for the same actor,
- * organization, key and equivalent body. Retrying an uncertain Stripe call must reuse
- * the same provider request identity.
+ * The action returns a Stripe Checkout URL. Billing reconciles with the current Checkout
+ * Session and subscription through authenticated reads from Stripe, either after a
+ * verified webhook or while recovering an earlier attempt.
+ *
+ * Billing replays the original response for 24 hours for the same actor, organization,
+ * key and equivalent body. An authorized repeat of an uncertain Stripe create request
+ * uses the saved provider idempotency key and identical parameters. Recovery uses reads
+ * after the create window closes. Billing keeps the original reservation while the
+ * outcome is uncertain. A replacement requires confirmation that the previous session
+ * expired without payment.
  * @summary Start hosted Checkout for the signed organization
  */
 export const startBillingCheckoutInternalHeaderIdempotencyKeyMax = 255;

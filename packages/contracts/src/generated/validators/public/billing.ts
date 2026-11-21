@@ -51,9 +51,14 @@ export const GetBillingSubscriptionResponse = zod.object({
  * available through self-service checkout. Billing supplies the price, seat quantity and
  * return destinations from its configuration and the organization's current state.
  *
- * This action returns a Stripe Checkout URL. A later verified Stripe event determines the
- * subscription change. The same key and equivalent body replay the original response for
- * 24 hours while the caller remains authorized.
+ * This action returns a Stripe Checkout URL. Billing confirms the payment and subscription
+ * against current Stripe state. A verified Stripe webhook or recovery of the original
+ * session on a retry can trigger the same reconciliation.
+ *
+ * The same key and equivalent body replay the original response for 24 hours while the
+ * caller remains authorized. Billing keeps the original reservation while its outcome is
+ * uncertain. A replacement requires Stripe to confirm that the previous session expired
+ * without payment.
  * @summary Start hosted Checkout for the Team plan
  */
 export const startBillingCheckoutHeaderIdempotencyKeyMax = 255;
