@@ -862,3 +862,65 @@ export const CompleteReminderInternalResponse = zod.object({
   "completedAt": zod.iso.datetime({"offset":true}).nullable(),
   "version": zod.int().min(1)
 })
+
+
+/**
+ * Internal token: issuer `api-gateway`, actor `{type: system, id: api-gateway}`.
+ * Contact submissions have no organization or account association.
+ *
+ * Notification commits the submission and one durable delivery intent together. The worker
+ * sends the message as plain text to the support address configured by Notification. The
+ * user's validated address can be used only as Reply-To. The sender, recipient and mail
+ * subject are server-controlled, with a subject label selected from the supported categories.
+ * Notification sends no automatic mail to the submitted address and publishes no form data
+ * to the event bus. Log and trace metadata contains no body, address or idempotency key.
+ *
+ * The gateway forwards the idempotency key unchanged. For 24 hours after acceptance, the
+ * same key and validated payload replay the empty receipt without creating a new delivery
+ * intent. A concurrent request holding that key returns 409. Reuse for a different payload
+ * returns 422. Acceptance is durable and does not wait for SMTP.
+ * @summary Record a public-site message for support delivery
+ */
+export const submitContactFormInternalHeaderIdempotencyKeyRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+
+
+export const SubmitContactFormInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().regex(submitContactFormInternalHeaderIdempotencyKeyRegExp).describe('Random UUIDv4. Reuse it when retrying the same contact submission.')
+})
+
+export const submitContactFormInternalBodyEmailMax = 254;
+
+export const submitContactFormInternalBodyMessageMin = 20;
+export const submitContactFormInternalBodyMessageMax = 2000;
+
+
+
+export const SubmitContactFormInternalBody = zod.strictObject({
+  "email": zod.email().max(submitContactFormInternalBodyEmailMax).describe('A single reply or subscription address without surrounding whitespace.'),
+  "subject": zod.enum(['login', 'mfa', 'org', 'data', 'other']).describe('Topic chosen in the support form.'),
+  "message": zod.string().refine((value) => Array.from(value.trim()).length >= submitContactFormInternalBodyMessageMin && Array.from(value).length <= submitContactFormInternalBodyMessageMax, { message: 'Invalid contact message length' }).describe('Plain text. Count Unicode code points. The minimum applies after trimming surrounding whitespace.')
+})
+
+export const SubmitContactFormInternalResponse = zod.void()
+
+
+/**
+ * Internal token: issuer `api-gateway`, actor `{type: system, id: api-gateway}`.
+ * Newsletter signups have no organization or account association.
+ *
+ * Notification records the mailbox and sign-up time. Lowercase the domain and preserve
+ * the local part when comparing mailboxes. The unique mailbox constraint applies even to
+ * concurrent requests. An existing record is left as is, including its subscription state.
+ * Both a new record and a replay answer with the same empty receipt. The operation sends
+ * no email and publishes no address. Acceptance follows durable storage.
+ * @summary Record a public-site newsletter signup
+ */
+export const subscribeToNewsletterInternalBodyEmailMax = 254;
+
+
+
+export const SubscribeToNewsletterInternalBody = zod.strictObject({
+  "email": zod.email().max(subscribeToNewsletterInternalBodyEmailMax).describe('A single reply or subscription address without surrounding whitespace.')
+})
+
+export const SubscribeToNewsletterInternalResponse = zod.void()

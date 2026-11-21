@@ -11,6 +11,19 @@
  * type of the same name, exported together.
  */
 
+// openapi/public/site.yaml
+export {
+  SiteService,
+  type SubmitContactFormClientResult,
+  type SubscribeToNewsletterClientResult,
+} from './generated/public/site/site/site.service';
+export { PublicContactSubmissionSubject } from './generated/public/site/model';
+export type {
+  NewsletterSubscription,
+  PublicContactSubmission,
+  PublicSiteEmail,
+} from './generated/public/site/model';
+
 // openapi/public/search.yaml
 export {
   SearchService,

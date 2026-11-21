@@ -306,6 +306,42 @@ export interface TaskReminderSchedule {
 }
 
 /**
+ * A single reply or subscription address without surrounding whitespace.
+ * @maxLength 254
+ */
+export type PublicSiteEmail = string;
+
+/**
+ * Topic chosen in the support form.
+ */
+export type PublicContactSubmissionSubject = typeof PublicContactSubmissionSubject[keyof typeof PublicContactSubmissionSubject];
+
+
+export const PublicContactSubmissionSubject = {
+  login: 'login',
+  mfa: 'mfa',
+  org: 'org',
+  data: 'data',
+  other: 'other',
+} as const;
+
+export interface PublicContactSubmission {
+  email: PublicSiteEmail;
+  /** Topic chosen in the support form. */
+  subject: PublicContactSubmissionSubject;
+  /**
+     * Plain text. Count Unicode code points. The minimum applies after trimming surrounding whitespace.
+     * @minLength 20
+     * @maxLength 2000
+     */
+  message: string;
+}
+
+export interface NewsletterSubscription {
+  email: PublicSiteEmail;
+}
+
+/**
  * Members specific to the code, for example the fields that failed validation.
  */
 export type ProblemDetails = { [key: string]: unknown };
@@ -2683,6 +2719,21 @@ export interface AccessRequest {
 export interface AccessRequestApproval {
   role: AccessRole;
 }
+
+/**
+ * The public-site submission is recorded. The response has no body.
+ */
+export type SiteFormAcceptedResponse = void;
+
+/**
+ * `idempotency.request-in-progress`: a request using this key is still running.
+ */
+export type ContactSubmissionInProgressResponse = Problem;
+
+/**
+ * `idempotency.key-reused`: the key already represents a different contact submission.
+ */
+export type ContactSubmissionKeyReusedResponse = Problem;
 
 /**
  * `request.invalid`: the request does not match this contract. `details.issues` identifies

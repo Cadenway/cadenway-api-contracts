@@ -267,6 +267,21 @@ for (const root of ROOTS) {
         `.refine((value) => Array.from(value).length <= ${limit}, { message: 'At most 200 Unicode code points' })`,
       );
     }
+    // The support form counts Unicode code points and checks the minimum after trimming.
+    if (
+      root.name === 'contracts' &&
+      ['public/site', 'internal/notification-service'].includes(spec)
+    ) {
+      const suffix = spec === 'public/site' ? '' : 'Internal';
+      const minimum = `submitContactForm${suffix}BodyMessageMin`;
+      const maximum = `submitContactForm${suffix}BodyMessageMax`;
+      const length = `.min(${minimum}).max(${maximum})`;
+      if (!generated.includes(length)) throw new Error(`${source}: missing contact message length`);
+      generated = generated.replace(
+        length,
+        `.refine((value) => Array.from(value.trim()).length >= ${minimum} && Array.from(value).length <= ${maximum}, { message: 'Invalid contact message length' })`,
+      );
+    }
     // Intake writes must refuse unknown routing, identity, and field settings at the boundary.
     if (root.name === 'contracts' && ['public/intake', 'internal/task-service'].includes(spec)) {
       const suffix = spec === 'public/intake' ? '' : 'Internal';
