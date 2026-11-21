@@ -12,7 +12,9 @@
 /openapi/public/automations.yaml @Cadenway/maintainers
 /openapi/public/profile-media.yaml @Cadenway/maintainers
 /openapi/public/realtime.yaml @Cadenway/maintainers
+/openapi/public/site.yaml @Cadenway/maintainers
 /openapi/public/webhooks.yaml @Cadenway/maintainers
+/components/public-site.yaml @Cadenway/maintainers
 
 # Events.
 /asyncapi/ @Cadenway/maintainers
