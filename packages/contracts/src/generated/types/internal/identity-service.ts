@@ -1498,6 +1498,12 @@ export type FederatedSignInRefusedResponse = Problem;
 export type FederatedAuthorityUnavailableResponse = Problem;
 
 /**
+ * `organization.unavailable` when Identity cannot verify the credential's current membership.
+ * The caller may retry introspection. A temporary failure does not invalidate the credential.
+ */
+export type MembershipAuthorityUnavailableResponse = Problem;
+
+/**
  * `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
  */
 export type ProfileMediaReservationConflictResponse = Problem;

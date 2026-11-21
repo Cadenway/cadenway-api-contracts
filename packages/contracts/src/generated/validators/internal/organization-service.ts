@@ -729,9 +729,10 @@ export const RefuseInvitationInternalResponse = zod.void()
 
 
 /**
- * Requires issuer `search-service` and actor `{ type: 'system', id: 'search-service' }`, with
- * no organization claim. Every response carries `Cache-Control: private, no-store`.
- * Returns only organization IDs. Search then signs each owner's export request with the
+ * Requires issuer `search-service` or `identity-service` and a system actor whose ID is
+ * the issuer. The internal token has no organization claim. Identity carries no delegated
+ * role or scopes. Every response carries `Cache-Control: private, no-store`.
+ * Returns only organization IDs. Both callers sign each owner's export request with the
  * organization of that export.
  *
  * The first page fixes an upper organization ID in its read snapshot. Independent pages
@@ -742,7 +743,7 @@ export const RefuseInvitationInternalResponse = zod.void()
  * starts consuming durable invalidations, including `member.joined.v1`. Organization
  * creation emits the owner's join, so Search can schedule an export of a new tenant even
  * when its ID is outside this page sequence.
- * @summary List organization IDs for a search rebuild
+ * @summary List organization IDs for projection rebuilds
  */
 export const listSearchOrganizationsInternalQueryLimitDefault = 50;
 export const listSearchOrganizationsInternalQueryLimitMax = 100;
@@ -953,18 +954,20 @@ export const LookupQuotaNotificationRecipientsInternalResponse = zod.object({
 
 
 /**
- * Requires issuer `search-service`, an actor of type `user` and an organization in the
- * signed token. Search signs this call for the verified user and organization of the current
- * request. Neither value comes from search input or indexed data. Every response carries
+ * Requires issuer `search-service` or `identity-service`, an actor of type `user` and an
+ * organization in the signed token. Search delegates the user and organization of the
+ * authenticated search request. Identity signs the account and organization bound to a
+ * locally verified credential, with no delegated role or scopes. Every response carries
  * `Cache-Control: private, no-store`.
  *
  * Returns the active membership's ID, version and role in one current tenant snapshot.
  * The membership ID changes after removal and rejoining. The version is the version of
  * that membership, independent of the organization's version. An unknown organization or
- * absent active membership yields the same `404 organization.not-found`. The caller uses
- * the proof to check that Task evaluates candidate access against the same membership
- * identity and version. The proof alone grants no access to search results.
- * @summary Prove current organization membership for search
+ * absent active membership yields the same `404 organization.not-found`. Search uses this
+ * proof to check that Task evaluates candidate access against the same membership identity
+ * and version. Identity uses the current role and compares the membership ID before exposing
+ * a session's selected organization. The proof alone grants no access to search results.
+ * @summary Prove current organization membership
  */
 export const getSearchMembershipInternalResponseVersionMax = 9007199254740991;
 
@@ -975,3 +978,99 @@ export const GetSearchMembershipInternalResponse = zod.object({
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "version": zod.int().min(1).max(getSearchMembershipInternalResponseVersionMax).describe('Version of the active membership.')
 })
+
+
+/**
+ * Requires issuer `identity-service` and actor `{ type: 'system', id: 'identity-service' }`
+ * with the organization in the verified token and no delegated role or scopes. Identity
+ * enumerates organization IDs through `GET /internal/v1/search-organizations` and signs
+ * each tenant export separately. Every response carries `Cache-Control: private, no-store`.
+ *
+ * Returns all active memberships and retained removals. Every row includes the membership
+ * and account IDs and source version. An active row contains the role and a null removal
+ * time. A removed row contains the removal time and a null role. A removal is terminal
+ * for its membership ID, including when an older event arrives later. The export includes
+ * removals for as long as an older event can still arrive, including through a delayed outbox.
+ * Rejoining allocates a different membership ID. The page contains membership states only.
+ *
+ * The first page fixes an inclusive upper membership ID in one read snapshot. Every
+ * page reads ascending immutable IDs in that tenant above the last returned ID and at or
+ * below the upper bound. The authenticated cursor binds the operation, tenant, upper bound
+ * and last returned ID. A cursor has 1 to 1,024 characters. Only `nextCursor: null` marks
+ * completion. The UTF-8 JSON body is at most 1,048,576 bytes.
+ *
+ * Identity applies states by membership ID and source version and persists the checkpoint
+ * after committing the page. A scan requires durable event coverage from before the first
+ * page through catch-up after the last page. An empty page or a failed scan provides no
+ * evidence of membership removal. Identity restarts the rebuild after a confirmed coverage gap.
+ * @summary Export one tenant's membership states for Identity
+ */
+export const listIdentityMembershipsInternalQueryCursorTwoMax = 1024;
+
+export const listIdentityMembershipsInternalQueryLimitDefault = 50;
+export const listIdentityMembershipsInternalQueryLimitMax = 100;
+
+
+
+export const ListIdentityMembershipsInternalQueryParams = zod.object({
+  "cursor": zod.string().and(zod.string().min(1).max(listIdentityMembershipsInternalQueryCursorTwoMax)).optional().describe('Opaque authenticated cursor returned as `nextCursor` by the preceding page.'),
+  "limit": zod.coerce.number().int().min(1).max(listIdentityMembershipsInternalQueryLimitMax).default(listIdentityMembershipsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listIdentityMembershipsInternalResponseItemsItemOneVersionMax = 9007199254740991;
+
+export const listIdentityMembershipsInternalResponseItemsItemTwoVersionMin = 2;
+export const listIdentityMembershipsInternalResponseItemsItemTwoVersionMax = 9007199254740991;
+
+export const listIdentityMembershipsInternalResponseItemsMax = 100;
+
+export const listIdentityMembershipsInternalResponseNextCursorTwoMax = 1024;
+
+
+
+export const ListIdentityMembershipsInternalResponse = zod.object({
+  "items": zod.array(zod.union([zod.object({
+  "memberId": zod.uuid(),
+  "userId": zod.uuid(),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
+  "version": zod.int().min(1).max(listIdentityMembershipsInternalResponseItemsItemOneVersionMax),
+  "removedAt": zod.null()
+}),zod.object({
+  "memberId": zod.uuid(),
+  "userId": zod.uuid(),
+  "role": zod.null(),
+  "version": zod.int().min(listIdentityMembershipsInternalResponseItemsItemTwoVersionMin).max(listIdentityMembershipsInternalResponseItemsItemTwoVersionMax).describe('Terminal version of this membership.'),
+  "removedAt": zod.iso.datetime({"offset":true})
+})])).max(listIdentityMembershipsInternalResponseItemsMax),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.').and(zod.string().min(1).max(listIdentityMembershipsInternalResponseNextCursorTwoMax).nullable()).nullable()
+})
+
+
+/**
+ * Requires issuer `identity-service` and actor `{ type: 'system', id: 'identity-service' }`
+ * with no organization, delegated role or scopes. Identity calls this operation only after
+ * the scheduled deadline and after durably claiming the same deletion attempt. Every
+ * response carries `Cache-Control: private, no-store`.
+ *
+ * Organization checks current ownership and creates a durable reservation in one
+ * transaction, serialized with operations that give the account ownership or a new
+ * membership. A confirmed owner keeps their account. A reserved account cannot become
+ * an owner or gain a new membership. The reservation persists through retry and until
+ * the account deletion event is applied. Expiration or absence of an HTTP response does
+ * not release it. An equivalent retry of a stored attempt confirms the same reservation.
+ * A different attempt cannot replace a reservation.
+ *
+ * Only a successful response for the same attempt authorizes Identity to finish deletion.
+ * If a response is lost, Identity retries the same request. A conflict or temporary
+ * failure does not authorize deletion.
+ * @summary Reserve an account for final deletion
+ */
+export const reserveAccountDeletionInternalPathAttemptIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const ReserveAccountDeletionInternalParams = zod.object({
+  "userId": zod.uuid().describe('Account claimed for deletion by Identity.'),
+  "attemptId": zod.uuid().regex(reserveAccountDeletionInternalPathAttemptIdRegExp).describe('Stable UUIDv7 of the deletion attempt persisted by Identity.')
+})
+
+export const ReserveAccountDeletionInternalResponse = zod.void()

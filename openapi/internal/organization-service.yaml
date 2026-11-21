@@ -38,13 +38,16 @@ info:
     accept the issuer `api-gateway` and the actor `user` only. The isolated Search routes accept
     `search-service` with the actor and scope declared by each operation. The isolated Billing export
     routes accept the issuer `billing-service` and the system identity declared by each operation.
+    Identity membership proofs, rebuild and account deletion reservations accept `identity-service`
+    only on the operations that explicitly allow it.
     Quota notification recipient routes accept only the issuer `notification-service` and its
     exact system actor, with an organization in the token.
     Each operation says whether it requires an organization. An organization-scoped route acts on the organization of the token,
     the current organization of the session or the organization of the personal API token, and
     runs in the tenant transaction of that organization. A route that requires no organization
     ignores the one the token may carry, the current organization of the session, and opens no
-    tenant transaction from it. The Search and Billing organization exports require an unscoped token.
+    tenant transaction from it. The organization ID exports and account deletion reservations
+    explicitly reject organization-scoped tokens.
     The guard of the kit answers
     `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
     `403 auth.actor-not-allowed` and `403 auth.organization-required`. The gateway answers
@@ -101,6 +104,10 @@ info:
         before signing a recipient proof for an automation rule.
     - repository: cadenway-search-service
       uses: Enumerates organization IDs for rebuilds and checks the current signed user's membership before disclosing search results.
+    - repository: cadenway-identity-service
+      uses: >-
+        Verifies current membership during token introspection, rebuilds the membership projection,
+        and reserves accounts for final deletion after Organization checks ownership.
     - repository: cadenway-billing-service
       uses: Enumerates organization IDs and reads active membership roles and removal versions to rebuild its seat usage projection.
     - repository: cadenway-notification-service
@@ -119,6 +126,8 @@ tags:
     description: Invitations of the organization of the token, and those addressed to the actor.
   - name: search
     description: Organization IDs for search rebuilds and current membership proofs.
+  - name: identity-authority
+    description: Membership reconstruction and authoritative account deletion reservations for Identity.
   - name: billing-usage
     description: Organization and membership snapshots for Billing usage reconciliation.
   - name: quota-notifications
@@ -1050,11 +1059,12 @@ paths:
   /internal/v1/search-organizations:
     get:
       operationId: listSearchOrganizationsInternal
-      summary: List organization IDs for a search rebuild
+      summary: List organization IDs for projection rebuilds
       description: |
-        Requires issuer `search-service` and actor `{ type: 'system', id: 'search-service' }`, with
-        no organization claim. Every response carries `Cache-Control: private, no-store`.
-        Returns only organization IDs. Search then signs each owner's export request with the
+        Requires issuer `search-service` or `identity-service` and a system actor whose ID is
+        the issuer. The internal token has no organization claim. Identity carries no delegated
+        role or scopes. Every response carries `Cache-Control: private, no-store`.
+        Returns only organization IDs. Both callers sign each owner's export request with the
         organization of that export.
 
         The first page fixes an upper organization ID in its read snapshot. Independent pages
@@ -1303,19 +1313,21 @@ paths:
   /internal/v1/search-membership:
     get:
       operationId: getSearchMembershipInternal
-      summary: Prove current organization membership for search
+      summary: Prove current organization membership
       description: |
-        Requires issuer `search-service`, an actor of type `user` and an organization in the
-        signed token. Search signs this call for the verified user and organization of the current
-        request. Neither value comes from search input or indexed data. Every response carries
+        Requires issuer `search-service` or `identity-service`, an actor of type `user` and an
+        organization in the signed token. Search delegates the user and organization of the
+        authenticated search request. Identity signs the account and organization bound to a
+        locally verified credential, with no delegated role or scopes. Every response carries
         `Cache-Control: private, no-store`.
 
         Returns the active membership's ID, version and role in one current tenant snapshot.
         The membership ID changes after removal and rejoining. The version is the version of
         that membership, independent of the organization's version. An unknown organization or
-        absent active membership yields the same `404 organization.not-found`. The caller uses
-        the proof to check that Task evaluates candidate access against the same membership
-        identity and version. The proof alone grants no access to search results.
+        absent active membership yields the same `404 organization.not-found`. Search uses this
+        proof to check that Task evaluates candidate access against the same membership identity
+        and version. Identity uses the current role and compares the membership ID before exposing
+        a session's selected organization. The proof alone grants no access to search results.
       tags: [search]
       responses:
         '200':
@@ -1341,6 +1353,133 @@ paths:
           $ref: '#/components/responses/SearchMembershipNotFound'
         '503':
           $ref: '#/components/responses/SearchAuthorityUnavailable'
+  /internal/v1/identity-memberships:
+    get:
+      operationId: listIdentityMembershipsInternal
+      summary: Export one tenant's membership states for Identity
+      description: |
+        Requires issuer `identity-service` and actor `{ type: 'system', id: 'identity-service' }`
+        with the organization in the verified token and no delegated role or scopes. Identity
+        enumerates organization IDs through `GET /internal/v1/search-organizations` and signs
+        each tenant export separately. Every response carries `Cache-Control: private, no-store`.
+
+        Returns all active memberships and retained removals. Every row includes the membership
+        and account IDs and source version. An active row contains the role and a null removal
+        time. A removed row contains the removal time and a null role. A removal is terminal
+        for its membership ID, including when an older event arrives later. The export includes
+        removals for as long as an older event can still arrive, including through a delayed outbox.
+        Rejoining allocates a different membership ID. The page contains membership states only.
+
+        The first page fixes an inclusive upper membership ID in one read snapshot. Every
+        page reads ascending immutable IDs in that tenant above the last returned ID and at or
+        below the upper bound. The authenticated cursor binds the operation, tenant, upper bound
+        and last returned ID. A cursor has 1 to 1,024 characters. Only `nextCursor: null` marks
+        completion. The UTF-8 JSON body is at most 1,048,576 bytes.
+
+        Identity applies states by membership ID and source version and persists the checkpoint
+        after committing the page. A scan requires durable event coverage from before the first
+        page through catch-up after the last page. An empty page or a failed scan provides no
+        evidence of membership removal. Identity restarts the rebuild after a confirmed coverage gap.
+      tags: [identity-authority]
+      parameters:
+        - $ref: '#/components/parameters/IdentityMembershipCursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of active memberships and retained removals.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IdentityAuthorityPrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityMembershipPage'
+              example:
+                items:
+                  - memberId: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41
+                    userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                    role: admin
+                    version: 2
+                    removedAt: null
+                  - memberId: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e42
+                    userId: 019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33
+                    role: null
+                    version: 3
+                    removedAt: '2026-10-12T14:00:00Z'
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/IdentityAuthorityBadRequest'
+        '401':
+          $ref: '#/components/responses/IdentityAuthorityTokenRefused'
+        '403':
+          $ref: '#/components/responses/IdentityMembershipExportAccessRefused'
+        '404':
+          $ref: '#/components/responses/IdentityMembershipExportNotFound'
+        '503':
+          $ref: '#/components/responses/IdentityAuthorityUnavailable'
+  /internal/v1/users/{userId}/account-deletion-reservations/{attemptId}:
+    put:
+      operationId: reserveAccountDeletionInternal
+      summary: Reserve an account for final deletion
+      description: |
+        Requires issuer `identity-service` and actor `{ type: 'system', id: 'identity-service' }`
+        with no organization, delegated role or scopes. Identity calls this operation only after
+        the scheduled deadline and after durably claiming the same deletion attempt. Every
+        response carries `Cache-Control: private, no-store`.
+
+        Organization checks current ownership and creates a durable reservation in one
+        transaction, serialized with operations that give the account ownership or a new
+        membership. A confirmed owner keeps their account. A reserved account cannot become
+        an owner or gain a new membership. The reservation persists through retry and until
+        the account deletion event is applied. Expiration or absence of an HTTP response does
+        not release it. An equivalent retry of a stored attempt confirms the same reservation.
+        A different attempt cannot replace a reservation.
+
+        Only a successful response for the same attempt authorizes Identity to finish deletion.
+        If a response is lost, Identity retries the same request. A conflict or temporary
+        failure does not authorize deletion.
+      tags: [identity-authority]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: Account claimed for deletion by Identity.
+          schema:
+            type: string
+            format: uuid
+            examples: [019a5f3c-b2c3-7d4e-8f5a-6b7c8d9e0f33]
+        - name: attemptId
+          in: path
+          required: true
+          description: Stable UUIDv7 of the deletion attempt persisted by Identity.
+          schema:
+            type: string
+            format: uuid
+            pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+            examples: [019a6c30-7a8b-7c9d-8e0f-1a2b3c4d8e91]
+      responses:
+        '201':
+          description: The attempt has durably reserved the account.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IdentityAuthorityPrivateNoStore'
+        '204':
+          description: The same attempt has already reserved the account.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IdentityAuthorityPrivateNoStore'
+        '400':
+          $ref: '#/components/responses/IdentityAuthorityBadRequest'
+        '401':
+          $ref: '#/components/responses/IdentityAuthorityTokenRefused'
+        '403':
+          $ref: '#/components/responses/AccountDeletionReservationAccessRefused'
+        '404':
+          $ref: '#/components/responses/AccountDeletionReservationNotFound'
+        '409':
+          $ref: '#/components/responses/AccountDeletionReservationConflict'
+        '503':
+          $ref: '#/components/responses/IdentityAuthorityUnavailable'
 components:
   securitySchemes:
     internalToken:
@@ -1352,6 +1491,16 @@ components:
         `organization-service`. The operation defines the accepted issuer, actor and organization
         scope.
   parameters:
+    IdentityMembershipCursor:
+      name: cursor
+      in: query
+      description: Opaque authenticated cursor returned as `nextCursor` by the preceding page.
+      schema:
+        allOf:
+          - $ref: '../../components/http.yaml#/components/parameters/Cursor/schema'
+          - type: string
+            minLength: 1
+            maxLength: 1024
     UserId:
       name: userId
       in: path
@@ -1387,6 +1536,12 @@ components:
       schema:
         type: string
   headers:
+    IdentityAuthorityPrivateNoStore:
+      required: true
+      description: Keeps Identity authority responses out of HTTP caches.
+      schema:
+        type: string
+        const: 'private, no-store'
     AutomationRecipientPrivateNoStore:
       required: true
       description: Keeps the current automation recipient decision out of HTTP caches.
@@ -1660,9 +1815,9 @@ components:
     SearchOrganizationAccessRefused:
       description: |
         `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
-        actor type or ID, or `auth.organization-not-allowed` when the global export receives a
-        verified token scoped to an organization. The export checks the last condition after
-        token verification.
+        actor type or ID or for delegated Identity role or scopes, or
+        `auth.organization-not-allowed` when the global export receives a verified token scoped
+        to an organization. The export checks the last condition after token verification.
       headers:
         Cache-Control:
           $ref: '#/components/headers/SearchPrivateNoStore'
@@ -1673,7 +1828,8 @@ components:
     SearchMembershipAccessRefused:
       description: |
         `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for a non-user
-        actor, or `auth.organization-required` for an unscoped token.
+        actor or for delegated Identity role or scopes, or `auth.organization-required` for
+        an unscoped token.
       headers:
         Cache-Control:
           $ref: '#/components/headers/SearchPrivateNoStore'
@@ -1701,6 +1857,102 @@ components:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
+    IdentityAuthorityBadRequest:
+      description: '`request.invalid` for invalid input, including an invalid membership export cursor.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IdentityAuthorityPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    IdentityAuthorityTokenRefused:
+      description: '`auth.token-missing` or `auth.token-invalid`.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IdentityAuthorityPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    IdentityMembershipExportAccessRefused:
+      description: |
+        `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
+        actor type or ID or for a delegated role or scopes, or `auth.organization-required`
+        for an unscoped token.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IdentityAuthorityPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    IdentityMembershipExportNotFound:
+      description: '`organization.not-found` when the signed organization does not exist.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IdentityAuthorityPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    IdentityAuthorityUnavailable:
+      description: '`organization.unavailable` when Organization cannot complete the snapshot or reservation.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IdentityAuthorityPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    AccountDeletionReservationAccessRefused:
+      description: |
+        `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+        type or ID or for a delegated role or scopes, or `auth.organization-not-allowed` for an
+        organization-scoped token.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IdentityAuthorityPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    AccountDeletionReservationNotFound:
+      description: '`user.not-found` when there is no account directory record available for reservation.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IdentityAuthorityPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    AccountDeletionReservationConflict:
+      description: |
+        `account.organization-owner` when the account still owns an organization, with
+        `details.organizationIds` listing the owned organizations.
+        `account.deletion-reservation-conflict` when another attempt has already reserved the account.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IdentityAuthorityPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationOwner:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: account.organization-owner
+                details:
+                  organizationIds: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f]
+            differentAttempt:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: account.deletion-reservation-conflict
     ProfileMediaReservationConflict:
       description: |
         `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
@@ -2171,6 +2423,52 @@ components:
         - type: [string, 'null']
           minLength: 1
           maxLength: 1024
+    IdentityMembershipPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/IdentityActiveMembership'
+              - $ref: '#/components/schemas/IdentityRemovedMembership'
+        nextCursor:
+          type: [string, 'null']
+          allOf:
+            - $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+            - type: [string, 'null']
+              minLength: 1
+              maxLength: 1024
+    IdentityActiveMembership:
+      type: object
+      additionalProperties: false
+      required: [memberId, userId, role, version, removedAt]
+      properties:
+        memberId: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/Role' }
+        version:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        removedAt: { type: 'null' }
+    IdentityRemovedMembership:
+      type: object
+      additionalProperties: false
+      required: [memberId, userId, role, version, removedAt]
+      properties:
+        memberId: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        role: { type: 'null' }
+        version:
+          type: integer
+          minimum: 2
+          maximum: 9007199254740991
+          description: Terminal version of this membership.
+        removedAt: { type: string, format: date-time }
     SearchOrganizationPage:
       type: object
       additionalProperties: false

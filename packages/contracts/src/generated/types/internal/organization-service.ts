@@ -95,6 +95,40 @@ export interface BillingMembershipPage {
   nextCursor: BillingUsageNextCursor | null;
 }
 
+export interface IdentityActiveMembership {
+  memberId: string;
+  userId: string;
+  role: Role;
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+  /** @nullable */
+  removedAt: null;
+}
+
+export interface IdentityRemovedMembership {
+  memberId: string;
+  userId: string;
+  /** @nullable */
+  role: null;
+  /**
+     * Terminal version of this membership.
+     * @minimum 2
+     * @maximum 9007199254740991
+     */
+  version: number;
+  removedAt: string;
+}
+
+export interface IdentityMembershipPage {
+  /** @maxItems 100 */
+  items: (IdentityActiveMembership | IdentityRemovedMembership)[];
+  /** @nullable */
+  nextCursor: string | null;
+}
+
 /**
  * Cursor of the next page; `null` on the last page.
  * @nullable
@@ -718,15 +752,16 @@ export type SearchAuthorityTokenRefusedResponse = Problem;
 
 /**
  * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
- * actor type or ID, or `auth.organization-not-allowed` when the global export receives a
- * verified token scoped to an organization. The export checks the last condition after
- * token verification.
+ * actor type or ID or for delegated Identity role or scopes, or
+ * `auth.organization-not-allowed` when the global export receives a verified token scoped
+ * to an organization. The export checks the last condition after token verification.
  */
 export type SearchOrganizationAccessRefusedResponse = Problem;
 
 /**
  * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for a non-user
- * actor, or `auth.organization-required` for an unscoped token.
+ * actor or for delegated Identity role or scopes, or `auth.organization-required` for
+ * an unscoped token.
  */
 export type SearchMembershipAccessRefusedResponse = Problem;
 
@@ -740,6 +775,52 @@ export type SearchMembershipNotFoundResponse = Problem;
  * No partial page or membership proof is returned.
  */
 export type SearchAuthorityUnavailableResponse = Problem;
+
+/**
+ * `request.invalid` for invalid input, including an invalid membership export cursor.
+ */
+export type IdentityAuthorityBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type IdentityAuthorityTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
+ * actor type or ID or for a delegated role or scopes, or `auth.organization-required`
+ * for an unscoped token.
+ */
+export type IdentityMembershipExportAccessRefusedResponse = Problem;
+
+/**
+ * `organization.not-found` when the signed organization does not exist.
+ */
+export type IdentityMembershipExportNotFoundResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the snapshot or reservation.
+ */
+export type IdentityAuthorityUnavailableResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID or for a delegated role or scopes, or `auth.organization-not-allowed` for an
+ * organization-scoped token.
+ */
+export type AccountDeletionReservationAccessRefusedResponse = Problem;
+
+/**
+ * `user.not-found` when there is no account directory record available for reservation.
+ */
+export type AccountDeletionReservationNotFoundResponse = Problem;
+
+/**
+ * `account.organization-owner` when the account still owns an organization, with
+ * `details.organizationIds` listing the owned organizations.
+ * `account.deletion-reservation-conflict` when another attempt has already reserved the account.
+ */
+export type AccountDeletionReservationConflictResponse = Problem;
 
 /**
  * `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
@@ -906,6 +987,11 @@ export type SlugInvalidResponse = Problem;
 export type VersionMismatchResponse = Problem;
 
 /**
+ * Opaque authenticated cursor returned as `nextCursor` by the preceding page.
+ */
+export type IdentityMembershipCursorParameter = string & string;
+
+/**
  * `"<version>"` the change was made from.
  */
 export type IfMatchParameter = string;
@@ -1002,6 +1088,17 @@ export type ListBillingMembershipsInternalParams = {
 export type ListQuotaNotificationRecipientsInternalParams = {
   /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
   cursor?: string & string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListIdentityMembershipsInternalParams = {
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: IdentityMembershipCursorParameter;
   /**
    * Page size.
    * @minimum 1

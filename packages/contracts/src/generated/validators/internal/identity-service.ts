@@ -893,9 +893,16 @@ export const AnswerSignInChallengeWithSecurityKeyInternalResponse = zod.object({
  *
  * A token that is unknown, expired, revoked or malformed answers `200` with
  * `active: false`, never an error; so does a personal API token, introspected by
- * `POST /internal/v1/api-tokens/introspect`. An active answer counts as activity: the
- * inactivity period of the session starts again, the one the authentication policy of its
- * current organization sets (12 hours by default and without an organization); a session
+ * `POST /internal/v1/api-tokens/introspect`. For a locally valid session with a selected
+ * organization, Identity verifies the active membership with organization-service. A
+ * confirmed absence or a replacement membership ID yields an active session with no
+ * organization or role. The current role from Organization applies to the policy and
+ * returned context.
+ * If the proof is unavailable the call returns `503 organization.unavailable`.
+ *
+ * An active answer counts as activity: the inactivity period of the session starts again,
+ * the one the authentication policy of its current organization sets (12 hours by default
+ * and without an organization); a session
  * idle for longer is inactive. A current organization withheld for want of two-step
  * verification gives `withheldOrganization` and no organization (see "Withheld
  * organization"); the inactivity of the policy of that organization still applies to the
@@ -1627,12 +1634,14 @@ export const ConfirmEmailChangeInternalResponse = zod.object({
  * is revoked (`session.revoked.v1` each), every personal API token is revoked, every trusted
  * device is forgotten, a pending change of address is dropped, and
  * `user.deletion-scheduled.v1` is emitted. The two-step verification stays. The gateway
- * then clears the session cookie. A sign-in before `deleteAt` cancels the deletion. At
- * `deleteAt`, identity-service checks the copy of the memberships again: an account that owns
- * an organization then (one whose creation reached the copy after the scheduling) is not
- * deleted and stays scheduled until it no longer owns one or signs in; otherwise it is
- * deleted and `user.deleted.v1` is emitted. Another user id, or an unknown one, answers
- * `404 user.not-found`; a `sessionId` that is not an open session of the actor,
+ * then clears the session cookie. A sign-in before `deleteAt` cancels the deletion. Once
+ * the deadline is reached, Identity durably claims a deletion attempt and asks
+ * organization-service to reserve the account for that attempt. An account that still owns
+ * an organization stays scheduled until it no longer owns one or signs in. Identity only
+ * deletes the account and emits `user.deleted.v1` after Organization confirms the same
+ * reservation. Identity retries a temporary failure with the same attempt ID. Another user
+ * ID, or an unknown one, answers `404 user.not-found`; a `sessionId` that is not an open
+ * session of the actor answers
  * `404 session.not-found`. Internal token: actor `user`, no organization.
  * @summary Schedule the deletion of a user
  */
@@ -2283,12 +2292,13 @@ export const RevokeApiTokenInternalResponse = zod.void()
  * on every request that carries a bearer token, never caches the answer, and gives the request
  * its context from it, as for a session.
  *
- * A token is active when it is known by its hash, neither revoked nor expired, and its user
- * belongs to its organization in the copy of the memberships. A token of a removed member is
- * inactive while the person is not a member, and active again, until revoked or expired, once
- * they join the organization again with a new membership. Any other token,
+ * A token is active when it is known by its hash, neither revoked nor expired, and
+ * organization-service confirms its user's current membership and role. A token of a removed
+ * member is inactive while the person is not a member, and active again, until revoked or
+ * expired, once they join the organization again with a new membership. Any other token,
  * malformed ones and session tokens included, answers `200` with `active: false`, never an
- * error. While the authentication policy of its organization requires two-step verification
+ * error. An unavailable membership proof answers `503 organization.unavailable`.
+ * While the authentication policy of its organization requires two-step verification
  * for the role of its user, who has none, the token stays active but acts on nothing:
  * `withheldOrganization` names the organization and `scopes` is empty (see "Withheld
  * organization"). An active answer records the last use of the token, at most once a

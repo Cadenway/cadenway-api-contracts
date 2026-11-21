@@ -172,9 +172,9 @@ info:
     the two-step challenges instead (`429 auth.two-step-locked`).
 
     **Ownership.** identity-service refuses to schedule the deletion of an account that owns an
-    organization (`409 account.organization-owner`). It knows it from its copy of the memberships:
-    the role `owner` of a membership that is not removed, which `member.joined.v1` gives the creator
-    of an organization. It never calls organization-service for it.
+    organization according to its membership projection (`409 account.organization-owner`).
+    Before final deletion it obtains a durable reservation from organization-service, which
+    checks current ownership and fences new ownership and memberships for the account.
 
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
     (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `identity-service`). Realtime ticket
@@ -191,11 +191,12 @@ info:
 
     **Memberships.** identity-service keeps a copy of the memberships (organization, user, role)
     from `member.joined.v1`, `member.role-changed.v1` and `member.removed.v1`
-    (`asyncapi/organization-service.yaml`). It checks the choice of an organization against it, and
-    fills the `organizationId` and the `role` of the introspections from it. A membership reaches
-    it within seconds of its creation. It reads the whole history of these events, applies each
-    membership by its `version`, and keeps a removed membership as removed, so that a late
-    `member.joined.v1` or `member.role-changed.v1` never brings it back.
+    (`asyncapi/organization-service.yaml`). It checks the choice of an organization against this
+    projection. It applies each membership by its `version` and keeps each removal terminal for
+    its membership ID. For an active credential scoped to an organization, Identity verifies the
+    current membership and role with organization-service before returning a context. If the proof
+    is unavailable, introspection returns `503 organization.unavailable` without returning a
+    projected role or treating the credential as permanently inactive.
 
     **Errors.** The codes are those of the public routes; the gateway forwards the `code` and the
     `details`, answers the French `title` of `openapi/public/auth.yaml`, and derives `Retry-After`
@@ -924,9 +925,16 @@ paths:
 
         A token that is unknown, expired, revoked or malformed answers `200` with
         `active: false`, never an error; so does a personal API token, introspected by
-        `POST /internal/v1/api-tokens/introspect`. An active answer counts as activity: the
-        inactivity period of the session starts again, the one the authentication policy of its
-        current organization sets (12 hours by default and without an organization); a session
+        `POST /internal/v1/api-tokens/introspect`. For a locally valid session with a selected
+        organization, Identity verifies the active membership with organization-service. A
+        confirmed absence or a replacement membership ID yields an active session with no
+        organization or role. The current role from Organization applies to the policy and
+        returned context.
+        If the proof is unavailable the call returns `503 organization.unavailable`.
+
+        An active answer counts as activity: the inactivity period of the session starts again,
+        the one the authentication policy of its current organization sets (12 hours by default
+        and without an organization); a session
         idle for longer is inactive. A current organization withheld for want of two-step
         verification gives `withheldOrganization` and no organization (see "Withheld
         organization"); the inactivity of the policy of that organization still applies to the
@@ -995,6 +1003,8 @@ paths:
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
           $ref: '#/components/responses/InternalAccessRefused'
+        '503':
+          $ref: '#/components/responses/MembershipAuthorityUnavailable'
   /internal/v1/sessions/{sessionId}:
     delete:
       operationId: revokeSession
@@ -2033,12 +2043,14 @@ paths:
         is revoked (`session.revoked.v1` each), every personal API token is revoked, every trusted
         device is forgotten, a pending change of address is dropped, and
         `user.deletion-scheduled.v1` is emitted. The two-step verification stays. The gateway
-        then clears the session cookie. A sign-in before `deleteAt` cancels the deletion. At
-        `deleteAt`, identity-service checks the copy of the memberships again: an account that owns
-        an organization then (one whose creation reached the copy after the scheduling) is not
-        deleted and stays scheduled until it no longer owns one or signs in; otherwise it is
-        deleted and `user.deleted.v1` is emitted. Another user id, or an unknown one, answers
-        `404 user.not-found`; a `sessionId` that is not an open session of the actor,
+        then clears the session cookie. A sign-in before `deleteAt` cancels the deletion. Once
+        the deadline is reached, Identity durably claims a deletion attempt and asks
+        organization-service to reserve the account for that attempt. An account that still owns
+        an organization stays scheduled until it no longer owns one or signs in. Identity only
+        deletes the account and emits `user.deleted.v1` after Organization confirms the same
+        reservation. Identity retries a temporary failure with the same attempt ID. Another user
+        ID, or an unknown one, answers `404 user.not-found`; a `sessionId` that is not an open
+        session of the actor answers
         `404 session.not-found`. Internal token: actor `user`, no organization.
       tags: [users]
       parameters:
@@ -2836,12 +2848,13 @@ paths:
         on every request that carries a bearer token, never caches the answer, and gives the request
         its context from it, as for a session.
 
-        A token is active when it is known by its hash, neither revoked nor expired, and its user
-        belongs to its organization in the copy of the memberships. A token of a removed member is
-        inactive while the person is not a member, and active again, until revoked or expired, once
-        they join the organization again with a new membership. Any other token,
+        A token is active when it is known by its hash, neither revoked nor expired, and
+        organization-service confirms its user's current membership and role. A token of a removed
+        member is inactive while the person is not a member, and active again, until revoked or
+        expired, once they join the organization again with a new membership. Any other token,
         malformed ones and session tokens included, answers `200` with `active: false`, never an
-        error. While the authentication policy of its organization requires two-step verification
+        error. An unavailable membership proof answers `503 organization.unavailable`.
+        While the authentication policy of its organization requires two-step verification
         for the role of its user, who has none, the token stays active but acts on nothing:
         `withheldOrganization` names the organization and `scopes` is empty (see "Withheld
         organization"). An active answer records the last use of the token, at most once a
@@ -2900,6 +2913,8 @@ paths:
           $ref: '#/components/responses/InternalTokenRefused'
         '403':
           $ref: '#/components/responses/InternalAccessRefused'
+        '503':
+          $ref: '#/components/responses/MembershipAuthorityUnavailable'
 components:
   securitySchemes:
     internalToken:
@@ -3040,6 +3055,19 @@ components:
             title: Service Unavailable
             status: 503
             code: auth.federated-unavailable
+    MembershipAuthorityUnavailable:
+      description: |
+        `organization.unavailable` when Identity cannot verify the credential's current membership.
+        The caller may retry introspection. A temporary failure does not invalidate the credential.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: organization.unavailable
     ProfileMediaReservationConflict:
       description: |
         `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
