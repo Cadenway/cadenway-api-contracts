@@ -1,5 +1,11 @@
 # @cadenway/api-client
 
+## 0.26.0
+
+### Minor Changes
+
+- 4e6dd5f: Add owner-only Team Checkout and invoice history contracts, and a raw signed Stripe webhook relay.
+
 ## 0.25.1
 
 ### Patch Changes
