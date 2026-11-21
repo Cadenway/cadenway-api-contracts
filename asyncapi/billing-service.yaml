@@ -21,6 +21,9 @@ info:
     Notification-service deduplicates by event `id`, resolves the current active owners and
     administrators of the event's organization, and sends email and in-app notifications to
     those recipients. The payload carries no recipient identifiers or contact details.
+
+    Billing-service owns the effective subscription entitlements. Organization-service and
+    storage-service use committed entitlement snapshots to enforce their admission limits.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -30,9 +33,15 @@ info:
   tags:
     - name: quotas
       description: Committed changes to quota utilization.
+    - name: subscriptions
+      description: Committed changes to effective subscription entitlements.
   x-consumers:
     - repository: cadenway-notification-service
       uses: Planned in P5, quota.threshold-reached.v1 to notify current organization owners and administrators.
+    - repository: cadenway-organization-service
+      uses: Applies subscription.changed.v1 to the seat admission limit under the tenant's seat admission lock.
+    - repository: cadenway-storage-service
+      uses: Applies subscription.changed.v1 to the attachment byte limit under the tenant's storage quota lock.
 servers:
   nats:
     host: nats:4222
@@ -46,6 +55,12 @@ channels:
     messages:
       quotaThresholdReachedV1:
         $ref: '#/components/messages/quotaThresholdReachedV1'
+  subscriptionChangedV1:
+    address: evt.subscription.changed.v1
+    description: Emitted by billing-service. Consumers are cadenway-organization-service and cadenway-storage-service.
+    messages:
+      subscriptionChangedV1:
+        $ref: '#/components/messages/subscriptionChangedV1'
 operations:
   publishQuotaThresholdReachedV1:
     action: send
@@ -55,6 +70,17 @@ operations:
       $ref: '#/channels/quotaThresholdReachedV1'
     messages:
       - $ref: '#/channels/quotaThresholdReachedV1/messages/quotaThresholdReachedV1'
+  publishSubscriptionChangedV1:
+    action: send
+    summary: Publish an effective subscription entitlement change.
+    description: >
+      Billing writes the new entitlement snapshot, payment settlement receipt and outbox event
+      in one tenant transaction. The relay publishes the event to EVENTS after commit with
+      at-least-once delivery. Delivery order is unspecified.
+    channel:
+      $ref: '#/channels/subscriptionChangedV1'
+    messages:
+      - $ref: '#/channels/subscriptionChangedV1/messages/subscriptionChangedV1'
 components:
   schemas:
     EventHeaders:
@@ -147,3 +173,74 @@ components:
             thresholdPercent: 80
             used: 1600000000
             limit: 2000000000
+    subscriptionChangedV1:
+      name: subscription.changed.v1
+      title: Subscription changed
+      summary: Billing committed a new effective entitlement snapshot for an organization.
+      description: |
+        The actor is the billing-service system actor (`type: system`, `id: billing-service`).
+        The event contains the complete entitlement limits for this version of the subscription.
+        Billing emits a new version when the plan changes, including when the limits stay equal.
+        The Free baseline is five seats and 2,000,000,000 bytes. The initial rollout defers
+        changes that lower either limit until both admission owners can prepare the decrease.
+
+        Organization and Storage compare the tenant's persisted entitlement version and apply only
+        a newer snapshot under their respective admission locks. They persist the applied version
+        atomically with the limit used for admission. Repeated deliveries and older snapshots
+        leave the current limit in effect. For recovery, either consumer can read the latest
+        snapshot through the signed `getBillingEntitlementInternal` operation and apply the same
+        version check. Version zero is the legacy Free snapshot returned by that operation before
+        the first committed entitlement change.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [id, occurredAt, organizationId, actor, version, plan, seatLimit, storageByteLimit]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event deduplication key, stable across deliveries.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When Billing committed the entitlement change.
+          organizationId:
+            type: string
+            format: uuid
+            description: Tenant whose effective subscription changed.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+            description: Monotonically increasing entitlement version within the organization.
+          plan:
+            $ref: '../components/billing.yaml#/components/schemas/BillingPlan'
+          seatLimit:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+            description: Effective limit for active owners, administrators and members occupying seats.
+          storageByteLimit:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+            description: Effective storage limit in decimal bytes for verified ready attachments.
+      examples:
+        - name: atelierNordTeamEntitlement
+          summary: Atelier Nord upgrades from Free to Team with eighteen seats and 100 GB of storage.
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d42
+            occurredAt: '2026-11-21T14:08:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: billing-service
+            version: 1
+            plan: team
+            seatLimit: 18
+            storageByteLimit: 100000000000

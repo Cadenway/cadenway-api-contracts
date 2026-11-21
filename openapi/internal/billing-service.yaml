@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: |
     Serves organization subscriptions, measured usage, hosted Checkout, invoices and verified
-    Stripe event deliveries. Billing derives the request scope from the signed gateway token.
+    Stripe event deliveries. Billing uses verified internal token claims for the request scope.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -14,6 +14,10 @@ info:
   x-consumers:
     - repository: cadenway-api-gateway
       uses: Relays authorized organization billing operations and raw Stripe deliveries.
+    - repository: cadenway-organization-service
+      uses: Reads committed entitlement snapshots to recover its seat admission projection.
+    - repository: cadenway-storage-service
+      uses: Reads committed entitlement snapshots to recover its storage admission projection.
 servers:
   - url: http://billing-service:3012
     description: Billing service on the internal network.
@@ -70,6 +74,60 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /internal/v1/billing/entitlement:
+    get:
+      operationId: getBillingEntitlementInternal
+      summary: Read the current entitlement for the signed organization
+      description: |
+        Requires a signed token with the `billing-service` audience, an organization claim, and
+        issuer `organization-service` or `storage-service`. The actor must be of type `system`
+        and its ID must match the issuer. Billing reads only the organization in the verified
+        claim. The operation accepts no query parameters.
+
+        Returns the complete committed entitlement independently of measured usage, Stripe
+        availability and event delivery. Version zero represents the legacy Free baseline
+        only when Billing can establish that the organization has no committed versioned
+        entitlement. If Billing cannot establish the current state, it returns
+        `503 billing.unavailable`.
+
+        Organization and Storage use this snapshot to recover from missing
+        `subscription.changed.v1` deliveries. Each consumer applies a newer version under its
+        own quota admission lock and keeps the current projection for an older or repeated
+        version. All responses carry `Cache-Control: private, no-store`.
+      tags: [billing]
+      responses:
+        '200':
+          description: Complete entitlement snapshot for the signed organization.
+          headers:
+            Cache-Control:
+              $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingEntitlement'
+              examples:
+                legacyFree:
+                  summary: Atelier Nord before its first committed entitlement change
+                  value:
+                    plan: free
+                    seatLimit: 5
+                    storageByteLimit: 2000000000
+                    version: 0
+                committedTeam:
+                  summary: Atelier Nord after a committed Team upgrade
+                  value:
+                    plan: team
+                    seatLimit: 18
+                    storageByteLimit: 100000000000
+                    version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/EntitlementUnavailable'
   /internal/v1/billing/checkout:
     post:
       operationId: startBillingCheckoutInternal
@@ -186,8 +244,62 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Signed API gateway token with the billing-service audience and route-specific actor and organization claims.
+      description: Signed internal token with the billing-service audience and route-specific issuer, actor and organization claims.
+  schemas:
+    BillingEntitlement:
+      description: Complete entitlement and its version for quota admission.
+      anyOf:
+        - $ref: '#/components/schemas/LegacyFreeBillingEntitlement'
+        - $ref: '#/components/schemas/CommittedBillingEntitlement'
+    LegacyFreeBillingEntitlement:
+      type: object
+      additionalProperties: false
+      required: [plan, seatLimit, storageByteLimit, version]
+      properties:
+        plan:
+          type: string
+          const: free
+        seatLimit:
+          type: integer
+          const: 5
+        storageByteLimit:
+          type: integer
+          const: 2000000000
+        version:
+          type: integer
+          const: 0
+    CommittedBillingEntitlement:
+      type: object
+      additionalProperties: false
+      required: [plan, seatLimit, storageByteLimit, version]
+      properties:
+        plan:
+          $ref: '../../components/billing.yaml#/components/schemas/BillingPlan'
+        seatLimit:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Number of included seats for active owners, administrators and members.
+        storageByteLimit:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Storage quota in bytes for verified ready attachments.
+        version:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Monotonic entitlement version for this organization.
   responses:
+    EntitlementUnavailable:
+      description: '`billing.unavailable` when Billing cannot establish the current entitlement.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     StripeWebhookForbidden:
       description: |
         `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
