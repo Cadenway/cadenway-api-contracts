@@ -1,5 +1,12 @@
 # @cadenway/contracts
 
+## 0.27.0
+
+### Minor Changes
+
+- 7aa888c: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+- 7aa888c: Add the signed GitHub and GitLab webhook delivery contracts for the gateway and Integration.
+
 ## 0.26.0
 
 ### Minor Changes
