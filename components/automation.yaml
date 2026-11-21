@@ -1,0 +1,315 @@
+openapi: 3.1.0
+info:
+  title: Cadenway shared automation components
+  version: 1.0.0
+  description: Organization rules and completed executions shared by the public and internal APIs.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  parameters:
+    RuleId:
+      name: ruleId
+      in: path
+      required: true
+      description: UUIDv7 of the automation rule in the current organization.
+      schema:
+        $ref: '#/components/schemas/AutomationRuleId'
+    IfMatch:
+      name: If-Match
+      in: header
+      description: Strong validator containing the rule version in double quotes.
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]*"$'
+        examples: ['"1"']
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: A matching creation request replays its original response for 24 hours.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        examples: [5d0c6f1e-2a3b-4c5d-8e9f-0a1b2c3d4e5f]
+  headers:
+    ETag:
+      required: true
+      description: Strong validator containing the rule version in double quotes.
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]*"$'
+        examples: ['"1"']
+    PrivateNoStore:
+      required: true
+      description: The browser and intermediaries must not store this response.
+      schema:
+        type: string
+        const: private, no-store
+  responses:
+    BadRequest:
+      description: '`request.invalid`: `details.issues` identifies invalid parameters, headers or body fields.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: './http.yaml#/components/schemas/Problem'
+    RuleNotFound:
+      description: '`automation.rule-not-found`: the rule is unknown, deleted or belongs to another organization.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: './http.yaml#/components/schemas/Problem'
+    RequestInProgress:
+      description: '`idempotency.request-in-progress`: a request with the same key is already running.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: './http.yaml#/components/schemas/Problem'
+    VersionMismatch:
+      description: '`request.version-mismatch`: If-Match names an older rule version. `details.version` gives the current version.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: './http.yaml#/components/schemas/Problem'
+    CreationRefused:
+      description: |
+        - `automation.recipient-ineligible`: the assignment or notification recipient is not a current active member of the organization.
+        - `idempotency.key-reused`: the key was used with another request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: './http.yaml#/components/schemas/Problem'
+  schemas:
+    AutomationRuleId:
+      type: string
+      format: uuid
+      description: UUIDv7 of an organization automation rule.
+      examples: [019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01]
+    AutomationTrigger:
+      description: Task fact that makes the rule eligible to run.
+      oneOf:
+        - $ref: '#/components/schemas/AutomationTaskCreatedTrigger'
+        - $ref: '#/components/schemas/AutomationTaskStatusTrigger'
+      discriminator:
+        propertyName: type
+        mapping:
+          created: '#/components/schemas/AutomationTaskCreatedTrigger'
+          status: '#/components/schemas/AutomationTaskStatusTrigger'
+    AutomationTaskCreatedTrigger:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          type: string
+          const: created
+    AutomationTaskStatusTrigger:
+      type: object
+      additionalProperties: false
+      required: [type, status]
+      properties:
+        type:
+          type: string
+          const: status
+        status:
+          $ref: './task.yaml#/components/schemas/StatusKey'
+    AutomationActionType:
+      description: Kind of action that the rule applied.
+      oneOf:
+        - $ref: '#/components/schemas/AutomationAssignActionType'
+        - $ref: '#/components/schemas/AutomationPriorityActionType'
+        - $ref: '#/components/schemas/AutomationNotifyActionType'
+        - $ref: '#/components/schemas/AutomationCommentActionType'
+    AutomationAssignActionType:
+      type: string
+      const: assign
+    AutomationPriorityActionType:
+      type: string
+      const: priority
+    AutomationNotifyActionType:
+      type: string
+      const: notify
+    AutomationCommentActionType:
+      type: string
+      const: comment
+    AutomationAction:
+      description: One action applied to the task that triggered the rule.
+      oneOf:
+        - $ref: '#/components/schemas/AutomationAssignAction'
+        - $ref: '#/components/schemas/AutomationPriorityAction'
+        - $ref: '#/components/schemas/AutomationNotifyAction'
+        - $ref: '#/components/schemas/AutomationCommentAction'
+      discriminator:
+        propertyName: type
+        mapping:
+          assign: '#/components/schemas/AutomationAssignAction'
+          priority: '#/components/schemas/AutomationPriorityAction'
+          notify: '#/components/schemas/AutomationNotifyAction'
+          comment: '#/components/schemas/AutomationCommentAction'
+    AutomationRuleAuthorUserId:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      description: UUIDv7 of the user whose authority Automation recorded when creating the rule.
+    AutomationNotificationRecipientUserId:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      description: UUIDv7 of the account selected by the rule's notification action.
+    AutomationAssignAction:
+      type: object
+      additionalProperties: false
+      required: [type, userId]
+      properties:
+        type:
+          $ref: '#/components/schemas/AutomationAssignActionType'
+        userId:
+          type: string
+          format: uuid
+          description: UUIDv7 of the active organization member to add to the assignees.
+    AutomationPriorityAction:
+      type: object
+      additionalProperties: false
+      required: [type, priority]
+      properties:
+        type:
+          $ref: '#/components/schemas/AutomationPriorityActionType'
+        priority:
+          $ref: './task.yaml#/components/schemas/PriorityKey'
+    AutomationNotifyAction:
+      type: object
+      additionalProperties: false
+      required: [type, userId]
+      properties:
+        type:
+          $ref: '#/components/schemas/AutomationNotifyActionType'
+        userId:
+          type: string
+          format: uuid
+          description: UUIDv7 of the active organization member to notify about the task.
+    AutomationCommentAction:
+      type: object
+      additionalProperties: false
+      required: [type, body]
+      properties:
+        type:
+          $ref: '#/components/schemas/AutomationCommentActionType'
+        body:
+          $ref: './task.yaml#/components/schemas/CommentCreation/properties/body'
+    AutomationRuleCreate:
+      type: object
+      additionalProperties: false
+      required: [trigger, action]
+      properties:
+        trigger:
+          $ref: '#/components/schemas/AutomationTrigger'
+        action:
+          $ref: '#/components/schemas/AutomationAction'
+    AutomationRulePatch:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: Whether the rule can react to new task events.
+    AutomationRule:
+      type: object
+      additionalProperties: false
+      required: [ruleId, trigger, action, enabled, version, createdAt]
+      properties:
+        ruleId:
+          $ref: '#/components/schemas/AutomationRuleId'
+        trigger:
+          $ref: '#/components/schemas/AutomationTrigger'
+        action:
+          $ref: '#/components/schemas/AutomationAction'
+        enabled:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+          description: Starts at 1 and increases only when the stored rule changes.
+        createdAt:
+          type: string
+          format: date-time
+    AutomationRulePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/AutomationRule'
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'
+    AutomationRunAction:
+      description: Structured data for displaying the action that was applied.
+      oneOf:
+        - $ref: '#/components/schemas/AutomationAssignAction'
+        - $ref: '#/components/schemas/AutomationPriorityAction'
+        - $ref: '#/components/schemas/AutomationNotifyAction'
+        - $ref: '#/components/schemas/AutomationCommentRunAction'
+      discriminator:
+        propertyName: type
+        mapping:
+          assign: '#/components/schemas/AutomationAssignAction'
+          priority: '#/components/schemas/AutomationPriorityAction'
+          notify: '#/components/schemas/AutomationNotifyAction'
+          comment: '#/components/schemas/AutomationCommentRunAction'
+    AutomationCommentRunAction:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          $ref: '#/components/schemas/AutomationCommentActionType'
+    AutomationRun:
+      type: object
+      additionalProperties: false
+      required: [executionId, ruleId, taskKey, action, executedAt]
+      properties:
+        executionId:
+          type: string
+          format: uuid
+          description: UUIDv7 of the applied rule execution.
+        ruleId:
+          $ref: '#/components/schemas/AutomationRuleId'
+        taskKey:
+          $ref: './task.yaml#/components/schemas/TaskKey'
+        action:
+          $ref: '#/components/schemas/AutomationRunAction'
+        executedAt:
+          type: string
+          format: date-time
+    AutomationRunPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/AutomationRun'
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'
+  examples:
+    AtelierNordRule:
+      summary: Notifier Hugo quand une tâche est terminée dans Atelier Nord
+      value:
+        ruleId: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01
+        trigger:
+          type: status
+          status: done
+        action:
+          type: notify
+          userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+        enabled: true
+        version: 1
+        createdAt: '2026-11-20T08:00:00Z'

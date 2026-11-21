@@ -787,14 +787,15 @@ export interface Sprint {
 /**
  * Who made a change: a person (`user`, `id` is the account), an automation rule
  * (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
- * example `task-service` when a removed member leaves the assignees). Later versions add
- * actor types (the public intake form of the mockup, "Formulaire public") and members (the
- * Git provider): a client shows an unknown type as is.
+ * example `task-service` when a removed member leaves the assignees). A client can show an
+ * unknown type as is. Git activity can identify the verified provider.
  */
 export interface Actor {
   type: string;
   /** @minLength 1 */
   id: string;
+  /** Verified provider for Git activity. Other actors and earlier Git activity omit it. */
+  provider?: string;
 }
 
 /**
@@ -2655,7 +2656,10 @@ export type IntakeAttachmentSubmissionConflictResponse = Problem;
 
 /**
  * `attachment.upload-expired` when the signed transfer expired before verification,
- * or `attachment.upload-not-ready` when the reserved object has not arrived.
+ * `attachment.upload-not-ready` when the reserved object has not arrived, or
+ * `attachment.storage-quota-exceeded` when the receiving organization cannot accept
+ * those additional verified bytes. The quota refusal is generic and omits plan, limit,
+ * and usage details.
  * These errors apply only to an otherwise eligible reservation of the presented draft.
  */
 export type IntakeAttachmentCompletionConflictResponse = Problem;

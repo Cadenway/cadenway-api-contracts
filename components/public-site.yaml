@@ -1,0 +1,58 @@
+openapi: 3.1.0
+info:
+  title: Cadenway shared public site components
+  version: 1.0.0
+  description: Website contact submissions and newsletter sign-up requests.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  parameters:
+    ContactIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Random UUIDv4. Reuse it when retrying the same contact submission.
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      example: 806f0650-bdef-4474-a5cf-22b60c810f76
+  schemas:
+    PublicSiteEmail:
+      type: string
+      format: email
+      maxLength: 254
+      description: A single reply or subscription address without surrounding whitespace.
+      examples: [camille@example.com]
+    PublicContactSubmission:
+      type: object
+      additionalProperties: false
+      required: [email, subject, message]
+      properties:
+        email:
+          $ref: '#/components/schemas/PublicSiteEmail'
+        subject:
+          type: string
+          enum: [login, mfa, org, data, other]
+          description: Topic chosen in the support form.
+        message:
+          type: string
+          minLength: 20
+          maxLength: 2000
+          description: Plain text. Count Unicode code points. The minimum applies after trimming surrounding whitespace.
+      examples:
+        - email: camille@example.com
+          subject: login
+          message: Je souhaite récupérer l’accès à mon compte.
+    NewsletterSubscription:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          $ref: '#/components/schemas/PublicSiteEmail'
+      examples:
+        - email: camille@example.com

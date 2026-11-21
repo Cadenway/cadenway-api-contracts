@@ -278,6 +278,19 @@ export interface MyOrganizationPage {
   nextCursor: NextCursor | null;
 }
 
+export interface AutomationRecipientCheck {
+  /**
+     * UUIDv7 of the requested account. Compare case-equivalent forms as one account.
+     * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+     */
+  userId: string;
+}
+
+export interface AutomationRecipientDecision {
+  /** Whether the requested account is a current active member of the organization. */
+  eligible: boolean;
+}
+
 export interface MemberNameLookup {
   /**
      * @minItems 1
@@ -657,6 +670,11 @@ export type QuotaNotificationRecipientsOrganizationNotFoundResponse = Problem;
 export type QuotaNotificationRecipientsUnavailableResponse = Problem;
 
 /**
+ * `organization.unavailable` when Organization cannot complete the recipient membership check.
+ */
+export type AutomationRecipientUnavailableResponse = Problem;
+
+/**
  * `request.invalid` for invalid query parameters or a malformed cursor, including a cursor for a different operation or tenant.
  */
 export type BillingUsageBadRequestResponse = Problem;
@@ -854,6 +872,18 @@ export type InvitationResendLimitedResponse = Problem;
  * `refused`) or `invitation.expired` (with `details.expiresAt`).
  */
 export type InvitationNotPendingResponse = Problem;
+
+/**
+ * `invitation.revoked`, `invitation.answered` (with `details.status`, `accepted` or
+ * `refused`), `invitation.expired` (with `details.expiresAt`), or
+ * `organization.seat-quota-exceeded` when acceptance would add a seat beyond the plan limit.
+ */
+export type InvitationAcceptanceConflictResponse = Problem;
+
+/**
+ * `organization.seat-quota-exceeded`: changing this guest to an admin or a member would add a seat beyond the plan limit.
+ */
+export type SeatQuotaExceededResponse = Problem;
 
 /**
  * `member.owner-protected`: the owner is neither removed nor given another role.

@@ -362,6 +362,19 @@ export type InvitationClosedResponse = Problem;
 export type InvitationNotPendingResponse = Problem;
 
 /**
+ * - `invitation.revoked`: the invitation was revoked;
+ * - `invitation.answered`: it was accepted or refused already, `details.status` says which;
+ * - `invitation.expired`: its 7 days are over, `details.expiresAt` says when they ended;
+ * - `organization.seat-quota-exceeded`: acceptance would add a seat beyond the plan limit.
+ */
+export type InvitationAcceptanceConflictResponse = Problem;
+
+/**
+ * `organization.seat-quota-exceeded`: changing this guest to an admin or a member would add a seat beyond the plan limit.
+ */
+export type SeatQuotaExceededResponse = Problem;
+
+/**
  * `member.owner-protected`: the owner is neither removed nor given another role.
  */
 export type OwnerProtectedResponse = Problem;

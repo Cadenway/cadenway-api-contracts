@@ -102,10 +102,14 @@ export const GetMemberResponse = zod.object({
 
 
 /**
- * Gives a member another role, at once and without a seat check ("Rôle modifié", "{name} est
- * maintenant {rôle}."). Owner and admins only. The role of the owner never changes and
+ * Gives a member another role ("Rôle modifié", "{name} est maintenant {rôle}.").
+ * Owner and admins only. The role of the owner never changes and
  * nobody becomes owner: `422 member.owner-protected` for the owner, `400 request.invalid`
  * for `role: owner`. `If-Match` is optional (`412 request.version-mismatch`).
+ *
+ * Giving a guest the admin or member role consumes one seat. If that increase would exceed
+ * the organization's plan limit, this answers `409 organization.seat-quota-exceeded`
+ * and keeps the existing role.
  *
  * Emits `member.role-changed.v1` when the role changes; the same role answers `200` and
  * emits nothing. Session only.
@@ -167,7 +171,7 @@ export const RemoveMemberResponse = zod.void()
  * order given (the same address twice counts once). An address of a member answers
  * `already-member`, an address with a pending invitation `already-invited`; nothing is sent
  * for either. The web application counts the `invited` outcomes ("{n} invitations
- * envoyées"). Owner and admins only. No seat check in this version.
+ * envoyées"). Owner and admins only. Sending an invitation does not consume a seat.
  *
  * **Daily allowance.** An organization causes at most 100 invitation emails in any 24 hours:
  * the invitations of this route, those of the creation of the organization and the resends
@@ -369,6 +373,9 @@ export const ListReceivedInvitationsResponse = zod.object({
  *    otherwise.
  * 3. It is still pending: `409 invitation.revoked`, `409 invitation.answered` (accepted or
  *    refused already) or `409 invitation.expired`.
+ * 4. If acceptance would add a seat beyond the organization's plan limit,
+ *    `409 organization.seat-quota-exceeded` leaves the invitation pending. Guests and
+ *    existing active memberships do not add a seat.
  *
  * An action: answers `200` with the organization as the picker lists it. Emits
  * `member.joined.v1`. Session only.
@@ -399,7 +406,8 @@ export const AcceptInvitationResponse = zod.object({
 /**
  * Refuses an invitation addressed to the caller ("Refuser"): it leaves both lists, and the
  * person who invited can send a new one ("Inès Robert pourra vous en envoyer une nouvelle.").
- * Same checks as the acceptance. Emits nothing. Session only.
+ * Checks that the invitation exists, is addressed to the caller's verified address and is
+ * still pending. Emits nothing. Session only.
  * @summary Refuse an invitation
  */
 export const RefuseInvitationParams = zod.object({
