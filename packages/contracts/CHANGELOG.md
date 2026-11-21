@@ -1,5 +1,12 @@
 # @cadenway/contracts
 
+## 0.31.1
+
+### Patch Changes
+
+- 009359c: Clarify the lowercase UUIDv7 rule actor claim used to scope receipts for automated comments and
+  inbox notifications.
+
 ## 0.31.0
 
 ### Minor Changes

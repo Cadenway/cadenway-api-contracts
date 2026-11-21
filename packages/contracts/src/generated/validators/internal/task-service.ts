@@ -2531,10 +2531,11 @@ export const ApplyAutomationTaskActionInternalResponse = zod.object({
 
 /**
  * Requires signed issuer `automation-service`, audience `task-service`, an organization
- * and an `automation` actor whose ID is the rule UUIDv7. Automation binds the command to
- * the task key and organization of a validated `task.created.v1` or `task.status-changed.v1`
- * event, ignores automation-authored status events, and selects the action and recorded
- * author of its current enabled rule in that organization.
+ * and an `automation` actor whose ID is the rule UUIDv7 in canonical lowercase form.
+ * Automation signs that form so every retry uses the same actor-scoped receipt. It binds
+ * the command to the task key and organization of a validated `task.created.v1` or
+ * `task.status-changed.v1` event, ignores automation-authored status events, and selects
+ * the action and recorded author of its current enabled rule in that organization.
  *
  * Task uses the signed organization only. It checks current rule-author membership and
  * effective `edit` access on the active task and its active parent scope before any

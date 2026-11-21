@@ -98,7 +98,7 @@ export interface BillingCheckoutRequest {
 export interface BillingCheckoutSession {
   /**
      * Temporary URL returned by Stripe for the hosted checkout.
-     * @pattern ^https://
+     * @pattern ^https:[/][/]
      */
   url: string;
 }
@@ -129,7 +129,7 @@ export interface BillingInvoice {
   /**
      * Download URL from Stripe when the invoice PDF is available.
      * @nullable
-     * @pattern ^https://
+     * @pattern ^https:[/][/]
      */
   pdfUrl: string | null;
 }

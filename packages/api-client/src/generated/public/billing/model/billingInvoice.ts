@@ -29,7 +29,7 @@ export interface BillingInvoice {
   /**
      * Download URL from Stripe when the invoice PDF is available.
      * @nullable
-     * @pattern ^https://
+     * @pattern ^https:[/][/]
      */
   pdfUrl: string | null;
 }

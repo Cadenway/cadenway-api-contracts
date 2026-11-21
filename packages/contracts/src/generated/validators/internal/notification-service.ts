@@ -6,8 +6,9 @@ import * as zod from 'zod';
 
 /**
  * Requires the signed `automation-service` issuer, `notification-service` audience,
- * `automation` actor with the rule UUIDv7, and organization. Automation validates the
- * triggering Task event and takes the task key and organization from that event. It
+ * `automation` actor with the rule UUIDv7 in canonical lowercase form, and organization.
+ * Automation signs that form so every retry uses the same actor-scoped receipt. It validates
+ * the triggering Task event and takes the task key and organization from that event. It
  * submits the author and recipient of the current enabled rule in that organization.
  *
  * Notification calls Task's `authorizeAutomationNotificationInternal` for this task key,

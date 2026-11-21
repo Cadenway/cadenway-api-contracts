@@ -6,7 +6,7 @@
 export interface BillingCheckoutSession {
   /**
      * Temporary URL returned by Stripe for the hosted checkout.
-     * @pattern ^https://
+     * @pattern ^https:[/][/]
      */
   url: string;
 }

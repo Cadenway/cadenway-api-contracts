@@ -104,7 +104,7 @@ components:
         url:
           type: string
           format: uri
-          pattern: '^https://'
+          pattern: '^https:[/][/]'
           description: Temporary URL returned by Stripe for the hosted checkout.
     BillingInvoice:
       type: object
@@ -144,7 +144,7 @@ components:
         pdfUrl:
           type: [string, 'null']
           format: uri
-          pattern: '^https://'
+          pattern: '^https:[/][/]'
           description: Download URL from Stripe when the invoice PDF is available.
     BillingInvoicePage:
       type: object
