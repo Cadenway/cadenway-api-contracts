@@ -760,7 +760,7 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
           example:
             type: about:blank
-            title: Le formulaire ne peut pas recevoir cette pièce jointe.
+            title: Cette pièce jointe ne peut pas être reçue.
             status: 409
             code: attachment.storage-quota-exceeded
     IntakeAttachmentStartRefused:
