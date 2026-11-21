@@ -661,14 +661,15 @@ export interface Sprint {
 /**
  * Who made a change: a person (`user`, `id` is the account), an automation rule
  * (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
- * example `task-service` when a removed member leaves the assignees). Later versions add
- * actor types (the public intake form of the mockup, "Formulaire public") and members (the
- * Git provider): a client shows an unknown type as is.
+ * example `task-service` when a removed member leaves the assignees). A client can show an
+ * unknown type as is. Git activity can identify the verified provider.
  */
 export interface Actor {
   type: string;
   /** @minLength 1 */
   id: string;
+  /** Verified provider for Git activity. Other actors and earlier Git activity omit it. */
+  provider?: string;
 }
 
 /**
@@ -2438,7 +2439,10 @@ export type ArchivedTargetResponse = Problem;
 export type UploadStartConflictResponse = Problem;
 
 /**
- * `task.archived` when the target task or its list is archived, `attachment.upload-expired` for an expired pending reservation, or `attachment.upload-not-ready` when the temporary object has not arrived.
+ * `task.archived` when the target task or its list is archived, `attachment.upload-expired`
+ * for an expired pending reservation, `attachment.upload-not-ready` when the temporary
+ * object has not arrived, or `attachment.storage-quota-exceeded` when adding the verified
+ * object would exceed the organization's plan limit.
  */
 export type UploadCompletionConflictResponse = Problem;
 

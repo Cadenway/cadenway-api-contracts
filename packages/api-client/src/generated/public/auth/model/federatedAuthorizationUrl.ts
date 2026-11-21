@@ -5,6 +5,6 @@
 
 /**
  * @maxLength 8192
- * @pattern ^https://
+ * @pattern ^https:[/][/]
  */
 export type FederatedAuthorizationUrl = string;

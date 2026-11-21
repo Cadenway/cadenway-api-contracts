@@ -5,6 +5,58 @@
 import * as zod from 'zod';
 
 /**
+ * Requires the signed `automation-service` issuer, `notification-service` audience,
+ * `automation` actor with the rule UUIDv7, and organization. Automation validates the
+ * triggering Task event and takes the task key and organization from that event. It
+ * submits the author and recipient of the current enabled rule in that organization.
+ *
+ * Notification calls Task's `authorizeAutomationNotificationInternal` for this task key,
+ * author and recipient before it resolves the idempotency key or creates a notice. The
+ * call uses a Notification-signed token with `task-service` audience, `system` actor
+ * `notification-service` and the same signed organization. Task checks that the task and
+ * its parents are active, the rule author currently has edit authority, and the recipient
+ * is an active member with current read access. Notification neither caches this decision
+ * nor uses it for another command. It returns a generic `404` after denial or `503` when
+ * current authority cannot be established, without creating the notice or revealing a
+ * previous receipt. Both failures omit identifiers and Task error details. Every response
+ * carries `Cache-Control: private, no-store`.
+ *
+ * On the initial authorized execution, Notification uses the recipient's current
+ * `statusChange.inApp` preference for this task activity. A disabled preference records
+ * `no_op`. An enabled preference records `applied` with one personal inbox item of kind
+ * `automation`, linked to the checked task key and without an account actor or copied task
+ * content. Distinct rule commands on the same triggering event have distinct inbox source
+ * identities. The gateway checks current Task access when reading and counting linked
+ * notices. Notification commits the receipt, notice and any inbox generation change together.
+ * Replays return the recorded disposition after a fresh authorization check, without
+ * repeating the write. This action uses only the existing in-app channel.
+ * @summary Apply an enabled rule's inbox notification action
+ */
+export const createAutomationNotificationInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const CreateAutomationNotificationInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createAutomationNotificationInternalHeaderIdempotencyKeyMax).describe('Opaque key derived from the triggering event and command identity. Automation reserves\na distinct key per command and reuses it on retries and event redelivery. Notification\nscopes it to the signed organization and rule and binds it to the operation and request\nbody. It retains receipts for at least 24 hours. Automation keeps durable deduplication\nand stops resending a submitted command before the receipt retention guarantee expires.')
+})
+
+export const createAutomationNotificationInternalBodyTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const createAutomationNotificationInternalBodyRuleAuthorUserIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const createAutomationNotificationInternalBodyRecipientUserIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const CreateAutomationNotificationInternalBody = zod.strictObject({
+  "taskKey": zod.string().regex(createAutomationNotificationInternalBodyTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "ruleAuthorUserId": zod.uuid().regex(createAutomationNotificationInternalBodyRuleAuthorUserIdRegExp).describe('UUIDv7 of the user whose authority Automation recorded when creating the rule.'),
+  "recipientUserId": zod.uuid().regex(createAutomationNotificationInternalBodyRecipientUserIdRegExp).describe('UUIDv7 of the account selected by the rule\'s notification action.')
+})
+
+export const CreateAutomationNotificationInternalResponse = zod.object({
+  "disposition": zod.enum(['applied', 'no_op']).describe('Whether a notice was created or the recipient\'s preference suppressed it.')
+})
+
+
+/**
  * Scans the caller's candidates in (createdAt, id) descending order. The opaque cursor
  * belongs to the caller, organization and filter. The gateway checks linked subjects in
  * bounded Task batches and seeks one visible item beyond the requested page. The cursor
@@ -862,3 +914,65 @@ export const CompleteReminderInternalResponse = zod.object({
   "completedAt": zod.iso.datetime({"offset":true}).nullable(),
   "version": zod.int().min(1)
 })
+
+
+/**
+ * Internal token: issuer `api-gateway`, actor `{type: system, id: api-gateway}`.
+ * Contact submissions have no organization or account association.
+ *
+ * Notification commits the submission and one durable delivery intent together. The worker
+ * sends the message as plain text to the support address configured by Notification. The
+ * user's validated address can be used only as Reply-To. The sender, recipient and mail
+ * subject are server-controlled, with a subject label selected from the supported categories.
+ * Notification sends no automatic mail to the submitted address and publishes no form data
+ * to the event bus. Log and trace metadata contains no body, address or idempotency key.
+ *
+ * The gateway forwards the idempotency key unchanged. For 24 hours after acceptance, the
+ * same key and validated payload replay the empty receipt without creating a new delivery
+ * intent. A concurrent request holding that key returns 409. Reuse for a different payload
+ * returns 422. Acceptance is durable and does not wait for SMTP.
+ * @summary Record a public-site message for support delivery
+ */
+export const submitContactFormInternalHeaderIdempotencyKeyRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+
+
+export const SubmitContactFormInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().regex(submitContactFormInternalHeaderIdempotencyKeyRegExp).describe('Random UUIDv4. Reuse it when retrying the same contact submission.')
+})
+
+export const submitContactFormInternalBodyEmailMax = 254;
+
+export const submitContactFormInternalBodyMessageMin = 20;
+export const submitContactFormInternalBodyMessageMax = 2000;
+
+
+
+export const SubmitContactFormInternalBody = zod.strictObject({
+  "email": zod.email().max(submitContactFormInternalBodyEmailMax).describe('A single reply or subscription address without surrounding whitespace.'),
+  "subject": zod.enum(['login', 'mfa', 'org', 'data', 'other']).describe('Topic chosen in the support form.'),
+  "message": zod.string().refine((value) => Array.from(value.trim()).length >= submitContactFormInternalBodyMessageMin && Array.from(value).length <= submitContactFormInternalBodyMessageMax, { message: 'Invalid contact message length' }).describe('Plain text. Count Unicode code points. The minimum applies after trimming surrounding whitespace.')
+})
+
+export const SubmitContactFormInternalResponse = zod.void()
+
+
+/**
+ * Internal token: issuer `api-gateway`, actor `{type: system, id: api-gateway}`.
+ * Newsletter signups have no organization or account association.
+ *
+ * Notification records the mailbox and sign-up time. Lowercase the domain and preserve
+ * the local part when comparing mailboxes. The unique mailbox constraint applies even to
+ * concurrent requests. An existing record is left as is, including its subscription state.
+ * Both a new record and a replay answer with the same empty receipt. The operation sends
+ * no email and publishes no address. Acceptance follows durable storage.
+ * @summary Record a public-site newsletter signup
+ */
+export const subscribeToNewsletterInternalBodyEmailMax = 254;
+
+
+
+export const SubscribeToNewsletterInternalBody = zod.strictObject({
+  "email": zod.email().max(subscribeToNewsletterInternalBodyEmailMax).describe('A single reply or subscription address without surrounding whitespace.')
+})
+
+export const SubscribeToNewsletterInternalResponse = zod.void()

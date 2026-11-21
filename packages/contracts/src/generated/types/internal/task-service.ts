@@ -1334,14 +1334,15 @@ export interface Sprint {
 /**
  * Who made a change: a person (`user`, `id` is the account), an automation rule
  * (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
- * example `task-service` when a removed member leaves the assignees). Later versions add
- * actor types (the public intake form of the mockup, "Formulaire public") and members (the
- * Git provider): a client shows an unknown type as is.
+ * example `task-service` when a removed member leaves the assignees). A client can show an
+ * unknown type as is. Git activity can identify the verified provider.
  */
 export interface Actor {
   type: string;
   /** @minLength 1 */
   id: string;
+  /** Verified provider for Git activity. Other actors and earlier Git activity omit it. */
+  provider?: string;
 }
 
 /**
@@ -3351,6 +3352,121 @@ export interface OnboardingFinish {
 }
 
 /**
+ * Provider authenticated by Integration for the current delivery and mapping.
+ */
+export type GitTaskStatusActionProvider = typeof GitTaskStatusActionProvider[keyof typeof GitTaskStatusActionProvider];
+
+
+export const GitTaskStatusActionProvider = {
+  github: 'github',
+  gitlab: 'gitlab',
+} as const;
+
+/**
+ * UUIDv7 of a resource verified by Task for a Git command.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type GitTaskActionResourceId = string;
+
+export interface GitTaskStatusAction {
+  /** Provider authenticated by Integration for the current delivery and mapping. */
+  provider: GitTaskStatusActionProvider;
+  /** The Task space UUIDv7 of the verified repository mapping. */
+  spaceId: GitTaskActionResourceId;
+  /**
+     * UUIDv7 of the user whose authority Integration recorded when enabling the mapping.
+     * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+     */
+  mappingAuthorUserId: string;
+  /** The configured target status, or null when the delivery records a link without changing status. */
+  status: StatusKey | null;
+}
+
+/**
+ * A committed Task write or a completed command with no change, including when replayed.
+ */
+export type GitTaskActionReceiptDisposition = typeof GitTaskActionReceiptDisposition[keyof typeof GitTaskActionReceiptDisposition];
+
+
+export const GitTaskActionReceiptDisposition = {
+  applied: 'applied',
+  no_op: 'no_op',
+} as const;
+
+export interface GitTaskActionReceipt {
+  disposition: GitTaskActionReceiptDisposition;
+  taskId: GitTaskActionResourceId;
+  listId: GitTaskActionResourceId;
+  spaceId: GitTaskActionResourceId;
+}
+
+/**
+ * UUIDv7 of the user whose authority Automation recorded when creating the rule.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type AutomationRuleAuthorUserId = string;
+
+export type AutomationTaskAssignCommandType = typeof AutomationTaskAssignCommandType[keyof typeof AutomationTaskAssignCommandType];
+
+
+export const AutomationTaskAssignCommandType = {
+  assign: 'assign',
+} as const;
+
+export interface AutomationTaskAssignCommand {
+  ruleAuthorUserId: AutomationRuleAuthorUserId;
+  type: AutomationTaskAssignCommandType;
+  userId: string;
+}
+
+export type AutomationTaskPriorityCommandType = typeof AutomationTaskPriorityCommandType[keyof typeof AutomationTaskPriorityCommandType];
+
+
+export const AutomationTaskPriorityCommandType = {
+  priority: 'priority',
+} as const;
+
+export interface AutomationTaskPriorityCommand {
+  ruleAuthorUserId: AutomationRuleAuthorUserId;
+  type: AutomationTaskPriorityCommandType;
+  priority: PriorityKey;
+}
+
+export type AutomationTaskActionCommand = AutomationTaskAssignCommand | AutomationTaskPriorityCommand;
+
+export interface AutomationTaskCommentCommand {
+  ruleAuthorUserId: AutomationRuleAuthorUserId;
+  body: string;
+}
+
+/**
+ * UUIDv7 of the account selected by the rule's notification action.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type AutomationNotificationRecipientUserId = string;
+
+export interface AutomationTaskNotificationAuthorization {
+  ruleAuthorUserId: AutomationRuleAuthorUserId;
+  recipientUserId: AutomationNotificationRecipientUserId;
+}
+
+/**
+ * A committed Task write or a completed command with no change, including when replayed.
+ */
+export type TaskActionReceiptDisposition = typeof TaskActionReceiptDisposition[keyof typeof TaskActionReceiptDisposition];
+
+
+export const TaskActionReceiptDisposition = {
+  applied: 'applied',
+  no_op: 'no_op',
+} as const;
+
+export interface TaskActionReceipt {
+  /** A committed Task write or a completed command with no change, including when replayed. */
+  disposition: TaskActionReceiptDisposition;
+}
+
+/**
  * Members specific to the code, for example the fields that failed validation.
  */
 export type ProblemDetails = { [key: string]: unknown };
@@ -4196,6 +4312,253 @@ export interface ReminderSnooze {
 }
 
 /**
+ * UUIDv7 of an organization automation rule.
+ */
+export type AutomationRuleId = string;
+
+export type AutomationTaskCreatedTriggerType = typeof AutomationTaskCreatedTriggerType[keyof typeof AutomationTaskCreatedTriggerType];
+
+
+export const AutomationTaskCreatedTriggerType = {
+  created: 'created',
+} as const;
+
+export interface AutomationTaskCreatedTrigger {
+  type: AutomationTaskCreatedTriggerType;
+}
+
+export type AutomationTaskStatusTriggerType = typeof AutomationTaskStatusTriggerType[keyof typeof AutomationTaskStatusTriggerType];
+
+
+export const AutomationTaskStatusTriggerType = {
+  status: 'status',
+} as const;
+
+export interface AutomationTaskStatusTrigger {
+  type: AutomationTaskStatusTriggerType;
+  status: StatusKey;
+}
+
+/**
+ * Task fact that makes the rule eligible to run.
+ */
+export type AutomationTrigger = AutomationTaskCreatedTrigger | AutomationTaskStatusTrigger;
+
+export type AutomationAssignActionType = 'assign';
+
+export type AutomationPriorityActionType = 'priority';
+
+export type AutomationNotifyActionType = 'notify';
+
+export type AutomationCommentActionType = 'comment';
+
+/**
+ * Kind of action that the rule applied.
+ */
+export type AutomationActionType = AutomationAssignActionType | AutomationPriorityActionType | AutomationNotifyActionType | AutomationCommentActionType;
+
+export type AutomationAssignActionTypeProperty = typeof AutomationAssignActionTypeProperty[keyof typeof AutomationAssignActionTypeProperty];
+
+
+export const AutomationAssignActionTypeProperty = {
+  assign: 'assign',
+} as const;
+
+export interface AutomationAssignAction {
+  type: AutomationAssignActionTypeProperty;
+  /** UUIDv7 of the active organization member to add to the assignees. */
+  userId: string;
+}
+
+export type AutomationPriorityActionTypeProperty = typeof AutomationPriorityActionTypeProperty[keyof typeof AutomationPriorityActionTypeProperty];
+
+
+export const AutomationPriorityActionTypeProperty = {
+  priority: 'priority',
+} as const;
+
+export interface AutomationPriorityAction {
+  type: AutomationPriorityActionTypeProperty;
+  priority: PriorityKey;
+}
+
+export type AutomationNotifyActionTypeProperty = typeof AutomationNotifyActionTypeProperty[keyof typeof AutomationNotifyActionTypeProperty];
+
+
+export const AutomationNotifyActionTypeProperty = {
+  notify: 'notify',
+} as const;
+
+export interface AutomationNotifyAction {
+  type: AutomationNotifyActionTypeProperty;
+  /** UUIDv7 of the active organization member to notify about the task. */
+  userId: string;
+}
+
+export type AutomationCommentActionTypeProperty = typeof AutomationCommentActionTypeProperty[keyof typeof AutomationCommentActionTypeProperty];
+
+
+export const AutomationCommentActionTypeProperty = {
+  comment: 'comment',
+} as const;
+
+export interface AutomationCommentAction {
+  type: AutomationCommentActionTypeProperty;
+  body: string;
+}
+
+/**
+ * One action applied to the task that triggered the rule.
+ */
+export type AutomationAction = AutomationAssignAction | AutomationPriorityAction | AutomationNotifyAction | AutomationCommentAction;
+
+export interface AutomationRuleCreate {
+  trigger: AutomationTrigger;
+  action: AutomationAction;
+}
+
+export interface AutomationRulePatch {
+  /** Whether the rule can react to new task events. */
+  enabled: boolean;
+}
+
+export interface AutomationRule {
+  ruleId: AutomationRuleId;
+  trigger: AutomationTrigger;
+  action: AutomationAction;
+  enabled: boolean;
+  /**
+     * Starts at 1 and increases only when the stored rule changes.
+     * @minimum 1
+     */
+  version: number;
+  createdAt: string;
+}
+
+export interface AutomationRulePage {
+  /** @maxItems 100 */
+  items: AutomationRule[];
+  nextCursor: NextCursor | null;
+}
+
+export type AutomationCommentRunActionType = typeof AutomationCommentRunActionType[keyof typeof AutomationCommentRunActionType];
+
+
+export const AutomationCommentRunActionType = {
+  comment: 'comment',
+} as const;
+
+export interface AutomationCommentRunAction {
+  type: AutomationCommentRunActionType;
+}
+
+/**
+ * Structured data for displaying the action that was applied.
+ */
+export type AutomationRunAction = AutomationAssignAction | AutomationPriorityAction | AutomationNotifyAction | AutomationCommentRunAction;
+
+export interface AutomationRun {
+  /** UUIDv7 of the applied rule execution. */
+  executionId: string;
+  ruleId: AutomationRuleId;
+  taskKey: TaskKey;
+  action: AutomationRunAction;
+  executedAt: string;
+}
+
+export interface AutomationRunPage {
+  /** @maxItems 100 */
+  items: AutomationRun[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * The Git command disposition and the minimal task identity and placement authorized by
+ * Task when it recorded this command. A replay makes no version, activity or event changes.
+ */
+export type GitTaskActionReceiptResponse = GitTaskActionReceipt;
+
+/**
+ * The first or recorded disposition, without task or resource properties. A no-op commits
+ * only the receipt. A replay makes no version, activity or event changes.
+ */
+export type TaskActionReceiptResponse = TaskActionReceipt;
+
+/**
+ * `task.not-found` for a missing, inactive, cross-tenant or unauthorized target, including
+ * its current parent scope. All cases return the same problem without resource details.
+ */
+export type TaskActionTargetUnavailableResponse = Problem;
+
+/**
+ * `task.action-unavailable` when Task cannot verify current authorization or complete the
+ * command transaction. Retry with the same key. The problem omits resource details.
+ */
+export type TaskActionUnavailableResponse = Problem;
+
+/**
+ * `idempotency.key-reused` for a different body under the same command key,
+ * `task.assignee-invalid` for an ineligible recipient, or `task.assignee-limit-reached`
+ * when the task already has the maximum number of assignees. No resource details are returned.
+ */
+export type AutomationTaskActionRefusedResponse = Problem;
+
+/**
+ * `request.invalid`: the request does not match the schema; one `details.issues` entry per issue.
+ */
+export type AutomationTaskBadRequestResponse = Problem;
+
+/**
+ * The internal token is missing (`auth.token-missing`) or refused (`auth.token-invalid`,
+ * with `details.reason`).
+ */
+export type AutomationTaskInternalTokenRefusedResponse = Problem;
+
+/**
+ * The internal token is valid but the route does not accept its issuer
+ * (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`), or it carries no
+ * organization (`auth.organization-required`).
+ */
+export type AutomationTaskInternalAccessRefusedResponse = Problem;
+
+export type AutomationTaskCommentReceiptResponse = {
+  disposition: 'applied';
+};
+
+/**
+ * `task.not-found` for a missing, inactive, cross-tenant or unauthorized target, including
+ * its current parent scope. All cases return the same problem without resource details.
+ */
+export type AutomationTaskCommentTargetUnavailableResponse = Problem;
+
+/**
+ * `idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.
+ */
+export type AutomationTaskCommentInProgressResponse = Problem;
+
+/**
+ * `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+ */
+export type AutomationTaskCommentKeyReusedResponse = Problem;
+
+/**
+ * `task.action-unavailable` when Task cannot verify current authorization or complete the
+ * command transaction. Retry with the same key. The problem omits resource details.
+ */
+export type AutomationTaskCommentUnavailableResponse = Problem;
+
+/**
+ * `task.not-found` for a missing, inactive, cross-tenant or unauthorized task or parent,
+ * or when either account lacks the required access. All cases return the same problem.
+ */
+export type AutomationTaskNotificationAuthorizationDeniedResponse = Problem;
+
+/**
+ * `task.notification-authorization-unavailable`: Task could not establish a current access snapshot.
+ */
+export type AutomationTaskNotificationAuthorizationUnavailableResponse = Problem;
+
+/**
  * `request.invalid` with `details.issues` for an invalid request, selector or cursor.
  * `request.body-too-large` applies when the request exceeds the JSON body limit.
  */
@@ -4914,6 +5277,17 @@ export type RequiredIntakeIfMatchParameter = string;
 export type IntakeDraftKeyParameter = IntakeDraftKey;
 
 export type RequiredIntakeDraftKeyParameter = IntakeDraftKey;
+
+/**
+ * Stable command identity derived from the normalized Git delivery or triggering Task event,
+ * reused on every retry and redelivery for this actor, operation and task. Use an opaque
+ * value without raw provider headers or payload. Reserve a distinct value for each command
+ * within the signed organization and actor. Reusing a value for a different operation,
+ * task key or body is refused. Task rechecks current target authorization before returning
+ * an execution receipt and retains receipts for at least 24 hours. Callers keep their own
+ * durable delivery deduplication and do not resend a submitted command after that window.
+ */
+export type TaskActionIdempotencyKeyParameter = string;
 
 /**
  * Client-chosen key for this reservation within its tenant, publication and draft.

@@ -1,5 +1,59 @@
 # @cadenway/contracts
 
+## 0.31.0
+
+### Minor Changes
+
+- fb1bb34: Define internal commands for automatic comments and inbox notifications. Task rechecks current
+  rule-author authority and recipient visibility. The comment contract describes moderation of
+  rule-authored comments.
+
+## 0.30.0
+
+### Minor Changes
+
+- 9f66bfc: Define public and internal endpoints for support requests and newsletter sign-ups and expose the public Angular client.
+
+## 0.29.0
+
+### Minor Changes
+
+- 622f33a: Specify the Organization eligibility check and its signed Automation recipient proof. Count Unicode code points in generated automation comment validators.
+- 34e100e: Define the Git integration facts and the authorized real-time notice that Git links for a task changed.
+
+## 0.28.0
+
+### Minor Changes
+
+- 393c0f0: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+- 393c0f0: Define the internal Git and Automation task actions and expose the verified Git provider on activity actors when available.
+
+## 0.27.0
+
+### Minor Changes
+
+- 7aa888c: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+- 7aa888c: Add the signed GitHub and GitLab webhook delivery contracts for the gateway and Integration.
+
+## 0.26.0
+
+### Minor Changes
+
+- cfb8b2f: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+
+## 0.25.1
+
+### Patch Changes
+
+- 203e6c5: Clarify when Billing confirms a quota threshold crossing and align attachment quota examples
+  on one public problem title.
+
+## 0.25.0
+
+### Minor Changes
+
+- 8583adf: Document the seat quota conflict for membership increases and the storage quota conflict for verified attachment uploads. Keep the existing problem format and omit usage details from anonymous Intake refusals.
+
 ## 0.24.0
 
 ### Minor Changes

@@ -142,18 +142,17 @@ info:
     missing or no longer active, or that a bearer token is not valid, and the web application sends
     the person to the sign-in screen on it.
 
-    **Status codes of actions.** These routes are actions, not resources: none answers `201` with a
-    `Location`, but the addition of a security key. A route that sends a code or a link answers
-    `202`; one that signs in answers `200` with the cookie, or, for the two sign-ins of an account
-    with two-step verification, `202` with a challenge and no cookie; the answers of a challenge
-    answer `200` with the cookie; the sign-out, the revocation of a session and the removals answer
-    `204`; and the scheduling of the deletion answers `202` and clears the cookie. Only a `200`
-    means signed in: a client checks the status (or the presence of `session`) rather than taking
-    any success for a sign-in. No route here signs in other than the sign-up verification, the two
-    sign-ins and the answers of their challenge: the password reset never does.
+    **Status codes of actions.** The addition of a security key answers `201` with a
+    `Location`. A route that sends a code or a link answers `202`. Password sign-in,
+    email-code verification and federated finish answer `200` with the session cookie or
+    `202` with a two-step challenge and no session cookie. A successful challenge answer
+    or sign-up verification opens the session with `200`. Federated start returns the
+    provider URL with `200` and the provider callbacks redirect with `303`.
+    The sign-out, the revocation of a session and the removals answer `204`. The
+    scheduling of the deletion answers `202` and clears the cookie. Completing a
+    password reset opens no session.
 
-    **Later versions** add, without changing what is here: OAuth providers and SAML single sign-on
-    (new method types in the discovery, new routes); new two-step methods (new values of the
+    **Later versions** add OAuth and SAML method discovery and new two-step methods (new values of the
     method lists, which a client ignores when it does not know them); the list of the trusted
     devices; the reset of the two-step verification of a member by an administrator; and the
     photo. The organizations, the current organization of the session, its authentication policy
@@ -392,6 +391,7 @@ paths:
   /v1/auth/sign-in/federated/start:
     post:
       operationId: startFederatedSignIn
+      x-cadenway-strict-body: true
       summary: Start federated sign-in in this browser
       description: |
         Accepts a social provider (Google, GitHub, Microsoft or GitLab) or a work email address
@@ -527,6 +527,7 @@ paths:
   /v1/auth/sign-in/federated/finish:
     post:
       operationId: finishFederatedSignIn
+      x-cadenway-strict-empty: true
       summary: Complete a federated sign-in in the initiating browser
       description: |
         After the redirect, submits an empty JSON object from an allowed Origin with the

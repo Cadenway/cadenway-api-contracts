@@ -1,0 +1,317 @@
+openapi: 3.1.0
+info:
+  title: Cadenway automations
+  version: 1.0.0
+  description: |
+    Manages the rules and recent executions shown in Automatisations. An active owner or admin
+    of the selected organization manages and reads its rules using a browser session. The gateway
+    verifies the current role with organization-service before forwarding an authorized request.
+
+    Each rule reacts to task creation or entry into a chosen status and applies one assignment,
+    priority change, notification or comment to the triggering task. Assignment and notification
+    recipients must be active members of the selected organization when the rule is created.
+    Effective task access and recipient eligibility are checked by the service applying the action.
+    Clients derive the display label from the trigger and action.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Authorizes the caller, relays rule operations and checks task visibility for recent executions.
+    - repository: cadenway-webapp
+      uses: Lists, creates, toggles and deletes rules and displays recent executions in Automatisations.
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging.
+tags:
+  - name: automations
+    description: Automation rules and their recent executions.
+paths:
+  /v1/automations:
+    get:
+      operationId: listAutomationRules
+      summary: List the selected organization's automation rules
+      description: Returns rules in ascending `(createdAt, ruleId)` order. The cursor is bound to the caller and organization.
+      tags: [automations]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of the organization's automation rules.
+          headers:
+            Cache-Control:
+              $ref: '../../components/automation.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/automation.yaml#/components/schemas/AutomationRulePage'
+        '400':
+          $ref: '../../components/automation.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: createAutomationRule
+      summary: Create an enabled automation rule
+      description: The rule starts enabled at version 1. An optional idempotency key replays the original response for 24 hours.
+      tags: [automations]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/automation.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/automation.yaml#/components/schemas/AutomationRuleCreate'
+            example:
+              trigger:
+                type: status
+                status: done
+              action:
+                type: notify
+                userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+      responses:
+        '201':
+          description: The rule was created.
+          headers:
+            Location:
+              description: Public URI reference for the new rule.
+              schema:
+                type: string
+                format: uri-reference
+                examples: [/v1/automations/019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01]
+            ETag:
+              $ref: '../../components/automation.yaml#/components/headers/ETag'
+            Cache-Control:
+              $ref: '../../components/automation.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/automation.yaml#/components/schemas/AutomationRule'
+              examples:
+                atelierNord:
+                  $ref: '../../components/automation.yaml#/components/examples/AtelierNordRule'
+        '400':
+          $ref: '../../components/automation.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '../../components/automation.yaml#/components/responses/RequestInProgress'
+        '422':
+          $ref: '../../components/automation.yaml#/components/responses/CreationRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/automations/{ruleId}:
+    parameters:
+      - $ref: '../../components/automation.yaml#/components/parameters/RuleId'
+    patch:
+      operationId: updateAutomationRule
+      summary: Enable or disable an automation rule
+      description: |
+        Applies the requested `enabled` value. A no-op keeps the current version. When provided,
+        `If-Match` checks the current rule version before any change.
+      tags: [automations]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/automation.yaml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/automation.yaml#/components/schemas/AutomationRulePatch'
+            example:
+              enabled: false
+      responses:
+        '200':
+          description: The current rule after applying the patch.
+          headers:
+            ETag:
+              $ref: '../../components/automation.yaml#/components/headers/ETag'
+            Cache-Control:
+              $ref: '../../components/automation.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/automation.yaml#/components/schemas/AutomationRule'
+        '400':
+          $ref: '../../components/automation.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RuleOrOrganizationNotFound'
+        '412':
+          $ref: '../../components/automation.yaml#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteAutomationRule
+      summary: Remove a rule from the selected organization
+      description: |
+        Removes the rule from management and new trigger decisions. Previously applied executions
+        can still appear in the recent history. When provided, `If-Match` checks the current rule version.
+      tags: [automations]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/automation.yaml#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The rule was deleted.
+        '400':
+          $ref: '../../components/automation.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RuleOrOrganizationNotFound'
+        '412':
+          $ref: '../../components/automation.yaml#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/automation-runs:
+    get:
+      operationId: listRecentAutomationRuns
+      summary: List up to eight visible recent automation executions
+      description: |
+        Returns successfully applied actions for tasks the current owner or admin can read, newest
+        first in descending `(executedAt, executionId)` order. The gateway verifies each task's
+        current visibility as the requesting user before returning its execution. Visible archived
+        tasks are eligible. Trashed, deleted and inaccessible tasks are omitted. The gateway checks
+        at most the 100 newest executions in the organization and stops after eight visible entries.
+        An exhausted candidate window returns the entries found, including an empty list. A failed
+        visibility check or an upstream deadline before the scan completes yields 503.
+        The response contains no internal cursor or count of omitted executions.
+      tags: [automations]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The most recent visible executions, bounded to eight.
+          headers:
+            Cache-Control:
+              $ref: '../../components/automation.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 8
+                    items:
+                      $ref: '../../components/automation.yaml#/components/schemas/AutomationRun'
+              example:
+                items:
+                  - executionId: 019a701b-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    ruleId: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    taskKey: CAD-482
+                    action:
+                      type: notify
+                      userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                    executedAt: '2026-11-20T08:05:00Z'
+        '400':
+          $ref: '../../components/automation.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: Browser session with a selected organization.
+  responses:
+    Unauthenticated:
+      description: '`auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Forbidden:
+      description: |
+        - `organization.role-forbidden`: the current organization role is outside the owner and admin roles.
+        - `organization.not-selected`, `organization.mfa-required`: the session lacks the required organization context.
+        - `auth.api-token-not-accepted`: this route requires a browser session.
+        - `auth.csrf-rejected`: the origin or content type of a write was refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    OrganizationNotFound:
+      description: '`organization.not-found`: the selected organization or current membership is absent.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    RuleOrOrganizationNotFound:
+      description: |
+        - `automation.rule-not-found`: the rule is unknown, deleted or belongs to another organization.
+        - `organization.not-found`: the selected organization or current membership is absent.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    RateLimited:
+      description: '`rate-limit.exceeded`: the request exceeds the gateway limit for the caller.'
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unavailable:
+      description: |
+        A required automation-service, organization-service or task-service dependency could not complete the request.
+        `details.service` identifies it. Codes include `upstream.unavailable`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized`
+        and `upstream.deadline-exceeded`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'

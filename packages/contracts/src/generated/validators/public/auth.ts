@@ -193,10 +193,10 @@ export const startFederatedSignInBodyTwoEmailMax = 254;
 
 export const startFederatedSignInBodyTwoRememberMeDefault = false;
 
-export const StartFederatedSignInBody = zod.union([zod.object({
+export const StartFederatedSignInBody = zod.union([zod.strictObject({
   "provider": zod.enum(['google', 'github', 'microsoft', 'gitlab']),
   "rememberMe": zod.boolean().default(startFederatedSignInBodyOneRememberMeDefault)
-}),zod.object({
+}),zod.strictObject({
   "provider": zod.literal("saml"),
   "email": zod.email().max(startFederatedSignInBodyTwoEmailMax),
   "rememberMe": zod.boolean().default(startFederatedSignInBodyTwoRememberMeDefault)
@@ -205,7 +205,7 @@ export const StartFederatedSignInBody = zod.union([zod.object({
 export const startFederatedSignInResponseAuthorizationUrlMax = 8192;
 
 
-export const startFederatedSignInResponseAuthorizationUrlRegExp = new RegExp('^https:/');
+export const startFederatedSignInResponseAuthorizationUrlRegExp = new RegExp('^https:[/][/]');
 
 
 export const StartFederatedSignInResponse = zod.object({
@@ -288,9 +288,7 @@ export const CompleteSamlSignInResponse = zod.void()
  * establishes the Cadenway session. No session needed. Scopes: none.
  * @summary Complete a federated sign-in in the initiating browser
  */
-export const FinishFederatedSignInBody = zod.object({
-
-}).describe('Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.')
+export const FinishFederatedSignInBody = zod.strictObject({}).describe('Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.')
 
 export const finishFederatedSignInResponseUserEmailMax = 254;
 

@@ -97,7 +97,8 @@ info:
     - repository: cadenway-api-gateway
       uses: >-
         Relays the organization, member and logo routes exposed in the public specs, and looks
-        up names for list CSV export and authorized notification actors.
+        up names for list CSV export and authorized notification actors. Checks current membership
+        before signing a recipient proof for an automation rule.
     - repository: cadenway-search-service
       uses: Enumerates organization IDs for rebuilds and checks the current signed user's membership before disclosing search results.
     - repository: cadenway-billing-service
@@ -595,6 +596,55 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+  /internal/v1/automation-recipients/check:
+    post:
+      operationId: checkAutomationRecipientInternal
+      summary: Check current organization membership for an automation rule recipient
+      description: |
+        Only api-gateway may call this operation, with a signed user token for organization-service
+        and a selected organization. Read the caller's current membership and the requested
+        account's membership in one tenant snapshot. The caller must be a current owner or admin.
+        Use the role from this snapshot for authorization.
+
+        An active membership, including an active guest, makes the requested account eligible.
+        For absent, removed or other-organization accounts return the same negative decision.
+        This read-only operation returns a single boolean and does not consult the user directory.
+        The decision is current at the time of the read and does not establish task access.
+      tags: [members]
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutomationRecipientCheck'
+            example:
+              userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+      responses:
+        '200':
+          description: Eligibility of the requested account in the signed organization.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/AutomationRecipientPrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationRecipientDecision'
+              examples:
+                activeAtelierNordMember:
+                  value: { eligible: true }
+                outsideOrganization:
+                  value: { eligible: false }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '503':
+          $ref: '#/components/responses/AutomationRecipientUnavailable'
   /internal/v1/members/{memberId}:
     parameters:
       - $ref: '#/components/parameters/MemberId'
@@ -632,9 +682,11 @@ paths:
       summary: Change the role of a member
       description: |
         Gives a member another role. Owner and admins only; `422 member.owner-protected` for the
-        owner; `If-Match` optional (`412 request.version-mismatch`). Emits
-        `member.role-changed.v1` when the role changes. Internal token: actor `user`, organization
-        required.
+        owner; `If-Match` optional (`412 request.version-mismatch`). Changing a guest to admin or
+        member uses one seat. If that increase would exceed the organization's plan limit, this
+        answers `409 organization.seat-quota-exceeded` without changing the role. Emits
+        `member.role-changed.v1` when the role changes. Internal token: actor `user`,
+        organization required.
       tags: [members]
       parameters:
         - $ref: '#/components/parameters/IfMatch'
@@ -667,6 +719,8 @@ paths:
           $ref: '#/components/responses/RoleForbidden'
         '404':
           $ref: '#/components/responses/MemberNotFound'
+        '409':
+          $ref: '#/components/responses/SeatQuotaExceeded'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '422':
@@ -923,8 +977,11 @@ paths:
         (`404 invitation.not-found`, also while the directory holds no verified address for the
         actor); its address is the verified address of the actor (`403 invitation.email-mismatch`);
         it is pending (`409 invitation.revoked`, `409 invitation.answered`,
-        `409 invitation.expired`). Emits `member.joined.v1`. A `userId` other than the actor
-        answers `404 user.not-found`. Internal token: actor `user`, no organization.
+        `409 invitation.expired`). If acceptance would add a seat beyond the organization's
+        plan limit, `409 organization.seat-quota-exceeded` leaves the invitation pending. Guests
+        and existing active memberships do not add a seat. Emits `member.joined.v1`. A `userId`
+        other than the actor answers `404 user.not-found`. Internal token: actor `user`, no
+        organization.
       tags: [invitations]
       requestBody:
         required: true
@@ -945,7 +1002,7 @@ paths:
                 name: Coopérative Lumen
                 slug: lumen
                 role: member
-                memberCount: 42
+                memberCount: 5
                 plan: free
                 joinedAt: '2026-11-08T10:30:00Z'
         '400':
@@ -957,7 +1014,7 @@ paths:
         '404':
           $ref: '#/components/responses/InvitationOrUserNotFound'
         '409':
-          $ref: '#/components/responses/InvitationNotPending'
+          $ref: '#/components/responses/InvitationAcceptanceConflict'
   /internal/v1/users/{userId}/invitations/{invitationId}/refuse:
     parameters:
       - $ref: '#/components/parameters/UserId'
@@ -966,8 +1023,9 @@ paths:
       operationId: refuseInvitationInternal
       summary: Refuse an invitation
       description: |
-        Refuses an invitation addressed to the actor, with the checks of the acceptance. Emits
-        nothing. Internal token: actor `user`, no organization.
+        Refuses an invitation addressed to the actor. Checks that the invitation exists, is
+        addressed to the actor's verified address and is still pending. Emits nothing. Internal
+        token: actor `user`, no organization.
       tags: [invitations]
       requestBody:
         required: true
@@ -1329,6 +1387,12 @@ components:
       schema:
         type: string
   headers:
+    AutomationRecipientPrivateNoStore:
+      required: true
+      description: Keeps the current automation recipient decision out of HTTP caches.
+      schema:
+        type: string
+        const: 'private, no-store'
     QuotaNotificationRecipientsNoStore:
       required: true
       description: Keeps current recipient authority responses out of HTTP caches.
@@ -1365,6 +1429,13 @@ components:
         type: integer
         minimum: 1
   examples:
+    SeatQuotaExceeded:
+      summary: No seat available under the organization's plan
+      value:
+        type: about:blank
+        title: Conflict
+        status: 409
+        code: organization.seat-quota-exceeded
     AtelierNord:
       summary: Atelier Nord, read by its owner
       value:
@@ -1497,6 +1568,15 @@ components:
       headers:
         Cache-Control:
           $ref: '#/components/headers/QuotaNotificationRecipientsNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    AutomationRecipientUnavailable:
+      description: '`organization.unavailable` when Organization cannot complete the recipient membership check.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/AutomationRecipientPrivateNoStore'
       content:
         application/problem+json:
           schema:
@@ -1905,6 +1985,33 @@ components:
               $ref: '#/components/examples/InvitationAnswered'
             invitationExpired:
               $ref: '#/components/examples/InvitationExpired'
+    InvitationAcceptanceConflict:
+      description: |
+        `invitation.revoked`, `invitation.answered` (with `details.status`, `accepted` or
+        `refused`), `invitation.expired` (with `details.expiresAt`), or
+        `organization.seat-quota-exceeded` when acceptance would add a seat beyond the plan limit.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invitationRevoked:
+              $ref: '#/components/examples/InvitationRevoked'
+            invitationAnswered:
+              $ref: '#/components/examples/InvitationAnswered'
+            invitationExpired:
+              $ref: '#/components/examples/InvitationExpired'
+            seatQuotaExceeded:
+              $ref: '#/components/examples/SeatQuotaExceeded'
+    SeatQuotaExceeded:
+      description: '`organization.seat-quota-exceeded`: changing this guest to an admin or a member would add a seat beyond the plan limit.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            seatQuotaExceeded:
+              $ref: '#/components/examples/SeatQuotaExceeded'
     OwnerProtected:
       description: '`member.owner-protected`: the owner is neither removed nor given another role.'
       content:
@@ -2265,6 +2372,24 @@ components:
             $ref: '#/components/schemas/MyOrganization'
         nextCursor:
           $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+    AutomationRecipientCheck:
+      type: object
+      additionalProperties: false
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+          description: UUIDv7 of the requested account. Compare case-equivalent forms as one account.
+    AutomationRecipientDecision:
+      type: object
+      additionalProperties: false
+      required: [eligible]
+      properties:
+        eligible:
+          type: boolean
+          description: Whether the requested account is a current active member of the organization.
     MemberNameLookup:
       type: object
       required: [userIds]

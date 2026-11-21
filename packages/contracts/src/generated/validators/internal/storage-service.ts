@@ -65,11 +65,15 @@ export const StartIntakeAttachmentUploadInternalResponse = zod.object({
  * with task-service for the current publication and draft.
  *
  * Verify the same immutable bytes that will be retained, and commit election of the
- * candidate together with the verification event. A successful retry returns the
+ * candidate and reservation of its verified bytes together with the verification event.
+ * Adding verified bytes beyond the organization's plan limit answers
+ * `409 attachment.storage-quota-exceeded` without committing the election or event.
+ * A successful retry returns the
  * same acknowledgement without another verification fact. No task attachment
  * metadata or ordinary file facts are published by this operation. Keep the elected
- * candidate until the Task claim or release is applied, including past the draft
- * expiry if event delivery is delayed.
+ * candidate and the storage reservation until the Task claim or release is applied,
+ * including past the draft expiry if event delivery is delayed. A claim transfers the
+ * reservation to the ready attachment without consuming additional quota.
  * @summary Verify the applicant object and pin its elected copy
  */
 export const completeIntakeAttachmentUploadInternalPathPublicationIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
@@ -280,6 +284,10 @@ export const DeleteTaskAttachmentInternalResponse = zod.void()
  * and records `file.uploaded.v1` together. Repeating successful completion returns the same
  * metadata without a second fact. A staged object that is missing before expiry answers
  * `409 attachment.upload-not-ready`. Expired pending reservations cannot be completed.
+ *
+ * A first completion that would increase the organization's verified attachment storage
+ * beyond its plan limit answers `409 attachment.storage-quota-exceeded` without publishing
+ * the attachment or its event.
  * @summary Complete a task attachment upload
  */
 export const completeTaskAttachmentUploadInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');

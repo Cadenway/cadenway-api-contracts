@@ -89,6 +89,20 @@ for (const root of ROOTS) {
           }
           generated = generated.slice(0, start) + query + generated.slice(end);
         }
+        if (operation['x-cadenway-raw-body'] === true) {
+          const schema = operation.requestBody?.content?.['application/json']?.schema;
+          if (schema?.type !== 'string' || schema.format !== 'binary') {
+            throw new Error(`${source}: raw body marker requires a binary JSON body`);
+          }
+          const name = `${operation.operationId[0].toUpperCase()}${operation.operationId.slice(1)}Body`;
+          const original = `export const ${name} = zod.instanceof(Blob)`;
+          if (!generated.includes(original))
+            throw new Error(`${source}: missing raw body validator ${name}`);
+          generated = generated.replace(
+            original,
+            `export const ${name} = zod.union([zod.instanceof(Uint8Array), zod.instanceof(Blob)])`,
+          );
+        }
         const strictEmpty = operation['x-cadenway-strict-empty'] === true;
         if (!strictEmpty && operation['x-cadenway-strict-body'] !== true) continue;
         const schema = operation.requestBody?.content?.['application/json']?.schema;
@@ -266,6 +280,42 @@ for (const root of ROOTS) {
         excerpt,
         `.refine((value) => Array.from(value).length <= ${limit}, { message: 'At most 200 Unicode code points' })`,
       );
+    }
+    // The support form counts Unicode code points and checks the minimum after trimming.
+    if (
+      root.name === 'contracts' &&
+      ['public/site', 'internal/notification-service'].includes(spec)
+    ) {
+      const suffix = spec === 'public/site' ? '' : 'Internal';
+      const minimum = `submitContactForm${suffix}BodyMessageMin`;
+      const maximum = `submitContactForm${suffix}BodyMessageMax`;
+      const length = `.min(${minimum}).max(${maximum})`;
+      if (!generated.includes(length)) throw new Error(`${source}: missing contact message length`);
+      generated = generated.replace(
+        length,
+        `.refine((value) => Array.from(value.trim()).length >= ${minimum} && Array.from(value).length <= ${maximum}, { message: 'Invalid contact message length' })`,
+      );
+    }
+    // Automation comments use the Unicode code-point count of OpenAPI string lengths.
+    if (
+      root.name === 'contracts' &&
+      ['public/automations', 'internal/automation-service'].includes(spec)
+    ) {
+      const suffix = spec === 'public/automations' ? '' : 'Internal';
+      for (const name of [
+        `listAutomationRules${suffix}ResponseItemsItemActionFourBodyMax`,
+        `createAutomationRule${suffix}BodyActionFourBodyMax`,
+        `createAutomationRule${suffix}ResponseActionFourBodyMax`,
+        `updateAutomationRule${suffix}ResponseActionFourBodyMax`,
+      ]) {
+        const length = `.max(${name})`;
+        if (!generated.includes(length))
+          throw new Error(`${source}: missing comment length ${name}`);
+        generated = generated.replace(
+          length,
+          `.refine((value) => Array.from(value).length <= ${name}, { message: 'At most 5000 Unicode code points' })`,
+        );
+      }
     }
     // Intake writes must refuse unknown routing, identity, and field settings at the boundary.
     if (root.name === 'contracts' && ['public/intake', 'internal/task-service'].includes(spec)) {

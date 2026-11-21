@@ -281,6 +281,7 @@ paths:
   /internal/v1/auth/sign-in/federated/start:
     post:
       operationId: startFederatedSignInInternal
+      x-cadenway-strict-body: true
       summary: Start federated sign-in and create its browser binding
       description: |
         Generates an expiring flow and a browser binding. For SAML, a work email selects the
@@ -321,6 +322,7 @@ paths:
   /internal/v1/auth/sign-in/federated/oauth/callback:
     post:
       operationId: completeOAuthSignInInternal
+      x-cadenway-strict-body: true
       summary: Validate an OAuth callback and issue a continuation receipt
       description: |
         Atomically claims the unexpired state only when the provider and browser binding match.
@@ -355,6 +357,7 @@ paths:
   /internal/v1/auth/sign-in/federated/saml/callback:
     post:
       operationId: completeSamlSignInInternal
+      x-cadenway-strict-body: true
       summary: Validate a SAML assertion and issue a continuation receipt
       description: |
         Atomically claims the unexpired RelayState only when the original SAML flow and browser
@@ -389,6 +392,7 @@ paths:
   /internal/v1/auth/sign-in/federated/finish:
     post:
       operationId: finishFederatedSignInInternal
+      x-cadenway-strict-body: true
       summary: Redeem a federated receipt using the ordinary session and two-step flow
       description: |
         Consumes the unexpired receipt once and proves the account through the existing link for

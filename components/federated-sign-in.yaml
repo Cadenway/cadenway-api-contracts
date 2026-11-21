@@ -54,7 +54,7 @@ components:
       type: string
       format: uri
       maxLength: 8192
-      pattern: '^https://'
+      pattern: '^https:[/][/]'
     FederatedState:
       type: string
       minLength: 32

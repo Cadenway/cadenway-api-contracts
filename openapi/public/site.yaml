@@ -1,0 +1,222 @@
+openapi: 3.1.0
+info:
+  title: Cadenway public site forms
+  version: 1.0.0
+  description: |-
+    The public marketing and help pages send these requests to the API gateway without a
+    session. The gateway ignores account cookies and authorization headers, accepts only
+    JSON requests up to 1 MiB, and permits browser access from configured origins. The website
+    submits without credentials. The gateway limits each operation in its own IP bucket before relaying
+    an accepted request. The default limits are five contact submissions and ten newsletter
+    submissions per minute per IP. Forwarded address headers are trusted only from configured
+    proxies. The contact route allows the `Idempotency-Key` request header for those origins.
+
+    All responses carry `Cache-Control: no-store`. Request bodies, email addresses and
+    idempotency keys stay out of request logs and tracing attributes. Problems use a request
+    reference and may name invalid fields without returning their values.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Serves these routes, limits anonymous submissions and relays them to Notification.
+    - repository: cadenway-website
+      uses: Submits the contact and newsletter forms through @cadenway/api-client.
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging.
+tags:
+  - name: site
+    description: Contact and newsletter forms of the public website.
+paths:
+  /v1/contact-submissions:
+    post:
+      operationId: submitContactForm
+      x-cadenway-strict-body: true
+      summary: Send a message to Cadenway support
+      description: |-
+        Accepts a help request for delivery to the configured Cadenway support mailbox.
+        The browser displays its local email and subject label after acceptance. The server
+        returns no submission identifier or personal data and sends no automatic reply to the
+        address in the request. Acceptance means the request was recorded for delivery.
+
+        Reuse the same key for retries of one submission. The key is scoped to this operation
+        for 24 hours. A completed replay gives the same empty receipt, a running request gives
+        409, and reuse for a different payload gives 422.
+      tags: [site]
+      security: []
+      parameters:
+        - $ref: '../../components/public-site.yaml#/components/parameters/ContactIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/public-site.yaml#/components/schemas/PublicContactSubmission'
+            example:
+              email: camille.martin@ateliernord.fr
+              subject: login
+              message: Je ne parviens plus à me connecter à mon compte.
+      responses:
+        '202':
+          $ref: '#/components/responses/SiteFormAccepted'
+        '400':
+          $ref: '#/components/responses/SiteInvalidRequest'
+        '409':
+          $ref: '#/components/responses/ContactSubmissionInProgress'
+        '422':
+          $ref: '#/components/responses/ContactSubmissionKeyReused'
+        '429':
+          $ref: '#/components/responses/SiteRateLimited'
+        '503':
+          $ref: '#/components/responses/SiteUnavailable'
+  /v1/newsletter-subscriptions:
+    post:
+      operationId: subscribeToNewsletter
+      x-cadenway-strict-body: true
+      summary: Request the Cadenway newsletter
+      description: |-
+        Records the visitor's explicit newsletter signup independently of any Cadenway
+        account. New and previously recorded addresses receive the same empty receipt.
+        Repeating a request for the same address creates no second signup, including when
+        requests overlap. Acceptance does not indicate the state of an email address or
+        send a newsletter or automatic receipt.
+      tags: [site]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/public-site.yaml#/components/schemas/NewsletterSubscription'
+            example:
+              email: vous@exemple.fr
+      responses:
+        '202':
+          $ref: '#/components/responses/SiteFormAccepted'
+        '400':
+          $ref: '#/components/responses/SiteInvalidRequest'
+        '429':
+          $ref: '#/components/responses/SiteRateLimited'
+        '503':
+          $ref: '#/components/responses/SiteUnavailable'
+components:
+  headers:
+    NoStore:
+      required: true
+      description: Prevents shared or private caches from storing the response.
+      schema: { type: string, const: no-store }
+    SiteRateLimit:
+      description: Current quota state for the operation, in the gateway's RateLimit format.
+      schema: { type: string }
+    SiteRateLimitPolicy:
+      description: Quota policy for the operation, in the gateway's RateLimit-Policy format.
+      schema: { type: string }
+  responses:
+    SiteFormAccepted:
+      description: Accepted. The response has no body.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        RateLimit:
+          $ref: '#/components/headers/SiteRateLimit'
+        RateLimit-Policy:
+          $ref: '#/components/headers/SiteRateLimitPolicy'
+    SiteInvalidRequest:
+      description: |-
+        `request.invalid`: the JSON body or a required header is invalid.
+        `request.body-too-large`: the body exceeds the gateway's JSON size limit.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invalidRequest:
+              value:
+                type: about:blank
+                title: Vérifiez les informations du formulaire.
+                status: 400
+                code: request.invalid
+            bodyTooLarge:
+              value:
+                type: about:blank
+                title: Le formulaire est trop volumineux.
+                status: 400
+                code: request.body-too-large
+    ContactSubmissionInProgress:
+      description: '`idempotency.request-in-progress`: the request using this key is still running.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Votre demande est en cours de traitement.
+            status: 409
+            code: idempotency.request-in-progress
+    ContactSubmissionKeyReused:
+      description: '`idempotency.key-reused`: the key already represents a different contact submission.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Renouvelez l’envoi de ce formulaire.
+            status: 422
+            code: idempotency.key-reused
+    SiteRateLimited:
+      description: '`rate-limit.exceeded`: the operation-specific gateway limit was reached.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        RateLimit:
+          $ref: '#/components/headers/SiteRateLimit'
+        RateLimit-Policy:
+          $ref: '#/components/headers/SiteRateLimitPolicy'
+        Retry-After:
+          required: true
+          description: Whole seconds before retrying.
+          schema: { type: integer, minimum: 0 }
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Trop de requêtes : réessayez dans un instant.'
+            status: 429
+            code: rate-limit.exceeded
+    SiteUnavailable:
+      description: |-
+        The gateway could not obtain a durable acceptance from Notification within the
+        request budget. The problem uses `upstream.unavailable`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`,
+        `upstream.unauthorized` or `upstream.deadline-exceeded`. A retry of the same
+        contact submission uses its original key.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Le formulaire est temporairement indisponible.
+            status: 503
+            code: upstream.unavailable

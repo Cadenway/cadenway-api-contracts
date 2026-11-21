@@ -6,8 +6,7 @@ import { ROOTS, SHARED, listYaml } from './scripts/lib/roots.mjs';
 
 type Entries = Parameters<typeof defineConfig>[0];
 
-// One set of entries per OpenAPI document, discovered here so that adding a spec needs no change in
-// this file:
+// One set of entries per discovered OpenAPI document:
 // - every document gives its TypeScript types and its zod validators to @cadenway/contracts. The
 //   types name each schema of the document (`Task`, `Problem`); the validators are written per
 //   operation, with the schemas inlined and without the error responses, so they do not replace
@@ -24,6 +23,8 @@ for (const root of ROOTS) {
   for (const spec of listYaml(root.openapi)) {
     const id = `${root.name}-${spec.replaceAll('/', '-')}`;
     const target = `${root.openapi}/${spec}.yaml`;
+    const closedAutomationSchemas =
+      spec === 'public/automations' || spec === 'internal/automation-service';
     const input = {
       target,
       parserOptions: {
@@ -64,7 +65,13 @@ for (const root of ROOTS) {
         client: 'zod',
         mode: 'single',
         target: `${root.contracts}/validators/${spec}.ts`,
-        override: { ...override, zod: { coerce: { query: ['number'] } } },
+        override: {
+          ...override,
+          zod: {
+            coerce: { query: ['number'] },
+            strict: { body: closedAutomationSchemas, response: closedAutomationSchemas },
+          },
+        },
       },
     };
 
