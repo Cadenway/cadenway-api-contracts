@@ -4,14 +4,14 @@
  */
 import * as zod from 'zod';
 
-/** Name of the event `quota.threshold-reached.v1`. Utilization of a billed quota rose from below 80% to at least 80%. */
+/** Name of the event `quota.threshold-reached.v1`. Billing confirmed a rise in utilization from below 80% to at least 80%. */
 export const QUOTA_THRESHOLD_REACHED_V1 = 'quota.threshold-reached.v1';
 
 /** Payload of the event `quota.threshold-reached.v1`. */
 export interface QuotaThresholdReachedV1 {
   /** Event deduplication key, stable across deliveries. */
   id: string;
-  /** When the quota change was committed. */
+  /** When confirmation of the quota crossing was committed. */
   occurredAt: string;
   /** Tenant whose quota crossed the threshold. */
   organizationId: string;
@@ -22,7 +22,7 @@ export interface QuotaThresholdReachedV1 {
     /** Id of the user, the automation rule, the Git integration or the service. */
     id: string;
   };
-  /** Committed quota version for the organization and metric. */
+  /** Quota version of the confirmed crossing for the organization and metric. */
   version: number;
   /**
    * `seats` counts active owners, administrators and members in seats. Active guests
@@ -31,9 +31,9 @@ export interface QuotaThresholdReachedV1 {
   metric: 'seats' | 'storage';
   /** Threshold crossed, expressed as an integer percentage. */
   thresholdPercent: 80;
-  /** Exact committed usage, in seats or bytes according to the metric. */
+  /** Exact committed usage at confirmation, in seats or bytes according to the metric. */
   used: number;
-  /** Exact committed quota limit, in seats or bytes according to the metric. */
+  /** Exact committed quota limit at confirmation, in seats or bytes according to the metric. */
   limit: number;
 }
 

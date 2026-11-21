@@ -235,10 +235,14 @@ export class MembersService {
     );
   }
 /**
- * Gives a member another role, at once and without a seat check ("Rôle modifié", "{name} est
- * maintenant {rôle}."). Owner and admins only. The role of the owner never changes and
+ * Gives a member another role ("Rôle modifié", "{name} est maintenant {rôle}.").
+ * Owner and admins only. The role of the owner never changes and
  * nobody becomes owner: `422 member.owner-protected` for the owner, `400 request.invalid`
  * for `role: owner`. `If-Match` is optional (`412 request.version-mismatch`).
+ *
+ * Giving a guest the admin or member role consumes one seat. If that increase would exceed
+ * the organization's plan limit, this answers `409 organization.seat-quota-exceeded`
+ * and keeps the existing role.
  *
  * Emits `member.role-changed.v1` when the role changes; the same role answers `200` and
  * emits nothing. Session only.

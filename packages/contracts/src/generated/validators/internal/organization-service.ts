@@ -410,9 +410,11 @@ export const GetMemberInternalResponse = zod.object({
 
 /**
  * Gives a member another role. Owner and admins only; `422 member.owner-protected` for the
- * owner; `If-Match` optional (`412 request.version-mismatch`). Emits
- * `member.role-changed.v1` when the role changes. Internal token: actor `user`, organization
- * required.
+ * owner; `If-Match` optional (`412 request.version-mismatch`). Changing a guest to admin or
+ * member uses one seat. If that increase would exceed the organization's plan limit, this
+ * answers `409 organization.seat-quota-exceeded` without changing the role. Emits
+ * `member.role-changed.v1` when the role changes. Internal token: actor `user`,
+ * organization required.
  * @summary Change the role of a member
  */
 export const ChangeMemberRoleInternalParams = zod.object({
@@ -654,8 +656,11 @@ export const ListReceivedInvitationsInternalResponse = zod.object({
  * (`404 invitation.not-found`, also while the directory holds no verified address for the
  * actor); its address is the verified address of the actor (`403 invitation.email-mismatch`);
  * it is pending (`409 invitation.revoked`, `409 invitation.answered`,
- * `409 invitation.expired`). Emits `member.joined.v1`. A `userId` other than the actor
- * answers `404 user.not-found`. Internal token: actor `user`, no organization.
+ * `409 invitation.expired`). If acceptance would add a seat beyond the organization's
+ * plan limit, `409 organization.seat-quota-exceeded` leaves the invitation pending. Guests
+ * and existing active memberships do not add a seat. Emits `member.joined.v1`. A `userId`
+ * other than the actor answers `404 user.not-found`. Internal token: actor `user`, no
+ * organization.
  * @summary Accept an invitation
  */
 export const AcceptInvitationInternalParams = zod.object({
@@ -682,8 +687,9 @@ export const AcceptInvitationInternalResponse = zod.object({
 
 
 /**
- * Refuses an invitation addressed to the actor, with the checks of the acceptance. Emits
- * nothing. Internal token: actor `user`, no organization.
+ * Refuses an invitation addressed to the actor. Checks that the invitation exists, is
+ * addressed to the actor's verified address and is still pending. Emits nothing. Internal
+ * token: actor `user`, no organization.
  * @summary Refuse an invitation
  */
 export const RefuseInvitationInternalParams = zod.object({

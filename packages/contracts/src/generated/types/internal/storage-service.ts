@@ -2994,7 +2994,10 @@ export type IntakeAttachmentNotFoundResponse = Problem;
 export type UploadReservationConflictResponse = Problem;
 
 /**
- * `attachment.upload-expired` for an expired pending reservation or `attachment.upload-not-ready` when the temporary object has not arrived.
+ * `attachment.upload-expired` for an expired pending reservation,
+ * `attachment.upload-not-ready` when the temporary object has not arrived, or
+ * `attachment.storage-quota-exceeded` when adding verified bytes would exceed the
+ * organization's plan limit.
  */
 export type UploadStateConflictResponse = Problem;
 

@@ -195,6 +195,10 @@ export const DeleteTaskAttachmentResponse = zod.void()
  * and records `file.uploaded.v1` together. Repeating successful completion returns the same
  * metadata without a second fact. A staged object that is missing before expiry answers
  * `409 attachment.upload-not-ready`. Expired pending reservations cannot be completed.
+ *
+ * A first completion that would increase the organization's verified attachment storage
+ * beyond its plan limit answers `409 attachment.storage-quota-exceeded` without publishing
+ * the attachment or its event.
  * @summary Complete a task attachment upload
  */
 export const completeTaskAttachmentUploadPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
