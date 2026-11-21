@@ -1,5 +1,12 @@
 # @cadenway/contracts
 
+## 0.29.0
+
+### Minor Changes
+
+- 622f33a: Specify the Organization eligibility check and its signed Automation recipient proof. Count Unicode code points in generated automation comment validators.
+- 34e100e: Define the Git integration facts and the authorized real-time notice that Git links for a task changed.
+
 ## 0.28.0
 
 ### Minor Changes
