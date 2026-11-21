@@ -444,7 +444,9 @@ paths:
         A matching retry returns the same acknowledgement without another verification
         fact. Submission can briefly answer `409 attachment.upload-not-ready` while the
         verification reaches task-service. Retry submission with the same idempotency key.
-        The acknowledgement gives the applicant no metadata or download access.
+        A first verification that would exceed the receiving organization's storage limit
+        answers `409 attachment.storage-quota-exceeded` and does not make the file available
+        for submission. The acknowledgement gives the applicant no metadata or download access.
       tags: [public-intake]
       security: []
       parameters:
@@ -747,12 +749,20 @@ components:
     IntakeAttachmentCompletionConflict:
       description: |
         `attachment.upload-expired` when the signed transfer expired before verification,
-        or `attachment.upload-not-ready` when the reserved object has not arrived.
+        `attachment.upload-not-ready` when the reserved object has not arrived, or
+        `attachment.storage-quota-exceeded` when the receiving organization cannot accept
+        those additional verified bytes. The quota refusal is generic and omits plan, limit,
+        and usage details.
         These errors apply only to an otherwise eligible reservation of the presented draft.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Le formulaire ne peut pas recevoir cette pièce jointe.
+            status: 409
+            code: attachment.storage-quota-exceeded
     IntakeAttachmentStartRefused:
       description: |
         `attachment.file-too-large` above 26,214,400 bytes, `attachment.upload-metadata-mismatch`

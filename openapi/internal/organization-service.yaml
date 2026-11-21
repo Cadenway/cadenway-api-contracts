@@ -632,9 +632,11 @@ paths:
       summary: Change the role of a member
       description: |
         Gives a member another role. Owner and admins only; `422 member.owner-protected` for the
-        owner; `If-Match` optional (`412 request.version-mismatch`). Emits
-        `member.role-changed.v1` when the role changes. Internal token: actor `user`, organization
-        required.
+        owner; `If-Match` optional (`412 request.version-mismatch`). Changing a guest to admin or
+        member uses one seat. If that increase would exceed the organization's plan limit, this
+        answers `409 organization.seat-quota-exceeded` without changing the role. Emits
+        `member.role-changed.v1` when the role changes. Internal token: actor `user`,
+        organization required.
       tags: [members]
       parameters:
         - $ref: '#/components/parameters/IfMatch'
@@ -667,6 +669,8 @@ paths:
           $ref: '#/components/responses/RoleForbidden'
         '404':
           $ref: '#/components/responses/MemberNotFound'
+        '409':
+          $ref: '#/components/responses/SeatQuotaExceeded'
         '412':
           $ref: '#/components/responses/VersionMismatch'
         '422':
@@ -923,8 +927,11 @@ paths:
         (`404 invitation.not-found`, also while the directory holds no verified address for the
         actor); its address is the verified address of the actor (`403 invitation.email-mismatch`);
         it is pending (`409 invitation.revoked`, `409 invitation.answered`,
-        `409 invitation.expired`). Emits `member.joined.v1`. A `userId` other than the actor
-        answers `404 user.not-found`. Internal token: actor `user`, no organization.
+        `409 invitation.expired`). If acceptance would add a seat beyond the organization's
+        plan limit, `409 organization.seat-quota-exceeded` leaves the invitation pending. Guests
+        and existing active memberships do not add a seat. Emits `member.joined.v1`. A `userId`
+        other than the actor answers `404 user.not-found`. Internal token: actor `user`, no
+        organization.
       tags: [invitations]
       requestBody:
         required: true
@@ -945,7 +952,7 @@ paths:
                 name: Coopérative Lumen
                 slug: lumen
                 role: member
-                memberCount: 42
+                memberCount: 5
                 plan: free
                 joinedAt: '2026-11-08T10:30:00Z'
         '400':
@@ -957,7 +964,7 @@ paths:
         '404':
           $ref: '#/components/responses/InvitationOrUserNotFound'
         '409':
-          $ref: '#/components/responses/InvitationNotPending'
+          $ref: '#/components/responses/InvitationAcceptanceConflict'
   /internal/v1/users/{userId}/invitations/{invitationId}/refuse:
     parameters:
       - $ref: '#/components/parameters/UserId'
@@ -966,8 +973,9 @@ paths:
       operationId: refuseInvitationInternal
       summary: Refuse an invitation
       description: |
-        Refuses an invitation addressed to the actor, with the checks of the acceptance. Emits
-        nothing. Internal token: actor `user`, no organization.
+        Refuses an invitation addressed to the actor. Checks that the invitation exists, is
+        addressed to the actor's verified address and is still pending. Emits nothing. Internal
+        token: actor `user`, no organization.
       tags: [invitations]
       requestBody:
         required: true
@@ -1365,6 +1373,13 @@ components:
         type: integer
         minimum: 1
   examples:
+    SeatQuotaExceeded:
+      summary: No seat available under the organization's plan
+      value:
+        type: about:blank
+        title: Conflict
+        status: 409
+        code: organization.seat-quota-exceeded
     AtelierNord:
       summary: Atelier Nord, read by its owner
       value:
@@ -1905,6 +1920,33 @@ components:
               $ref: '#/components/examples/InvitationAnswered'
             invitationExpired:
               $ref: '#/components/examples/InvitationExpired'
+    InvitationAcceptanceConflict:
+      description: |
+        `invitation.revoked`, `invitation.answered` (with `details.status`, `accepted` or
+        `refused`), `invitation.expired` (with `details.expiresAt`), or
+        `organization.seat-quota-exceeded` when acceptance would add a seat beyond the plan limit.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            invitationRevoked:
+              $ref: '#/components/examples/InvitationRevoked'
+            invitationAnswered:
+              $ref: '#/components/examples/InvitationAnswered'
+            invitationExpired:
+              $ref: '#/components/examples/InvitationExpired'
+            seatQuotaExceeded:
+              $ref: '#/components/examples/SeatQuotaExceeded'
+    SeatQuotaExceeded:
+      description: '`organization.seat-quota-exceeded`: changing this guest to an admin or a member would add a seat beyond the plan limit.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            seatQuotaExceeded:
+              $ref: '#/components/examples/SeatQuotaExceeded'
     OwnerProtected:
       description: '`member.owner-protected`: the owner is neither removed nor given another role.'
       content:
