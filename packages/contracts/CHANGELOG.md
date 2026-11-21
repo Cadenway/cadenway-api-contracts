@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.34.0
+
+### Minor Changes
+
+- a1d02c3: Add the committed subscription entitlement event and an internal signed snapshot read for seat and storage admission.
+
 ## 0.33.0
 
 ### Minor Changes
