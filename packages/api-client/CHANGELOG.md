@@ -1,5 +1,11 @@
 # @cadenway/api-client
 
+## 0.25.0
+
+### Minor Changes
+
+- 9f66bfc: Define public and internal endpoints for support requests and newsletter sign-ups and expose the public Angular client.
+
 ## 0.24.0
 
 ### Minor Changes
