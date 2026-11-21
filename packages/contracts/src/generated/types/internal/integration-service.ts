@@ -50,14 +50,15 @@ export type BadRequestResponse = Problem;
 
 /**
  * `auth.token-missing` or `auth.token-invalid` rejects the relay token.
- * `webhook.authentication-failed` is the same refusal for an unknown, disabled or mismatched
- * receiver, or missing, invalid or stale provider authentication.
  */
 export type UnauthenticatedResponse = Problem;
 
 /**
  * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
  * type or ID, or `auth.organization-not-allowed` for a token with an organization claim.
+ * `webhook.authentication-failed` is the same refusal for an unknown, disabled or mismatched
+ * receiver, or missing, invalid or stale provider authentication. The gateway translates
+ * this provider refusal alone to the public 401 response.
  */
 export type ForbiddenResponse = Problem;
 
