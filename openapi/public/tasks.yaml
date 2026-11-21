@@ -1318,10 +1318,12 @@ paths:
       operationId: deleteTaskComment
       summary: Delete a task comment
       description: |
-        Requires `comment` or `edit` and the human author; another editor gets
-        `403 comment.author-required`. If-Match is optional and uses the comment version. Removes
-        text and spans, leaves a content-free tombstone for replies until task purge, and excludes
-        it from pages and counts. The task version, activity and outbox change atomically.
+        For a human-authored comment, requires `comment` or `edit` and the author. To moderate an
+        automation comment, requires `edit` on the task and permission to manage its current
+        space. After the task role check, a caller outside the applicable author or moderator
+        rule gets `403 comment.author-required`. If-Match is optional and uses the comment version.
+        Removes text and spans, leaves a content-free tombstone for replies until task purge, and
+        excludes it from pages and counts. The task version, activity and outbox change atomically.
         Scope `tasks:write` for a personal API token.
       tags: [tasks]
       security:

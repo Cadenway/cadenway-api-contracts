@@ -3434,6 +3434,22 @@ export interface AutomationTaskPriorityCommand {
 
 export type AutomationTaskActionCommand = AutomationTaskAssignCommand | AutomationTaskPriorityCommand;
 
+export interface AutomationTaskCommentCommand {
+  ruleAuthorUserId: AutomationRuleAuthorUserId;
+  body: string;
+}
+
+/**
+ * UUIDv7 of the account selected by the rule's notification action.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type AutomationNotificationRecipientUserId = string;
+
+export interface AutomationTaskNotificationAuthorization {
+  ruleAuthorUserId: AutomationRuleAuthorUserId;
+  recipientUserId: AutomationNotificationRecipientUserId;
+}
+
 /**
  * A committed Task write or a completed command with no change, including when replayed.
  */
@@ -4486,6 +4502,61 @@ export type TaskActionUnavailableResponse = Problem;
  * when the task already has the maximum number of assignees. No resource details are returned.
  */
 export type AutomationTaskActionRefusedResponse = Problem;
+
+/**
+ * `request.invalid`: the request does not match the schema; one `details.issues` entry per issue.
+ */
+export type AutomationTaskBadRequestResponse = Problem;
+
+/**
+ * The internal token is missing (`auth.token-missing`) or refused (`auth.token-invalid`,
+ * with `details.reason`).
+ */
+export type AutomationTaskInternalTokenRefusedResponse = Problem;
+
+/**
+ * The internal token is valid but the route does not accept its issuer
+ * (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`), or it carries no
+ * organization (`auth.organization-required`).
+ */
+export type AutomationTaskInternalAccessRefusedResponse = Problem;
+
+export type AutomationTaskCommentReceiptResponse = {
+  disposition: 'applied';
+};
+
+/**
+ * `task.not-found` for a missing, inactive, cross-tenant or unauthorized target, including
+ * its current parent scope. All cases return the same problem without resource details.
+ */
+export type AutomationTaskCommentTargetUnavailableResponse = Problem;
+
+/**
+ * `idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.
+ */
+export type AutomationTaskCommentInProgressResponse = Problem;
+
+/**
+ * `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+ */
+export type AutomationTaskCommentKeyReusedResponse = Problem;
+
+/**
+ * `task.action-unavailable` when Task cannot verify current authorization or complete the
+ * command transaction. Retry with the same key. The problem omits resource details.
+ */
+export type AutomationTaskCommentUnavailableResponse = Problem;
+
+/**
+ * `task.not-found` for a missing, inactive, cross-tenant or unauthorized task or parent,
+ * or when either account lacks the required access. All cases return the same problem.
+ */
+export type AutomationTaskNotificationAuthorizationDeniedResponse = Problem;
+
+/**
+ * `task.notification-authorization-unavailable`: Task could not establish a current access snapshot.
+ */
+export type AutomationTaskNotificationAuthorizationUnavailableResponse = Problem;
 
 /**
  * `request.invalid` with `details.issues` for an invalid request, selector or cursor.

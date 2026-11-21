@@ -2490,9 +2490,9 @@ export const ApplyGitTaskStatusActionInternalResponse = zod.object({
  * an existing eligible assignee yields `no_op`. A change commits the command receipt, write,
  * activity and usual task outbox entries together.
  *
- * This command accepts only `assign` and `priority`. A notification needs a separate
- * Notification command with current task visibility for its recipient. An automatic comment
- * needs a comment contract that can represent and enforce a rule's authorship and moderation.
+ * This command accepts only `assign` and `priority`. Automatic comments have their own
+ * Task command. Notification handles the `notify` action and checks current task access
+ * through the automation notification authorization operation.
  * @summary Apply an enabled rule's task action to the task in its triggering event
  */
 export const applyAutomationTaskActionInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -2527,6 +2527,93 @@ export const ApplyAutomationTaskActionInternalBody = zod.union([zod.strictObject
 export const ApplyAutomationTaskActionInternalResponse = zod.object({
   "disposition": zod.enum(['applied', 'no_op']).describe('A committed Task write or a completed command with no change, including when replayed.')
 })
+
+
+/**
+ * Requires signed issuer `automation-service`, audience `task-service`, an organization
+ * and an `automation` actor whose ID is the rule UUIDv7. Automation binds the command to
+ * the task key and organization of a validated `task.created.v1` or `task.status-changed.v1`
+ * event, ignores automation-authored status events, and selects the action and recorded
+ * author of its current enabled rule in that organization.
+ *
+ * Task uses the signed organization only. It checks current rule-author membership and
+ * effective `edit` access on the active task and its active parent scope before any
+ * receipt lookup or replay. The write transaction locks and rechecks those conditions.
+ * The signed rule is the author of the comment, its activity and its event. On ordinary
+ * comment reads, it has `actor.type: automation`, `mentions: []` and
+ * `replyToCommentId: null`. The rule author's account ID serves only as authorization
+ * evidence and is not exposed as the comment author. A human task editor who also manages
+ * the current space may delete the comment through the ordinary moderation path.
+ *
+ * The comment, task version, comment activity, text-free `comment.created.v1` event with
+ * current eligible watchers, and command receipt commit together. A replay returns the
+ * recorded disposition without repeating those changes or recreating a moderated comment.
+ * All responses send `Cache-Control: private, no-store`.
+ * @summary Apply an enabled rule's comment action to its triggering task
+ */
+export const applyAutomationTaskCommentInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const ApplyAutomationTaskCommentInternalParams = zod.object({
+  "taskKey": zod.string().regex(applyAutomationTaskCommentInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const applyAutomationTaskCommentInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const ApplyAutomationTaskCommentInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(applyAutomationTaskCommentInternalHeaderIdempotencyKeyMax).describe('Stable command identity derived from the normalized Git delivery or triggering Task event,\nreused on every retry and redelivery for this actor, operation and task. Use an opaque\nvalue without raw provider headers or payload. Reserve a distinct value for each command\nwithin the signed organization and actor. Reusing a value for a different operation,\ntask key or body is refused. Task rechecks current target authorization before returning\nan execution receipt and retains receipts for at least 24 hours. Callers keep their own\ndurable delivery deduplication and do not resend a submitted command after that window.\n')
+})
+
+export const applyAutomationTaskCommentInternalBodyRuleAuthorUserIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const applyAutomationTaskCommentInternalBodyBodyMax = 5000;
+
+
+export const applyAutomationTaskCommentInternalBodyBodyRegExp = new RegExp('\\S');
+
+
+export const ApplyAutomationTaskCommentInternalBody = zod.strictObject({
+  "ruleAuthorUserId": zod.uuid().regex(applyAutomationTaskCommentInternalBodyRuleAuthorUserIdRegExp).describe('UUIDv7 of the user whose authority Automation recorded when creating the rule.'),
+  "body": zod.string().min(1).max(applyAutomationTaskCommentInternalBodyBodyMax).regex(applyAutomationTaskCommentInternalBodyBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
+})
+
+export const ApplyAutomationTaskCommentInternalResponse = zod.object({
+  "disposition": zod.literal("applied")
+})
+
+
+/**
+ * Requires signed issuer `notification-service`, audience `task-service`, organization
+ * and actor `{type: system, id: notification-service}`. The token supplies the tenant.
+ * Notification calls for the exact task key, rule author and recipient in its validated
+ * automation command. In one current tenant snapshot, Task checks that the task and its
+ * parent scope are active, both accounts are current members, the author has effective
+ * `edit` access and the recipient can read the task at its current placement.
+ *
+ * Notification requests a fresh decision on each attempt before creating a notification
+ * or acknowledging a replay. A denial or unavailable decision authorizes no delivery.
+ * This read makes no changes, issues no reusable proof and returns no task identity,
+ * placement, content or account details. All responses send `Cache-Control: private, no-store`.
+ * @summary Authorize this task as the subject of an automation notification
+ */
+export const authorizeAutomationNotificationInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const AuthorizeAutomationNotificationInternalParams = zod.object({
+  "taskKey": zod.string().regex(authorizeAutomationNotificationInternalPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const authorizeAutomationNotificationInternalBodyRuleAuthorUserIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const authorizeAutomationNotificationInternalBodyRecipientUserIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AuthorizeAutomationNotificationInternalBody = zod.strictObject({
+  "ruleAuthorUserId": zod.uuid().regex(authorizeAutomationNotificationInternalBodyRuleAuthorUserIdRegExp).describe('UUIDv7 of the user whose authority Automation recorded when creating the rule.'),
+  "recipientUserId": zod.uuid().regex(authorizeAutomationNotificationInternalBodyRecipientUserIdRegExp).describe('UUIDv7 of the account selected by the rule\'s notification action.')
+})
+
+export const AuthorizeAutomationNotificationInternalResponse = zod.void()
 
 
 /**
@@ -3861,10 +3948,17 @@ export const UpdateTaskCommentInternalResponse = zod.object({
 
 
 /**
- * Requires `comment` or `edit` and the human author; another editor gets
- * `403 comment.author-required`. If-Match is optional and uses the comment version. Removes
- * text and spans, leaves a content-free tombstone for replies until task purge, and excludes
- * it from pages and counts. The task version, activity and outbox change atomically.
+ * For a human-authored comment, requires `comment` or `edit` and the author. For a
+ * rule-authored comment, requires `edit` on the task and permission to manage its current
+ * space. The space owner, or an organization owner or admin in an organization-visible
+ * space, may manage that space under the existing access rules. Creating the rule grants
+ * no moderation authority. After the task role check, a caller outside the applicable
+ * author or moderator rule gets `403 comment.author-required`.
+ *
+ * If-Match is optional and uses the comment version. Removes text and spans, leaves a
+ * content-free tombstone for replies until task purge, and excludes it from pages and
+ * counts. The task version, activity and outbox change atomically. When a moderator
+ * deletes a rule-authored comment, `comment.deleted.v1` carries the human moderator's actor.
  * Internal token: issuer api-gateway, actor user and organization required.
  * @summary Delete a task comment
  */
