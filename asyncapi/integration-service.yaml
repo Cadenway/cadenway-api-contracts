@@ -1,0 +1,445 @@
+asyncapi: 3.0.0
+info:
+  title: integration-service events
+  version: 1.0.0
+  description: |
+    Integration-service owns the Git links of a task. It publishes facts about committed link
+    changes from a verified GitHub or GitLab delivery. Resolve the active repository mapping and
+    obtain Task's authorization before creating a link. The event uses the mapped organization
+    and the space and list from the placement authorized by Task for the link.
+    The Git actor has `type: git` and uses the local Cadenway integration ID.
+
+    Append the fact to the outbox in the same tenant transaction as the link change. Publish it at
+    least once from the outbox after commit. Use one fact per committed link change across repeat
+    deliveries. A delivery that changes several task links produces a separate fact per affected
+    link. Reject an older provider delivery that would reverse a newer terminal state.
+    Task-service owns task status writes and emits the facts for those writes.
+
+    The event ID is stable across retries. The version is ordered only within the link identified
+    by `(organizationId, gitLinkId)`. The task is addressed by its stable business key. Payloads
+    expose only the event envelope, local link and task placement identifiers and the changed
+    field. Consumers deduplicate by event ID and may refetch their authorized view regardless of
+    delivery order. Only the Integration broker identity may publish the Git subjects.
+    Consumers use the broker's publisher restrictions and require the Git actor kind.
+
+    Integration-service consumes the Task purge fact. It records the purge for the authorized
+    event organization and stable task key and removes the corresponding links. A terminal purge
+    marker prevents a late or retried delivery from creating a new link for that task.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  tags:
+    - name: git-links
+      description: Committed Git link updates.
+  x-consumers:
+    - repository: cadenway-realtime-gateway
+      uses: Planned in P6, invalidates the authorized task Git projection through Socket.IO.
+servers:
+  nats:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream of each environment, on its internal network.
+defaultContentType: application/json
+channels:
+  gitBranchCreatedV1:
+    address: evt.git.branch-created.v1
+    description: Git branch created. Emitted by integration-service. Planned consumer is cadenway-realtime-gateway.
+    messages:
+      gitBranchCreatedV1:
+        $ref: '#/components/messages/gitBranchCreatedV1'
+  gitPrOpenedV1:
+    address: evt.git.pr-opened.v1
+    description: Git pull request opened. Emitted by integration-service. Planned consumer is cadenway-realtime-gateway.
+    messages:
+      gitPrOpenedV1:
+        $ref: '#/components/messages/gitPrOpenedV1'
+  gitPrMergedV1:
+    address: evt.git.pr-merged.v1
+    description: Git pull request merged. Emitted by integration-service. Planned consumer is cadenway-realtime-gateway.
+    messages:
+      gitPrMergedV1:
+        $ref: '#/components/messages/gitPrMergedV1'
+  gitPrClosedV1:
+    address: evt.git.pr-closed.v1
+    description: Git pull request closed. Emitted by integration-service. Planned consumer is cadenway-realtime-gateway.
+    messages:
+      gitPrClosedV1:
+        $ref: '#/components/messages/gitPrClosedV1'
+  gitChecksCompletedV1:
+    address: evt.git.checks-completed.v1
+    description: Git checks completed. Emitted by integration-service. Planned consumer is cadenway-realtime-gateway.
+    messages:
+      gitChecksCompletedV1:
+        $ref: '#/components/messages/gitChecksCompletedV1'
+  taskPurgedV1:
+    address: evt.task.purged.v1
+    description: Produced by task-service. Integration-service removes its Git links for the task.
+    messages:
+      taskPurgedV1:
+        $ref: './task-service.yaml#/components/messages/taskPurgedV1'
+operations:
+  publishGitBranchCreatedV1:
+    action: send
+    summary: Git branch created.
+    channel:
+      $ref: '#/channels/gitBranchCreatedV1'
+    messages:
+      - $ref: '#/channels/gitBranchCreatedV1/messages/gitBranchCreatedV1'
+  publishGitPrOpenedV1:
+    action: send
+    summary: Git pull request opened.
+    channel:
+      $ref: '#/channels/gitPrOpenedV1'
+    messages:
+      - $ref: '#/channels/gitPrOpenedV1/messages/gitPrOpenedV1'
+  publishGitPrMergedV1:
+    action: send
+    summary: Git pull request merged.
+    channel:
+      $ref: '#/channels/gitPrMergedV1'
+    messages:
+      - $ref: '#/channels/gitPrMergedV1/messages/gitPrMergedV1'
+  publishGitPrClosedV1:
+    action: send
+    summary: Git pull request closed.
+    channel:
+      $ref: '#/channels/gitPrClosedV1'
+    messages:
+      - $ref: '#/channels/gitPrClosedV1/messages/gitPrClosedV1'
+  publishGitChecksCompletedV1:
+    action: send
+    summary: Git checks completed.
+    channel:
+      $ref: '#/channels/gitChecksCompletedV1'
+    messages:
+      - $ref: '#/channels/gitChecksCompletedV1/messages/gitChecksCompletedV1'
+  receiveTaskPurgedV1:
+    action: receive
+    summary: Remove links and fence their recreation after the task is purged.
+    channel:
+      $ref: '#/channels/taskPurgedV1'
+components:
+  schemas:
+    EventHeaders:
+      type: object
+      properties:
+        traceparent:
+          type: string
+          description: W3C Trace Context of the request or event that caused the change.
+    LocalId:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      description: Cadenway UUIDv7.
+    CommitTime:
+      type: string
+      format: date-time
+      description: UTC time when Integration recorded the link change.
+    GitLinkVersion:
+      type: integer
+      minimum: 1
+      description: Version of the linked Git object for that task, assigned by Integration.
+  messages:
+    gitBranchCreatedV1:
+      name: git.branch-created.v1
+      title: Git branch created
+      summary: Integration recorded a created branch for an authorized linked task.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            taskKey,
+            spaceId,
+            listId,
+            gitLinkId,
+            changed,
+          ]
+        properties:
+          id:
+            $ref: '#/components/schemas/LocalId'
+          occurredAt:
+            $ref: '#/components/schemas/CommitTime'
+          organizationId:
+            $ref: '#/components/schemas/LocalId'
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            $ref: '#/components/schemas/GitLinkVersion'
+          taskKey:
+            $ref: '../components/task.yaml#/components/schemas/TaskKey'
+          spaceId:
+            $ref: '#/components/schemas/LocalId'
+          listId:
+            $ref: '#/components/schemas/LocalId'
+          gitLinkId:
+            $ref: '#/components/schemas/LocalId'
+          changed:
+            type: array
+            minItems: 1
+            maxItems: 1
+            items:
+              const: branch
+      examples:
+        - name: Git branch created
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d4f
+            occurredAt: '2026-11-08T10:41:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: git, id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01 }
+            version: 1
+            taskKey: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            gitLinkId: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e02
+            changed: [branch]
+    gitPrOpenedV1:
+      name: git.pr-opened.v1
+      title: Git pull request opened
+      summary: Integration recorded an opened pull request or merge request for an authorized linked task.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            taskKey,
+            spaceId,
+            listId,
+            gitLinkId,
+            changed,
+          ]
+        properties:
+          id:
+            $ref: '#/components/schemas/LocalId'
+          occurredAt:
+            $ref: '#/components/schemas/CommitTime'
+          organizationId:
+            $ref: '#/components/schemas/LocalId'
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            $ref: '#/components/schemas/GitLinkVersion'
+          taskKey:
+            $ref: '../components/task.yaml#/components/schemas/TaskKey'
+          spaceId:
+            $ref: '#/components/schemas/LocalId'
+          listId:
+            $ref: '#/components/schemas/LocalId'
+          gitLinkId:
+            $ref: '#/components/schemas/LocalId'
+          changed:
+            type: array
+            minItems: 1
+            maxItems: 1
+            items:
+              const: state
+      examples:
+        - name: Open CAD-482 pull request
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d50
+            occurredAt: '2026-11-08T10:41:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: git, id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01 }
+            version: 1
+            taskKey: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            gitLinkId: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e03
+            changed: [state]
+    gitPrMergedV1:
+      name: git.pr-merged.v1
+      title: Git pull request merged
+      summary: Integration recorded a merged pull request or merge request for an authorized linked task.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            taskKey,
+            spaceId,
+            listId,
+            gitLinkId,
+            changed,
+          ]
+        properties:
+          id:
+            $ref: '#/components/schemas/LocalId'
+          occurredAt:
+            $ref: '#/components/schemas/CommitTime'
+          organizationId:
+            $ref: '#/components/schemas/LocalId'
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            $ref: '#/components/schemas/GitLinkVersion'
+          taskKey:
+            $ref: '../components/task.yaml#/components/schemas/TaskKey'
+          spaceId:
+            $ref: '#/components/schemas/LocalId'
+          listId:
+            $ref: '#/components/schemas/LocalId'
+          gitLinkId:
+            $ref: '#/components/schemas/LocalId'
+          changed:
+            type: array
+            minItems: 1
+            maxItems: 1
+            items:
+              const: state
+      examples:
+        - name: Git pull request merged
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d51
+            occurredAt: '2026-11-08T10:41:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: git, id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01 }
+            version: 3
+            taskKey: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            gitLinkId: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e03
+            changed: [state]
+    gitPrClosedV1:
+      name: git.pr-closed.v1
+      title: Git pull request closed
+      summary: Integration recorded a pull request or merge request closed without a merge for an authorized linked task.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            taskKey,
+            spaceId,
+            listId,
+            gitLinkId,
+            changed,
+          ]
+        properties:
+          id:
+            $ref: '#/components/schemas/LocalId'
+          occurredAt:
+            $ref: '#/components/schemas/CommitTime'
+          organizationId:
+            $ref: '#/components/schemas/LocalId'
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            $ref: '#/components/schemas/GitLinkVersion'
+          taskKey:
+            $ref: '../components/task.yaml#/components/schemas/TaskKey'
+          spaceId:
+            $ref: '#/components/schemas/LocalId'
+          listId:
+            $ref: '#/components/schemas/LocalId'
+          gitLinkId:
+            $ref: '#/components/schemas/LocalId'
+          changed:
+            type: array
+            minItems: 1
+            maxItems: 1
+            items:
+              const: state
+      examples:
+        - name: Git pull request closed
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d52
+            occurredAt: '2026-11-08T10:41:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: git, id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01 }
+            version: 2
+            taskKey: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            gitLinkId: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e04
+            changed: [state]
+    gitChecksCompletedV1:
+      name: git.checks-completed.v1
+      title: Git checks completed
+      summary: Integration recorded completed checks for an authorized linked task.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            taskKey,
+            spaceId,
+            listId,
+            gitLinkId,
+            changed,
+          ]
+        properties:
+          id:
+            $ref: '#/components/schemas/LocalId'
+          occurredAt:
+            $ref: '#/components/schemas/CommitTime'
+          organizationId:
+            $ref: '#/components/schemas/LocalId'
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            $ref: '#/components/schemas/GitLinkVersion'
+          taskKey:
+            $ref: '../components/task.yaml#/components/schemas/TaskKey'
+          spaceId:
+            $ref: '#/components/schemas/LocalId'
+          listId:
+            $ref: '#/components/schemas/LocalId'
+          gitLinkId:
+            $ref: '#/components/schemas/LocalId'
+          changed:
+            type: array
+            minItems: 1
+            maxItems: 1
+            items:
+              const: checks
+      examples:
+        - name: Git checks completed
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d53
+            occurredAt: '2026-11-08T10:41:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: git, id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01 }
+            version: 2
+            taskKey: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            gitLinkId: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e03
+            changed: [checks]
