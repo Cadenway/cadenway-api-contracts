@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.25.0
+
+### Minor Changes
+
+- 8583adf: Document the seat quota conflict for membership increases and the storage quota conflict for verified attachment uploads. Keep the existing problem format and omit usage details from anonymous Intake refusals.
+
 ## 0.24.0
 
 ### Minor Changes
