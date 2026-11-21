@@ -14,7 +14,8 @@ import * as zod from 'zod';
  * consists of active owners, admins and members. Count active guests separately. The
  * attachment usage counter sums verified sizes for ready attachments. The Free plan
  * includes five seats and 2,000,000,000 bytes of storage. Return 503 if the subscription or
- * a required source usage baseline is unavailable.
+ * a required source usage baseline is unavailable. A committed source change can still
+ * be in delivery when the initialized usage is read.
  * @summary Read the subscription for the signed organization
  */
 export const getBillingSubscriptionInternalResponseSeatsUsedMin = 0;

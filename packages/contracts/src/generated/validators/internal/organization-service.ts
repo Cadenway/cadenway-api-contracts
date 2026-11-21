@@ -752,17 +752,22 @@ export const ListSearchOrganizationsInternalResponse = zod.object({
  * a rebuilt projection only once it has proved continuous coverage and applied all relevant
  * facts through those positions. If a gap in the event history is confirmed, Billing discards
  * the candidate and restarts from new starting positions. Durable consumption continues after
- * promotion. `organization.created.v1` covers a tenant created during the scan, including a
- * tenant whose ID falls before the current cursor or above the upper bound.
+ * promotion. Changes committed at the source and still in its outbox at the catch-up position
+ * appear when delivered. The read projection is eventually consistent after promotion.
+ * Mutation admission requires a separate current usage proof. `organization.created.v1`
+ * covers a tenant created during the scan, including a tenant whose ID falls before the
+ * current cursor or above the upper bound.
  * @summary List organization IDs for a Billing usage rebuild
  */
+export const listBillingOrganizationsInternalQueryCursorTwoMax = 1024;
+
 export const listBillingOrganizationsInternalQueryLimitDefault = 50;
 export const listBillingOrganizationsInternalQueryLimitMax = 100;
 
 
 
 export const ListBillingOrganizationsInternalQueryParams = zod.object({
-  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "cursor": zod.string().and(zod.string().min(1).max(listBillingOrganizationsInternalQueryCursorTwoMax)).optional().describe('Opaque authenticated cursor returned as `nextCursor` by the preceding page.'),
   "limit": zod.coerce.number().int().min(1).max(listBillingOrganizationsInternalQueryLimitMax).default(listBillingOrganizationsInternalQueryLimitDefault).describe('Page size.')
 })
 
@@ -797,19 +802,25 @@ export const ListBillingOrganizationsInternalResponse = zod.object({
  * Billing reconciles by membership ID and its highest source version using `member.joined.v1`,
  * `member.role-changed.v1` and `member.removed.v1`. A removal is terminal for the membership ID.
  * A removal takes precedence over an active row of the same version. Once a membership ID
- * is terminal, Billing never restores it. A rebuild requires continuous durable delivery from a starting position recorded
- * before the first page through a catch-up position recorded after the final page. Billing
- * proves coverage and applies all relevant facts through that position before promotion. On
- * a confirmed gap, Billing discards the candidate and restarts from a new starting position.
+ * is terminal, Billing never restores it. A rebuild requires continuous durable delivery
+ * from a starting position recorded before the first page through a catch-up position
+ * recorded after the final page. Billing proves coverage and applies all relevant facts
+ * through that position before promotion. On a confirmed gap, Billing discards the candidate
+ * and restarts from a new starting position. Changes committed by Organization and still in
+ * its outbox at the catch-up position appear when delivered. The read projection is
+ * eventually consistent after promotion. Mutation admission requires a separate current
+ * usage proof.
  * @summary Export membership states for Billing seat usage
  */
+export const listBillingMembershipsInternalQueryCursorTwoMax = 1024;
+
 export const listBillingMembershipsInternalQueryLimitDefault = 50;
 export const listBillingMembershipsInternalQueryLimitMax = 100;
 
 
 
 export const ListBillingMembershipsInternalQueryParams = zod.object({
-  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "cursor": zod.string().and(zod.string().min(1).max(listBillingMembershipsInternalQueryCursorTwoMax)).optional().describe('Opaque authenticated cursor returned as `nextCursor` by the preceding page.'),
   "limit": zod.coerce.number().int().min(1).max(listBillingMembershipsInternalQueryLimitMax).default(listBillingMembershipsInternalQueryLimitDefault).describe('Page size.')
 })
 
@@ -836,6 +847,78 @@ export const ListBillingMembershipsInternalResponse = zod.object({
   "version": zod.int().min(listBillingMembershipsInternalResponseItemsItemTwoVersionMin).max(listBillingMembershipsInternalResponseItemsItemTwoVersionMax).describe('Terminal version of this membership.')
 })])).max(listBillingMembershipsInternalResponseItemsMax),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.').and(zod.string().min(1).max(listBillingMembershipsInternalResponseNextCursorTwoMax).nullable()).nullable()
+})
+
+
+/**
+ * Returns the user IDs of active owners and administrators of the organization of the
+ * `quota.threshold-reached.v1` event. Notification signs the event organization in the
+ * internal token. Organization takes the tenant from that verified claim and reads its
+ * own current membership state. The token requires issuer `notification-service`, actor
+ * `{ type: 'system', id: 'notification-service' }` and an organization claim.
+ *
+ * Each page returns up to `limit` eligible user IDs in ascending UUID order. Its opaque,
+ * authenticated cursor binds the tenant, operation and last returned user ID. Memberships
+ * are evaluated at the time of each page read, so eligibility may change during paging.
+ * Only `nextCursor: null` marks completion. Notification rechecks the IDs through the
+ * lookup before dispatch. Every response carries `Cache-Control: private, no-store`.
+ * This operation is read-only.
+ * @summary List current organization recipients for a quota alert
+ */
+export const listQuotaNotificationRecipientsInternalQueryCursorTwoMax = 1024;
+
+export const listQuotaNotificationRecipientsInternalQueryLimitDefault = 50;
+export const listQuotaNotificationRecipientsInternalQueryLimitMax = 100;
+
+
+
+export const ListQuotaNotificationRecipientsInternalQueryParams = zod.object({
+  "cursor": zod.string().and(zod.string().min(1).max(listQuotaNotificationRecipientsInternalQueryCursorTwoMax)).optional().describe('Opaque authenticated cursor returned as `nextCursor` by the preceding page.'),
+  "limit": zod.coerce.number().int().min(1).max(listQuotaNotificationRecipientsInternalQueryLimitMax).default(listQuotaNotificationRecipientsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listQuotaNotificationRecipientsInternalResponseItemsMax = 100;
+
+export const listQuotaNotificationRecipientsInternalResponseNextCursorTwoMax = 1024;
+
+
+
+export const ListQuotaNotificationRecipientsInternalResponse = zod.object({
+  "items": zod.array(zod.uuid()).max(listQuotaNotificationRecipientsInternalResponseItemsMax),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.').and(zod.string().min(1).max(listQuotaNotificationRecipientsInternalResponseNextCursorTwoMax).nullable()).nullable()
+})
+
+
+/**
+ * In one tenant read, returns the requested user IDs that currently belong to an active
+ * owner or administrator of the organization in the verified token. All other IDs are
+ * omitted without distinguishing missing accounts, different organizations and ineligible
+ * memberships. Repeated or case-equivalent UUIDs produce at most one result per account.
+ * Result order is unspecified. The token requires issuer `notification-service`, actor
+ * `{ type: 'system', id: 'notification-service' }` and an organization claim.
+ *
+ * Notification calls this again before each delivery attempt, including a delayed send or
+ * retry. Notification delivers only to accounts in the current result. If the lookup is
+ * unavailable, Notification defers delivery until it obtains a fresh result. This authority checks
+ * membership at the time of the read. Notification still checks its delivery preferences
+ * and resolves the current email address through Identity. Every response carries
+ * `Cache-Control: private, no-store`. This operation is read-only.
+ * @summary Recheck quota alert recipients immediately before delivery
+ */
+export const lookupQuotaNotificationRecipientsInternalBodyUserIdsMax = 100;
+
+
+
+export const LookupQuotaNotificationRecipientsInternalBody = zod.object({
+  "userIds": zod.array(zod.uuid()).min(1).max(lookupQuotaNotificationRecipientsInternalBodyUserIdsMax)
+})
+
+export const lookupQuotaNotificationRecipientsInternalResponseItemsMax = 100;
+
+
+
+export const LookupQuotaNotificationRecipientsInternalResponse = zod.object({
+  "items": zod.array(zod.uuid()).max(lookupQuotaNotificationRecipientsInternalResponseItemsMax)
 })
 
 

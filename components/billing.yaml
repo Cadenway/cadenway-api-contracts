@@ -10,6 +10,17 @@ info:
     name: Proprietary
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
 components:
+  parameters:
+    BillingCursor:
+      name: cursor
+      in: query
+      description: Opaque authenticated cursor returned as `nextCursor` by the preceding page.
+      schema:
+        allOf:
+          - $ref: './http.yaml#/components/parameters/Cursor/schema'
+          - type: string
+            minLength: 1
+            maxLength: 1024
   headers:
     PrivateNoStore:
       required: true

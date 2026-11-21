@@ -708,10 +708,12 @@ paths:
         starting position recorded before the first page through a catch-up position recorded after
         the final page. Billing proves coverage and applies all relevant facts through that position
         before promotion. On a confirmed gap, Billing discards the candidate and restarts from a
-        new starting position.
+        new starting position. A committed change still in the producer outbox at that position
+        is reflected once it is delivered. Quota admission requires an additional guarantee
+        at the source write boundary to account for those pending changes.
       tags: [billing-usage]
       parameters:
-        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/billing.yaml#/components/parameters/BillingCursor'
         - $ref: '../../components/http.yaml#/components/parameters/Limit'
       responses:
         '200':

@@ -552,16 +552,20 @@ export const ListLargestAttachmentsInternalResponse = zod.object({
  * starting position recorded before the first page through a catch-up position recorded after
  * the final page. Billing proves coverage and applies all relevant facts through that position
  * before promotion. On a confirmed gap, Billing discards the candidate and restarts from a
- * new starting position.
+ * new starting position. A committed change still in the producer outbox at that position
+ * is reflected once it is delivered. Quota admission requires an additional guarantee
+ * at the source write boundary to account for those pending changes.
  * @summary Export attachment states for Billing storage usage
  */
+export const listBillingAttachmentUsageInternalQueryCursorTwoMax = 1024;
+
 export const listBillingAttachmentUsageInternalQueryLimitDefault = 50;
 export const listBillingAttachmentUsageInternalQueryLimitMax = 100;
 
 
 
 export const ListBillingAttachmentUsageInternalQueryParams = zod.object({
-  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "cursor": zod.string().and(zod.string().min(1).max(listBillingAttachmentUsageInternalQueryCursorTwoMax)).optional().describe('Opaque authenticated cursor returned as `nextCursor` by the preceding page.'),
   "limit": zod.coerce.number().int().min(1).max(listBillingAttachmentUsageInternalQueryLimitMax).default(listBillingAttachmentUsageInternalQueryLimitDefault).describe('Page size.')
 })
 

@@ -3,6 +3,29 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
+ * @maxItems 100
+ */
+export type QuotaNotificationRecipientIds = string[];
+
+export interface QuotaNotificationRecipientPage {
+  items: QuotaNotificationRecipientIds;
+  /** @nullable */
+  nextCursor: string | null;
+}
+
+export interface QuotaNotificationRecipientLookup {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  userIds: string[];
+}
+
+export interface QuotaNotificationRecipientLookupResult {
+  items: QuotaNotificationRecipientIds;
+}
+
+/**
  * @nullable
  */
 export type BillingUsageNextCursor = string | null;
@@ -560,6 +583,80 @@ export interface ProfileMediaPreparation {
 }
 
 /**
+ * The organization's plan identifier. Consumers must handle later plan identifiers.
+ */
+export type BillingPlan = string;
+
+export interface BillingSeats {
+  /**
+     * Active owners, administrators and members occupying a seat.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  used: number;
+  /**
+     * Number of seats included in the current plan. The Free plan includes five.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  limit: number;
+}
+
+export interface BillingStorage {
+  /**
+     * Sum in bytes of verified attachments that are ready for the organization.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  attachmentBytesUsed: number;
+  /**
+     * Current storage quota in bytes. The Free plan includes 2,000,000,000 bytes.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  limitBytes: number;
+}
+
+export interface BillingSubscription {
+  plan: BillingPlan;
+  seats: BillingSeats;
+  /**
+     * Active guests recorded separately from occupied seats.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  guestCount: number;
+  storage: BillingStorage;
+}
+
+/**
+ * `request.invalid` for malformed input, including a cursor issued for another tenant or
+ * operation. `request.body-too-large` when the body exceeds the service size limit.
+ */
+export type QuotaNotificationRecipientsBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type QuotaNotificationRecipientsTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID, or `auth.organization-required` for an unscoped token.
+ */
+export type QuotaNotificationRecipientsAccessRefusedResponse = Problem;
+
+/**
+ * `organization.not-found` when the organization in the verified token does not exist.
+ */
+export type QuotaNotificationRecipientsOrganizationNotFoundResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the recipient read.
+ */
+export type QuotaNotificationRecipientsUnavailableResponse = Problem;
+
+/**
  * `request.invalid` for invalid query parameters or a malformed cursor, including a cursor for a different operation or tenant.
  */
 export type BillingUsageBadRequestResponse = Problem;
@@ -851,8 +948,8 @@ export type ListSearchOrganizationsInternalParams = {
 };
 
 export type ListBillingOrganizationsInternalParams = {
-  /** Opaque cursor taken from the `nextCursor` of the previous page. */
-  cursor?: string;
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: string & string;
   /**
    * Page size.
    * @minimum 1
@@ -862,8 +959,19 @@ export type ListBillingOrganizationsInternalParams = {
 };
 
 export type ListBillingMembershipsInternalParams = {
-  /** Opaque cursor taken from the `nextCursor` of the previous page. */
-  cursor?: string;
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: string & string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListQuotaNotificationRecipientsInternalParams = {
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: string & string;
   /**
    * Page size.
    * @minimum 1
