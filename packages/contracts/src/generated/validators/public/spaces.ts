@@ -139,8 +139,9 @@ export const CreateSpaceResponse = zod.object({
   "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
   "archivedBy": zod.union([zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
   "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('The list "Première liste" created with the space, which the web application opens.')
 })
@@ -695,8 +696,9 @@ export const GetSpaceOverviewResponse = zod.object({
   "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
   "archivedBy": zod.union([zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
   "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "counts": zod.object({

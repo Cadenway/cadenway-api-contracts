@@ -58,8 +58,9 @@ export const TrashTaskResponse = zod.object({
   "trashedAt": zod.iso.datetime({"offset":true}).describe('"Supprimée il y a 2 jours"'),
   "trashedBy": zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n'),
   "purgeAt": zod.iso.datetime({"offset":true}).describe('When the entry is erased for good, 30 days after `trashedAt` ("Effacée définitivement\ndans 28 jours").\n')
 }).describe('One element of the trash ("Corbeille"): a task and its subtasks at every level, deleted\ntogether, which come back or are erased together. Deleting a subtask makes an entry of its\nown subtree; deleting a list or a space makes one entry per top-level task.\n')
 
@@ -112,8 +113,9 @@ export const ListTrashResponse = zod.object({
   "trashedAt": zod.iso.datetime({"offset":true}).describe('"Supprimée il y a 2 jours"'),
   "trashedBy": zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n'),
   "purgeAt": zod.iso.datetime({"offset":true}).describe('When the entry is erased for good, 30 days after `trashedAt` ("Effacée définitivement\ndans 28 jours").\n')
 }).describe('One element of the trash ("Corbeille"): a task and its subtasks at every level, deleted\ntogether, which come back or are erased together. Deleting a subtask makes an entry of its\nown subtree; deleting a list or a space makes one entry per top-level task.\n')).describe('The entries, the most recently deleted first.'),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
@@ -241,15 +243,17 @@ export const RestoreTrashEntryResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "createdBy": zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When the task last changed, its assignees, labels and checklist included.'),
   "version": zod.int().min(1).describe('Version of the task, also sent as `ETag`; every change adds one, a change of its\nassignees, labels or checklist, an archive and a restoration included.\n'),
   "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the task was archived, with the subtree it heads or belongs to ("archivée le 5\nnov."); `null` for a task that is not. An archived task is left out of every\ncollection and count, reads by its key and refuses changes (`409 task.archived`) until\nit is restored. Absent, it reads as `null`.\n'),
   "archivedBy": zod.union([zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n'),zod.null()]).optional().describe('Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`.')
 }).describe('A task, with its description and its checklist.'),
   "list": zod.object({
   "id": zod.uuid(),
@@ -268,8 +272,9 @@ export const RestoreTrashEntryResponse = zod.object({
   "archivedAt": zod.iso.datetime({"offset":true}).nullish().describe('When the list was archived ("archivée le 3 nov."); `null` for a list that is not.\nAn archived list is left out of the lists of its space, of the overview and of\n"Accueil", and reads by its id. Absent, it reads as `null`.\n'),
   "archivedBy": zod.union([zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n'),zod.null()]).optional().describe('Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`.'),
   "callerRole": zod.string().optional().describe('A role of `AccessRole`, as a resource carries it. Later versions may add roles\n(`x-extensible-enum`): a client treats an unknown one as `view`.\n')
 }).describe('A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of\ntheir creation.\n'),
   "subtaskCount": zod.int().min(restoreTrashEntryResponseSubtaskCountMin).describe('The subtasks that came back with it, at every level.'),

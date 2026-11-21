@@ -1,5 +1,25 @@
 # @cadenway/contracts
 
+## 0.28.0
+
+### Minor Changes
+
+- 393c0f0: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+- 393c0f0: Define the internal Git and Automation task actions and expose the verified Git provider on activity actors when available.
+
+## 0.27.0
+
+### Minor Changes
+
+- 7aa888c: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+- 7aa888c: Add the signed GitHub and GitLab webhook delivery contracts for the gateway and Integration.
+
+## 0.26.0
+
+### Minor Changes
+
+- cfb8b2f: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+
 ## 0.25.1
 
 ### Patch Changes
