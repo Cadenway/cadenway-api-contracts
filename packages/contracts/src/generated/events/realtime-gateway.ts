@@ -65,6 +65,266 @@ export const commentCreatedV1Schema = zod.object({
   replyToUserId: zod.uuid().optional(),
 }) satisfies zod.ZodType<CommentCreatedV1>;
 
+/** Name of the event `git.branch-created.v1`. Integration recorded a created branch for an authorized linked task. */
+export const GIT_BRANCH_CREATED_V1 = 'git.branch-created.v1';
+
+/** Payload of the event `git.branch-created.v1`. */
+export interface GitBranchCreatedV1 {
+  /** Cadenway UUIDv7. */
+  id: string;
+  /** UTC time when Integration recorded the link change. */
+  occurredAt: string;
+  /** Cadenway UUIDv7. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the linked Git object for that task, assigned by Integration. */
+  version: number;
+  /**
+   * Key of a task, the only way a task is named outside task-service: the prefix of the space
+   * it was created in, a dash and a number. A key never changes, also when the task moves to
+   * another space or its space changes prefix, and is never given to another task.
+   */
+  taskKey: string;
+  /** Cadenway UUIDv7. */
+  spaceId: string;
+  /** Cadenway UUIDv7. */
+  listId: string;
+  /** Cadenway UUIDv7. */
+  gitLinkId: string;
+  changed: ('branch')[];
+}
+
+/** Validator of the payload of the event `git.branch-created.v1`. */
+export const gitBranchCreatedV1Schema = zod.strictObject({
+  id: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  taskKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  listId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  gitLinkId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  changed: zod.array(zod.literal('branch')).min(1).max(1),
+}) satisfies zod.ZodType<GitBranchCreatedV1>;
+
+/** Name of the event `git.checks-completed.v1`. Integration recorded completed checks for an authorized linked task. */
+export const GIT_CHECKS_COMPLETED_V1 = 'git.checks-completed.v1';
+
+/** Payload of the event `git.checks-completed.v1`. */
+export interface GitChecksCompletedV1 {
+  /** Cadenway UUIDv7. */
+  id: string;
+  /** UTC time when Integration recorded the link change. */
+  occurredAt: string;
+  /** Cadenway UUIDv7. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the linked Git object for that task, assigned by Integration. */
+  version: number;
+  /**
+   * Key of a task, the only way a task is named outside task-service: the prefix of the space
+   * it was created in, a dash and a number. A key never changes, also when the task moves to
+   * another space or its space changes prefix, and is never given to another task.
+   */
+  taskKey: string;
+  /** Cadenway UUIDv7. */
+  spaceId: string;
+  /** Cadenway UUIDv7. */
+  listId: string;
+  /** Cadenway UUIDv7. */
+  gitLinkId: string;
+  changed: ('checks')[];
+}
+
+/** Validator of the payload of the event `git.checks-completed.v1`. */
+export const gitChecksCompletedV1Schema = zod.strictObject({
+  id: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  taskKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  listId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  gitLinkId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  changed: zod.array(zod.literal('checks')).min(1).max(1),
+}) satisfies zod.ZodType<GitChecksCompletedV1>;
+
+/** Name of the event `git.pr-closed.v1`. Integration recorded a pull request or merge request closed without a merge for an authorized linked task. */
+export const GIT_PR_CLOSED_V1 = 'git.pr-closed.v1';
+
+/** Payload of the event `git.pr-closed.v1`. */
+export interface GitPrClosedV1 {
+  /** Cadenway UUIDv7. */
+  id: string;
+  /** UTC time when Integration recorded the link change. */
+  occurredAt: string;
+  /** Cadenway UUIDv7. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the linked Git object for that task, assigned by Integration. */
+  version: number;
+  /**
+   * Key of a task, the only way a task is named outside task-service: the prefix of the space
+   * it was created in, a dash and a number. A key never changes, also when the task moves to
+   * another space or its space changes prefix, and is never given to another task.
+   */
+  taskKey: string;
+  /** Cadenway UUIDv7. */
+  spaceId: string;
+  /** Cadenway UUIDv7. */
+  listId: string;
+  /** Cadenway UUIDv7. */
+  gitLinkId: string;
+  changed: ('state')[];
+}
+
+/** Validator of the payload of the event `git.pr-closed.v1`. */
+export const gitPrClosedV1Schema = zod.strictObject({
+  id: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  taskKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  listId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  gitLinkId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  changed: zod.array(zod.literal('state')).min(1).max(1),
+}) satisfies zod.ZodType<GitPrClosedV1>;
+
+/** Name of the event `git.pr-merged.v1`. Integration recorded a merged pull request or merge request for an authorized linked task. */
+export const GIT_PR_MERGED_V1 = 'git.pr-merged.v1';
+
+/** Payload of the event `git.pr-merged.v1`. */
+export interface GitPrMergedV1 {
+  /** Cadenway UUIDv7. */
+  id: string;
+  /** UTC time when Integration recorded the link change. */
+  occurredAt: string;
+  /** Cadenway UUIDv7. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the linked Git object for that task, assigned by Integration. */
+  version: number;
+  /**
+   * Key of a task, the only way a task is named outside task-service: the prefix of the space
+   * it was created in, a dash and a number. A key never changes, also when the task moves to
+   * another space or its space changes prefix, and is never given to another task.
+   */
+  taskKey: string;
+  /** Cadenway UUIDv7. */
+  spaceId: string;
+  /** Cadenway UUIDv7. */
+  listId: string;
+  /** Cadenway UUIDv7. */
+  gitLinkId: string;
+  changed: ('state')[];
+}
+
+/** Validator of the payload of the event `git.pr-merged.v1`. */
+export const gitPrMergedV1Schema = zod.strictObject({
+  id: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  taskKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  listId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  gitLinkId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  changed: zod.array(zod.literal('state')).min(1).max(1),
+}) satisfies zod.ZodType<GitPrMergedV1>;
+
+/** Name of the event `git.pr-opened.v1`. Integration recorded an opened pull request or merge request for an authorized linked task. */
+export const GIT_PR_OPENED_V1 = 'git.pr-opened.v1';
+
+/** Payload of the event `git.pr-opened.v1`. */
+export interface GitPrOpenedV1 {
+  /** Cadenway UUIDv7. */
+  id: string;
+  /** UTC time when Integration recorded the link change. */
+  occurredAt: string;
+  /** Cadenway UUIDv7. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the linked Git object for that task, assigned by Integration. */
+  version: number;
+  /**
+   * Key of a task, the only way a task is named outside task-service: the prefix of the space
+   * it was created in, a dash and a number. A key never changes, also when the task moves to
+   * another space or its space changes prefix, and is never given to another task.
+   */
+  taskKey: string;
+  /** Cadenway UUIDv7. */
+  spaceId: string;
+  /** Cadenway UUIDv7. */
+  listId: string;
+  /** Cadenway UUIDv7. */
+  gitLinkId: string;
+  changed: ('state')[];
+}
+
+/** Validator of the payload of the event `git.pr-opened.v1`. */
+export const gitPrOpenedV1Schema = zod.strictObject({
+  id: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1),
+  taskKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  spaceId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  listId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  gitLinkId: zod.uuid().regex(new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')),
+  changed: zod.array(zod.literal('state')).min(1).max(1),
+}) satisfies zod.ZodType<GitPrOpenedV1>;
+
 /** Name of the event `list.access-changed.v1`. The grants or the switch "Accès de l’organisation" of a list changed. */
 export const LIST_ACCESS_CHANGED_V1 = 'list.access-changed.v1';
 
@@ -950,7 +1210,7 @@ export const taskUpdatedV1Schema = zod.object({
 }) satisfies zod.ZodType<TaskUpdatedV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [COMMENT_CREATED_V1, LIST_ACCESS_CHANGED_V1, LIST_DELETED_V1, MEMBER_REMOVED_V1, MEMBER_ROLE_CHANGED_V1, SESSION_ORGANIZATION_CHANGED_V1, SESSION_REVOKED_V1, SPACE_ACCESS_CHANGED_V1, SPACE_ACCESS_REPUBLISHED_V1, SPACE_DELETED_V1, SPACE_UPDATED_V1, TASK_PURGED_V1, TASK_STATUS_CHANGED_V1, TASK_TRASHED_V1, TASK_UPDATED_V1] as const;
+export const EVENT_NAMES = [COMMENT_CREATED_V1, GIT_BRANCH_CREATED_V1, GIT_CHECKS_COMPLETED_V1, GIT_PR_CLOSED_V1, GIT_PR_MERGED_V1, GIT_PR_OPENED_V1, LIST_ACCESS_CHANGED_V1, LIST_DELETED_V1, MEMBER_REMOVED_V1, MEMBER_ROLE_CHANGED_V1, SESSION_ORGANIZATION_CHANGED_V1, SESSION_REVOKED_V1, SPACE_ACCESS_CHANGED_V1, SPACE_ACCESS_REPUBLISHED_V1, SPACE_DELETED_V1, SPACE_UPDATED_V1, TASK_PURGED_V1, TASK_STATUS_CHANGED_V1, TASK_TRASHED_V1, TASK_UPDATED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -968,6 +1228,11 @@ export type RestrictedEventName = (typeof RESTRICTED_EVENT_NAMES)[number];
 /** Payload type of each event of this document, by event name. */
 export interface EventPayloads {
   'comment.created.v1': CommentCreatedV1;
+  'git.branch-created.v1': GitBranchCreatedV1;
+  'git.checks-completed.v1': GitChecksCompletedV1;
+  'git.pr-closed.v1': GitPrClosedV1;
+  'git.pr-merged.v1': GitPrMergedV1;
+  'git.pr-opened.v1': GitPrOpenedV1;
   'list.access-changed.v1': ListAccessChangedV1;
   'list.deleted.v1': ListDeletedV1;
   'member.removed.v1': MemberRemovedV1;
@@ -987,6 +1252,11 @@ export interface EventPayloads {
 /** Payload validator of each event of this document, by event name. */
 export const eventSchemas = {
   'comment.created.v1': commentCreatedV1Schema,
+  'git.branch-created.v1': gitBranchCreatedV1Schema,
+  'git.checks-completed.v1': gitChecksCompletedV1Schema,
+  'git.pr-closed.v1': gitPrClosedV1Schema,
+  'git.pr-merged.v1': gitPrMergedV1Schema,
+  'git.pr-opened.v1': gitPrOpenedV1Schema,
   'list.access-changed.v1': listAccessChangedV1Schema,
   'list.deleted.v1': listDeletedV1Schema,
   'member.removed.v1': memberRemovedV1Schema,
