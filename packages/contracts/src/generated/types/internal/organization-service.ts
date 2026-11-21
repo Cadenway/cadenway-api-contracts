@@ -3,16 +3,22 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
- * Cursor of the next page; `null` on the last page.
  * @nullable
  */
-export type NextCursor = string | null;
+export type BillingUsageNextCursor = string | null;
 
-export interface SearchOrganizationPage {
+export interface BillingOrganizationPage {
   /** @maxItems 100 */
   items: string[];
-  nextCursor: NextCursor | null;
+  nextCursor: BillingUsageNextCursor | null;
 }
+
+export type BillingActiveMembershipState = typeof BillingActiveMembershipState[keyof typeof BillingActiveMembershipState];
+
+
+export const BillingActiveMembershipState = {
+  active: 'active',
+} as const;
 
 /**
  * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
@@ -27,6 +33,56 @@ export const Role = {
   member: 'member',
   guest: 'guest',
 } as const;
+
+export interface BillingActiveMembership {
+  memberId: string;
+  state: BillingActiveMembershipState;
+  role: Role;
+  /**
+     * Version of the membership, independent of the organization version.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+export type BillingRemovedMembershipState = typeof BillingRemovedMembershipState[keyof typeof BillingRemovedMembershipState];
+
+
+export const BillingRemovedMembershipState = {
+  removed: 'removed',
+} as const;
+
+export interface BillingRemovedMembership {
+  memberId: string;
+  state: BillingRemovedMembershipState;
+  /**
+     * Terminal version of this membership.
+     * @minimum 2
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+export type BillingMembership = BillingActiveMembership | BillingRemovedMembership;
+
+export interface BillingMembershipPage {
+  /** @maxItems 100 */
+  items: BillingMembership[];
+  nextCursor: BillingUsageNextCursor | null;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+export interface SearchOrganizationPage {
+  /** @maxItems 100 */
+  items: string[];
+  nextCursor: NextCursor | null;
+}
 
 export interface SearchMembership {
   memberId: string;
@@ -504,6 +560,38 @@ export interface ProfileMediaPreparation {
 }
 
 /**
+ * `request.invalid` for invalid query parameters or a malformed cursor, including a cursor for a different operation or tenant.
+ */
+export type BillingUsageBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type BillingUsageTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor type
+ * or ID, or `auth.organization-not-allowed` for a verified token scoped to an organization.
+ */
+export type BillingOrganizationAccessRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID, or `auth.organization-required` for an unscoped token.
+ */
+export type BillingMembershipAccessRefusedResponse = Problem;
+
+/**
+ * `organization.not-found` when the organization in the verified token does not exist.
+ */
+export type BillingOrganizationNotFoundResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the snapshot page.
+ */
+export type BillingUsageUnavailableResponse = Problem;
+
+/**
  * `request.invalid` for invalid input, including an invalid organization export cursor.
  */
 export type SearchAuthorityBadRequestResponse = Problem;
@@ -752,6 +840,28 @@ export type ListReceivedInvitationsInternalParams = {
 };
 
 export type ListSearchOrganizationsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListBillingOrganizationsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListBillingMembershipsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: string;
   /**

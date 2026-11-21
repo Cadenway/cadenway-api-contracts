@@ -735,6 +735,111 @@ export const ListSearchOrganizationsInternalResponse = zod.object({
 
 
 /**
+ * Requires issuer `billing-service`, actor `{ type: 'system', id: 'billing-service' }`,
+ * and a null organization claim in the verified internal token. Every response carries
+ * `Cache-Control: private, no-store`. Only organization IDs are returned. IDs may use
+ * historical UUID versions. Billing signs a separate token for each tenant export.
+ *
+ * The first page fixes an inclusive upper organization ID in its read snapshot. Each page
+ * reads its own snapshot in ascending immutable UUID order above the last returned ID and
+ * at or below that upper bound. The opaque, authenticated cursor binds the operation, the
+ * upper bound and the last returned ID. The cursor has 1 to 1,024 characters. Only
+ * `nextCursor: null` marks completion. The UTF-8 JSON body is at most 1,048,576 bytes.
+ *
+ * Before the first page, Billing records the starting positions for durable consumption of
+ * `organization.created.v1` and the membership and attachment facts used by the tenant
+ * exports. After the final snapshot page, it captures catch-up positions. Billing promotes
+ * a rebuilt projection only once it has proved continuous coverage and applied all relevant
+ * facts through those positions. If a gap in the event history is confirmed, Billing discards
+ * the candidate and restarts from new starting positions. Durable consumption continues after
+ * promotion. `organization.created.v1` covers a tenant created during the scan, including a
+ * tenant whose ID falls before the current cursor or above the upper bound.
+ * @summary List organization IDs for a Billing usage rebuild
+ */
+export const listBillingOrganizationsInternalQueryLimitDefault = 50;
+export const listBillingOrganizationsInternalQueryLimitMax = 100;
+
+
+
+export const ListBillingOrganizationsInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listBillingOrganizationsInternalQueryLimitMax).default(listBillingOrganizationsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listBillingOrganizationsInternalResponseItemsMax = 100;
+
+export const listBillingOrganizationsInternalResponseNextCursorTwoMax = 1024;
+
+
+
+export const ListBillingOrganizationsInternalResponse = zod.object({
+  "items": zod.array(zod.uuid()).max(listBillingOrganizationsInternalResponseItemsMax),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.').and(zod.string().min(1).max(listBillingOrganizationsInternalResponseNextCursorTwoMax).nullable()).nullable()
+})
+
+
+/**
+ * Requires issuer `billing-service`, actor `{ type: 'system', id: 'billing-service' }`,
+ * and an organization in the verified internal token. The token determines the tenant.
+ * Every response carries `Cache-Control: private, no-store`. Each active membership,
+ * including a guest, is exported with its ID, version and role. Each retained removal is
+ * exported with its ID and terminal version. The export must include a removal whenever
+ * an older membership fact can still arrive, including from a delayed Organization outbox.
+ * An invitation without a membership contributes no row. A person who rejoins after removal
+ * gets a new membership ID. The export includes no account IDs, names or email addresses.
+ *
+ * The first page fixes an inclusive upper membership ID in its tenant snapshot. Each page
+ * reads its own tenant snapshot in ascending immutable UUID order above the last returned
+ * ID and at or below that upper bound. The opaque, authenticated cursor has 1 to 1,024
+ * characters and binds the operation, the tenant, the upper bound and the last returned ID.
+ * Only `nextCursor: null` marks completion. The UTF-8 JSON body is at most 1,048,576 bytes.
+ *
+ * Billing reconciles by membership ID and its highest source version using `member.joined.v1`,
+ * `member.role-changed.v1` and `member.removed.v1`. A removal is terminal for the membership ID.
+ * A removal takes precedence over an active row of the same version. Once a membership ID
+ * is terminal, Billing never restores it. A rebuild requires continuous durable delivery from a starting position recorded
+ * before the first page through a catch-up position recorded after the final page. Billing
+ * proves coverage and applies all relevant facts through that position before promotion. On
+ * a confirmed gap, Billing discards the candidate and restarts from a new starting position.
+ * @summary Export membership states for Billing seat usage
+ */
+export const listBillingMembershipsInternalQueryLimitDefault = 50;
+export const listBillingMembershipsInternalQueryLimitMax = 100;
+
+
+
+export const ListBillingMembershipsInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listBillingMembershipsInternalQueryLimitMax).default(listBillingMembershipsInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listBillingMembershipsInternalResponseItemsItemOneVersionMax = 9007199254740991;
+
+export const listBillingMembershipsInternalResponseItemsItemTwoVersionMin = 2;
+export const listBillingMembershipsInternalResponseItemsItemTwoVersionMax = 9007199254740991;
+
+export const listBillingMembershipsInternalResponseItemsMax = 100;
+
+export const listBillingMembershipsInternalResponseNextCursorTwoMax = 1024;
+
+
+
+export const ListBillingMembershipsInternalResponse = zod.object({
+  "items": zod.array(zod.union([zod.object({
+  "memberId": zod.uuid(),
+  "state": zod.enum(['active']),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
+  "version": zod.int().min(1).max(listBillingMembershipsInternalResponseItemsItemOneVersionMax).describe('Version of the membership, independent of the organization version.')
+}),zod.object({
+  "memberId": zod.uuid(),
+  "state": zod.enum(['removed']),
+  "version": zod.int().min(listBillingMembershipsInternalResponseItemsItemTwoVersionMin).max(listBillingMembershipsInternalResponseItemsItemTwoVersionMax).describe('Terminal version of this membership.')
+})])).max(listBillingMembershipsInternalResponseItemsMax),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.').and(zod.string().min(1).max(listBillingMembershipsInternalResponseNextCursorTwoMax).nullable()).nullable()
+})
+
+
+/**
  * Requires issuer `search-service`, an actor of type `user` and an organization in the
  * signed token. Search signs this call for the verified user and organization of the current
  * request. Neither value comes from search input or indexed data. Every response carries

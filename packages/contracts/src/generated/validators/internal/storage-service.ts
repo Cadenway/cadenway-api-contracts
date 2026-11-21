@@ -527,6 +527,75 @@ export const ListLargestAttachmentsInternalResponse = zod.object({
 
 
 /**
+ * Requires issuer `billing-service`, actor `{ type: 'system', id: 'billing-service' }`,
+ * and an organization in the verified internal token. The token determines the tenant.
+ * Every response carries `Cache-Control: private, no-store`. Each ready task attachment,
+ * including a claimed public intake attachment, is exported with its ID, verified byte
+ * count and version. Each retained deletion of a previously ready attachment is exported
+ * with its ID and terminal version. The export must include a deletion whenever an older
+ * upload fact can still arrive, including from a delayed Storage outbox. Pending or
+ * discarded uploads that never reached the ready state, unclaimed intake candidates and
+ * profile media contribute no row. During a task purge, each attachment stops contributing
+ * when Storage commits its file tombstone and appends `file.deleted.v1`.
+ * Physical object erasure can follow later. No file names, task keys, object keys or author
+ * details are returned. A tenant with no eligible attachments receives an empty page.
+ *
+ * The first page fixes an inclusive upper file ID in its tenant snapshot. Each page reads
+ * its own tenant snapshot in ascending immutable UUID order above the last returned ID
+ * and at or below that upper bound. The opaque, authenticated cursor has 1 to 1,024
+ * characters and binds the operation, the tenant, the upper bound and the last returned ID.
+ * Only `nextCursor: null` marks completion. The UTF-8 JSON body is at most 1,048,576 bytes.
+ *
+ * Billing reconciles `file.uploaded.v1` and `file.deleted.v1` by file ID and highest source
+ * version. A deletion takes precedence over a ready row of the same version. Once a file ID
+ * is terminal, Billing never restores its usage. A rebuild requires continuous durable delivery from a
+ * starting position recorded before the first page through a catch-up position recorded after
+ * the final page. Billing proves coverage and applies all relevant facts through that position
+ * before promotion. On a confirmed gap, Billing discards the candidate and restarts from a
+ * new starting position.
+ * @summary Export attachment states for Billing storage usage
+ */
+export const listBillingAttachmentUsageInternalQueryLimitDefault = 50;
+export const listBillingAttachmentUsageInternalQueryLimitMax = 100;
+
+
+
+export const ListBillingAttachmentUsageInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listBillingAttachmentUsageInternalQueryLimitMax).default(listBillingAttachmentUsageInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listBillingAttachmentUsageInternalResponseItemsItemOneFileIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listBillingAttachmentUsageInternalResponseItemsItemOneSizeBytesMax = 26214400;
+
+export const listBillingAttachmentUsageInternalResponseItemsItemOneVersionMax = 9007199254740991;
+
+export const listBillingAttachmentUsageInternalResponseItemsItemTwoFileIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listBillingAttachmentUsageInternalResponseItemsItemTwoVersionMin = 2;
+export const listBillingAttachmentUsageInternalResponseItemsItemTwoVersionMax = 9007199254740991;
+
+export const listBillingAttachmentUsageInternalResponseItemsMax = 100;
+
+export const listBillingAttachmentUsageInternalResponseNextCursorTwoMax = 1024;
+
+
+
+export const ListBillingAttachmentUsageInternalResponse = zod.object({
+  "items": zod.array(zod.union([zod.object({
+  "fileId": zod.uuid().regex(listBillingAttachmentUsageInternalResponseItemsItemOneFileIdRegExp),
+  "state": zod.enum(['ready']),
+  "sizeBytes": zod.int().min(1).max(listBillingAttachmentUsageInternalResponseItemsItemOneSizeBytesMax).describe('Verified object size in bytes, up to 25 MiB.'),
+  "version": zod.int().min(1).max(listBillingAttachmentUsageInternalResponseItemsItemOneVersionMax).describe('Owner version of the ready attachment.')
+}),zod.object({
+  "fileId": zod.uuid().regex(listBillingAttachmentUsageInternalResponseItemsItemTwoFileIdRegExp),
+  "state": zod.enum(['deleted']),
+  "version": zod.int().min(listBillingAttachmentUsageInternalResponseItemsItemTwoVersionMin).max(listBillingAttachmentUsageInternalResponseItemsItemTwoVersionMax).describe('Terminal version of the previously ready attachment.')
+})])).max(listBillingAttachmentUsageInternalResponseItemsMax),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.').and(zod.string().min(1).max(listBillingAttachmentUsageInternalResponseNextCursorTwoMax).nullable()).nullable()
+})
+
+
+/**
  * Requires issuer `search-service`, actor `{ type: 'system', id: 'search-service' }`, and
  * an organization in the signed token. Every response carries `Cache-Control: private,
  * no-store`. The operation exports only ready task attachments in that organization. A

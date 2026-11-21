@@ -48,7 +48,7 @@ info:
     - repository: cadenway-notification-service
       uses: invitation.issued.v1, to send the invitation email.
     - repository: cadenway-billing-service
-      uses: Planned, organization.created.v1, member.joined.v1 and member.removed.v1, for the subscription and the seats.
+      uses: Planned, organization.created.v1, member.joined.v1, member.role-changed.v1 and member.removed.v1, for the subscription and the seats.
     - repository: cadenway-task-service
       uses: member.joined.v1, member.role-changed.v1 and member.removed.v1, through the consumers task-service__project-member-joined, task-service__project-member-role-changed and task-service__project-member-removed, for its copy of the members and their roles (who sees and changes spaces, lists and tasks, who can be assigned), to unassign a removed member and to give the private spaces they owned to the owner of the organization.
     - repository: cadenway-search-service
@@ -106,7 +106,8 @@ channels:
     address: evt.member.role-changed.v1
     description: |
       The role of a member changed. Emitted by organization-service. Consumers:
-      cadenway-identity-service and cadenway-task-service; planned, cadenway-search-service.
+      cadenway-identity-service and cadenway-task-service; planned, cadenway-billing-service and
+      cadenway-search-service.
     messages:
       memberRoleChangedV1:
         $ref: '#/components/messages/memberRoleChangedV1'

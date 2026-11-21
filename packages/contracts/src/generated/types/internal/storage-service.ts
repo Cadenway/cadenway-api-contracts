@@ -7,6 +7,57 @@
  */
 export type AttachmentId = string;
 
+export type BillingReadyAttachmentState = typeof BillingReadyAttachmentState[keyof typeof BillingReadyAttachmentState];
+
+
+export const BillingReadyAttachmentState = {
+  ready: 'ready',
+} as const;
+
+export interface BillingReadyAttachment {
+  fileId: AttachmentId;
+  state: BillingReadyAttachmentState;
+  /**
+     * Verified object size in bytes, up to 25 MiB.
+     * @minimum 1
+     * @maximum 26214400
+     */
+  sizeBytes: number;
+  /**
+     * Owner version of the ready attachment.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+export type BillingDeletedAttachmentState = typeof BillingDeletedAttachmentState[keyof typeof BillingDeletedAttachmentState];
+
+
+export const BillingDeletedAttachmentState = {
+  deleted: 'deleted',
+} as const;
+
+export interface BillingDeletedAttachment {
+  fileId: AttachmentId;
+  state: BillingDeletedAttachmentState;
+  /**
+     * Terminal version of the previously ready attachment.
+     * @minimum 2
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+export type BillingAttachmentUsage = BillingReadyAttachment | BillingDeletedAttachment;
+
+export interface BillingAttachmentUsagePage {
+  /** @maxItems 100 */
+  items: BillingAttachmentUsage[];
+  /** @nullable */
+  nextCursor: string | null;
+}
+
 /**
  * Key of a task, the only way a task is named outside task-service: the prefix of the space
  * it was created in, a dash and a number. A key never changes, also when the task moves to
@@ -2786,6 +2837,27 @@ export interface ProfileMediaPreparation {
 }
 
 /**
+ * `request.invalid` for invalid query parameters or a malformed cursor, including a cursor for a different operation or tenant.
+ */
+export type BillingUsageBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type BillingUsageTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID, or `auth.organization-required` for an unscoped token.
+ */
+export type BillingUsageAccessRefusedResponse = Problem;
+
+/**
+ * `storage.unavailable` when Storage cannot complete the snapshot page.
+ */
+export type BillingUsageUnavailableResponse = Problem;
+
+/**
  * `request.invalid` for invalid input, including an invalid cursor or duplicate file IDs.
  * `request.body-too-large` when the incoming request body exceeds the JSON body limit.
  */
@@ -2936,6 +3008,17 @@ export type GetAvatarImageInternalParams = {
 };
 
 export type ListLargestAttachmentsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListBillingAttachmentUsageInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: string;
   /**

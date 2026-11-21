@@ -1,0 +1,76 @@
+openapi: 3.1.0
+info:
+  title: Cadenway shared billing components
+  version: 1.0.0
+  description: Current subscription limits and usage measurements for an organization.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  headers:
+    PrivateNoStore:
+      required: true
+      description: The browser and intermediaries must not store this response.
+      schema:
+        type: string
+        const: private, no-store
+  schemas:
+    BillingPlan:
+      type: string
+      description: The organization's plan identifier. Consumers must handle later plan identifiers.
+      x-extensible-enum: [free, team, enterprise]
+      example: free
+    BillingSeats:
+      type: object
+      additionalProperties: false
+      required: [used, limit]
+      properties:
+        used:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Active owners, administrators and members occupying a seat.
+          example: 4
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Number of seats included in the current plan. The Free plan includes five.
+          example: 5
+    BillingStorage:
+      type: object
+      additionalProperties: false
+      required: [attachmentBytesUsed, limitBytes]
+      properties:
+        attachmentBytesUsed:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Sum in bytes of verified attachments that are ready for the organization.
+          example: 700000000
+        limitBytes:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Current storage quota in bytes. The Free plan includes 2,000,000,000 bytes.
+          example: 2000000000
+    BillingSubscription:
+      type: object
+      additionalProperties: false
+      required: [plan, seats, guestCount, storage]
+      properties:
+        plan:
+          $ref: '#/components/schemas/BillingPlan'
+        seats:
+          $ref: '#/components/schemas/BillingSeats'
+        guestCount:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Active guests recorded separately from occupied seats.
+          example: 2
+        storage:
+          $ref: '#/components/schemas/BillingStorage'
