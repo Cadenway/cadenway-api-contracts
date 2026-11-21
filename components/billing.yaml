@@ -33,7 +33,7 @@ components:
       type: string
       description: The organization's plan identifier. Consumers must handle later plan identifiers.
       x-extensible-enum: [free, team, enterprise]
-      example: free
+      examples: [free]
     BillingSeats:
       type: object
       additionalProperties: false

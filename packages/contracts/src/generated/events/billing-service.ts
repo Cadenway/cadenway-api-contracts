@@ -53,8 +53,51 @@ export const quotaThresholdReachedV1Schema = zod.strictObject({
   limit: zod.int().min(1).max(9007199254740991),
 }) satisfies zod.ZodType<QuotaThresholdReachedV1>;
 
+/** Name of the event `subscription.changed.v1`. Billing committed a new effective entitlement snapshot for an organization. */
+export const SUBSCRIPTION_CHANGED_V1 = 'subscription.changed.v1';
+
+/** Payload of the event `subscription.changed.v1`. */
+export interface SubscriptionChangedV1 {
+  /** Event deduplication key, stable across deliveries. */
+  id: string;
+  /** When Billing committed the entitlement change. */
+  occurredAt: string;
+  /** Tenant whose effective subscription changed. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Monotonically increasing entitlement version within the organization. */
+  version: number;
+  /** The organization's plan identifier. Consumers must handle later plan identifiers. */
+  plan: string;
+  /** Effective limit for active owners, administrators and members occupying seats. */
+  seatLimit: number;
+  /** Effective storage limit in decimal bytes for verified ready attachments. */
+  storageByteLimit: number;
+}
+
+/** Validator of the payload of the event `subscription.changed.v1`. */
+export const subscriptionChangedV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1).max(9007199254740991),
+  plan: zod.string(),
+  seatLimit: zod.int().min(1).max(9007199254740991),
+  storageByteLimit: zod.int().min(1).max(9007199254740991),
+}) satisfies zod.ZodType<SubscriptionChangedV1>;
+
 /** Names of the events of this document. */
-export const EVENT_NAMES = [QUOTA_THRESHOLD_REACHED_V1] as const;
+export const EVENT_NAMES = [QUOTA_THRESHOLD_REACHED_V1, SUBSCRIPTION_CHANGED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -72,9 +115,11 @@ export type RestrictedEventName = (typeof RESTRICTED_EVENT_NAMES)[number];
 /** Payload type of each event of this document, by event name. */
 export interface EventPayloads {
   'quota.threshold-reached.v1': QuotaThresholdReachedV1;
+  'subscription.changed.v1': SubscriptionChangedV1;
 }
 
 /** Payload validator of each event of this document, by event name. */
 export const eventSchemas = {
   'quota.threshold-reached.v1': quotaThresholdReachedV1Schema,
+  'subscription.changed.v1': subscriptionChangedV1Schema,
 } as const satisfies { readonly [Name in EventName]: zod.ZodType<EventPayloads[Name]> };

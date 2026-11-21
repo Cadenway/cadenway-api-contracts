@@ -48,6 +48,45 @@ export const GetBillingSubscriptionInternalResponse = zod.object({
 
 
 /**
+ * Requires a signed token with the `billing-service` audience, an organization claim, and
+ * issuer `organization-service` or `storage-service`. The actor must be of type `system`
+ * and its ID must match the issuer. Billing reads only the organization in the verified
+ * claim. The operation accepts no query parameters.
+ *
+ * Returns the complete committed entitlement independently of measured usage, Stripe
+ * availability and event delivery. Version zero represents the legacy Free baseline
+ * only when Billing can establish that the organization has no committed versioned
+ * entitlement. If Billing cannot establish the current state, it returns
+ * `503 billing.unavailable`.
+ *
+ * Organization and Storage use this snapshot to recover from missing
+ * `subscription.changed.v1` deliveries. Each consumer applies a newer version under its
+ * own quota admission lock and keeps the current projection for an older or repeated
+ * version. All responses carry `Cache-Control: private, no-store`.
+ * @summary Read the current entitlement for the signed organization
+ */
+export const getBillingEntitlementInternalResponseTwoSeatLimitMax = 9007199254740991;
+
+export const getBillingEntitlementInternalResponseTwoStorageByteLimitMax = 9007199254740991;
+
+export const getBillingEntitlementInternalResponseTwoVersionMax = 9007199254740991;
+
+
+
+export const GetBillingEntitlementInternalResponse = zod.union([zod.object({
+  "plan": zod.literal("free"),
+  "seatLimit": zod.literal(5),
+  "storageByteLimit": zod.literal(2000000000),
+  "version": zod.literal(0)
+}),zod.object({
+  "plan": zod.string().describe('The organization\'s plan identifier. Consumers must handle later plan identifiers.'),
+  "seatLimit": zod.int().min(1).max(getBillingEntitlementInternalResponseTwoSeatLimitMax).describe('Number of included seats for active owners, administrators and members.'),
+  "storageByteLimit": zod.int().min(1).max(getBillingEntitlementInternalResponseTwoStorageByteLimitMax).describe('Storage quota in bytes for verified ready attachments.'),
+  "version": zod.int().min(1).max(getBillingEntitlementInternalResponseTwoVersionMax).describe('Monotonic entitlement version for this organization.')
+})]).describe('Complete entitlement and its version for quota admission.')
+
+
+/**
  * Requires an api-gateway token with a user actor, an organization and the billing-service
  * audience. The gateway confirms the current owner role before relaying every call.
  * Billing looks up the Team price and return destinations from its own configuration and
