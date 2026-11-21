@@ -3,15 +3,20 @@ info:
   title: billing-service events
   version: 1.0.0
   description: |
-    Billing-service owns quota counters and records an upward crossing of the 80% threshold
-    for billed seats or verified ready attachment bytes. The previously committed utilization
-    was below 80% and the newly committed utilization is at least 80%. Staying at or above the
-    threshold emits nothing. A committed drop below it allows a later upward crossing to emit
-    another event. The 90% gauge state and the 95% banner are application display states.
+    Billing-service owns quota counters and records confirmed upward crossings of the 80%
+    threshold for billed seats or verified ready attachment bytes. A usage observation can
+    record a pending crossing when utilization moves from below 80% to at least 80%. Staying
+    at or above the threshold creates no new crossing. A later upward crossing can follow a
+    drop below the threshold. While confirmation is pending, Billing keeps only the latest
+    crossing for each organization and metric.
 
-    Billing appends the fact to its outbox in the same tenant transaction as the quota change.
-    The relay publishes to `EVENTS` after commit with at-least-once delivery. Redelivery of an
-    input fact and replay to rebuild a quota projection do not create another threshold fact.
+    Billing confirms a pending crossing against the same active projection once its JetStream
+    consumers have caught up and delivery continuity is verified. If the current total is below
+    the threshold, Billing clears the pending crossing. Billing confirms the crossing and
+    appends the fact to its outbox in one tenant transaction. The relay publishes the confirmed
+    fact to `EVENTS` after commit with at-least-once delivery. Redelivery of an input fact and
+    replay to rebuild a quota projection do not create another threshold fact. The 90% gauge
+    state and the 95% banner are application display states.
 
     Notification-service deduplicates by event `id`, resolves the current active owners and
     administrators of the event's organization, and sends email and in-app notifications to
@@ -44,8 +49,8 @@ channels:
 operations:
   publishQuotaThresholdReachedV1:
     action: send
-    summary: Publish an upward crossing of the 80% quota threshold.
-    description: Sent from the transactional outbox after commit, at least once.
+    summary: Publish a confirmed upward crossing of the 80% quota threshold.
+    description: Sent at least once from the transactional outbox after confirmation commits.
     channel:
       $ref: '#/channels/quotaThresholdReachedV1'
     messages:
@@ -68,8 +73,8 @@ components:
     quotaThresholdReachedV1:
       name: quota.threshold-reached.v1
       title: Quota threshold reached
-      summary: Utilization of a billed quota rose from below 80% to at least 80%.
-      description: The actor is the billing-service system actor for the committed quota change.
+      summary: Billing confirmed a rise in utilization from below 80% to at least 80%.
+      description: The actor is the billing-service system actor that confirmed the crossing.
       headers:
         $ref: '#/components/schemas/EventHeaders'
       payload:
@@ -85,7 +90,7 @@ components:
           occurredAt:
             type: string
             format: date-time
-            description: When the quota change was committed.
+            description: When confirmation of the quota crossing was committed.
           organizationId:
             type: string
             format: uuid
@@ -96,7 +101,7 @@ components:
             type: integer
             minimum: 1
             maximum: 9007199254740991
-            description: Committed quota version for the organization and metric.
+            description: Quota version of the confirmed crossing for the organization and metric.
           metric:
             $ref: '#/components/schemas/QuotaMetric'
           thresholdPercent:
@@ -107,12 +112,12 @@ components:
             type: integer
             minimum: 0
             maximum: 9007199254740991
-            description: Exact committed usage, in seats or bytes according to the metric.
+            description: Exact committed usage at confirmation, in seats or bytes according to the metric.
           limit:
             type: integer
             minimum: 1
             maximum: 9007199254740991
-            description: Exact committed quota limit, in seats or bytes according to the metric.
+            description: Exact committed quota limit at confirmation, in seats or bytes according to the metric.
       examples:
         - name: atelierNordFreeSeats
           summary: Atelier Nord reaches four of the five seats on the Free plan.
