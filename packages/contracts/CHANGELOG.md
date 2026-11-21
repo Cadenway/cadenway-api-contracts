@@ -1,5 +1,12 @@
 # @cadenway/contracts
 
+## 0.28.0
+
+### Minor Changes
+
+- 393c0f0: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+- 393c0f0: Define the internal Git and Automation task actions and expose the verified Git provider on activity actors when available.
+
 ## 0.27.0
 
 ### Minor Changes

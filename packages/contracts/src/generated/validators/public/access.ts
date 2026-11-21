@@ -41,8 +41,9 @@ export const ListSpaceGrantsResponse = zod.object({
   "grantedAt": zod.iso.datetime({"offset":true}).describe('When the person was given this role.'),
   "grantedBy": zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n')
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n')
 }).describe('The access of one person to a space or a list ("Personnes ayant accès"), given by someone\nwho manages it. A space or a list holds 200 grants at most. The owner of the space holds\nnone: they always have `edit` ("Propriétaire").\n')),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(listSpaceGrantsResponseTotalMin).describe('Grants of the space or the list, on every page.')
@@ -84,8 +85,9 @@ export const SetSpaceGrantResponse = zod.object({
   "grantedAt": zod.iso.datetime({"offset":true}).describe('When the person was given this role.'),
   "grantedBy": zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n')
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n')
 }).describe('The access of one person to a space or a list ("Personnes ayant accès"), given by someone\nwho manages it. A space or a list holds 200 grants at most. The owner of the space holds\nnone: they always have `edit` ("Propriétaire").\n')
 
 
@@ -147,8 +149,9 @@ export const ListListGrantsResponse = zod.object({
   "grantedAt": zod.iso.datetime({"offset":true}).describe('When the person was given this role.'),
   "grantedBy": zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n')
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n')
 }).describe('The access of one person to a space or a list ("Personnes ayant accès"), given by someone\nwho manages it. A space or a list holds 200 grants at most. The owner of the space holds\nnone: they always have `edit` ("Propriétaire").\n')),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(listListGrantsResponseTotalMin).describe('Grants of the space or the list, on every page.')
@@ -190,8 +193,9 @@ export const SetListGrantResponse = zod.object({
   "grantedAt": zod.iso.datetime({"offset":true}).describe('When the person was given this role.'),
   "grantedBy": zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n')
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n')
 }).describe('The access of one person to a space or a list ("Personnes ayant accès"), given by someone\nwho manages it. A space or a list holds 200 grants at most. The owner of the space holds\nnone: they always have `edit` ("Propriétaire").\n')
 
 
@@ -300,8 +304,9 @@ export const ListAccessRequestsResponse = zod.object({
   "decidedAt": zod.iso.datetime({"offset":true}).nullable().describe('When it was approved or refused; `null` while pending.'),
   "decidedBy": zod.union([zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).describe('Who approved or refused it; `null` while pending.')
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n'),zod.null()]).describe('Who approved or refused it; `null` while pending.')
 }).describe('A request for access, as the people who manage its target read it. The requester never\nreads it: they learn the answer from the inbox (cadenway-notification-service). It has no\n`version` of its own to send back: it changes once, from `pending`, and a second answer\ngets `409 access-request.already-decided`; its events carry `1`, then `2`.\n')).describe('The pending requests, the most recent first.'),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(listAccessRequestsResponseTotalMin).describe('Pending requests that match the filters, on every page.')
@@ -355,8 +360,9 @@ export const ApproveAccessRequestResponse = zod.object({
   "decidedAt": zod.iso.datetime({"offset":true}).nullable().describe('When it was approved or refused; `null` while pending.'),
   "decidedBy": zod.union([zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).describe('Who approved or refused it; `null` while pending.')
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n'),zod.null()]).describe('Who approved or refused it; `null` while pending.')
 }).describe('A request for access, as the people who manage its target read it. The requester never\nreads it: they learn the answer from the inbox (cadenway-notification-service). It has no\n`version` of its own to send back: it changes once, from `pending`, and a second answer\ngets `409 access-request.already-decided`; its events carry `1`, then `2`.\n')
 
 
@@ -402,6 +408,7 @@ export const RefuseAccessRequestResponse = zod.object({
   "decidedAt": zod.iso.datetime({"offset":true}).nullable().describe('When it was approved or refused; `null` while pending.'),
   "decidedBy": zod.union([zod.object({
   "type": zod.string(),
-  "id": zod.string().min(1)
-}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). Later versions add\nactor types (the public intake form of the mockup, "Formulaire public") and members (the\nGit provider): a client shows an unknown type as is.\n'),zod.null()]).describe('Who approved or refused it; `null` while pending.')
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n'),zod.null()]).describe('Who approved or refused it; `null` while pending.')
 }).describe('A request for access, as the people who manage its target read it. The requester never\nreads it: they learn the answer from the inbox (cadenway-notification-service). It has no\n`version` of its own to send back: it changes once, from `pending`, and a second answer\ngets `409 access-request.already-decided`; its events carry `1`, then `2`.\n')
