@@ -1,0 +1,233 @@
+openapi: 3.1.0
+info:
+  title: automation-service internal routes
+  version: 1.0.0
+  description: |
+    Requires a signed token from `api-gateway`, audience `automation-service`, actor `user`
+    and a selected organization. The gateway verifies current owner or admin membership with
+    organization-service before calling these operations. The service scopes every lookup and
+    write to the organization in the verified token.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Relays authorized rules management and builds the authorized recent executions response.
+servers:
+  - url: http://automation-service:3017
+    description: Automation service on the internal network.
+security:
+  - internalToken: []
+tags:
+  - name: automations
+    description: Rules and completed executions in the signed organization.
+paths:
+  /internal/v1/automations:
+    get:
+      operationId: listAutomationRulesInternal
+      summary: List automation rules for the signed organization
+      description: Returns rules in ascending `(createdAt, ruleId)` order. The cursor is bound to the signed actor and organization.
+      tags: [automations]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of rules in the signed organization.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/automation.yaml#/components/schemas/AutomationRulePage'
+        '400':
+          $ref: '../../components/automation.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: createAutomationRuleInternal
+      summary: Create a rule in the signed organization
+      description: |
+        Persists an enabled rule at version 1. Assignment and notification require a current active
+        member of the signed organization as the recipient. An optional idempotency key replays
+        the original response for 24 hours and is scoped to the signed actor and organization.
+      tags: [automations]
+      parameters:
+        - $ref: '../../components/automation.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/automation.yaml#/components/schemas/AutomationRuleCreate'
+      responses:
+        '201':
+          description: The rule was created.
+          headers:
+            Location:
+              description: Internal URI reference for the new rule.
+              schema:
+                type: string
+                format: uri-reference
+                examples: [/internal/v1/automations/019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01]
+            ETag:
+              $ref: '../../components/automation.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/automation.yaml#/components/schemas/AutomationRule'
+              examples:
+                atelierNord:
+                  $ref: '../../components/automation.yaml#/components/examples/AtelierNordRule'
+        '400':
+          $ref: '../../components/automation.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '../../components/automation.yaml#/components/responses/RequestInProgress'
+        '422':
+          $ref: '../../components/automation.yaml#/components/responses/CreationRefused'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/automations/{ruleId}:
+    parameters:
+      - $ref: '../../components/automation.yaml#/components/parameters/RuleId'
+    patch:
+      operationId: updateAutomationRuleInternal
+      summary: Enable or disable a rule in the signed organization
+      description: |
+        Applies the requested `enabled` value. A no-op keeps the current version. If provided,
+        `If-Match` is compared to the current version in the same transaction as the write.
+        A disabled rule is ineligible for new trigger decisions.
+      tags: [automations]
+      parameters:
+        - $ref: '../../components/automation.yaml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/automation.yaml#/components/schemas/AutomationRulePatch'
+      responses:
+        '200':
+          description: The current rule after applying the patch.
+          headers:
+            ETag:
+              $ref: '../../components/automation.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/automation.yaml#/components/schemas/AutomationRule'
+        '400':
+          $ref: '../../components/automation.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '../../components/automation.yaml#/components/responses/RuleNotFound'
+        '412':
+          $ref: '../../components/automation.yaml#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: deleteAutomationRuleInternal
+      summary: Delete a rule in the signed organization
+      description: |
+        Removes the rule from management and new trigger decisions. Previously applied executions
+        can remain in history. If provided, `If-Match` is compared to the current version in the
+        same transaction as the deletion.
+      tags: [automations]
+      parameters:
+        - $ref: '../../components/automation.yaml#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The rule was deleted.
+        '400':
+          $ref: '../../components/automation.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '../../components/automation.yaml#/components/responses/RuleNotFound'
+        '412':
+          $ref: '../../components/automation.yaml#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/v1/automation-runs:
+    get:
+      operationId: listAutomationRunCandidatesInternal
+      summary: Page through candidate executions for the signed organization
+      description: |
+        Pages through a window of at most the 100 newest applied actions in the organization, in
+        descending `(executedAt, executionId)` order. No-op, skipped and failed actions do not
+        produce entries. The opaque cursor binds the fixed upper bound, last returned execution
+        and remaining window to this operation and signed actor and organization. An invalid or
+        mismatched cursor returns `400 request.invalid`.
+
+        Entries can refer to tasks outside the actor's current access. The gateway verifies task
+        visibility as this actor before returning an entry and stops after finding eight visible
+        executions or exhausting the window. An exhausted window can yield an empty public list.
+      tags: [automations]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A bounded page of candidate executions in the signed organization.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/automation.yaml#/components/schemas/AutomationRunPage'
+              example:
+                items:
+                  - executionId: 019a701b-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                    ruleId: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                    taskKey: CAD-482
+                    action:
+                      type: notify
+                      userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                    executedAt: '2026-11-20T08:05:00Z'
+                nextCursor: null
+        '400':
+          $ref: '../../components/automation.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Signed api-gateway token for this service with a user actor and an organization.
+  responses:
+    Unauthenticated:
+      description: '`auth.token-missing` or `auth.token-invalid`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Forbidden:
+      description: '`auth.issuer-not-allowed`, `auth.actor-not-allowed` or `auth.organization-required`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unavailable:
+      description: '`automation.unavailable` when a required store or dependency is unavailable.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
