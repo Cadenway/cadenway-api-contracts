@@ -47,7 +47,7 @@ export const ListAutomationRulesResponse = zod.strictObject({
   "userId": zod.uuid().describe('UUIDv7 of the active organization member to notify about the task.')
 }),zod.strictObject({
   "type": zod.enum(['comment']),
-  "body": zod.string().min(1).max(listAutomationRulesResponseItemsItemActionFourBodyMax).regex(listAutomationRulesResponseItemsItemActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
+  "body": zod.string().min(1).refine((value) => Array.from(value).length <= listAutomationRulesResponseItemsItemActionFourBodyMax, { message: 'At most 5000 Unicode code points' }).regex(listAutomationRulesResponseItemsItemActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
 })]).describe('One action applied to the task that triggered the rule.'),
   "enabled": zod.boolean(),
   "version": zod.int().min(1).describe('Starts at 1 and increases only when the stored rule changes.'),
@@ -93,7 +93,7 @@ export const CreateAutomationRuleBody = zod.strictObject({
   "userId": zod.uuid().describe('UUIDv7 of the active organization member to notify about the task.')
 }),zod.strictObject({
   "type": zod.enum(['comment']),
-  "body": zod.string().min(1).max(createAutomationRuleBodyActionFourBodyMax).regex(createAutomationRuleBodyActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
+  "body": zod.string().min(1).refine((value) => Array.from(value).length <= createAutomationRuleBodyActionFourBodyMax, { message: 'At most 5000 Unicode code points' }).regex(createAutomationRuleBodyActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
 })]).describe('One action applied to the task that triggered the rule.')
 })
 
@@ -123,7 +123,7 @@ export const CreateAutomationRuleResponse = zod.strictObject({
   "userId": zod.uuid().describe('UUIDv7 of the active organization member to notify about the task.')
 }),zod.strictObject({
   "type": zod.enum(['comment']),
-  "body": zod.string().min(1).max(createAutomationRuleResponseActionFourBodyMax).regex(createAutomationRuleResponseActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
+  "body": zod.string().min(1).refine((value) => Array.from(value).length <= createAutomationRuleResponseActionFourBodyMax, { message: 'At most 5000 Unicode code points' }).regex(createAutomationRuleResponseActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
 })]).describe('One action applied to the task that triggered the rule.'),
   "enabled": zod.boolean(),
   "version": zod.int().min(1).describe('Starts at 1 and increases only when the stored rule changes.'),
@@ -177,7 +177,7 @@ export const UpdateAutomationRuleResponse = zod.strictObject({
   "userId": zod.uuid().describe('UUIDv7 of the active organization member to notify about the task.')
 }),zod.strictObject({
   "type": zod.enum(['comment']),
-  "body": zod.string().min(1).max(updateAutomationRuleResponseActionFourBodyMax).regex(updateAutomationRuleResponseActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
+  "body": zod.string().min(1).refine((value) => Array.from(value).length <= updateAutomationRuleResponseActionFourBodyMax, { message: 'At most 5000 Unicode code points' }).regex(updateAutomationRuleResponseActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
 })]).describe('One action applied to the task that triggered the rule.'),
   "enabled": zod.boolean(),
   "version": zod.int().min(1).describe('Starts at 1 and increases only when the stored rule changes.'),
