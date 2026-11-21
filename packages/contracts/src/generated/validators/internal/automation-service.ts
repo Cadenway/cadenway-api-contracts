@@ -47,7 +47,7 @@ export const ListAutomationRulesInternalResponse = zod.strictObject({
   "userId": zod.uuid().describe('UUIDv7 of the active organization member to notify about the task.')
 }),zod.strictObject({
   "type": zod.enum(['comment']),
-  "body": zod.string().min(1).max(listAutomationRulesInternalResponseItemsItemActionFourBodyMax).regex(listAutomationRulesInternalResponseItemsItemActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
+  "body": zod.string().min(1).refine((value) => Array.from(value).length <= listAutomationRulesInternalResponseItemsItemActionFourBodyMax, { message: 'At most 5000 Unicode code points' }).regex(listAutomationRulesInternalResponseItemsItemActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
 })]).describe('One action applied to the task that triggered the rule.'),
   "enabled": zod.boolean(),
   "version": zod.int().min(1).describe('Starts at 1 and increases only when the stored rule changes.'),
@@ -58,9 +58,23 @@ export const ListAutomationRulesInternalResponse = zod.strictObject({
 
 
 /**
- * Persists an enabled rule at version 1. Assignment and notification require a current active
- * member of the signed organization as the recipient. An optional idempotency key replays
- * the original response for 24 hours and is scoped to the signed actor and organization.
+ * Persists an enabled rule at version 1. For an assignment or notification, api-gateway makes
+ * a fresh `checkAutomationRecipientInternal` call for the same authenticated user,
+ * organization and action recipient. A negative decision refuses creation. Without a
+ * successful decision the gateway cannot sign a proof or forward the command.
+ *
+ * The gateway signs the scope `automation:recipient:<canonical UUIDv7>`, with the recipient
+ * UUID in lowercase, in its user token with audience `automation-service`. It mints this scope
+ * only from the positive Organization decision. It discards client-supplied values in this
+ * reserved scope namespace and never sends the internal token to the client.
+ *
+ * Automation compares the recipient's canonical action `userId` to the reserved scope in the
+ * verified token. An absent or nonmatching proof returns `422 automation.recipient-ineligible`.
+ * This check applies before any creation or idempotent replay. An optional idempotency key
+ * replays the original response for 24 hours and is scoped to the signed actor and organization.
+ *
+ * The proof is for rule creation only. Task or Notification still rechecks live action
+ * authority and recipient eligibility when applying an action.
  * @summary Create a rule in the signed organization
  */
 export const createAutomationRuleInternalHeaderIdempotencyKeyMax = 255;
@@ -95,7 +109,7 @@ export const CreateAutomationRuleInternalBody = zod.strictObject({
   "userId": zod.uuid().describe('UUIDv7 of the active organization member to notify about the task.')
 }),zod.strictObject({
   "type": zod.enum(['comment']),
-  "body": zod.string().min(1).max(createAutomationRuleInternalBodyActionFourBodyMax).regex(createAutomationRuleInternalBodyActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
+  "body": zod.string().min(1).refine((value) => Array.from(value).length <= createAutomationRuleInternalBodyActionFourBodyMax, { message: 'At most 5000 Unicode code points' }).regex(createAutomationRuleInternalBodyActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
 })]).describe('One action applied to the task that triggered the rule.')
 })
 
@@ -125,7 +139,7 @@ export const CreateAutomationRuleInternalResponse = zod.strictObject({
   "userId": zod.uuid().describe('UUIDv7 of the active organization member to notify about the task.')
 }),zod.strictObject({
   "type": zod.enum(['comment']),
-  "body": zod.string().min(1).max(createAutomationRuleInternalResponseActionFourBodyMax).regex(createAutomationRuleInternalResponseActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
+  "body": zod.string().min(1).refine((value) => Array.from(value).length <= createAutomationRuleInternalResponseActionFourBodyMax, { message: 'At most 5000 Unicode code points' }).regex(createAutomationRuleInternalResponseActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
 })]).describe('One action applied to the task that triggered the rule.'),
   "enabled": zod.boolean(),
   "version": zod.int().min(1).describe('Starts at 1 and increases only when the stored rule changes.'),
@@ -180,7 +194,7 @@ export const UpdateAutomationRuleInternalResponse = zod.strictObject({
   "userId": zod.uuid().describe('UUIDv7 of the active organization member to notify about the task.')
 }),zod.strictObject({
   "type": zod.enum(['comment']),
-  "body": zod.string().min(1).max(updateAutomationRuleInternalResponseActionFourBodyMax).regex(updateAutomationRuleInternalResponseActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
+  "body": zod.string().min(1).refine((value) => Array.from(value).length <= updateAutomationRuleInternalResponseActionFourBodyMax, { message: 'At most 5000 Unicode code points' }).regex(updateAutomationRuleInternalResponseActionFourBodyRegExp).describe('Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.\n')
 })]).describe('One action applied to the task that triggered the rule.'),
   "enabled": zod.boolean(),
   "version": zod.int().min(1).describe('Starts at 1 and increases only when the stored rule changes.'),

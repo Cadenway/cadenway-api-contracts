@@ -6465,12 +6465,11 @@ components:
       description: |
         Stable command identity derived from the normalized Git delivery or triggering Task event,
         reused on every retry and redelivery for this actor, operation and task. Use an opaque
-        value without raw provider headers or payload. The receipt is scoped to the signed
-        organization, issuer, actor, operation, task key and this value. Recheck current target
-        authorization before returning an execution receipt. A different body for the scoped key
-        is refused. Task retains receipts for at least 24 hours, covering the entire window in
-        which callers retry this command. Callers keep their own durable delivery deduplication
-        and do not send a previously submitted command again after that window.
+        value without raw provider headers or payload. Reserve a distinct value for each command
+        within the signed organization and actor. Reusing a value for a different operation,
+        task key or body is refused. Task rechecks current target authorization before returning
+        an execution receipt and retains receipts for at least 24 hours. Callers keep their own
+        durable delivery deduplication and do not resend a submitted command after that window.
       schema:
         type: string
         minLength: 1

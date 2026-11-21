@@ -281,6 +281,27 @@ for (const root of ROOTS) {
         `.refine((value) => Array.from(value).length <= ${limit}, { message: 'At most 200 Unicode code points' })`,
       );
     }
+    // Automation comments use the Unicode code-point count of OpenAPI string lengths.
+    if (
+      root.name === 'contracts' &&
+      ['public/automations', 'internal/automation-service'].includes(spec)
+    ) {
+      const suffix = spec === 'public/automations' ? '' : 'Internal';
+      for (const name of [
+        `listAutomationRules${suffix}ResponseItemsItemActionFourBodyMax`,
+        `createAutomationRule${suffix}BodyActionFourBodyMax`,
+        `createAutomationRule${suffix}ResponseActionFourBodyMax`,
+        `updateAutomationRule${suffix}ResponseActionFourBodyMax`,
+      ]) {
+        const length = `.max(${name})`;
+        if (!generated.includes(length))
+          throw new Error(`${source}: missing comment length ${name}`);
+        generated = generated.replace(
+          length,
+          `.refine((value) => Array.from(value).length <= ${name}, { message: 'At most 5000 Unicode code points' })`,
+        );
+      }
+    }
     // Intake writes must refuse unknown routing, identity, and field settings at the boundary.
     if (root.name === 'contracts' && ['public/intake', 'internal/task-service'].includes(spec)) {
       const suffix = spec === 'public/intake' ? '' : 'Internal';
