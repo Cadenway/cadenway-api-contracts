@@ -666,7 +666,7 @@ paths:
                 name: Coopérative Lumen
                 slug: lumen
                 role: member
-                memberCount: 42
+                memberCount: 5
                 plan: free
                 joinedAt: '2026-11-08T10:30:00Z'
         '400':
