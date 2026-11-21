@@ -1,5 +1,11 @@
 # @cadenway/api-client
 
+## 0.22.0
+
+### Minor Changes
+
+- cfb8b2f: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+
 ## 0.21.0
 
 ### Minor Changes

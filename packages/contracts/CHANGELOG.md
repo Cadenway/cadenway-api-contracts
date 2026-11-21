@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.26.0
+
+### Minor Changes
+
+- cfb8b2f: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+
 ## 0.25.1
 
 ### Patch Changes
