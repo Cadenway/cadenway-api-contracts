@@ -10,7 +10,10 @@ import * as zod from 'zod';
  * and repository identifiers, as applicable, to find the active mapping. It checks the event
  * header against the payload before processing a supported event.
  *
- * The delivery key is scoped to this receiver and provider, using `X-GitHub-Delivery`.
+ * The receiver and SHA-256 digest of the authenticated body identify one admitted
+ * delivery independently of `X-GitHub-Delivery`. Persist the receipt and accepted
+ * work atomically and reject reuse of the delivery ID with different authenticated
+ * bytes. Retain the receipt while the signing key can still be accepted.
  * A pull request opened in `atelier-nord/cadenway-web` from
  * `cad-482-ecran-connexion-sso` is an example of a delivery that can initiate Task work.
  * @summary Receive a signed GitHub webhook delivery
@@ -33,7 +36,7 @@ export const ReceiveGitHubWebhookInternalHeader = zod.object({
   "X-Hub-Signature-256": zod.string().regex(receiveGitHubWebhookInternalHeaderXHubSignature256RegExp).describe('GitHub HMAC-SHA256 signature of the raw body, with the sha256 prefix.')
 })
 
-export const ReceiveGitHubWebhookInternalBody = zod.instanceof(Blob)
+export const ReceiveGitHubWebhookInternalBody = zod.union([zod.instanceof(Uint8Array), zod.instanceof(Blob)])
 
 export const ReceiveGitHubWebhookInternalResponse = zod.void()
 
@@ -70,6 +73,6 @@ export const ReceiveGitLabWebhookInternalHeader = zod.object({
   "webhook-signature": zod.string().min(1).max(receiveGitLabWebhookInternalHeaderWebhookSignatureMax).describe('Space-separated signatures. Integration verifies a supported v1 signature for this receiver.')
 })
 
-export const ReceiveGitLabWebhookInternalBody = zod.instanceof(Blob)
+export const ReceiveGitLabWebhookInternalBody = zod.union([zod.instanceof(Uint8Array), zod.instanceof(Blob)])
 
 export const ReceiveGitLabWebhookInternalResponse = zod.void()

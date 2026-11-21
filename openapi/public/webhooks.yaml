@@ -33,6 +33,7 @@ paths:
   /v1/webhooks/github:
     post:
       operationId: receiveGitHubWebhook
+      x-cadenway-raw-body: true
       summary: Receive a signed GitHub webhook delivery
       description: |
         The gateway forwards the original bytes and headers. Integration verifies the SHA-256
@@ -41,7 +42,10 @@ paths:
         to find the active mapping. It checks the event header against the payload before
         processing a supported event.
 
-        The delivery key is scoped to this receiver and provider, using `X-GitHub-Delivery`.
+        Integration atomically admits one delivery per receiver and SHA-256 digest of the
+        authenticated body, regardless of the supplied `X-GitHub-Delivery`. It retains that
+        receipt while the signing key can still be accepted. Reuse of the provider delivery ID
+        with different authenticated bytes is rejected.
         A pull request opened in `atelier-nord/cadenway-web` from
         `cad-482-ecran-connexion-sso` is an example of a delivery that can initiate Task work.
       externalDocs:
@@ -69,6 +73,7 @@ paths:
   /v1/webhooks/gitlab:
     post:
       operationId: receiveGitLabWebhook
+      x-cadenway-raw-body: true
       summary: Receive a signed GitLab webhook delivery
       description: |
         The gateway forwards the original bytes and headers. Integration verifies the Standard
@@ -242,6 +247,14 @@ components:
           $ref: '#/components/headers/PrivateNoStore'
         Retry-After:
           $ref: '#/components/headers/RetryAfter'
+        RateLimit:
+          required: true
+          description: Rate limit state for the webhook policy.
+          schema: { type: string }
+        RateLimit-Policy:
+          required: true
+          description: Applicable webhook rate limit policy.
+          schema: { type: string }
       content:
         application/problem+json:
           schema:

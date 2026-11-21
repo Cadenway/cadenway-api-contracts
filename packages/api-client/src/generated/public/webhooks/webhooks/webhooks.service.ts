@@ -158,7 +158,10 @@ export class WebhooksService {
  * to find the active mapping. It checks the event header against the payload before
  * processing a supported event.
  *
- * The delivery key is scoped to this receiver and provider, using `X-GitHub-Delivery`.
+ * Integration atomically admits one delivery per receiver and SHA-256 digest of the
+ * authenticated body, regardless of the supplied `X-GitHub-Delivery`. It retains that
+ * receipt while the signing key can still be accepted. Reuse of the provider delivery ID
+ * with different authenticated bytes is rejected.
  * A pull request opened in `atelier-nord/cadenway-web` from
  * `cad-482-ecran-connexion-sso` is an example of a delivery that can initiate Task work.
  * @summary Receive a signed GitHub webhook delivery
