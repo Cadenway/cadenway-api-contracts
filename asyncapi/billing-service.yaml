@@ -1,0 +1,144 @@
+asyncapi: 3.0.0
+info:
+  title: billing-service events
+  version: 1.0.0
+  description: |
+    Billing-service owns quota counters and records an upward crossing of the 80% threshold
+    for billed seats or verified ready attachment bytes. The previously committed utilization
+    was below 80% and the newly committed utilization is at least 80%. Staying at or above the
+    threshold emits nothing. A committed drop below it allows a later upward crossing to emit
+    another event. The 90% gauge state and the 95% banner are application display states.
+
+    Billing appends the fact to its outbox in the same tenant transaction as the quota change.
+    The relay publishes to `EVENTS` after commit with at-least-once delivery. Redelivery of an
+    input fact and replay to rebuild a quota projection do not create another threshold fact.
+
+    Notification-service deduplicates by event `id`, resolves the current active owners and
+    administrators of the event's organization, and sends email and in-app notifications to
+    those recipients. The payload carries no recipient identifiers or contact details.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  tags:
+    - name: quotas
+      description: Committed changes to quota utilization.
+  x-consumers:
+    - repository: cadenway-notification-service
+      uses: Planned in P5, quota.threshold-reached.v1 to notify current organization owners and administrators.
+servers:
+  nats:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream of each environment, on its internal network.
+defaultContentType: application/json
+channels:
+  quotaThresholdReachedV1:
+    address: evt.quota.threshold-reached.v1
+    description: Emitted by billing-service. Planned consumer cadenway-notification-service.
+    messages:
+      quotaThresholdReachedV1:
+        $ref: '#/components/messages/quotaThresholdReachedV1'
+operations:
+  publishQuotaThresholdReachedV1:
+    action: send
+    summary: Publish an upward crossing of the 80% quota threshold.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/quotaThresholdReachedV1'
+    messages:
+      - $ref: '#/channels/quotaThresholdReachedV1/messages/quotaThresholdReachedV1'
+components:
+  schemas:
+    EventHeaders:
+      type: object
+      properties:
+        traceparent:
+          type: string
+          description: W3C Trace Context of the request or event that caused the change.
+    QuotaMetric:
+      type: string
+      enum: [seats, storage]
+      description: |
+        `seats` counts active owners, administrators and members in seats. Active guests
+        are counted separately. `storage` measures verified ready attachments in bytes.
+  messages:
+    quotaThresholdReachedV1:
+      name: quota.threshold-reached.v1
+      title: Quota threshold reached
+      summary: Utilization of a billed quota rose from below 80% to at least 80%.
+      description: The actor is the billing-service system actor for the committed quota change.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [id, occurredAt, organizationId, actor, version, metric, thresholdPercent, used, limit]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event deduplication key, stable across deliveries.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the quota change was committed.
+          organizationId:
+            type: string
+            format: uuid
+            description: Tenant whose quota crossed the threshold.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+            description: Committed quota version for the organization and metric.
+          metric:
+            $ref: '#/components/schemas/QuotaMetric'
+          thresholdPercent:
+            type: integer
+            const: 80
+            description: Threshold crossed, expressed as an integer percentage.
+          used:
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+            description: Exact committed usage, in seats or bytes according to the metric.
+          limit:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+            description: Exact committed quota limit, in seats or bytes according to the metric.
+      examples:
+        - name: atelierNordFreeSeats
+          summary: Atelier Nord reaches four of the five seats on the Free plan.
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d40
+            occurredAt: '2026-11-20T14:08:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: billing-service
+            version: 4
+            metric: seats
+            thresholdPercent: 80
+            used: 4
+            limit: 5
+        - name: atelierNordFreeStorage
+          summary: Atelier Nord reaches 1.6 of the 2 GB of attachment storage on the Free plan.
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d41
+            occurredAt: '2026-11-20T14:10:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: billing-service
+            version: 2
+            metric: storage
+            thresholdPercent: 80
+            used: 1600000000
+            limit: 2000000000

@@ -1,0 +1,119 @@
+openapi: 3.1.0
+info:
+  title: billing-service internal routes
+  version: 1.0.0
+  description: |
+    Reads organization subscriptions and measured usage. Billing derives the actor and
+    organization from the signed gateway token.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Relays authorized subscription reads via the generated internal client.
+servers:
+  - url: http://billing-service:3012
+    description: Billing service on the internal network.
+security:
+  - internalToken: []
+tags:
+  - name: billing
+    description: Subscription and measured usage for the signed organization.
+paths:
+  /internal/v1/billing/subscription:
+    get:
+      operationId: getBillingSubscriptionInternal
+      summary: Read the subscription for the signed organization
+      description: |
+        Requires an `api-gateway` token with a `user` actor, an organization and a
+        `billing-service` audience. The gateway verifies an active owner membership with
+        Organization before calling this operation. Billing reads only the organization
+        in the verified token.
+
+        Return the current subscription and the initialized usage counters. The seat count
+        consists of active owners, admins and members. Count active guests separately. The
+        attachment usage counter sums verified sizes for ready attachments. The Free plan
+        includes five seats and 2,000,000,000 bytes of storage. Return 503 if the subscription or
+        a required source usage baseline is unavailable. A committed source change can still
+        be in delivery when the initialized usage is read.
+      tags: [billing]
+      responses:
+        '200':
+          description: The subscription and measured usage of the signed organization.
+          headers:
+            Cache-Control:
+              $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/billing.yaml#/components/schemas/BillingSubscription'
+              examples:
+                free:
+                  summary: Exemple d’Atelier Nord au plan Gratuit
+                  value:
+                    plan: free
+                    seats:
+                      used: 3
+                      limit: 5
+                    guestCount: 1
+                    storage:
+                      attachmentBytesUsed: 120000000
+                      limitBytes: 2000000000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Signed API gateway token with a user actor, organization and billing-service audience.
+  responses:
+    BadRequest:
+      description: |
+        `request.invalid` with `details.issues` for an unknown query parameter or an invalid
+        request body. `request.body-too-large` applies when the request exceeds the service body
+        limit.
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unauthenticated:
+      description: '`auth.token-missing` or `auth.token-invalid`.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Forbidden:
+      description: '`auth.issuer-not-allowed`, `auth.actor-not-allowed` or `auth.organization-required`.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unavailable:
+      description: '`billing.unavailable` when the subscription or a required usage baseline is unavailable.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'

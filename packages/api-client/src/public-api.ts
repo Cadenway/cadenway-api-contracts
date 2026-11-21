@@ -25,6 +25,18 @@ export type {
   TaskSearchHit,
 } from './generated/public/search/model';
 
+// openapi/public/billing.yaml
+export {
+  BillingService,
+  type GetBillingSubscriptionClientResult,
+} from './generated/public/billing/billing/billing.service';
+export type {
+  BillingPlan,
+  BillingSeats,
+  BillingStorage,
+  BillingSubscription,
+} from './generated/public/billing/model';
+
 // openapi/public/documents.yaml
 export {
   DocumentsService,

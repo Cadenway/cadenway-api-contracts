@@ -4,9 +4,10 @@ info:
   version: 1.0.0
   description: |
     Attachment and profile image resources owned by storage-service. Gateway routes use a verified
-    `api-gateway` token. Search projection routes use a verified `search-service` token. Task attachment, quota
-    and logo operations require a `user` actor and an organization. Applicant upload operations
-    require a `system` actor and the organization resolved by task-service. The account owns
+    `api-gateway` token. Search projection routes use a verified `search-service` token. The Billing
+    usage export uses a verified `billing-service` system token scoped to an organization. Task
+    attachment, quota and logo operations require a `user` actor and an organization. Applicant
+    upload operations require a `system` actor and the organization resolved by task-service. The account owns
     its avatar independently of any organization. Avatar operations require a `user` actor.
     Directory avatar reads require the organization in which the gateway verified member access.
     Before relaying each task attachment request, the gateway requires a successful decision
@@ -37,6 +38,8 @@ info:
       uses: Authorizes task and applicant upload access through task-service and relays attachment and profile image operations using the generated internal client. Profile images require current owner or directory access.
     - repository: cadenway-search-service
       uses: Rebuilds and refreshes its index of ready task attachment filenames through the internal search projection routes.
+    - repository: cadenway-billing-service
+      uses: Rebuilds its storage usage projection from verified sizes and versions of ready task attachments and the terminal versions of deletions.
 servers:
   - url: http://storage-service:3015
     description: Internal service endpoint.
@@ -51,6 +54,8 @@ tags:
     description: Signed transfers, verified raster preparation and authorized image reads.
   - name: search-projections
     description: Bounded snapshots and current attachment metadata for the search index.
+  - name: billing-usage
+    description: Verified attachment usage snapshots for Billing reconciliation.
 paths:
   /internal/v1/intake-publications/{publicationId}/attachments:
     parameters:
@@ -673,6 +678,71 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /internal/v1/billing-attachment-usage:
+    get:
+      operationId: listBillingAttachmentUsageInternal
+      summary: Export attachment states for Billing storage usage
+      description: |
+        Requires issuer `billing-service`, actor `{ type: 'system', id: 'billing-service' }`,
+        and an organization in the verified internal token. The token determines the tenant.
+        Every response carries `Cache-Control: private, no-store`. Each ready task attachment,
+        including a claimed public intake attachment, is exported with its ID, verified byte
+        count and version. Each retained deletion of a previously ready attachment is exported
+        with its ID and terminal version. The export must include a deletion whenever an older
+        upload fact can still arrive, including from a delayed Storage outbox. Pending or
+        discarded uploads that never reached the ready state, unclaimed intake candidates and
+        profile media contribute no row. During a task purge, each attachment stops contributing
+        when Storage commits its file tombstone and appends `file.deleted.v1`.
+        Physical object erasure can follow later. No file names, task keys, object keys or author
+        details are returned. A tenant with no eligible attachments receives an empty page.
+
+        The first page fixes an inclusive upper file ID in its tenant snapshot. Each page reads
+        its own tenant snapshot in ascending immutable UUID order above the last returned ID
+        and at or below that upper bound. The opaque, authenticated cursor has 1 to 1,024
+        characters and binds the operation, the tenant, the upper bound and the last returned ID.
+        Only `nextCursor: null` marks completion. The UTF-8 JSON body is at most 1,048,576 bytes.
+
+        Billing reconciles `file.uploaded.v1` and `file.deleted.v1` by file ID and highest source
+        version. A deletion takes precedence over a ready row of the same version. Once a file ID
+        is terminal, Billing never restores its usage. A rebuild requires continuous durable delivery from a
+        starting position recorded before the first page through a catch-up position recorded after
+        the final page. Billing proves coverage and applies all relevant facts through that position
+        before promotion. On a confirmed gap, Billing discards the candidate and restarts from a
+        new starting position. A committed change still in the producer outbox at that position
+        is reflected once it is delivered. Quota admission requires an additional guarantee
+        at the source write boundary to account for those pending changes.
+      tags: [billing-usage]
+      parameters:
+        - $ref: '../../components/billing.yaml#/components/parameters/BillingCursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of verified ready task attachments and retained deletions.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/BillingPrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingAttachmentUsagePage'
+              example:
+                items:
+                  - fileId: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15
+                    state: ready
+                    sizeBytes: 248320
+                    version: 1
+                  - fileId: 019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f16
+                    state: deleted
+                    version: 2
+                nextCursor: null
+        '400':
+          $ref: '#/components/responses/BillingUsageBadRequest'
+        '401':
+          $ref: '#/components/responses/BillingUsageTokenRefused'
+        '403':
+          $ref: '#/components/responses/BillingUsageAccessRefused'
+        '503':
+          $ref: '#/components/responses/BillingUsageUnavailable'
   /internal/v1/attachment-search-projections:
     get:
       operationId: listAttachmentSearchProjectionsInternal
@@ -828,6 +898,12 @@ components:
         pattern: '^"[1-9][0-9]*"$'
         examples: ['"1"']
   headers:
+    BillingPrivateNoStore:
+      required: true
+      description: Keeps Billing authority responses out of HTTP caches.
+      schema:
+        type: string
+        const: 'private, no-store'
     SearchPrivateNoStore:
       required: true
       description: Keeps the private attachment projection out of HTTP caches.
@@ -860,6 +936,44 @@ components:
         type: string
         examples: ['"1"']
   responses:
+    BillingUsageBadRequest:
+      description: '`request.invalid` for invalid query parameters or a malformed cursor, including a cursor for a different operation or tenant.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/BillingPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    BillingUsageTokenRefused:
+      description: '`auth.token-missing` or `auth.token-invalid`.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/BillingPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    BillingUsageAccessRefused:
+      description: |
+        `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+        type or ID, or `auth.organization-required` for an unscoped token.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/BillingPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    BillingUsageUnavailable:
+      description: '`storage.unavailable` when Storage cannot complete the snapshot page.'
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/BillingPrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     SearchProjectionBadRequest:
       description: |
         `request.invalid` for invalid input, including an invalid cursor or duplicate file IDs.
@@ -1040,6 +1154,60 @@ components:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
   schemas:
+    BillingAttachmentUsage:
+      oneOf:
+        - $ref: '#/components/schemas/BillingReadyAttachment'
+        - $ref: '#/components/schemas/BillingDeletedAttachment'
+      discriminator:
+        propertyName: state
+        mapping:
+          ready: '#/components/schemas/BillingReadyAttachment'
+          deleted: '#/components/schemas/BillingDeletedAttachment'
+    BillingReadyAttachment:
+      type: object
+      additionalProperties: false
+      required: [fileId, version, state, sizeBytes]
+      properties:
+        fileId: { $ref: '../../components/attachments.yaml#/components/schemas/AttachmentId' }
+        state: { type: string, const: ready }
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 26214400
+          description: Verified object size in bytes, up to 25 MiB.
+        version:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Owner version of the ready attachment.
+    BillingDeletedAttachment:
+      type: object
+      additionalProperties: false
+      required: [fileId, version, state]
+      properties:
+        fileId: { $ref: '../../components/attachments.yaml#/components/schemas/AttachmentId' }
+        state: { type: string, const: deleted }
+        version:
+          type: integer
+          minimum: 2
+          maximum: 9007199254740991
+          description: Terminal version of the previously ready attachment.
+    BillingAttachmentUsagePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/BillingAttachmentUsage' }
+        nextCursor:
+          type: [string, 'null']
+          allOf:
+            - $ref: '../../components/http.yaml#/components/schemas/NextCursor'
+            - type: [string, 'null']
+              minLength: 1
+              maxLength: 1024
     AttachmentSearchProjection:
       type: object
       additionalProperties: false

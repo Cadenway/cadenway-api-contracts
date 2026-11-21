@@ -1,0 +1,157 @@
+openapi: 3.1.0
+info:
+  title: Cadenway organization billing
+  version: 1.0.0
+  description: Reads the selected organization's subscription, seat usage and verified attachment usage.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: Checks the current Organization access and relays the subscription read to Billing.
+    - repository: cadenway-webapp
+      uses: Shows the current plan, seats and measured attachment usage in organization settings.
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+  - url: https://api.staging.cadenway.com
+    description: Staging.
+tags:
+  - name: billing
+    description: Subscription and measured usage for the selected organization.
+paths:
+  /v1/billing/subscription:
+    get:
+      operationId: getBillingSubscription
+      summary: Read the current organization subscription
+      description: |
+        The selected organization comes from the verified browser session. The gateway checks
+        the caller's current membership with Organization. Only an active owner can
+        read the subscription and usage. Billing returns its current plan and available usage
+        counters. When a required source baseline is unavailable, the route returns 503.
+
+        The Free plan includes five seats and 2,000,000,000 bytes of storage. Active owners,
+        admins and members consume seats. Active guests are counted separately. The storage usage
+        field measures verified ready attachment bytes. Its limit is the organization's storage
+        allowance.
+      tags: [billing]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The subscription and measured usage of the selected organization.
+          headers:
+            Cache-Control:
+              $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/billing.yaml#/components/schemas/BillingSubscription'
+              examples:
+                free:
+                  summary: Exemple d’Atelier Nord au plan Gratuit
+                  value:
+                    plan: free
+                    seats:
+                      used: 3
+                      limit: 5
+                    guestCount: 1
+                    storage:
+                      attachmentBytesUsed: 120000000
+                      limitBytes: 2000000000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: Browser session with a selected organization.
+  responses:
+    BadRequest:
+      description: |
+        `request.invalid` with `details.issues` for an unknown query parameter or an invalid
+        request body. `request.body-too-large` applies when the request exceeds the gateway body
+        limit.
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unauthenticated:
+      description: '`auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Forbidden:
+      description: |
+        `auth.api-token-not-accepted`, `organization.not-selected`, `organization.mfa-required`,
+        or `organization.role-forbidden` when the current active membership lacks the owner role.
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    OrganizationNotFound:
+      description: '`organization.not-found` when the organization or current membership is absent.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Organisation introuvable.
+            status: 404
+            code: organization.not-found
+    RateLimited:
+      description: '`rate-limit.exceeded` when the gateway limit applies.'
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+        Retry-After:
+          description: Delay in seconds before trying again.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unavailable:
+      description: |
+        `billing.unavailable` when the subscription or a required usage baseline is unavailable.
+        Dependency failures can use `upstream.failed`, `upstream.unauthorized`,
+        `upstream.unreachable`, `upstream.timeout`, `upstream.unavailable`,
+        `upstream.circuit-open` or `upstream.deadline-exceeded`.
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'

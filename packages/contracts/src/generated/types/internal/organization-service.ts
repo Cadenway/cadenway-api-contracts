@@ -3,16 +3,45 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
- * Cursor of the next page; `null` on the last page.
+ * @maxItems 100
+ */
+export type QuotaNotificationRecipientIds = string[];
+
+export interface QuotaNotificationRecipientPage {
+  items: QuotaNotificationRecipientIds;
+  /** @nullable */
+  nextCursor: string | null;
+}
+
+export interface QuotaNotificationRecipientLookup {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  userIds: string[];
+}
+
+export interface QuotaNotificationRecipientLookupResult {
+  items: QuotaNotificationRecipientIds;
+}
+
+/**
  * @nullable
  */
-export type NextCursor = string | null;
+export type BillingUsageNextCursor = string | null;
 
-export interface SearchOrganizationPage {
+export interface BillingOrganizationPage {
   /** @maxItems 100 */
   items: string[];
-  nextCursor: NextCursor | null;
+  nextCursor: BillingUsageNextCursor | null;
 }
+
+export type BillingActiveMembershipState = typeof BillingActiveMembershipState[keyof typeof BillingActiveMembershipState];
+
+
+export const BillingActiveMembershipState = {
+  active: 'active',
+} as const;
 
 /**
  * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
@@ -27,6 +56,56 @@ export const Role = {
   member: 'member',
   guest: 'guest',
 } as const;
+
+export interface BillingActiveMembership {
+  memberId: string;
+  state: BillingActiveMembershipState;
+  role: Role;
+  /**
+     * Version of the membership, independent of the organization version.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+export type BillingRemovedMembershipState = typeof BillingRemovedMembershipState[keyof typeof BillingRemovedMembershipState];
+
+
+export const BillingRemovedMembershipState = {
+  removed: 'removed',
+} as const;
+
+export interface BillingRemovedMembership {
+  memberId: string;
+  state: BillingRemovedMembershipState;
+  /**
+     * Terminal version of this membership.
+     * @minimum 2
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+export type BillingMembership = BillingActiveMembership | BillingRemovedMembership;
+
+export interface BillingMembershipPage {
+  /** @maxItems 100 */
+  items: BillingMembership[];
+  nextCursor: BillingUsageNextCursor | null;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+export interface SearchOrganizationPage {
+  /** @maxItems 100 */
+  items: string[];
+  nextCursor: NextCursor | null;
+}
 
 export interface SearchMembership {
   memberId: string;
@@ -504,6 +583,112 @@ export interface ProfileMediaPreparation {
 }
 
 /**
+ * The organization's plan identifier. Consumers must handle later plan identifiers.
+ */
+export type BillingPlan = string;
+
+export interface BillingSeats {
+  /**
+     * Active owners, administrators and members occupying a seat.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  used: number;
+  /**
+     * Number of seats included in the current plan. The Free plan includes five.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  limit: number;
+}
+
+export interface BillingStorage {
+  /**
+     * Sum in bytes of verified attachments that are ready for the organization.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  attachmentBytesUsed: number;
+  /**
+     * Current storage quota in bytes. The Free plan includes 2,000,000,000 bytes.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  limitBytes: number;
+}
+
+export interface BillingSubscription {
+  plan: BillingPlan;
+  seats: BillingSeats;
+  /**
+     * Active guests recorded separately from occupied seats.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  guestCount: number;
+  storage: BillingStorage;
+}
+
+/**
+ * `request.invalid` for malformed input, including a cursor issued for another tenant or
+ * operation. `request.body-too-large` when the body exceeds the service size limit.
+ */
+export type QuotaNotificationRecipientsBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type QuotaNotificationRecipientsTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID, or `auth.organization-required` for an unscoped token.
+ */
+export type QuotaNotificationRecipientsAccessRefusedResponse = Problem;
+
+/**
+ * `organization.not-found` when the organization in the verified token does not exist.
+ */
+export type QuotaNotificationRecipientsOrganizationNotFoundResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the recipient read.
+ */
+export type QuotaNotificationRecipientsUnavailableResponse = Problem;
+
+/**
+ * `request.invalid` for invalid query parameters or a malformed cursor, including a cursor for a different operation or tenant.
+ */
+export type BillingUsageBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type BillingUsageTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor type
+ * or ID, or `auth.organization-not-allowed` for a verified token scoped to an organization.
+ */
+export type BillingOrganizationAccessRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID, or `auth.organization-required` for an unscoped token.
+ */
+export type BillingMembershipAccessRefusedResponse = Problem;
+
+/**
+ * `organization.not-found` when the organization in the verified token does not exist.
+ */
+export type BillingOrganizationNotFoundResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the snapshot page.
+ */
+export type BillingUsageUnavailableResponse = Problem;
+
+/**
  * `request.invalid` for invalid input, including an invalid organization export cursor.
  */
 export type SearchAuthorityBadRequestResponse = Problem;
@@ -754,6 +939,39 @@ export type ListReceivedInvitationsInternalParams = {
 export type ListSearchOrganizationsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListBillingOrganizationsInternalParams = {
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: string & string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListBillingMembershipsInternalParams = {
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: string & string;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListQuotaNotificationRecipientsInternalParams = {
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: string & string;
   /**
    * Page size.
    * @minimum 1
