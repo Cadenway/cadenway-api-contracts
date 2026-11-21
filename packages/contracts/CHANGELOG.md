@@ -1,5 +1,12 @@
 # @cadenway/contracts
 
+## 0.25.1
+
+### Patch Changes
+
+- 203e6c5: Clarify when Billing confirms a quota threshold crossing and align attachment quota examples
+  on one public problem title.
+
 ## 0.25.0
 
 ### Minor Changes
