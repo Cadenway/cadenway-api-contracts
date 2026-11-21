@@ -233,6 +233,10 @@ paths:
         and records `file.uploaded.v1` together. Repeating successful completion returns the same
         metadata without a second fact. A staged object that is missing before expiry answers
         `409 attachment.upload-not-ready`. Expired pending reservations cannot be completed.
+
+        A first completion that would increase the organization's verified attachment storage
+        beyond its plan limit answers `409 attachment.storage-quota-exceeded` without publishing
+        the attachment or its event.
       tags: [attachments]
       security:
         - sessionCookie: []
@@ -439,11 +443,19 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
     UploadCompletionConflict:
       description: |
-        `task.archived` when the target task or its list is archived, `attachment.upload-expired` for an expired pending reservation, or `attachment.upload-not-ready` when the temporary object has not arrived.
+        `task.archived` when the target task or its list is archived, `attachment.upload-expired`
+        for an expired pending reservation, `attachment.upload-not-ready` when the temporary
+        object has not arrived, or `attachment.storage-quota-exceeded` when adding the verified
+        object would exceed the organization's plan limit.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: La limite de stockage du forfait est atteinte.
+            status: 409
+            code: attachment.storage-quota-exceeded
     UploadStartRefused:
       description: |
         `attachment.file-too-large` above 26,214,400 bytes, `attachment.upload-metadata-mismatch`

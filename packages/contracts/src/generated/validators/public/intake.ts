@@ -369,7 +369,9 @@ export const AbandonPublicIntakeAttachmentUploadResponse = zod.void()
  * A matching retry returns the same acknowledgement without another verification
  * fact. Submission can briefly answer `409 attachment.upload-not-ready` while the
  * verification reaches task-service. Retry submission with the same idempotency key.
- * The acknowledgement gives the applicant no metadata or download access.
+ * A first verification that would exceed the receiving organization's storage limit
+ * answers `409 attachment.storage-quota-exceeded` and does not make the file available
+ * for submission. The acknowledgement gives the applicant no metadata or download access.
  * @summary Verify an applicant's uploaded file
  */
 export const completePublicIntakeAttachmentUploadPathAttachmentIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');

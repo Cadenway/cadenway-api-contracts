@@ -6,7 +6,10 @@ import type { Problem } from './problem';
 
 /**
  * `attachment.upload-expired` when the signed transfer expired before verification,
- * or `attachment.upload-not-ready` when the reserved object has not arrived.
+ * `attachment.upload-not-ready` when the reserved object has not arrived, or
+ * `attachment.storage-quota-exceeded` when the receiving organization cannot accept
+ * those additional verified bytes. The quota refusal is generic and omits plan, limit,
+ * and usage details.
  * These errors apply only to an otherwise eligible reservation of the presented draft.
  */
 export type IntakeAttachmentCompletionConflictResponse = Problem;
