@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Cadenway organization billing
   version: 1.0.0
-  description: Reads the selected organization's subscription, seat usage and verified attachment usage.
+  description: Subscription, measured usage, hosted checkout and invoices for the selected organization.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -11,9 +11,9 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: Checks the current Organization access and relays the subscription read to Billing.
+      uses: Authorizes organization billing and relays signed Stripe deliveries to Billing.
     - repository: cadenway-webapp
-      uses: Shows the current plan, seats and measured attachment usage in organization settings.
+      uses: Shows the current plan, usage, Checkout and invoice history in organization settings.
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -21,7 +21,7 @@ servers:
     description: Staging.
 tags:
   - name: billing
-    description: Subscription and measured usage for the selected organization.
+    description: Subscription, measured usage, payments and invoices.
 paths:
   /v1/billing/subscription:
     get:
@@ -74,6 +74,127 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/billing/checkout:
+    post:
+      operationId: startBillingCheckout
+      summary: Start hosted Checkout for the Team plan
+      description: |
+        The gateway takes the organization from the browser session and verifies an active owner
+        membership with Organization on every request, including retries. The Team plan is
+        available through self-service checkout. Billing supplies the price, seat quantity and
+        return destinations from its configuration and the organization's current state.
+
+        This action returns a Stripe Checkout URL. A later verified Stripe event determines the
+        subscription change. The same key and equivalent body replay the original response for
+        24 hours while the caller remains authorized.
+      tags: [billing]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/billing-payments.yaml#/components/parameters/BillingCheckoutIdempotencyKey'
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/billing-payments.yaml#/components/schemas/BillingCheckoutRequest'
+            example:
+              plan: team
+      responses:
+        '200':
+          description: Hosted Checkout URL for the organization.
+          headers:
+            Cache-Control:
+              $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/billing-payments.yaml#/components/schemas/BillingCheckoutSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          $ref: '../../components/billing-payments.yaml#/components/responses/BillingCheckoutConflict'
+        '422':
+          $ref: '../../components/billing-payments.yaml#/components/responses/BillingCheckoutKeyReused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/PaymentUnavailable'
+  /v1/billing/invoices:
+    get:
+      operationId: listBillingInvoices
+      summary: List issued invoices for the selected organization
+      description: |
+        The gateway verifies an active owner membership with Organization on every request. Billing
+        lists issued invoices for the Stripe customer linked to the selected organization, newest
+        creation first. An organization without a linked customer has an empty history. Continue
+        with the opaque cursor from the preceding page.
+      tags: [billing]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '../../components/billing.yaml#/components/parameters/BillingCursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of issued invoices.
+          headers:
+            Cache-Control:
+              $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/billing-payments.yaml#/components/schemas/BillingInvoicePage'
+        '400':
+          $ref: '../../components/billing-payments.yaml#/components/responses/BillingInvoiceBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/PaymentUnavailable'
+  /v1/billing/webhooks/stripe:
+    post:
+      operationId: receiveStripeBillingWebhook
+      summary: Receive a signed Stripe billing event
+      description: |
+        Stripe sends this server-to-server request. The gateway forwards the unchanged body and
+        Stripe-Signature to Billing under a signed system token with no organization. Billing
+        verifies the Stripe signature and its timestamp before reading the event or resolving
+        the organization from Billing's provider records.
+
+        Billing durably accepts supported deliveries before acknowledging them. Duplicate
+        verified deliveries and verified event types that Billing does not process also return
+        204. The provider signature is the credential for this route.
+      tags: [billing]
+      security: []
+      parameters:
+        - $ref: '../../components/billing-payments.yaml#/components/parameters/StripeSignature'
+      requestBody:
+        $ref: '../../components/billing-payments.yaml#/components/requestBodies/StripeWebhook'
+      responses:
+        '204':
+          description: Verified delivery accepted, already recorded, or intentionally ignored.
+          headers:
+            Cache-Control:
+              $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+        '400':
+          $ref: '../../components/billing-payments.yaml#/components/responses/StripeWebhookBadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/PaymentUnavailable'
 components:
   securitySchemes:
     sessionCookie:
@@ -82,6 +203,19 @@ components:
       name: __Host-cw_session
       description: Browser session with a selected organization.
   responses:
+    PaymentUnavailable:
+      description: |
+        `billing.unavailable` when Billing cannot complete the operation. Dependency failures
+        can use `upstream.failed`, `upstream.unauthorized`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.unavailable`, `upstream.circuit-open`
+        or `upstream.deadline-exceeded`.
+      headers:
+        Cache-Control:
+          $ref: '../../components/billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     BadRequest:
       description: |
         `request.invalid` with `details.issues` for an unknown query parameter or an invalid

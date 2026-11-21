@@ -43,3 +43,103 @@ export const GetBillingSubscriptionResponse = zod.object({
   "limitBytes": zod.int().min(1).max(getBillingSubscriptionResponseStorageLimitBytesMax).describe('Current storage quota in bytes. The Free plan includes 2,000,000,000 bytes.')
 })
 })
+
+
+/**
+ * The gateway takes the organization from the browser session and verifies an active owner
+ * membership with Organization on every request, including retries. The Team plan is
+ * available through self-service checkout. Billing supplies the price, seat quantity and
+ * return destinations from its configuration and the organization's current state.
+ *
+ * This action returns a Stripe Checkout URL. A later verified Stripe event determines the
+ * subscription change. The same key and equivalent body replay the original response for
+ * 24 hours while the caller remains authorized.
+ * @summary Start hosted Checkout for the Team plan
+ */
+export const startBillingCheckoutHeaderIdempotencyKeyMax = 255;
+
+
+export const startBillingCheckoutHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
+
+export const StartBillingCheckoutHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(startBillingCheckoutHeaderIdempotencyKeyMax).regex(startBillingCheckoutHeaderIdempotencyKeyRegExp).describe('Reuse this key when retrying the same checkout request.')
+})
+
+export const StartBillingCheckoutBody = zod.strictObject({
+  "plan": zod.enum(['team']).describe('The Team plan is available through self-service checkout.')
+})
+
+export const startBillingCheckoutResponseUrlRegExp = new RegExp('^https:[/][/]');
+
+
+export const StartBillingCheckoutResponse = zod.object({
+  "url": zod.url().regex(startBillingCheckoutResponseUrlRegExp).describe('Temporary URL returned by Stripe for the hosted checkout.')
+})
+
+
+/**
+ * The gateway verifies an active owner membership with Organization on every request. Billing
+ * lists issued invoices for the Stripe customer linked to the selected organization, newest
+ * creation first. An organization without a linked customer has an empty history. Continue
+ * with the opaque cursor from the preceding page.
+ * @summary List issued invoices for the selected organization
+ */
+export const listBillingInvoicesQueryCursorTwoMax = 1024;
+
+export const listBillingInvoicesQueryLimitDefault = 50;
+export const listBillingInvoicesQueryLimitMax = 100;
+
+
+
+export const ListBillingInvoicesQueryParams = zod.object({
+  "cursor": zod.string().and(zod.string().min(1).max(listBillingInvoicesQueryCursorTwoMax)).optional().describe('Opaque authenticated cursor returned as `nextCursor` by the preceding page.'),
+  "limit": zod.coerce.number().int().min(1).max(listBillingInvoicesQueryLimitMax).default(listBillingInvoicesQueryLimitDefault).describe('Page size.')
+})
+
+
+export const listBillingInvoicesResponseItemsItemTotalMinorUnitsMin = -9007199254740991;
+export const listBillingInvoicesResponseItemsItemTotalMinorUnitsMax = 9007199254740991;
+
+export const listBillingInvoicesResponseItemsItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const listBillingInvoicesResponseItemsItemPdfUrlRegExp = new RegExp('^https:[/][/]');
+export const listBillingInvoicesResponseItemsMax = 100;
+
+
+
+export const ListBillingInvoicesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "number": zod.string().min(1).describe('Issued invoice number displayed to the organization.'),
+  "periodStart": zod.iso.datetime({"offset":true}).describe('Start of the invoiced period in UTC.'),
+  "periodEnd": zod.iso.datetime({"offset":true}).describe('End of the invoiced period in UTC.'),
+  "totalMinorUnits": zod.int().min(listBillingInvoicesResponseItemsItemTotalMinorUnitsMin).max(listBillingInvoicesResponseItemsItemTotalMinorUnitsMax).describe('Actual invoice total in the currency\'s smallest unit, including taxes and discounts.'),
+  "currency": zod.string().regex(listBillingInvoicesResponseItemsItemCurrencyRegExp).describe('ISO 4217 currency code.'),
+  "status": zod.string().describe('Current status of the issued invoice.'),
+  "pdfUrl": zod.url().regex(listBillingInvoicesResponseItemsItemPdfUrlRegExp).nullable().describe('Download URL from Stripe when the invoice PDF is available.')
+})).max(listBillingInvoicesResponseItemsMax),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})
+
+
+/**
+ * Stripe sends this server-to-server request. The gateway forwards the unchanged body and
+ * Stripe-Signature to Billing under a signed system token with no organization. Billing
+ * verifies the Stripe signature and its timestamp before reading the event or resolving
+ * the organization from Billing's provider records.
+ *
+ * Billing durably accepts supported deliveries before acknowledging them. Duplicate
+ * verified deliveries and verified event types that Billing does not process also return
+ * 204. The provider signature is the credential for this route.
+ * @summary Receive a signed Stripe billing event
+ */
+export const receiveStripeBillingWebhookHeaderStripeSignatureMax = 4096;
+
+
+
+export const ReceiveStripeBillingWebhookHeader = zod.object({
+  "Stripe-Signature": zod.string().min(1).max(receiveStripeBillingWebhookHeaderStripeSignatureMax).describe('Stripe\'s timestamp and signature for the exact request bytes. Billing verifies it.')
+})
+
+export const ReceiveStripeBillingWebhookBody = zod.instanceof(Blob)
+
+export const ReceiveStripeBillingWebhookResponse = zod.void()

@@ -1,0 +1,160 @@
+openapi: 3.1.0
+info:
+  title: Cadenway shared billing payment components
+  version: 1.0.0
+  description: Hosted Checkout, invoice history and signed Stripe delivery transport.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  parameters:
+    BillingCheckoutIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Reuse this key when retrying the same checkout request.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        pattern: '^[!-~]+$'
+    StripeSignature:
+      name: Stripe-Signature
+      in: header
+      required: true
+      description: Stripe's timestamp and signature for the exact request bytes. Billing verifies it.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 4096
+  requestBodies:
+    StripeWebhook:
+      required: true
+      description: |
+        The original UTF-8 JSON event sent by Stripe, captured as raw bytes. The gateway preserves
+        those bytes through the relay. Only Billing interprets the event after verifying the signature.
+      content:
+        application/json:
+          schema:
+            type: string
+            format: binary
+  responses:
+    BillingCheckoutConflict:
+      description: |
+        `billing.subscription-active` when a paid subscription already exists,
+        `billing.checkout-in-progress` when a different Checkout is pending, or
+        `idempotency.request-in-progress` when the same request is still running.
+      headers:
+        Cache-Control:
+          $ref: './billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: './http.yaml#/components/schemas/Problem'
+    BillingCheckoutKeyReused:
+      description: '`idempotency.key-reused` when the key was already used with a different request.'
+      headers:
+        Cache-Control:
+          $ref: './billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: './http.yaml#/components/schemas/Problem'
+    BillingInvoiceBadRequest:
+      description: |
+        `request.invalid` with `details.issues` when pagination is invalid, or
+        `billing.invalid-cursor` when the cursor does not belong to this invoice listing.
+      headers:
+        Cache-Control:
+          $ref: './billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: './http.yaml#/components/schemas/Problem'
+    StripeWebhookBadRequest:
+      description: |
+        `billing.invalid-webhook-signature` for a missing, malformed, invalid or expired
+        signature, `billing.invalid-webhook` for an invalid event or media type, or
+        `request.body-too-large` when the request exceeds the body limit.
+      headers:
+        Cache-Control:
+          $ref: './billing.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: './http.yaml#/components/schemas/Problem'
+  schemas:
+    BillingCheckoutRequest:
+      type: object
+      additionalProperties: false
+      required: [plan]
+      properties:
+        plan:
+          type: string
+          description: The Team plan is available through self-service checkout.
+          enum: [team]
+    BillingCheckoutSession:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          pattern: '^https:[/][/]'
+          description: Temporary URL returned by Stripe for the hosted checkout.
+    BillingInvoice:
+      type: object
+      additionalProperties: false
+      required: [number, periodStart, periodEnd, totalMinorUnits, currency, status, pdfUrl]
+      properties:
+        number:
+          type: string
+          minLength: 1
+          description: Issued invoice number displayed to the organization.
+          example: FAC-2026-0011
+        periodStart:
+          type: string
+          format: date-time
+          description: Start of the invoiced period in UTC.
+          example: '2026-11-01T00:00:00Z'
+        periodEnd:
+          type: string
+          format: date-time
+          description: End of the invoiced period in UTC.
+          example: '2026-12-01T00:00:00Z'
+        totalMinorUnits:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+          description: Actual invoice total in the currency's smallest unit, including taxes and discounts.
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 currency code.
+          example: EUR
+        status:
+          type: string
+          x-extensible-enum: [open, paid, uncollectible, void]
+          description: Current status of the issued invoice.
+          example: paid
+        pdfUrl:
+          type: [string, 'null']
+          format: uri
+          pattern: '^https:[/][/]'
+          description: Download URL from Stripe when the invoice PDF is available.
+    BillingInvoicePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/BillingInvoice'
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'

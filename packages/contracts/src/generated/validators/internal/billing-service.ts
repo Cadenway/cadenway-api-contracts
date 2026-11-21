@@ -45,3 +45,105 @@ export const GetBillingSubscriptionInternalResponse = zod.object({
   "limitBytes": zod.int().min(1).max(getBillingSubscriptionInternalResponseStorageLimitBytesMax).describe('Current storage quota in bytes. The Free plan includes 2,000,000,000 bytes.')
 })
 })
+
+
+/**
+ * Requires an api-gateway token with a user actor, an organization and the billing-service
+ * audience. The gateway confirms the current owner role before relaying every call.
+ * Billing looks up the Team price and return destinations from its own configuration and
+ * determines the seat quantity from current organization state.
+ *
+ * The action returns a Stripe Checkout URL. A verified Stripe event determines the
+ * subscription change. Replay the original response for 24 hours for the same actor,
+ * organization, key and equivalent body. Retrying an uncertain Stripe call must reuse
+ * the same provider request identity.
+ * @summary Start hosted Checkout for the signed organization
+ */
+export const startBillingCheckoutInternalHeaderIdempotencyKeyMax = 255;
+
+
+export const startBillingCheckoutInternalHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
+
+export const StartBillingCheckoutInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(startBillingCheckoutInternalHeaderIdempotencyKeyMax).regex(startBillingCheckoutInternalHeaderIdempotencyKeyRegExp).describe('Reuse this key when retrying the same checkout request.')
+})
+
+export const StartBillingCheckoutInternalBody = zod.strictObject({
+  "plan": zod.enum(['team']).describe('The Team plan is available through self-service checkout.')
+})
+
+export const startBillingCheckoutInternalResponseUrlRegExp = new RegExp('^https:[/][/]');
+
+
+export const StartBillingCheckoutInternalResponse = zod.object({
+  "url": zod.url().regex(startBillingCheckoutInternalResponseUrlRegExp).describe('Temporary URL returned by Stripe for the hosted checkout.')
+})
+
+
+/**
+ * Requires an api-gateway token with a user actor, an organization and the billing-service
+ * audience. The gateway confirms the current owner role before relaying each page request.
+ * Billing reads only the Stripe customer linked to the organization in the signed token.
+ * An organization without a linked customer has an empty history. Sort by newest creation
+ * first. The cursor is bound to this organization and its linked Stripe customer.
+ * @summary List issued invoices for the signed organization
+ */
+export const listBillingInvoicesInternalQueryCursorTwoMax = 1024;
+
+export const listBillingInvoicesInternalQueryLimitDefault = 50;
+export const listBillingInvoicesInternalQueryLimitMax = 100;
+
+
+
+export const ListBillingInvoicesInternalQueryParams = zod.object({
+  "cursor": zod.string().and(zod.string().min(1).max(listBillingInvoicesInternalQueryCursorTwoMax)).optional().describe('Opaque authenticated cursor returned as `nextCursor` by the preceding page.'),
+  "limit": zod.coerce.number().int().min(1).max(listBillingInvoicesInternalQueryLimitMax).default(listBillingInvoicesInternalQueryLimitDefault).describe('Page size.')
+})
+
+
+export const listBillingInvoicesInternalResponseItemsItemTotalMinorUnitsMin = -9007199254740991;
+export const listBillingInvoicesInternalResponseItemsItemTotalMinorUnitsMax = 9007199254740991;
+
+export const listBillingInvoicesInternalResponseItemsItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const listBillingInvoicesInternalResponseItemsItemPdfUrlRegExp = new RegExp('^https:[/][/]');
+export const listBillingInvoicesInternalResponseItemsMax = 100;
+
+
+
+export const ListBillingInvoicesInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "number": zod.string().min(1).describe('Issued invoice number displayed to the organization.'),
+  "periodStart": zod.iso.datetime({"offset":true}).describe('Start of the invoiced period in UTC.'),
+  "periodEnd": zod.iso.datetime({"offset":true}).describe('End of the invoiced period in UTC.'),
+  "totalMinorUnits": zod.int().min(listBillingInvoicesInternalResponseItemsItemTotalMinorUnitsMin).max(listBillingInvoicesInternalResponseItemsItemTotalMinorUnitsMax).describe('Actual invoice total in the currency\'s smallest unit, including taxes and discounts.'),
+  "currency": zod.string().regex(listBillingInvoicesInternalResponseItemsItemCurrencyRegExp).describe('ISO 4217 currency code.'),
+  "status": zod.string().describe('Current status of the issued invoice.'),
+  "pdfUrl": zod.url().regex(listBillingInvoicesInternalResponseItemsItemPdfUrlRegExp).nullable().describe('Download URL from Stripe when the invoice PDF is available.')
+})).max(listBillingInvoicesInternalResponseItemsMax),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})
+
+
+/**
+ * Requires a signed api-gateway token with the billing-service audience, a system actor
+ * whose ID is api-gateway, and no organization claim. Billing verifies the timestamp
+ * and signature over the original Stripe bytes before interpreting the event.
+ *
+ * Resolve the organization through Billing's provider records. Record the supported
+ * verified event durably before acknowledging it and deduplicate by Stripe event ID.
+ * Reconcile with current provider state on retries and reordered events. A verified event
+ * of an unsupported type is acknowledged without changing state.
+ * @summary Verify and accept a Stripe billing delivery
+ */
+export const receiveStripeBillingWebhookInternalHeaderStripeSignatureMax = 4096;
+
+
+
+export const ReceiveStripeBillingWebhookInternalHeader = zod.object({
+  "Stripe-Signature": zod.string().min(1).max(receiveStripeBillingWebhookInternalHeaderStripeSignatureMax).describe('Stripe\'s timestamp and signature for the exact request bytes. Billing verifies it.')
+})
+
+export const ReceiveStripeBillingWebhookInternalBody = zod.instanceof(Blob)
+
+export const ReceiveStripeBillingWebhookInternalResponse = zod.void()

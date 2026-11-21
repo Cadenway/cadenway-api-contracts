@@ -21,7 +21,11 @@ import type {
 } from 'rxjs';
 
 import type {
-  BillingSubscription
+  BillingCheckoutRequest,
+  BillingCheckoutSession,
+  BillingInvoicePage,
+  BillingSubscription,
+  ListBillingInvoicesParams
 } from '../model';
 
 import type {
@@ -68,7 +72,78 @@ type HttpClientObserveOptions = HttpClientOptions & {
   readonly observe?: 'body' | 'events' | 'response';
 };
 
+type AngularHttpParamValue = string | number | boolean | Array<string | number | boolean>;
+type AngularHttpParamValueWithNullable = AngularHttpParamValue | null;
 
+function filterParams(
+  params: Record<string, unknown>,
+  requiredNullableKeys?: ReadonlySet<string>,
+  preserveRequiredNullables?: false,
+  passthroughKeys?: undefined,
+): Record<string, AngularHttpParamValue>;
+function filterParams(
+  params: Record<string, unknown>,
+  requiredNullableKeys: ReadonlySet<string> | undefined,
+  preserveRequiredNullables: true,
+  passthroughKeys?: undefined,
+): Record<string, AngularHttpParamValueWithNullable>;
+function filterParams(
+  params: Record<string, unknown>,
+  requiredNullableKeys: ReadonlySet<string> | undefined,
+  preserveRequiredNullables: boolean | undefined,
+  passthroughKeys: ReadonlySet<string>,
+): Record<string, unknown>;
+function filterParams(
+  params: Record<string, unknown>,
+  requiredNullableKeys: ReadonlySet<string> = new Set(),
+  preserveRequiredNullables = false,
+  passthroughKeys: ReadonlySet<string> = new Set(),
+): Record<string, unknown> {
+  const filteredParams: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (passthroughKeys.has(key)) {
+      if (value !== undefined) {
+        filteredParams[key] = value;
+      }
+      continue;
+    }
+    if (Array.isArray(value)) {
+      const filtered = value
+        .filter(
+          (item) =>
+            item != null &&
+            (typeof item === 'string' ||
+              typeof item === 'number' ||
+              typeof item === 'boolean' ||
+              (item instanceof Date && !Number.isNaN(item.getTime()))),
+        )
+        .map((item) =>
+          item instanceof Date ? item.toISOString() : item,
+        ) as Array<string | number | boolean>;
+      if (filtered.length) {
+        filteredParams[key] = filtered;
+      }
+    } else if (value === null && requiredNullableKeys.has(key)) {
+      // With a paramsSerializer (preserveRequiredNullables) the literal null
+      // is passed through for it to consume; without one, emit an empty
+      // string so the required key still reaches the wire as `?key=`
+      // instead of being silently dropped. See #3712.
+      filteredParams[key] = preserveRequiredNullables ? null : '';
+    } else if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      // useDates produces Date query params; serialize to ISO so they reach
+      // the wire instead of being dropped by the primitive check below. See #3856.
+      filteredParams[key] = value.toISOString();
+    } else if (
+      value != null &&
+      (typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean')
+    ) {
+      filteredParams[key] = value;
+    }
+  }
+  return filteredParams;
+}
 
 
 
@@ -119,6 +194,136 @@ export class BillingService {
       }
     );
   }
+/**
+ * The gateway takes the organization from the browser session and verifies an active owner
+ * membership with Organization on every request, including retries. The Team plan is
+ * available through self-service checkout. Billing supplies the price, seat quantity and
+ * return destinations from its configuration and the organization's current state.
+ *
+ * This action returns a Stripe Checkout URL. A later verified Stripe event determines the
+ * subscription change. The same key and equivalent body replay the original response for
+ * 24 hours while the caller remains authorized.
+ * @summary Start hosted Checkout for the Team plan
+ */
+ startBillingCheckout<TData = BillingCheckoutSession>(billingCheckoutRequest: BillingCheckoutRequest, options?: HttpClientBodyOptions): Observable<TData>;
+ startBillingCheckout<TData = BillingCheckoutSession>(billingCheckoutRequest: BillingCheckoutRequest, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ startBillingCheckout<TData = BillingCheckoutSession>(billingCheckoutRequest: BillingCheckoutRequest, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  startBillingCheckout<TData = BillingCheckoutSession>(
+    billingCheckoutRequest: BillingCheckoutRequest, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/billing/checkout`,
+      billingCheckoutRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/billing/checkout`,
+      billingCheckoutRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/billing/checkout`,
+      billingCheckoutRequest,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * The gateway verifies an active owner membership with Organization on every request. Billing
+ * lists issued invoices for the Stripe customer linked to the selected organization, newest
+ * creation first. An organization without a linked customer has an empty history. Continue
+ * with the opaque cursor from the preceding page.
+ * @summary List issued invoices for the selected organization
+ */
+ listBillingInvoices<TData = BillingInvoicePage>(params?: ListBillingInvoicesParams, options?: HttpClientBodyOptions): Observable<TData>;
+ listBillingInvoices<TData = BillingInvoicePage>(params?: ListBillingInvoicesParams, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listBillingInvoices<TData = BillingInvoicePage>(params?: ListBillingInvoicesParams, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listBillingInvoices<TData = BillingInvoicePage>(
+    params?: ListBillingInvoicesParams, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    const filteredParams = filterParams({...params, ...options?.params}, new Set<string>([]));
+
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/billing/invoices`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        params: filteredParams,}
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/billing/invoices`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        params: filteredParams,}
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/billing/invoices`,{
+    ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        params: filteredParams,}
+    );
+  }
+/**
+ * Stripe sends this server-to-server request. The gateway forwards the unchanged body and
+ * Stripe-Signature to Billing under a signed system token with no organization. Billing
+ * verifies the Stripe signature and its timestamp before reading the event or resolving
+ * the organization from Billing's provider records.
+ *
+ * Billing durably accepts supported deliveries before acknowledging them. Duplicate
+ * verified deliveries and verified event types that Billing does not process also return
+ * 204. The provider signature is the credential for this route.
+ * @summary Receive a signed Stripe billing event
+ */
+ receiveStripeBillingWebhook<TData = void>(receiveStripeBillingWebhookBody: Blob, options?: HttpClientBodyOptions): Observable<TData>;
+ receiveStripeBillingWebhook<TData = void>(receiveStripeBillingWebhookBody: Blob, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ receiveStripeBillingWebhook<TData = void>(receiveStripeBillingWebhookBody: Blob, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  receiveStripeBillingWebhook<TData = void>(
+    receiveStripeBillingWebhookBody: Blob, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/v1/billing/webhooks/stripe`,
+      receiveStripeBillingWebhookBody,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/v1/billing/webhooks/stripe`,
+      receiveStripeBillingWebhookBody,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/v1/billing/webhooks/stripe`,
+      receiveStripeBillingWebhookBody,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
 };
 
 export type GetBillingSubscriptionClientResult = NonNullable<BillingSubscription>
+export type StartBillingCheckoutClientResult = NonNullable<BillingCheckoutSession>
+export type ListBillingInvoicesClientResult = NonNullable<BillingInvoicePage>
+export type ReceiveStripeBillingWebhookClientResult = NonNullable<void>

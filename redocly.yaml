@@ -54,6 +54,11 @@ apis:
     rules:
       no-empty-servers: off
       no-unused-components: off
+  shared-billing-payments:
+    root: components/billing-payments.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
   shared-automation:
     root: components/automation.yaml
     rules:
