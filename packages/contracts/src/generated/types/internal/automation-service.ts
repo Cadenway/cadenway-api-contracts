@@ -2488,6 +2488,12 @@ export type UnauthenticatedResponse = Problem;
 export type ForbiddenResponse = Problem;
 
 /**
+ * `automation.recipient-ineligible` if an assignment or notification lacks a matching
+ * current recipient proof. `idempotency.key-reused` if the key was used with another request.
+ */
+export type CreationRefusedResponse = Problem;
+
+/**
  * `automation.unavailable` when a required store or dependency is unavailable.
  */
 export type UnavailableResponse = Problem;

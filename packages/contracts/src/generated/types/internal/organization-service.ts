@@ -278,6 +278,19 @@ export interface MyOrganizationPage {
   nextCursor: NextCursor | null;
 }
 
+export interface AutomationRecipientCheck {
+  /**
+     * UUIDv7 of the requested account. Compare case-equivalent forms as one account.
+     * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+     */
+  userId: string;
+}
+
+export interface AutomationRecipientDecision {
+  /** Whether the requested account is a current active member of the organization. */
+  eligible: boolean;
+}
+
 export interface MemberNameLookup {
   /**
      * @minItems 1
@@ -655,6 +668,11 @@ export type QuotaNotificationRecipientsOrganizationNotFoundResponse = Problem;
  * `organization.unavailable` when Organization cannot complete the recipient read.
  */
 export type QuotaNotificationRecipientsUnavailableResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the recipient membership check.
+ */
+export type AutomationRecipientUnavailableResponse = Problem;
 
 /**
  * `request.invalid` for invalid query parameters or a malformed cursor, including a cursor for a different operation or tenant.

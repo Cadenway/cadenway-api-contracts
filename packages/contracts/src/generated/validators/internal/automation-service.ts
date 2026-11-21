@@ -58,9 +58,23 @@ export const ListAutomationRulesInternalResponse = zod.strictObject({
 
 
 /**
- * Persists an enabled rule at version 1. Assignment and notification require a current active
- * member of the signed organization as the recipient. An optional idempotency key replays
- * the original response for 24 hours and is scoped to the signed actor and organization.
+ * Persists an enabled rule at version 1. For an assignment or notification, api-gateway makes
+ * a fresh `checkAutomationRecipientInternal` call for the same authenticated user,
+ * organization and action recipient. A negative decision refuses creation. Without a
+ * successful decision the gateway cannot sign a proof or forward the command.
+ *
+ * The gateway signs the scope `automation:recipient:<canonical UUIDv7>`, with the recipient
+ * UUID in lowercase, in its user token with audience `automation-service`. It mints this scope
+ * only from the positive Organization decision. It discards client-supplied values in this
+ * reserved scope namespace and never sends the internal token to the client.
+ *
+ * Automation compares the recipient's canonical action `userId` to the reserved scope in the
+ * verified token. An absent or nonmatching proof returns `422 automation.recipient-ineligible`.
+ * This check applies before any creation or idempotent replay. An optional idempotency key
+ * replays the original response for 24 hours and is scoped to the signed actor and organization.
+ *
+ * The proof is for rule creation only. Task or Notification still rechecks live action
+ * authority and recipient eligibility when applying an action.
  * @summary Create a rule in the signed organization
  */
 export const createAutomationRuleInternalHeaderIdempotencyKeyMax = 255;
