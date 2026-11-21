@@ -16,7 +16,7 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-webapp
-      uses: The Socket.IO protocol for invalidation of open tasks and lists and organization presence.
+      uses: The Socket.IO protocol for invalidation of open tasks, lists and Git links, and organization presence.
 servers:
   nats:
     host: nats:4222
@@ -113,6 +113,36 @@ channels:
     messages:
       commentCreatedV1:
         $ref: './task-service.yaml#/components/messages/commentCreatedV1'
+  gitBranchCreatedV1:
+    address: evt.git.branch-created.v1
+    description: Produced by integration-service. Consumed by realtime-gateway.
+    messages:
+      gitBranchCreatedV1:
+        $ref: './integration-service.yaml#/components/messages/gitBranchCreatedV1'
+  gitPrOpenedV1:
+    address: evt.git.pr-opened.v1
+    description: Produced by integration-service. Consumed by realtime-gateway.
+    messages:
+      gitPrOpenedV1:
+        $ref: './integration-service.yaml#/components/messages/gitPrOpenedV1'
+  gitPrMergedV1:
+    address: evt.git.pr-merged.v1
+    description: Produced by integration-service. Consumed by realtime-gateway.
+    messages:
+      gitPrMergedV1:
+        $ref: './integration-service.yaml#/components/messages/gitPrMergedV1'
+  gitPrClosedV1:
+    address: evt.git.pr-closed.v1
+    description: Produced by integration-service. Consumed by realtime-gateway.
+    messages:
+      gitPrClosedV1:
+        $ref: './integration-service.yaml#/components/messages/gitPrClosedV1'
+  gitChecksCompletedV1:
+    address: evt.git.checks-completed.v1
+    description: Produced by integration-service. Consumed by realtime-gateway.
+    messages:
+      gitChecksCompletedV1:
+        $ref: './integration-service.yaml#/components/messages/gitChecksCompletedV1'
 operations:
   receiveSessionRevokedV1:
     action: receive
@@ -189,6 +219,31 @@ operations:
     summary: Relay a comment ID to authorized task room members.
     channel:
       $ref: '#/channels/commentCreatedV1'
+  receiveGitBranchCreatedV1:
+    action: receive
+    summary: Invalidate Git links for authorized task readers.
+    channel:
+      $ref: '#/channels/gitBranchCreatedV1'
+  receiveGitPrOpenedV1:
+    action: receive
+    summary: Invalidate Git links for authorized task readers.
+    channel:
+      $ref: '#/channels/gitPrOpenedV1'
+  receiveGitPrMergedV1:
+    action: receive
+    summary: Invalidate Git links for authorized task readers.
+    channel:
+      $ref: '#/channels/gitPrMergedV1'
+  receiveGitPrClosedV1:
+    action: receive
+    summary: Invalidate Git links for authorized task readers.
+    channel:
+      $ref: '#/channels/gitPrClosedV1'
+  receiveGitChecksCompletedV1:
+    action: receive
+    summary: Invalidate Git links for authorized task readers.
+    channel:
+      $ref: '#/channels/gitChecksCompletedV1'
 # Socket.IO uses application events and acknowledgements rather than NATS subjects.
 x-cadenway-socket-io:
   version: 1
@@ -296,8 +351,9 @@ x-cadenway-socket-io:
       description: |
         An invalidation for an authorized receiver. The event id, time and version are taken
         from the producer fact when one exists. A client deduplicates the same fact by id and
-        understands that different facts can share an aggregate version. For a presence change,
-        `version` is the browser protocol version. Clients refetch business state via the API.
+        understands that different facts can share an aggregate version. For a presence change
+        or Git links invalidation, `version` is the browser protocol version. Clients refetch
+        business state via the API.
       envelope:
         $ref: '#/x-cadenway-socket-io/schemas/envelope'
       notices:
@@ -309,6 +365,21 @@ x-cadenway-socket-io:
           rooms: ['task:<taskId>', 'list:<listId>']
           data:
             $ref: '#/x-cadenway-socket-io/schemas/taskChange'
+        git.links-changed.v1:
+          description: |
+            Uniform Git invalidation from the five Integration link facts. Preserve the producer
+            event ID and time. Use protocol version 1. Refresh the task's Development panel or
+            its Git chip through the authorized HTTP projection. The data carries only the verified
+            task ID. Clients can ignore an unsupported notice type and refetch on reconnect.
+          rooms: ['task:<taskId>', 'list:<listId>']
+          data:
+            type: object
+            additionalProperties: false
+            required: [taskId]
+            properties:
+              taskId:
+                type: string
+                format: uuid
         comment.created.v1:
           rooms: ['task:<taskId>']
           data:
@@ -345,6 +416,16 @@ x-cadenway-socket-io:
         organization room. Task status notices carry `changed: [status]`. Other task notices
         carry field names from the producer's `changed` list. Values, assignee IDs, grants,
         comment bodies and producer payloads are omitted.
+
+        For Git invalidations, confirm each recipient's current session and task access as that
+        user in the event organization. Resolve its stable UUID and current placement using Task.
+        Its current space and list must match the placement in the fact. The producer list ID
+        is only an index for finding candidate subscriptions. A list recipient must also have an
+        active subscription to the verified list. Suppress delivery when Task denies access,
+        cannot prove the UUID or placement, or the recipient's authorization is uncertain.
+        Require the session and membership fences to remain current through delivery. Relay only
+        to the verified task and list rooms. Deduplicate delivery to a socket subscribed to both
+        eligible rooms.
       reservedPersonalNotices: |
         Inbox badges and due reminders use only the verified membership's personal room once
         Notification publishes their producer facts and the gateway consumes those contracts.
@@ -451,3 +532,10 @@ x-cadenway-socket-io:
       data:
         taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
         changed: [status]
+    gitLinksChanged:
+      id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d50
+      type: git.links-changed.v1
+      at: '2026-11-08T10:41:00Z'
+      version: 1
+      data:
+        taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23

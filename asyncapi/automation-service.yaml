@@ -1,0 +1,131 @@
+asyncapi: 3.0.0
+info:
+  title: automation-service events
+  version: 1.0.0
+  description: |
+    Automation-service records a successful execution when a rule applies its action to a
+    task. A rule execution is identified by the organization, rule and triggering event.
+    Replaying the trigger reuses that execution. Disabled rules, unchanged actions and failed
+    actions produce no successful execution. Triggers with actor type `automation` are ignored.
+
+    Automation-service appends the fact to its outbox in the same organization transaction
+    as the successful execution record. The relay publishes after commit to `EVENTS` with
+    at-least-once delivery. Billing-service can deduplicate by event `id` when counting
+    successful automation executions for the organization.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  tags:
+    - name: automations
+      description: Committed execution of automation rules.
+  x-consumers:
+    - repository: cadenway-billing-service
+      uses: Planned consumption of automation.executed.v1 to update organization usage counters.
+servers:
+  nats:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream of each environment, on its internal network.
+defaultContentType: application/json
+channels:
+  automationExecutedV1:
+    address: evt.automation.executed.v1
+    description: Emitted by automation-service. Planned consumer cadenway-billing-service.
+    messages:
+      automationExecutedV1:
+        $ref: '#/components/messages/automationExecutedV1'
+operations:
+  publishAutomationExecutedV1:
+    action: send
+    summary: Publish a committed successful automation execution.
+    description: Sent from the transactional outbox after commit, at least once.
+    channel:
+      $ref: '#/channels/automationExecutedV1'
+    messages:
+      - $ref: '#/channels/automationExecutedV1/messages/automationExecutedV1'
+components:
+  schemas:
+    EventHeaders:
+      type: object
+      properties:
+        traceparent:
+          type: string
+          description: W3C Trace Context of the event that triggered the execution.
+  messages:
+    automationExecutedV1:
+      name: automation.executed.v1
+      title: Automation executed
+      summary: An automation rule successfully applied its action to a task.
+      description: The actor has type `automation` and its id is the executing rule id.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            executionId,
+            ruleId,
+            triggerEventId,
+            taskKey,
+            actionType,
+          ]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Event deduplication key, stable across deliveries.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the successful execution was recorded.
+          organizationId:
+            type: string
+            format: uuid
+            description: Tenant that owns the rule, the execution and the task.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            const: 1
+            description: Initial version of the immutable execution record.
+          executionId:
+            type: string
+            format: uuid
+            description: Id of the successful execution record.
+          ruleId:
+            type: string
+            format: uuid
+            description: Id of the rule that applied the action.
+          triggerEventId:
+            type: string
+            format: uuid
+            description: Id of the task.created.v1 or task.status-changed.v1 event that triggered the rule.
+          taskKey:
+            $ref: '../components/task.yaml#/components/schemas/TaskKey'
+          actionType:
+            $ref: '../components/automation.yaml#/components/schemas/AutomationActionType'
+      examples:
+        - name: priorityRaisedOnBlockedTask
+          summary: A rule raises the priority of CAD-482 when the task moves to Blocked.
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d50
+            occurredAt: '2026-11-21T09:52:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: automation
+              id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d51
+            version: 1
+            executionId: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d52
+            ruleId: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d51
+            triggerEventId: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d53
+            taskKey: CAD-482
+            actionType: priority

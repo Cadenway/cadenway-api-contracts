@@ -6,6 +6,7 @@
 # goals and reports, the intake form and attachment access. Both gateways check notification
 # subject visibility. The realtime gateway checks access before a socket joins a room, and
 # document-service resolves the actor's current role on the spaces that contain documents.
+# Integration and Automation submit dedicated status and task actions.
 openapi: 3.1.0
 info:
   title: task-service internal routes
@@ -106,6 +107,9 @@ info:
     current Task data. Before returning search results, it checks candidate visibility through
     the Task search access lookup for the verified user. These routes have no public counterpart.
 
+    Integration-service and automation-service submit dedicated write commands with no public
+    counterpart. Their responses report only the disposition of the command.
+
     **Internal token.** Every call carries the internal token of `@cadenway/nest-common`
     (`Authorization: Bearer`, Ed25519, 60 seconds, `aud` = `task-service`). Every route accepts the
     issuer `api-gateway` and the actor `user` by default. The two access checks accept
@@ -114,9 +118,12 @@ info:
     accepts `document-service` with the actor `user`. Search projection routes accept the
     `search-service` issuer and the `search-service` system actor, in the signed organization.
     The search access lookup accepts the same issuer with a verified `user` actor instead.
+    The Git status command accepts only `integration-service` with the actor `git`. The rule
+    action command accepts only `automation-service` with the actor `automation`. Both require
+    the organization in the signed token and use the signed actor ID in activity and events.
     The applicant intake routes accept `api-gateway`
     with the actor `system` and resolve the target exclusively from the publication key.
-    All other routes require an organization and run in the tenant transaction for the
+    The user routes require an organization and run in the tenant transaction for the
     organization's session or personal API token. They take the actor and organization from
     the internal token. The `userId` of a path under `/internal/v1/users/` that is not the actor answers
     `404 user.not-found` (the `userId` of `/internal/v1/tasks/{taskKey}/assignees/{userId}` is the
@@ -124,8 +131,7 @@ info:
     answers `401 auth.token-missing`, `401 auth.token-invalid`, `403 auth.issuer-not-allowed`,
     `403 auth.actor-not-allowed` and `403 auth.organization-required`. The gateway answers
     `403 organization.not-selected` itself, before the call, when the session has no current
-    organization. Later versions accept other issuers (the automation and Git integrations, with
-    their actors).
+    organization.
 
     **Applicant intake.** The gateway uses a system token without an organization for the
     applicant routes. A valid publication key is the only authority for resolving the list
@@ -214,6 +220,10 @@ info:
       uses: Resolves the actor's current space roles before returning or mutating documents.
     - repository: cadenway-search-service
       uses: Rebuilds and refreshes Task search projections and verifies current candidate visibility.
+    - repository: cadenway-integration-service
+      uses: Submits forward status changes for verified deliveries from repositories mapped to a Task space.
+    - repository: cadenway-automation-service
+      uses: Submits task writes for enabled rules matched to validated Task events in the same organization.
 servers:
   - url: http://task-service:3013
     description: task-service on the internal network of each environment (`TASK_SERVICE_URL`).
@@ -1512,6 +1522,123 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/TaskRefused'
+  /internal/v1/tasks/{taskKey}/git-status-actions:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: applyGitTaskStatusActionInternal
+      x-cadenway-strict-body: true
+      summary: Apply a forward status transition from a verified Git delivery
+      description: |
+        Requires the signed `integration-service` issuer, `git` actor with the integration ID,
+        `task-service` audience and organization. Integration verifies the original provider
+        delivery, resolves its current active repository mapping and status rule, and binds the
+        request to the normalized delivery, verified provider and mapped space before calling Task.
+        The mapping carries the user who authorized it. Task verifies the task, list and space are
+        active in the signed organization, rechecks that the task is currently in that mapped space
+        and that the authorizing user still has edit permission on it, in the transaction that
+        locks and changes the task. The mapping author supplies permission evidence only.
+
+        The default rules map a branch or first commit to `progress`, an opened PR or MR to
+        `review` (for example, PR #214 for CAD-482), and a merged PR or MR to `done`.
+        The status must be available in the current space and have a strictly higher Git rank
+        than the task's current status. In increasing rank, the groups are `triage`, `backlog`,
+        `todo`; then `waiting`, `progress`, `blocked`; then `review`; then `testing`; then
+        `done`, `cancelled`. Milestones, unavailable statuses, cancellation and transitions of
+        equal or lower rank yield `no_op`. Task applies its existing status transition invariants
+        and side effects, including recurrence when entering `done`. A transition refused by a
+        Task business invariant yields `no_op`. A null status authorizes the link with no
+        status change, for example a check completion. A change records the Git actor and verified
+        provider for activity, increments the task version and enqueues `task.updated.v1` and
+        `task.status-changed.v1` in the same transaction as the command receipt.
+        An authorized receipt binds the stable task ID to its placement at the decision.
+        A consumer of a recorded placement rechecks the task's current placement before relay.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/TaskActionIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitTaskStatusAction'
+            example:
+              provider: github
+              spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+              mappingAuthorUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+              status: review
+      responses:
+        '200':
+          $ref: '#/components/responses/GitTaskActionReceipt'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskActionTargetUnavailable'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '503':
+          $ref: '#/components/responses/TaskActionUnavailable'
+  /internal/v1/tasks/{taskKey}/automation-actions:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    post:
+      operationId: applyAutomationTaskActionInternal
+      x-cadenway-strict-body: true
+      summary: Apply an enabled rule's task action to the task in its triggering event
+      description: |
+        Requires the signed `automation-service` issuer, `automation` actor with the rule ID,
+        `task-service` audience and organization. Automation validates the `task.created.v1` or
+        `task.status-changed.v1` event and binds the task key and organization to that event. It
+        selects the action of its current enabled rule in that organization, using the authority
+        recorded at rule creation. It ignores `task.status-changed.v1` events from `automation`
+        actors.
+
+        In the tenant transaction, Task locks the target, verifies that the task and its parents
+        are active, and rechecks the rule author's current membership and effective edit permission
+        on the task. The rule ID remains the actor for all activity and events. Assignment also
+        applies Task's current recipient eligibility and assignee limit. An unchanged priority or
+        an existing eligible assignee yields `no_op`. A change commits the command receipt, write,
+        activity and usual task outbox entries together.
+
+        This command accepts only `assign` and `priority`. A notification needs a separate
+        Notification command with current task visibility for its recipient. An automatic comment
+        needs a comment contract that can represent and enforce a rule's authorship and moderation.
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/TaskActionIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutomationTaskActionCommand'
+            example:
+              ruleAuthorUserId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+              type: priority
+              priority: haute
+      responses:
+        '200':
+          $ref: '#/components/responses/TaskActionReceipt'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/TaskActionTargetUnavailable'
+        '409':
+          $ref: '#/components/responses/RequestInProgress'
+        '422':
+          $ref: '#/components/responses/AutomationTaskActionRefused'
+        '503':
+          $ref: '#/components/responses/TaskActionUnavailable'
   /internal/v1/tasks/{taskKey}/assignees/{userId}:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
@@ -6331,6 +6458,23 @@ components:
       description: Private applicant key presented by the gateway for this same draft.
       schema:
         $ref: '../../components/intake.yaml#/components/schemas/IntakeDraftKey'
+    TaskActionIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Stable command identity derived from the normalized Git delivery or triggering Task event,
+        reused on every retry and redelivery for this actor, operation and task. Use an opaque
+        value without raw provider headers or payload. Reserve a distinct value for each command
+        within the signed organization and actor. Reusing a value for a different operation,
+        task key or body is refused. Task rechecks current target authorization before returning
+        an execution receipt and retains receipts for at least 24 hours. Callers keep their own
+        durable delivery deduplication and do not resend a submitted command after that window.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        examples: [p6-019a701b-2b3c-7d4e-8f5a-6b7c8d9e0f12]
     IntakeAttachmentIdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -6378,6 +6522,11 @@ components:
     ActorId:
       $ref: '../../components/task.yaml#/components/parameters/ActorId'
   headers:
+    TaskActionReplayed:
+      description: Present with the value true when returning the recorded response without running the command again.
+      schema:
+        type: string
+        const: 'true'
     SearchProjectionNoStore:
       required: true
       description: Prevents caches from storing search projection data.
@@ -6507,6 +6656,83 @@ components:
         status: 422
         code: idempotency.key-reused
   responses:
+    GitTaskActionReceipt:
+      description: |
+        The Git command disposition and the minimal task identity and placement authorized by
+        Task when it recorded this command. A replay makes no version, activity or event changes.
+      headers:
+        Idempotent-Replayed:
+          $ref: '#/components/headers/TaskActionReplayed'
+        Cache-Control:
+          required: true
+          description: Prevents caching the command receipt.
+          schema:
+            type: string
+            const: 'private, no-store'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GitTaskActionReceipt'
+          example:
+            disposition: applied
+            taskId: 019a7001-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7002-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+    TaskActionReceipt:
+      description: |
+        The first or recorded disposition, without task or resource properties. A no-op commits
+        only the receipt. A replay makes no version, activity or event changes.
+      headers:
+        Idempotent-Replayed:
+          $ref: '#/components/headers/TaskActionReplayed'
+        Cache-Control:
+          required: true
+          description: Prevents caching the command receipt.
+          schema:
+            type: string
+            const: 'private, no-store'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TaskActionReceipt'
+          examples:
+            applied:
+              value: { disposition: applied }
+            noOp:
+              value: { disposition: no_op }
+    TaskActionTargetUnavailable:
+      description: |
+        `task.not-found` for a missing, inactive, cross-tenant or unauthorized target, including
+        its current parent scope. All cases return the same problem without resource details.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            code: task.not-found
+    TaskActionUnavailable:
+      description: |
+        `task.action-unavailable` when Task cannot verify current authorization or complete the
+        command transaction. Retry with the same key. The problem omits resource details.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    AutomationTaskActionRefused:
+      description: |
+        `idempotency.key-reused` for a different body under the same command key,
+        `task.assignee-invalid` for an ineligible recipient, or `task.assignee-limit-reached`
+        when the task already has the maximum number of assignees. No resource details are returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            idempotencyKeyReused:
+              $ref: '#/components/examples/IdempotencyKeyReused'
     SearchBadRequest:
       description: |
         `request.invalid` with `details.issues` for an invalid request, selector or cursor.
@@ -9406,3 +9632,88 @@ components:
       $ref: '../../components/onboarding.yaml#/components/schemas/OnboardingChecklistPatch'
     OnboardingFinish:
       $ref: '../../components/onboarding.yaml#/components/schemas/OnboardingFinish'
+    GitTaskStatusAction:
+      type: object
+      additionalProperties: false
+      required: [provider, spaceId, mappingAuthorUserId, status]
+      properties:
+        provider:
+          type: string
+          enum: [github, gitlab]
+          description: Provider authenticated by Integration for the current delivery and mapping.
+        spaceId:
+          $ref: '#/components/schemas/GitTaskActionResourceId'
+          description: The Task space UUIDv7 of the verified repository mapping.
+        mappingAuthorUserId:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+          description: UUIDv7 of the user whose authority Integration recorded when enabling the mapping.
+        status:
+          anyOf:
+            - $ref: '../../components/task.yaml#/components/schemas/StatusKey'
+            - type: 'null'
+          description: The configured target status, or null when the delivery records a link without changing status.
+    GitTaskActionResourceId:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      description: UUIDv7 of a resource verified by Task for a Git command.
+    GitTaskActionReceipt:
+      type: object
+      additionalProperties: false
+      required: [disposition, taskId, listId, spaceId]
+      properties:
+        disposition:
+          $ref: '#/components/schemas/TaskActionReceipt/properties/disposition'
+        taskId:
+          $ref: '#/components/schemas/GitTaskActionResourceId'
+        listId:
+          $ref: '#/components/schemas/GitTaskActionResourceId'
+        spaceId:
+          $ref: '#/components/schemas/GitTaskActionResourceId'
+    AutomationTaskActionCommand:
+      oneOf:
+        - $ref: '#/components/schemas/AutomationTaskAssignCommand'
+        - $ref: '#/components/schemas/AutomationTaskPriorityCommand'
+      discriminator:
+        propertyName: type
+        mapping:
+          assign: '#/components/schemas/AutomationTaskAssignCommand'
+          priority: '#/components/schemas/AutomationTaskPriorityCommand'
+    AutomationTaskAssignCommand:
+      type: object
+      additionalProperties: false
+      required: [ruleAuthorUserId, type, userId]
+      properties:
+        ruleAuthorUserId:
+          $ref: '#/components/schemas/AutomationRuleAuthorUserId'
+        type:
+          $ref: '../../components/automation.yaml#/components/schemas/AutomationAssignActionType'
+        userId:
+          $ref: '../../components/automation.yaml#/components/schemas/AutomationAssignAction/properties/userId'
+    AutomationTaskPriorityCommand:
+      type: object
+      additionalProperties: false
+      required: [ruleAuthorUserId, type, priority]
+      properties:
+        ruleAuthorUserId:
+          $ref: '#/components/schemas/AutomationRuleAuthorUserId'
+        type:
+          $ref: '../../components/automation.yaml#/components/schemas/AutomationPriorityActionType'
+        priority:
+          $ref: '../../components/task.yaml#/components/schemas/PriorityKey'
+    AutomationRuleAuthorUserId:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      description: UUIDv7 of the user whose authority Automation recorded when creating the rule.
+    TaskActionReceipt:
+      type: object
+      additionalProperties: false
+      required: [disposition]
+      properties:
+        disposition:
+          type: string
+          enum: [applied, no_op]
+          description: A committed Task write or a completed command with no change, including when replayed.

@@ -1,5 +1,24 @@
 # @cadenway/api-client
 
+## 0.24.0
+
+### Minor Changes
+
+- 393c0f0: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+- 393c0f0: Define the internal Git and Automation task actions and expose the verified Git provider on activity actors when available.
+
+## 0.23.0
+
+### Minor Changes
+
+- 7aa888c: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+
+## 0.22.0
+
+### Minor Changes
+
+- cfb8b2f: Add the public and internal automation rule routes, the recent executions feed, and the `automation.executed.v1` event.
+
 ## 0.21.0
 
 ### Minor Changes

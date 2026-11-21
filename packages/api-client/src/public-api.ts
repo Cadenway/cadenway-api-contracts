@@ -50,6 +50,44 @@ export type {
   BillingSubscription,
 } from './generated/public/billing/model';
 
+// openapi/public/automations.yaml
+export {
+  AutomationsService,
+  type CreateAutomationRuleClientResult,
+  type DeleteAutomationRuleClientResult,
+  type ListAutomationRulesClientResult,
+  type ListRecentAutomationRunsClientResult,
+  type UpdateAutomationRuleClientResult,
+} from './generated/public/automations/automations/automations.service';
+export {
+  AutomationTaskCreatedTriggerType,
+  AutomationTaskStatusTriggerType,
+} from './generated/public/automations/model';
+export type {
+  AutomationAction,
+  AutomationActionType,
+  AutomationAssignAction,
+  AutomationAssignActionType,
+  AutomationCommentAction,
+  AutomationCommentActionType,
+  AutomationCommentRunAction,
+  AutomationNotifyAction,
+  AutomationNotifyActionType,
+  AutomationPriorityAction,
+  AutomationPriorityActionType,
+  AutomationRule,
+  AutomationRuleCreate,
+  AutomationRuleId,
+  AutomationRulePage,
+  AutomationRulePatch,
+  AutomationRun,
+  AutomationRunAction,
+  AutomationTaskCreatedTrigger,
+  AutomationTaskStatusTrigger,
+  AutomationTrigger,
+  ListAutomationRulesParams,
+} from './generated/public/automations/model';
+
 // openapi/public/documents.yaml
 export {
   DocumentsService,

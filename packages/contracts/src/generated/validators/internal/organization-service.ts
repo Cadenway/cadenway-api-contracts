@@ -381,6 +381,30 @@ export const LookupMemberNamesInternalResponse = zod.object({
 
 
 /**
+ * Only api-gateway may call this operation, with a signed user token for organization-service
+ * and a selected organization. Read the caller's current membership and the requested
+ * account's membership in one tenant snapshot. The caller must be a current owner or admin.
+ * Use the role from this snapshot for authorization.
+ *
+ * An active membership, including an active guest, makes the requested account eligible.
+ * For absent, removed or other-organization accounts return the same negative decision.
+ * This read-only operation returns a single boolean and does not consult the user directory.
+ * The decision is current at the time of the read and does not establish task access.
+ * @summary Check current organization membership for an automation rule recipient
+ */
+export const checkAutomationRecipientInternalBodyUserIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const CheckAutomationRecipientInternalBody = zod.strictObject({
+  "userId": zod.uuid().regex(checkAutomationRecipientInternalBodyUserIdRegExp).describe('UUIDv7 of the requested account. Compare case-equivalent forms as one account.')
+})
+
+export const CheckAutomationRecipientInternalResponse = zod.object({
+  "eligible": zod.boolean().describe('Whether the requested account is a current active member of the organization.')
+})
+
+
+/**
  * Returns a member of the organization of the token; any other id answers
  * `404 member.not-found`. A guest gets `403 organization.role-forbidden`. Internal token:
  * actor `user`, organization required.
