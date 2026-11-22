@@ -28,7 +28,53 @@ components:
         minimum: 1
         maximum: 100
         default: 50
+    IfOrganizationMatch:
+      name: If-Organization-Match
+      in: header
+      required: false
+      description: |
+        The UUIDv7 of the organization the caller expects, compared without regard to hex case.
+        The verified session or API token determines the organization for the request. The gateway
+        uses this header only to check that organization before forwarding the request. A mismatch
+        answers `412 organization.context-changed`. Omit the header to use the verified context
+        without an organization precondition. Send exactly one UUIDv7: repeated, comma-separated
+        or malformed values answer `400 request.invalid` with an issue on this header.
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$'
+        examples: [019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f]
+  headers:
+    OrganizationScopedNoStore:
+      description: The response is private and cannot be stored.
+      required: true
+      schema:
+        type: string
+        const: private, no-store
+  examples:
+    OrganizationContextChanged:
+      summary: The verified organization differs from the expected Atelier Nord context
+      value:
+        type: about:blank
+        title: L’organisation active a changé.
+        status: 412
+        code: organization.context-changed
   responses:
+    OrganizationContextChanged:
+      description: |
+        `organization.context-changed`: `If-Organization-Match` differs from the organization
+        verified for this request. The problem omits `details` and gives no information about the
+        organizations or the resource.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/OrganizationScopedNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            organizationContextChanged:
+              $ref: '#/components/examples/OrganizationContextChanged'
     Problem:
       description: The request failed; `code` says why.
       content:

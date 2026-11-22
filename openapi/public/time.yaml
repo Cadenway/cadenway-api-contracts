@@ -104,6 +104,7 @@ paths:
   /v1/tasks/{taskKey}/time-entries:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listTaskTimeEntries
       summary: List task time entries
@@ -121,6 +122,9 @@ paths:
       responses:
         '200':
           description: The page of time entries and its unpaginated totals.
+          headers:
+            Cache-Control:
+              $ref: '../../components/http.yaml#/components/headers/OrganizationScopedNoStore'
           content:
             application/json:
               schema:
@@ -159,6 +163,8 @@ paths:
           $ref: '#/components/responses/TimeReadForbidden'
         '404':
           $ref: '#/components/responses/TimeTaskNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -217,6 +223,8 @@ paths:
           $ref: '#/components/responses/TimeTaskNotFound'
         '409':
           $ref: '#/components/responses/TimeEntryCreationConflict'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/IdempotencyKeyReused'
         '429':
@@ -227,6 +235,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
       - $ref: '../../components/time.yaml#/components/parameters/TimeEntryId'
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getTaskTimeEntry
       summary: Read a task time entry
@@ -240,6 +249,9 @@ paths:
       responses:
         '200':
           description: The recorded entry.
+          headers:
+            Cache-Control:
+              $ref: '../../components/http.yaml#/components/headers/OrganizationScopedNoStore'
           content:
             application/json:
               schema:
@@ -252,6 +264,8 @@ paths:
           $ref: '#/components/responses/TimeReadForbidden'
         '404':
           $ref: '#/components/responses/TimeEntryNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -277,6 +291,8 @@ paths:
           $ref: '#/components/responses/TimeEntryNotFound'
         '409':
           $ref: '#/components/responses/TaskArchived'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -284,6 +300,7 @@ paths:
   /v1/tasks/{taskKey}/time-summary:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getTaskTimeSummary
       summary: Read the task time summary
@@ -298,6 +315,9 @@ paths:
       responses:
         '200':
           description: The recorded total and the task estimate.
+          headers:
+            Cache-Control:
+              $ref: '../../components/http.yaml#/components/headers/OrganizationScopedNoStore'
           content:
             application/json:
               schema:
@@ -311,6 +331,8 @@ paths:
           $ref: '#/components/responses/TimeReadForbidden'
         '404':
           $ref: '#/components/responses/TimeTaskNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -318,6 +340,7 @@ paths:
   /v1/tasks/{taskKey}/status-durations:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getTaskStatusDurations
       summary: Read elapsed time per task status
@@ -335,6 +358,9 @@ paths:
       responses:
         '200':
           description: The status durations and coverage of an ordinary task, or a null summary for a milestone.
+          headers:
+            Cache-Control:
+              $ref: '../../components/http.yaml#/components/headers/OrganizationScopedNoStore'
           content:
             application/json:
               schema:
@@ -362,6 +388,8 @@ paths:
           $ref: '#/components/responses/TimeReadForbidden'
         '404':
           $ref: '#/components/responses/TimeTaskNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':

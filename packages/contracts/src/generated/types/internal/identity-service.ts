@@ -1788,9 +1788,10 @@ export type SessionNotFoundResponse = Problem;
 export type UserNotFoundResponse = Problem;
 
 /**
- * - `session.not-found`: no session with this id belongs to the actor;
- * - `organization.not-found`: the copy of the memberships holds no membership of the actor in
- *   this organization, also for a few seconds after a creation or an acceptance.
+ * - `session.not-found`: no active session with this id belongs to the actor, or its
+ *   originating SAML membership is no longer active.
+ * - `organization.not-found`: the actor has no active membership in the target organization,
+ *   or the identifier or role in Identity's copy does not match the authoritative proof.
  */
 export type SessionOrOrganizationNotFoundResponse = Problem;
 

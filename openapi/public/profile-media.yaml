@@ -225,6 +225,7 @@ paths:
       security:
         - sessionCookie: []
       parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
         - $ref: '#/components/parameters/IdempotencyKey'
       x-cadenway-strict-body: true
       requestBody:
@@ -266,6 +267,8 @@ paths:
           $ref: '#/components/responses/OrganizationMediaNotFound'
         '409':
           $ref: '#/components/responses/UploadStartConflict'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/UploadStartRefused'
         '429':
@@ -310,6 +313,7 @@ paths:
       security:
         - sessionCookie: []
       parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
         - $ref: '#/components/parameters/IfMatch'
       x-cadenway-strict-body: true
       requestBody:
@@ -336,7 +340,7 @@ paths:
         '409':
           $ref: '#/components/responses/UploadStateConflict'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '422':
           $ref: '#/components/responses/UploadContentRefused'
         '429':
@@ -353,6 +357,7 @@ paths:
       security:
         - sessionCookie: []
       parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
         - $ref: '#/components/parameters/IfMatch'
       responses:
         '204':
@@ -369,7 +374,7 @@ paths:
         '404':
           $ref: '#/components/responses/OrganizationMediaNotFound'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -602,6 +607,20 @@ components:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
+
+    VersionOrOrganizationChanged:
+      description: |
+        - `request.version-mismatch` when the optional organization ETag is stale.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationContextChanged:
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
 
     UploadContentRefused:
       description: |

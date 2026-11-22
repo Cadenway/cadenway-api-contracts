@@ -65,6 +65,7 @@ paths:
   /v1/tasks/{taskKey}/trash:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: trashTask
       summary: Delete a task with its subtasks
@@ -139,6 +140,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/trash/entries:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listTrash
       summary: List the trash
@@ -160,6 +163,9 @@ paths:
       responses:
         '200':
           description: One page of trash entries.
+          headers:
+            Cache-Control:
+              $ref: '../../components/http.yaml#/components/headers/OrganizationScopedNoStore'
           content:
             application/json:
               schema:
@@ -210,6 +216,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -217,6 +225,7 @@ paths:
   /v1/trash/entries/{entryId}:
     parameters:
       - $ref: '#/components/parameters/EntryId'
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     delete:
       operationId: purgeTrashEntry
       summary: Erase a trash entry for good
@@ -243,6 +252,8 @@ paths:
           $ref: '#/components/responses/TasksWriteForbidden'
         '404':
           $ref: '#/components/responses/TrashEntryNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -257,6 +268,7 @@ paths:
         schema:
           type: boolean
           default: false
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: restoreTrashEntry
       summary: Restore a trash entry
@@ -356,11 +368,15 @@ paths:
           $ref: '#/components/responses/TrashEntryNotFound'
         '409':
           $ref: '#/components/responses/TrashEntryNotRestorableYet'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/trash/empty:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: emptyTrash
       summary: Empty the trash
@@ -402,6 +418,8 @@ paths:
           $ref: '#/components/responses/TasksWriteForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -705,18 +723,26 @@ components:
                 details:
                   limit: 1000
     VersionMismatch:
-      description: '`request.version-mismatch`: `If-Match` is not the current version of the task; `details.version` is.'
+      description: |
+        - `request.version-mismatch`: `If-Match` is not the current version of the task; `details.version` is.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-            status: 412
-            code: request.version-mismatch
-            details:
-              version: 13
+          examples:
+            organizationContextChanged:
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 13
     RateLimited:
       description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
       headers:

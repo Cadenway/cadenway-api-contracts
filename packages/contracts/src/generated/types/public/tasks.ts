@@ -2756,7 +2756,10 @@ export type DependencyRefusedResponse = Problem;
 export type TaskRecurrenceConflictResponse = Problem;
 
 /**
- * `request.version-mismatch`: If-Match is not the current comment version; `details.version` is.
+ * - `request.version-mismatch`: If-Match is not the current comment version; `details.version` is.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
  */
 export type CommentVersionMismatchResponse = Problem;
 
@@ -2991,14 +2994,17 @@ export type LabelLimitReachedResponse = Problem;
 export type ChecklistItemRefusedResponse = Problem;
 
 /**
- * `request.version-mismatch`: `If-Match` is not the current version of the task; `details.version` is.
+ * - `request.version-mismatch`: `If-Match` is not the current version of the task; `details.version` is.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
  */
 export type VersionMismatchResponse = Problem;
 
 /**
  * `organization.context-changed`: `If-Organization-Match` differs from the organization
  * verified for this request. The problem omits `details` and gives no information about the
- * organizations or the task.
+ * organizations or the resource.
  */
 export type OrganizationContextChangedResponse = Problem;
 
@@ -3038,7 +3044,7 @@ export type IfMatchParameter = string;
 /**
  * The UUIDv7 of the organization the caller expects, compared without regard to hex case.
  * The verified session or API token determines the organization for the request. The gateway
- * uses this header only to check that organization before calling task-service. A mismatch
+ * uses this header only to check that organization before forwarding the request. A mismatch
  * answers `412 organization.context-changed`. Omit the header to use the verified context
  * without an organization precondition. Send exactly one UUIDv7: repeated, comma-separated
  * or malformed values answer `400 request.invalid` with an issue on this header.

@@ -399,11 +399,13 @@ export const CountTaskGroupsResponse = zod.object({
  * Scope `tasks:write` for a personal API token.
  * @summary Apply an atomic bulk task action
  */
+export const executeBulkTaskActionHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const executeBulkTaskActionHeaderIdempotencyKeyMax = 255;
 
 
 
 export const ExecuteBulkTaskActionHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(executeBulkTaskActionHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(executeBulkTaskActionHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
 })
 
@@ -481,6 +483,13 @@ export const getTaskPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$
 
 export const GetTaskParams = zod.object({
   "taskKey": zod.string().regex(getTaskPathTaskKeyRegExp).describe('Key of the task.')
+})
+
+export const getTaskHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetTaskHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getTaskHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const getTaskResponseDescriptionMentionsItemStartMin = 0;
@@ -640,7 +649,7 @@ export const updateTaskHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f
 
 export const UpdateTaskHeader = zod.object({
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.'),
-  "If-Organization-Match": zod.uuid().regex(updateTaskHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before calling task-service. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+  "If-Organization-Match": zod.uuid().regex(updateTaskHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const updateTaskBodyCustomFieldValuesTwoMax = 500;
@@ -784,11 +793,13 @@ export const DuplicateTaskParams = zod.object({
   "taskKey": zod.string().regex(duplicateTaskPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const duplicateTaskHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const duplicateTaskHeaderIdempotencyKeyMax = 255;
 
 
 
 export const DuplicateTaskHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(duplicateTaskHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(duplicateTaskHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.')
 })
@@ -906,7 +917,7 @@ export const getTaskDetailHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-F
 
 
 export const GetTaskDetailHeader = zod.object({
-  "If-Organization-Match": zod.uuid().regex(getTaskDetailHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before calling task-service. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+  "If-Organization-Match": zod.uuid().regex(getTaskDetailHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const getTaskDetailResponseCommentsItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1181,6 +1192,13 @@ export const GetTaskApprovalParams = zod.object({
   "taskKey": zod.string().regex(getTaskApprovalPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const getTaskApprovalHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetTaskApprovalHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getTaskApprovalHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const getTaskApprovalResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 
@@ -1221,10 +1239,12 @@ export const RequestTaskApprovalParams = zod.object({
   "taskKey": zod.string().regex(requestTaskApprovalPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const requestTaskApprovalHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const requestTaskApprovalHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
 
 
 export const RequestTaskApprovalHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(requestTaskApprovalHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().regex(requestTaskApprovalHeaderIfMatchRegExp).describe('The strong task version ETag last returned on the task or approval state.')
 })
 
@@ -1277,10 +1297,12 @@ export const VoteOnTaskApprovalParams = zod.object({
   "roundId": zod.uuid().describe('Identifier of the current approval round.')
 })
 
+export const voteOnTaskApprovalHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const voteOnTaskApprovalHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
 
 
 export const VoteOnTaskApprovalHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(voteOnTaskApprovalHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().regex(voteOnTaskApprovalHeaderIfMatchRegExp).describe('The strong task version ETag last returned on the task or approval state.')
 })
 
@@ -1336,10 +1358,12 @@ export const WithdrawTaskApprovalVoteParams = zod.object({
   "roundId": zod.uuid().describe('Identifier of the current approval round.')
 })
 
+export const withdrawTaskApprovalVoteHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const withdrawTaskApprovalVoteHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
 
 
 export const WithdrawTaskApprovalVoteHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(withdrawTaskApprovalVoteHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().regex(withdrawTaskApprovalVoteHeaderIfMatchRegExp).describe('The strong task version ETag last returned on the task or approval state.')
 })
 
@@ -1367,6 +1391,13 @@ export const listTaskCommentsQueryLimitMax = 100;
 export const ListTaskCommentsQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.coerce.number().int().min(1).max(listTaskCommentsQueryLimitMax).default(listTaskCommentsQueryLimitDefault).describe('Page size.')
+})
+
+export const listTaskCommentsHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListTaskCommentsHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listTaskCommentsHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const listTaskCommentsResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1426,11 +1457,13 @@ export const CreateTaskCommentParams = zod.object({
   "taskKey": zod.string().regex(createTaskCommentPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const createTaskCommentHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const createTaskCommentHeaderIdempotencyKeyMax = 255;
 
 
 
 export const CreateTaskCommentHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(createTaskCommentHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(createTaskCommentHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
 })
 
@@ -1498,6 +1531,13 @@ export const GetTaskCommentParams = zod.object({
   "commentId": zod.uuid().describe('ID of the comment on this task.')
 })
 
+export const getTaskCommentHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetTaskCommentHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getTaskCommentHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const getTaskCommentResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 
@@ -1551,7 +1591,11 @@ export const UpdateTaskCommentParams = zod.object({
   "commentId": zod.uuid().describe('ID of the comment on this task.')
 })
 
+export const updateTaskCommentHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const UpdateTaskCommentHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(updateTaskCommentHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().describe('The comment version as returned in its ETag.')
 })
 
@@ -1622,7 +1666,11 @@ export const DeleteTaskCommentParams = zod.object({
   "commentId": zod.uuid().describe('ID of the comment on this task.')
 })
 
+export const deleteTaskCommentHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const DeleteTaskCommentHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(deleteTaskCommentHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('The comment version as returned in its ETag.')
 })
 
@@ -1651,6 +1699,13 @@ export const listTaskParticipantsQueryLimitMax = 100;
 export const ListTaskParticipantsQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.coerce.number().int().min(1).max(listTaskParticipantsQueryLimitMax).default(listTaskParticipantsQueryLimitDefault).describe('Page size.')
+})
+
+export const listTaskParticipantsHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListTaskParticipantsHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listTaskParticipantsHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const ListTaskParticipantsResponse = zod.object({
@@ -1688,6 +1743,13 @@ export const ListTaskWatchersQueryParams = zod.object({
   "limit": zod.coerce.number().int().min(1).max(listTaskWatchersQueryLimitMax).default(listTaskWatchersQueryLimitDefault).describe('Page size.')
 })
 
+export const listTaskWatchersHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListTaskWatchersHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listTaskWatchersHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const listTaskWatchersResponseTotalMin = 0;
 
 
@@ -1723,7 +1785,11 @@ export const FollowTaskWatcherParams = zod.object({
   "userId": zod.uuid().describe('Account whose watcher override is changed.')
 })
 
+export const followTaskWatcherHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const FollowTaskWatcherHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(followTaskWatcherHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.')
 })
 
@@ -1754,7 +1820,11 @@ export const UnfollowTaskWatcherParams = zod.object({
   "userId": zod.uuid().describe('Account whose watcher override is changed.')
 })
 
+export const unfollowTaskWatcherHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const UnfollowTaskWatcherHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(unfollowTaskWatcherHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.')
 })
 
@@ -1786,6 +1856,13 @@ export const listTaskDependenciesQueryLimitMax = 100;
 export const ListTaskDependenciesQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.coerce.number().int().min(1).max(listTaskDependenciesQueryLimitMax).default(listTaskDependenciesQueryLimitDefault).describe('Page size.')
+})
+
+export const listTaskDependenciesHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListTaskDependenciesHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listTaskDependenciesHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const listTaskDependenciesResponseItemsItemBlockerKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -1903,11 +1980,13 @@ export const CreateTaskDependencyParams = zod.object({
   "taskKey": zod.string().regex(createTaskDependencyPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const createTaskDependencyHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const createTaskDependencyHeaderIdempotencyKeyMax = 255;
 
 
 
 export const CreateTaskDependencyHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(createTaskDependencyHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.'),
   "Idempotency-Key": zod.string().min(1).max(createTaskDependencyHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
 })
@@ -2027,6 +2106,13 @@ export const GetTaskDependencyParams = zod.object({
   "dependencyId": zod.uuid().describe('ID of a directed dependency edge.')
 })
 
+export const getTaskDependencyHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetTaskDependencyHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getTaskDependencyHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const getTaskDependencyResponseBlockerKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const getTaskDependencyResponseBlockerParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -2135,7 +2221,11 @@ export const DeleteTaskDependencyParams = zod.object({
   "dependencyId": zod.uuid().describe('ID of a directed dependency edge.')
 })
 
+export const deleteTaskDependencyHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const DeleteTaskDependencyHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(deleteTaskDependencyHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.')
 })
 
@@ -2169,6 +2259,13 @@ export const ListDependencyCandidatesQueryParams = zod.object({
   "limit": zod.coerce.number().int().min(1).max(listDependencyCandidatesQueryLimitMax).default(listDependencyCandidatesQueryLimitDefault).describe('Page size.'),
   "direction": zod.enum(['blocks', 'blocked-by']).describe('Direction of the edge relative to the anchor task.'),
   "search": zod.string().min(1).max(listDependencyCandidatesQuerySearchMax).optional().describe('Text to find, without regard to case or accents.')
+})
+
+export const listDependencyCandidatesHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListDependencyCandidatesHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listDependencyCandidatesHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const listDependencyCandidatesResponseItemsItemKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -2248,6 +2345,13 @@ export const ListSubtasksQueryParams = zod.object({
   "limit": zod.coerce.number().int().min(1).max(listSubtasksQueryLimitMax).default(listSubtasksQueryLimitDefault).describe('Page size.')
 })
 
+export const listSubtasksHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListSubtasksHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listSubtasksHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const listSubtasksResponseItemsItemKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const listSubtasksResponseItemsItemParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -2322,11 +2426,13 @@ export const CreateSubtaskParams = zod.object({
   "taskKey": zod.string().regex(createSubtaskPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const createSubtaskHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const createSubtaskHeaderIdempotencyKeyMax = 255;
 
 
 
 export const CreateSubtaskHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(createSubtaskHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(createSubtaskHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
 })
 
@@ -2455,11 +2561,13 @@ export const AddChecklistItemParams = zod.object({
   "taskKey": zod.string().regex(addChecklistItemPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const addChecklistItemHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const addChecklistItemHeaderIdempotencyKeyMax = 255;
 
 
 
 export const AddChecklistItemHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(addChecklistItemHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(addChecklistItemHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
 })
 
@@ -2565,7 +2673,11 @@ export const UpdateChecklistItemParams = zod.object({
   "checklistItemId": zod.uuid().describe('Id of the checklist item, as the task gives it.')
 })
 
+export const updateChecklistItemHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const UpdateChecklistItemHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(updateChecklistItemHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.')
 })
 
@@ -2671,7 +2783,11 @@ export const AssignTaskParams = zod.object({
   "userId": zod.uuid().describe('Account of the person to assign or to remove, as the member list gives it (`userId`).')
 })
 
+export const assignTaskHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const AssignTaskHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(assignTaskHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.')
 })
 
@@ -2775,7 +2891,11 @@ export const UnassignTaskParams = zod.object({
   "userId": zod.uuid().describe('Account of the person to assign or to remove, as the member list gives it (`userId`).')
 })
 
+export const unassignTaskHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const UnassignTaskHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(unassignTaskHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.')
 })
 
@@ -2800,7 +2920,11 @@ export const AddTaskLabelParams = zod.object({
   "taskKey": zod.string().regex(addTaskLabelPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const addTaskLabelHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const AddTaskLabelHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(addTaskLabelHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.')
 })
 
@@ -2907,7 +3031,11 @@ export const RemoveTaskLabelParams = zod.object({
   "taskKey": zod.string().regex(removeTaskLabelPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const removeTaskLabelHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const RemoveTaskLabelHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(removeTaskLabelHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.')
 })
 
@@ -3024,6 +3152,13 @@ export const ListTaskActivityQueryParams = zod.object({
   "kind": zod.array(zod.enum(['create', 'status', 'priority', 'due', 'assign', 'comment'])).min(1).max(listTaskActivityQueryKindMax).optional().describe('Kinds of entries to keep, separated by commas; every kind when absent.'),
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.coerce.number().int().min(1).max(listTaskActivityQueryLimitMax).default(listTaskActivityQueryLimitDefault).describe('Page size.')
+})
+
+export const listTaskActivityHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListTaskActivityHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listTaskActivityHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 
@@ -3413,7 +3548,7 @@ export const updateOnboardingHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9
 
 export const UpdateOnboardingHeader = zod.object({
   "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.'),
-  "If-Organization-Match": zod.uuid().regex(updateOnboardingHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before calling task-service. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+  "If-Organization-Match": zod.uuid().regex(updateOnboardingHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const updateOnboardingBodyNameOneMax = 80;
@@ -3476,7 +3611,7 @@ export const updateOnboardingChecklistHeaderIfOrganizationMatchRegExp = new RegE
 
 export const UpdateOnboardingChecklistHeader = zod.object({
   "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.'),
-  "If-Organization-Match": zod.uuid().regex(updateOnboardingChecklistHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before calling task-service. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+  "If-Organization-Match": zod.uuid().regex(updateOnboardingChecklistHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const UpdateOnboardingChecklistBody = zod.strictObject({
@@ -3550,7 +3685,7 @@ export const finishOnboardingHeaderIdempotencyKeyMax = 255;
 
 export const FinishOnboardingHeader = zod.object({
   "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.'),
-  "If-Organization-Match": zod.uuid().regex(finishOnboardingHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before calling task-service. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
+  "If-Organization-Match": zod.uuid().regex(finishOnboardingHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(finishOnboardingHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
 })
 

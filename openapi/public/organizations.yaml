@@ -241,6 +241,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/organization:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getCurrentOrganization
       summary: Read the current organization
@@ -256,6 +258,8 @@ paths:
         '200':
           description: The current organization.
           headers:
+            Cache-Control:
+              $ref: '../../components/http.yaml#/components/headers/OrganizationScopedNoStore'
             ETag:
               $ref: '#/components/headers/ETag'
           content:
@@ -265,12 +269,16 @@ paths:
               examples:
                 atelierNord:
                   $ref: '#/components/examples/AtelierNord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/OrganizationReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -341,12 +349,15 @@ paths:
       description: |
         Makes an organization the caller belongs to the current organization of this session
         ("Organisation : {name}"), and the one the next sessions of the caller start in. Every
-        organization-scoped route of this session then acts on it. Answered by identity-service
-        from its own copy of the memberships.
+        organization-scoped route of this session then acts on it. Identity confirms the target
+        membership with Organization and checks that it agrees with Identity's membership copy.
 
         - An organization the caller does not belong to answers `404 organization.not-found`, as
           does, for a few seconds, an organization the caller has just created or joined: the web
           application retries before it shows the error.
+        - If Identity cannot obtain the required membership proof, the gateway answers
+          `503 upstream.unavailable` with `details.service: identity-service`. The session and saved
+          choice remain unchanged.
         - Choosing the current organization of the session again answers `200` and leaves the
           session as it is, but records the organization as the last choice of the caller again,
           the one their next sessions start in, also when another session of theirs chose
@@ -396,6 +407,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/organization/authentication-policy:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getAuthenticationPolicy
       summary: Read the authentication policy of the current organization
@@ -415,6 +428,8 @@ paths:
         '200':
           description: The authentication policy.
           headers:
+            Cache-Control:
+              $ref: '../../components/http.yaml#/components/headers/OrganizationScopedNoStore'
             ETag:
               $ref: '#/components/headers/PolicyETag'
           content:
@@ -424,12 +439,16 @@ paths:
               examples:
                 atelierNord:
                   $ref: '#/components/examples/AtelierNordPolicy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/OrganizationReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -852,18 +871,26 @@ components:
             details:
               slug: e
     VersionMismatch:
-      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
+      description: |
+        - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-            status: 412
-            code: request.version-mismatch
-            details:
-              version: 4
+          examples:
+            organizationContextChanged:
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 4
     OrganizationCreationLimited:
       description: |
         `invitation.daily-limit-reached` when the caller cannot send all requested invitation

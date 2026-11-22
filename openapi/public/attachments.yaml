@@ -30,6 +30,7 @@ paths:
   /v1/tasks/{taskKey}/attachments:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listTaskAttachments
       summary: List task attachments
@@ -48,6 +49,9 @@ paths:
       responses:
         '200':
           description: One page of ready attachments.
+          headers:
+            Cache-Control:
+              $ref: '../../components/http.yaml#/components/headers/OrganizationScopedNoStore'
           content:
             application/json:
               schema:
@@ -71,6 +75,8 @@ paths:
           $ref: '#/components/responses/ReadForbidden'
         '404':
           $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -133,6 +139,8 @@ paths:
           $ref: '#/components/responses/AttachmentOrTaskNotFound'
         '409':
           $ref: '#/components/responses/UploadStartConflict'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/UploadStartRefused'
         '429':
@@ -143,6 +151,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
       - $ref: '#/components/parameters/AttachmentId'
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getTaskAttachment
       summary: Read a ready attachment
@@ -158,6 +167,8 @@ paths:
         '200':
           description: Metadata of the ready attachment.
           headers:
+            Cache-Control:
+              $ref: '../../components/http.yaml#/components/headers/OrganizationScopedNoStore'
             ETag:
               $ref: '#/components/headers/ETag'
           content:
@@ -181,6 +192,8 @@ paths:
           $ref: '#/components/responses/ReadForbidden'
         '404':
           $ref: '#/components/responses/AttachmentOrTaskNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -222,6 +235,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
       - $ref: '#/components/parameters/AttachmentId'
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: completeTaskAttachmentUpload
       summary: Complete a task attachment upload
@@ -273,6 +287,8 @@ paths:
           $ref: '#/components/responses/AttachmentOrTaskNotFound'
         '409':
           $ref: '#/components/responses/UploadCompletionConflict'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/UploadContentRefused'
         '429':
@@ -283,6 +299,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
       - $ref: '#/components/parameters/AttachmentId'
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getTaskAttachmentDownload
       summary: Sign a task attachment download
@@ -317,6 +334,8 @@ paths:
           $ref: '#/components/responses/ReadForbidden'
         '404':
           $ref: '#/components/responses/AttachmentOrTaskNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -495,11 +514,17 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
     VersionMismatch:
       description: |
-        `request.version-mismatch` when the supplied attachment ETag is stale.
+        - `request.version-mismatch` when the supplied attachment ETag is stale.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationContextChanged:
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
     RateLimited:
       description: |
         `rate-limit.exceeded`. Retry after the delay in `Retry-After`.

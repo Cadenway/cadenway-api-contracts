@@ -2585,6 +2585,15 @@ export type AlreadyCompletedResponse = Problem;
 export type VersionMismatchResponse = Problem;
 
 /**
+ * - `request.version-mismatch`: the validator does not match. `details.version` gives the current
+ *   version when a representation exists.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
+ */
+export type VersionOrOrganizationChangedResponse = Problem;
+
+/**
  * `reminder.date-not-in-future`: a new reminder time must be later than the current time.
  */
 export type InvalidScheduleResponse = Problem;

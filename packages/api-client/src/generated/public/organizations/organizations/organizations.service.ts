@@ -346,12 +346,15 @@ export class OrganizationsService {
 /**
  * Makes an organization the caller belongs to the current organization of this session
  * ("Organisation : {name}"), and the one the next sessions of the caller start in. Every
- * organization-scoped route of this session then acts on it. Answered by identity-service
- * from its own copy of the memberships.
+ * organization-scoped route of this session then acts on it. Identity confirms the target
+ * membership with Organization and checks that it agrees with Identity's membership copy.
  *
  * - An organization the caller does not belong to answers `404 organization.not-found`, as
  *   does, for a few seconds, an organization the caller has just created or joined: the web
  *   application retries before it shows the error.
+ * - If Identity cannot obtain the required membership proof, the gateway answers
+ *   `503 upstream.unavailable` with `details.service: identity-service`. The session and saved
+ *   choice remain unchanged.
  * - Choosing the current organization of the session again answers `200` and leaves the
  *   session as it is, but records the organization as the last choice of the caller again,
  *   the one their next sessions start in, also when another session of theirs chose

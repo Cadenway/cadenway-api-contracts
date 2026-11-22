@@ -44,3 +44,4 @@ export * from './uploadStartConflictResponse';
 export * from './uploadStartRefusedResponse';
 export * from './uploadStateConflictResponse';
 export * from './versionMismatchResponse';
+export * from './versionOrOrganizationChangedResponse';
