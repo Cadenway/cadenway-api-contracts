@@ -181,13 +181,19 @@ components:
         The actor is the billing-service system actor (`type: system`, `id: billing-service`).
         The event contains the complete entitlement limits for this version of the subscription.
         Billing emits a new version when the plan changes, including when the limits stay equal.
-        The Free baseline is five seats and 2,000,000,000 bytes. The initial rollout defers
-        changes that lower either limit until both admission owners can prepare the decrease.
+        A scheduled Stripe cancellation keeps the Team entitlement in effect. When the return
+        to Free is enabled, Billing may emit a newer Free snapshot after an authenticated
+        Stripe read confirms cancellation of the bound subscription. The Free limits are
+        five seats and 2,000,000,000 bytes. Enable this path after both admission owners
+        support the Free return.
 
         Organization and Storage compare the tenant's persisted entitlement version and apply only
         a newer snapshot under their respective admission locks. They persist the applied version
-        atomically with the limit used for admission. Repeated deliveries and older snapshots
-        leave the current limit in effect. For recovery, either consumer can read the latest
+        atomically with the limit used for admission. The Free return preserves existing members,
+        attachments and verified upload reservations. Once a consumer applies the snapshot,
+        its enabled admission checks refuse additions that would exceed the Free limit.
+        Delivery is asynchronous. Repeated deliveries and older snapshots leave the current
+        limit in effect. For recovery, either consumer can read the latest
         snapshot through the signed `getBillingEntitlementInternal` operation and apply the same
         version check. Version zero is the legacy Free snapshot returned by that operation before
         the first committed entitlement change.
@@ -244,3 +250,16 @@ components:
             plan: team
             seatLimit: 18
             storageByteLimit: 100000000000
+        - name: atelierNordFreeReturn
+          summary: Atelier Nord returns to the Free allowance after its Stripe subscription is canceled.
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d43
+            occurredAt: '2026-11-22T14:08:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor:
+              type: system
+              id: billing-service
+            version: 2
+            plan: free
+            seatLimit: 5
+            storageByteLimit: 2000000000
