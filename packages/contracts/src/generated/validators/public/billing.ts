@@ -57,8 +57,9 @@ export const GetBillingSubscriptionResponse = zod.object({
  *
  * The same key and equivalent body replay the original response for 24 hours while the
  * caller remains authorized. Billing keeps the original reservation while its outcome is
- * uncertain. A replacement requires Stripe to confirm that the previous session expired
- * without payment.
+ * uncertain. A replacement can proceed when Stripe confirms that the previous session
+ * expired without payment or that it definitively rejected the first creation request
+ * before creating a session.
  * @summary Start hosted Checkout for the Team plan
  */
 export const startBillingCheckoutHeaderIdempotencyKeyMax = 255;
