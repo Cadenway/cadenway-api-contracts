@@ -206,6 +206,7 @@ export * from './unauthenticatedResponse';
 export * from './unavailableResponse';
 export * from './userRef';
 export * from './versionMismatchResponse';
+export * from './versionOrOrganizationChangedResponse';
 export * from './visibility';
 export * from './visibilityValue';
 export * from './watcher';

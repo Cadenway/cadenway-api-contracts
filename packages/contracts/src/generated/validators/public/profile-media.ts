@@ -93,11 +93,13 @@ export const DeleteAvatarResponse = zod.void()
  * original upload expiry. Use a fresh key for a new reservation.
  * @summary Reserve an organization logo upload
  */
+export const startOrganizationLogoUploadHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const startOrganizationLogoUploadHeaderIdempotencyKeyMax = 255;
 
 
 
 export const StartOrganizationLogoUploadHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(startOrganizationLogoUploadHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(startOrganizationLogoUploadHeaderIdempotencyKeyMax).optional().describe('Optional key scoped to the verified actor and image owner.')
 })
 
@@ -138,10 +140,12 @@ export const GetOrganizationLogoResponse = zod.unknown()
  * organization separately with GET /v1/organization.
  * @summary Publish a verified organization logo
  */
+export const setOrganizationLogoHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const setOrganizationLogoHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
 
 
 export const SetOrganizationLogoHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(setOrganizationLogoHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().regex(setOrganizationLogoHeaderIfMatchRegExp).optional().describe('Strong ETag of the current account or organization.')
 })
 
@@ -160,10 +164,12 @@ export const SetOrganizationLogoResponse = zod.void()
  * an absent logo leaves the organization version unchanged and emits no logo change.
  * @summary Remove the current organization logo
  */
+export const deleteOrganizationLogoHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const deleteOrganizationLogoHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
 
 
 export const DeleteOrganizationLogoHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(deleteOrganizationLogoHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().regex(deleteOrganizationLogoHeaderIfMatchRegExp).optional().describe('Strong ETag of the current account or organization.')
 })
 

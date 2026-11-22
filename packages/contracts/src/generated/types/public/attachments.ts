@@ -2464,7 +2464,10 @@ export type UploadStartRefusedResponse = Problem;
 export type UploadContentRefusedResponse = Problem;
 
 /**
- * `request.version-mismatch` when the supplied attachment ETag is stale.
+ * - `request.version-mismatch` when the supplied attachment ETag is stale.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
  */
 export type VersionMismatchResponse = Problem;
 

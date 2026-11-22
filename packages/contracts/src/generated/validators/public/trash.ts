@@ -29,7 +29,11 @@ export const TrashTaskParams = zod.object({
   "taskKey": zod.string().regex(trashTaskPathTaskKeyRegExp).describe('Key of the task.')
 })
 
+export const trashTaskHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const TrashTaskHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(trashTaskHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` of the task the deletion was made from, as the `ETag` gave it.')
 })
 
@@ -89,6 +93,13 @@ export const ListTrashQueryParams = zod.object({
   "limit": zod.coerce.number().int().min(1).max(listTrashQueryLimitMax).default(listTrashQueryLimitDefault).describe('Page size.')
 })
 
+export const listTrashHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListTrashHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listTrashHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const listTrashResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const listTrashResponseItemsItemParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const listTrashResponseItemsItemSubtaskCountMin = 0;
@@ -141,6 +152,13 @@ export const PurgeTrashEntryParams = zod.object({
   "entryId": zod.uuid().describe('Id of the trash entry, as the trash or `details.entryId` of `404 task.trashed` gives it.')
 })
 
+export const purgeTrashEntryHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const PurgeTrashEntryHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(purgeTrashEntryHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const PurgeTrashEntryResponse = zod.void()
 
 
@@ -172,6 +190,13 @@ export const restoreTrashEntryQueryReportNotReadyDefault = false;
 
 export const RestoreTrashEntryQueryParams = zod.object({
   "reportNotReady": zod.preprocess((value) => value === 'true' ? true : value === 'false' ? false : value, zod.boolean()).default(restoreTrashEntryQueryReportNotReadyDefault).describe('Report a restorable entry whose list deletion is still batching as not ready.')
+})
+
+export const restoreTrashEntryHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const RestoreTrashEntryHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(restoreTrashEntryHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const RestoreTrashEntryBody = zod.object({
@@ -300,6 +325,13 @@ export const RestoreTrashEntryResponse = zod.object({
  * `tasks:write` for a personal API token.
  * @summary Empty the trash
  */
+export const emptyTrashHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const EmptyTrashHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(emptyTrashHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const EmptyTrashBody = zod.object({
 
 }).describe('Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.')

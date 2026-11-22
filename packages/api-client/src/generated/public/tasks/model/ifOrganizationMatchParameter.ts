@@ -6,7 +6,7 @@
 /**
  * The UUIDv7 of the organization the caller expects, compared without regard to hex case.
  * The verified session or API token determines the organization for the request. The gateway
- * uses this header only to check that organization before calling task-service. A mismatch
+ * uses this header only to check that organization before forwarding the request. A mismatch
  * answers `412 organization.context-changed`. Omit the header to use the verified context
  * without an organization precondition. Send exactly one UUIDv7: repeated, comma-separated
  * or malformed values answer `400 request.invalid` with an issue on this header.

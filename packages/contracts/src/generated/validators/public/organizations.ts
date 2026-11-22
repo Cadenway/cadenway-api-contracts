@@ -129,6 +129,13 @@ export const ListMyOrganizationsResponse = zod.object({
  * a personal API token cannot call it.
  * @summary Read the current organization
  */
+export const getCurrentOrganizationHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetCurrentOrganizationHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getCurrentOrganizationHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 
 
 
@@ -164,7 +171,11 @@ export const GetCurrentOrganizationResponse = zod.object({
  * cannot call it.
  * @summary Update the current organization
  */
+export const updateCurrentOrganizationHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const UpdateCurrentOrganizationHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(updateCurrentOrganizationHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
 })
 
@@ -256,6 +267,13 @@ export const SwitchOrganizationResponse = zod.object({
  * personal API token cannot call it.
  * @summary Read the authentication policy of the current organization
  */
+export const getAuthenticationPolicyHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetAuthenticationPolicyHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getAuthenticationPolicyHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 
 export const getAuthenticationPolicyResponseMembersWithoutTwoStepVerificationAdminsMin = 0;
 
@@ -304,7 +322,11 @@ export const GetAuthenticationPolicyResponse = zod.object({
  * version. Session only: a personal API token cannot call it.
  * @summary Update the authentication policy of the current organization
  */
+export const updateAuthenticationPolicyHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const UpdateAuthenticationPolicyHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(updateAuthenticationPolicyHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('`"<version>"` the change was made from, as the `ETag` gave it.')
 })
 

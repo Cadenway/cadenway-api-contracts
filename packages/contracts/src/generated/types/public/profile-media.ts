@@ -261,6 +261,14 @@ export type UploadStateConflictResponse = Problem;
 export type VersionMismatchResponse = Problem;
 
 /**
+ * - `request.version-mismatch` when the optional organization ETag is stale.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
+ */
+export type VersionOrOrganizationChangedResponse = Problem;
+
+/**
  * `media.file-too-large` for an oversized source, `media.unsupported-type` for a disallowed format,
  * or `media.invalid-image` for inconsistent metadata, decoding, shape, dimension or safety failures.
  */

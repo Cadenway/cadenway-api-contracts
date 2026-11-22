@@ -7,6 +7,6 @@ import type { Problem } from './problem';
 /**
  * `organization.context-changed`: `If-Organization-Match` differs from the organization
  * verified for this request. The problem omits `details` and gives no information about the
- * organizations or the task.
+ * organizations or the resource.
  */
 export type OrganizationContextChangedResponse = Problem;

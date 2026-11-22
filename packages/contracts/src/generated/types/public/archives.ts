@@ -2401,6 +2401,14 @@ export type TaskNotFoundResponse = Problem;
 export type VersionMismatchResponse = Problem;
 
 /**
+ * - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
+ */
+export type VersionOrOrganizationChangedResponse = Problem;
+
+/**
  * `rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.
  */
 export type RateLimitedResponse = Problem;
