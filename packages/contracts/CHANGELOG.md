@@ -1,5 +1,12 @@
 # @cadenway/contracts
 
+## 0.37.0
+
+### Minor Changes
+
+- b4802f4: Document the authoritative membership check for organization switching, including the internal service-unavailable response when the proof cannot be obtained.
+- b4802f4: Allow callers to pin the expected organization on task, attachment, intake contact, reminder, time, archive, trash, organization settings, and logo operations. Document private reads and distinguish a changed organization from a stale resource version.
+
 ## 0.36.0
 
 ### Minor Changes
