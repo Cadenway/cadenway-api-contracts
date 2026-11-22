@@ -451,8 +451,9 @@ export class TasksService {
  * dependencies, recurrence, files, time or approvals. A copy in done gets its own completedAt.
  * Requires edit on the list; an archived task refuses changes. If-Match checks the source
  * task version. An optional Idempotency-Key replays the original 201 and Location for 24
- * hours; changed payload and concurrent replay use the standard idempotency problems. Emits
- * the ordinary task creation and assignment facts in the creation transaction.
+ * hours. Replaying requires current visibility of the original list and both tasks.
+ * Changed payload and concurrent replay use the standard idempotency problems. Emits the
+ * ordinary task creation and assignment facts in the creation transaction.
  * Scope `tasks:write` for a personal API token.
  * @summary Duplicate a task
  */

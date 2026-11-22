@@ -62,13 +62,16 @@ export const ListTaskAttachmentsResponse = zod.object({
  * Reserves one upload for the verified editor of the active task. The file-size limit is
  * 26,214,400 bytes (25 MiB). A larger declared size answers `422 attachment.file-too-large`
  * before a URL is issued. The media type must match the registered type of the final file
- * extension, ignoring case. The response authorizes a five-minute multipart POST to a temporary
- * object, restricted to that object, the declared media type and 1 to 26,214,400 file bytes.
- * Append all returned form fields unchanged to FormData, then append the file as its final
- * part named `file`. Complete the upload before the expiry instant.
- * Keep the URL and form fields out of logs. While authorization still holds, an equivalent
- * request with the same Idempotency-Key replays the original response and Location for 24 hours,
- * with the original URL expiry. Use a fresh key for a new reservation.
+ * extension, ignoring case. The response authorizes a five-minute multipart POST to the opaque
+ * URL returned by the server. Append all returned form fields unchanged to FormData, then
+ * append the file as its final part named `file`. Complete the upload before the expiry instant.
+ * When the returned fields contain a `ticket`, the transfer accepts the exact declared file
+ * length and media type and can be consumed only once. After an uncertain transfer outcome,
+ * try completion before starting a new reservation. Keep the URL and fields out of logs.
+ *
+ * While authorization still holds, an equivalent request with the same Idempotency-Key
+ * replays the original response and Location for 24 hours, with the original URL expiry.
+ * Use a fresh key for a new reservation.
  * @summary Reserve a signed task attachment upload
  */
 export const startTaskAttachmentUploadPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');

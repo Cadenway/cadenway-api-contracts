@@ -170,9 +170,11 @@ export class OrganizationsService {
  *   or not.
  * - Each address of `inviteEmails` gets its own outcome in `invitations`, as
  *   `POST /v1/invitations` does; an address of the caller answers `already-member`. These
- *   invitations take their emails from the daily allowance of the new organization, 100
- *   invitation emails in any 24 hours (`openapi/public/members.yaml`), which a creation, 50
- *   addresses at most, never exceeds.
+ *   invitations charge the caller's allowance of 100 invitation emails across all
+ *   organizations in a rolling 24-hour window. The caller's own address and other outcomes
+ *   that send no email do not consume the allowance. If the emails would exceed it, the
+ *   entire creation answers `429 invitation.daily-limit-reached` with `details.remaining`,
+ *   `details.nextAvailableAt` and `Retry-After`. No organization or invitation is created.
  * - organization-service knows the caller from the events of their sign-up, which precede
  *   their first session. In the rare case it has not applied them yet, the creation answers
  *   `404 user.not-synchronized` and nothing is created: the web application retries after a

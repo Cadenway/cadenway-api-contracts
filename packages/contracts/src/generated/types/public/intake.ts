@@ -2643,7 +2643,9 @@ export type IntakeDraftNotFoundResponse = Problem;
 export type IntakeListArchivedResponse = Problem;
 
 /**
- * `idempotency.request-in-progress`: a request using this key and publication is already running.
+ * `idempotency.request-in-progress` while a request using this key and publication runs,
+ * or `attachment.storage-quota-exceeded` when the receiving organization cannot reserve
+ * the declared bytes for a temporary upload. The quota refusal omits plan, limit and usage.
  */
 export type IntakeSubmissionInProgressResponse = Problem;
 
@@ -2668,7 +2670,8 @@ export type IntakeAttachmentCompletionConflictResponse = Problem;
  * `attachment.file-too-large` above 26,214,400 bytes, `attachment.upload-metadata-mismatch`
  * for an unsupported or inconsistent declaration, `intake-form.attachments-disabled`
  * when the current form disallows attachments, `intake-form.attachment-limit-exceeded`
- * when the draft already has five active reservations, or `idempotency.key-reused`
+ * when the draft already has five active reservations or a new draft would exceed the
+ * publication's limit of 10,000 distinct attachment drafts, or `idempotency.key-reused`
  * when a reservation key was used with a different declaration.
  */
 export type IntakeAttachmentStartRefusedResponse = Problem;

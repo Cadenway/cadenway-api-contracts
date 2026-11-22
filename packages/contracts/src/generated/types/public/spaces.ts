@@ -2463,7 +2463,8 @@ export type SpaceCreationForbiddenResponse = Problem;
 
 /**
  * - `space.visibility-forbidden`: only the owner of the space, and the owner and the admins
- *   of the organization, change its visibility;
+ *   of the organization, change its visibility. The space also stays private if widening
+ *   visibility could expose a template from an unavailable or restricted source list.
  * - `access.role-insufficient`: the caller sees the space without `edit` on it;
  *   `details.role` is their role there (`null` for a space they see only through some of its
  *   lists), `details.requiredRole` is `edit`;

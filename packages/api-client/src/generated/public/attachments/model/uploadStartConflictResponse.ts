@@ -5,6 +5,9 @@
 import type { Problem } from './problem';
 
 /**
- * `task.archived` when the target task or its list is archived, or `idempotency.request-in-progress` while the equivalent reservation is running.
+ * `task.archived` when the target task or its list is archived,
+ * `idempotency.request-in-progress` while the equivalent reservation is running, or
+ * `attachment.storage-quota-exceeded` when the organization cannot reserve the declared
+ * bytes for a temporary upload. This refusal includes no plan, limit or usage details.
  */
 export type UploadStartConflictResponse = Problem;

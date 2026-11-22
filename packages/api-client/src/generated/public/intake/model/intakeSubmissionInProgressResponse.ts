@@ -5,6 +5,8 @@
 import type { Problem } from './problem';
 
 /**
- * `idempotency.request-in-progress`: a request using this key and publication is already running.
+ * `idempotency.request-in-progress` while a request using this key and publication runs,
+ * or `attachment.storage-quota-exceeded` when the receiving organization cannot reserve
+ * the declared bytes for a temporary upload. The quota refusal omits plan, limit and usage.
  */
 export type IntakeSubmissionInProgressResponse = Problem;

@@ -8,7 +8,8 @@ import type { Problem } from './problem';
  * `attachment.file-too-large` above 26,214,400 bytes, `attachment.upload-metadata-mismatch`
  * for an unsupported or inconsistent declaration, `intake-form.attachments-disabled`
  * when the current form disallows attachments, `intake-form.attachment-limit-exceeded`
- * when the draft already has five active reservations, or `idempotency.key-reused`
+ * when the draft already has five active reservations or a new draft would exceed the
+ * publication's limit of 10,000 distinct attachment drafts, or `idempotency.key-reused`
  * when a reservation key was used with a different declaration.
  */
 export type IntakeAttachmentStartRefusedResponse = Problem;

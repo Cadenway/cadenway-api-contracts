@@ -390,11 +390,10 @@ export type VersionMismatchResponse = Problem;
 export type RateLimitedResponse = Problem;
 
 /**
- * - `invitation.daily-limit-reached`: the addresses that would be invited need more
- *   invitation emails than the organization has left of its 100 in any 24 hours;
- *   `details.remaining` is what it has left, `0` or more, `details.nextAvailableAt` when
- *   the oldest invitation email counted leaves the 24 hours, and nothing was created or
- *   sent;
+ * - `invitation.daily-limit-reached` when the batch exceeds the sender's or organization's
+ *   rolling allowance. `details.remaining` is the smaller allowance remaining.
+ *   `details.nextAvailableAt` reports when the limiting allowance next grows or when both
+ *   will have grown if they are equal. Nothing was created or sent.
  * - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
  *
  * `Retry-After` says how many seconds to wait: until `details.nextAvailableAt` for
@@ -405,9 +404,9 @@ export type InvitationBatchLimitedResponse = Problem;
 /**
  * - `invitation.resend-throttled`: the email of the invitation went out less than an hour
  *   ago; `details.resendAvailableAt` says when it can go out again;
- * - `invitation.daily-limit-reached`: the organization has no invitation email left of its
- *   100 in any 24 hours; `details.remaining` is `0`, and `details.nextAvailableAt` says
- *   when the oldest invitation email counted leaves the 24 hours;
+ * - `invitation.daily-limit-reached` when the organization or sender has no invitation
+ *   email left in their rolling allowance. `details.remaining` is `0` and
+ *   `details.nextAvailableAt` reports when both allowances permit another email.
  * - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
  *
  * `Retry-After` says how many seconds to wait: until `details.resendAvailableAt` for

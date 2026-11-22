@@ -78,6 +78,10 @@ paths:
         the trash already `404 task.trashed`. `If-Match` is optional
         (`412 request.version-mismatch`), with the version of the task.
 
+        Trees of more than 1000 tasks, including archived descendants, return
+        `409 trash.tree-too-large` before moving any task. Concurrent changes can also exhaust the
+        cumulative 1000-task lock budget.
+
         An action: answers `200`. Not recorded in the activity log. Emits `task.trashed.v1` for
         each task of the entry, the root first. Scope `tasks:write` for a personal API token.
       tags: [trash]
@@ -675,18 +679,31 @@ components:
             status: 409
             code: trash-entry.not-restorable-yet
     TaskArchived:
-      description: '`task.archived`: the task is archived; it is deleted once restored. `details.key` names it.'
+      description: |
+        `task.archived` (the root is archived, named by `details.key`) or
+        `trash.tree-too-large` (the tree or the cumulative lock budget exceeds `details.limit`,
+        currently 1000 tasks).
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: 'Cette tâche est archivée : restaurez-la depuis les Archives pour la modifier.'
-            status: 409
-            code: task.archived
-            details:
-              key: CAD-430
+          examples:
+            taskArchived:
+              value:
+                type: about:blank
+                title: 'Cette tâche est archivée : restaurez-la depuis les Archives pour la modifier.'
+                status: 409
+                code: task.archived
+                details:
+                  key: CAD-430
+            treeTooLarge:
+              value:
+                type: about:blank
+                title: L’arborescence contient trop de tâches pour être mise à la corbeille.
+                status: 409
+                code: trash.tree-too-large
+                details:
+                  limit: 1000
     VersionMismatch:
       description: '`request.version-mismatch`: `If-Match` is not the current version of the task; `details.version` is.'
       content:

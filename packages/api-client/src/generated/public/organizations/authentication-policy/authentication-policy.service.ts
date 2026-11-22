@@ -121,10 +121,11 @@ export class AuthenticationPolicyService {
   }
 /**
  * Applies a JSON Merge Patch (RFC 7396) to the authentication policy of the current
- * organization: a member left out is unchanged. Owner and admins only
- * (`403 organization.role-forbidden`). The change applies from the next request of every
- * session and personal token acting on the organization (toast "Politique de session mise à
- * jour", "Les sessions inactives expirent désormais après 12 heures.").
+ * organization: a member left out is unchanged. Identity checks the caller's current role
+ * with Organization. Owner and admins only (`403 organization.role-forbidden`). The change
+ * applies from the next request of every session and personal token acting on the organization
+ * (toast "Politique de session mise à jour", "Les sessions inactives expirent désormais après
+ * 12 heures.").
  *
  * - `twoStepVerificationRequiredFor`: `admins` ("Propriétaire et administrateurs ne peuvent
  *   plus se connecter sans elle.") or `everyone` withholds the organization from the people

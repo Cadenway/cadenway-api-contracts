@@ -257,8 +257,9 @@ export class MyTasksService {
 /**
  * Returns the caller's own wizard and "Bien démarrer" checklist for the current organization,
  * separately from `GET /v1/me/home`. Before the first write it returns the initial state at
- * version 1. The result is private to this caller and organization. Scope `tasks:read`
- * for a personal API token.
+ * version 1. The result is private to this caller and organization and cannot be cached.
+ * The ETag is the version for a subsequent write. Conditional reads return the current
+ * state without reusing a cached representation. Scope `tasks:read` for a personal API token.
  * @summary Read first-launch progress
  */
  getOnboarding<TData = OnboardingState>( options?: HttpClientBodyOptions): Observable<TData>;
@@ -296,7 +297,8 @@ export class MyTasksService {
  * `dismissed: true`, closes the wizard at the current draft. Dismissal requires only current
  * organization membership. Finishing or dismissing the wizard closes it permanently. A
  * repeated dismissal or another change that leaves the saved state identical preserves its
- * version.
+ * version. `If-Organization-Match` optionally pins the write to the expected organization.
+ * All responses carry `Cache-Control: private, no-store`.
  * Scope `tasks:write` for a personal API token.
  * @summary Save or dismiss the first-launch wizard
  */
@@ -340,7 +342,8 @@ export class MyTasksService {
  * separately under its normal authorization. Record only the marker after a successful
  * invitation result. Normal task creation updates `firstTaskCreated`. Reminder and mobile
  * actions depend on their own capabilities. A matching repeated marker preserves the current
- * version.
+ * version. `If-Organization-Match` optionally pins the write to the expected organization.
+ * All responses carry `Cache-Control: private, no-store`.
  * Scope `tasks:write` for a personal API token.
  * @summary Save the onboarding checklist presentation and markers
  */
@@ -401,6 +404,8 @@ export class MyTasksService {
  * A matching `Idempotency-Key` replay within 24 hours returns the original status, state
  * and space location. Provisioning is limited to one space per caller and organization.
  * If provisioning fails, the wizard can still be resumed with the same draft.
+ * `If-Organization-Match` optionally pins the write to the expected organization.
+ * All responses carry `Cache-Control: private, no-store`.
  * Scope `tasks:write` for a personal API token.
  * @summary Provision the space selected in the first-launch wizard
  */

@@ -108,7 +108,8 @@ info:
       uses: >-
         Serves every route through openapi/internal/task-service.yaml, composes task detail and
         checks scopes. Allows If-Organization-Match in CORS preflight and checks it against the
-        verified organization before calling task-service for task detail or update.
+        verified organization before calling task-service for task detail, task updates and
+        onboarding writes.
     - repository: cadenway-webapp
       uses: >-
         Calls every route through @cadenway/api-client (list, board and Gantt views, "Créer une tâche",
@@ -657,8 +658,9 @@ paths:
         dependencies, recurrence, files, time or approvals. A copy in done gets its own completedAt.
         Requires edit on the list; an archived task refuses changes. If-Match checks the source
         task version. An optional Idempotency-Key replays the original 201 and Location for 24
-        hours; changed payload and concurrent replay use the standard idempotency problems. Emits
-        the ordinary task creation and assignment facts in the creation transaction.
+        hours. Replaying requires current visibility of the original list and both tasks.
+        Changed payload and concurrent replay use the standard idempotency problems. Emits the
+        ordinary task creation and assignment facts in the creation transaction.
         Scope `tasks:write` for a personal API token.
       tags: [tasks]
       security:
@@ -2791,8 +2793,9 @@ paths:
       description: |
         Returns the caller's own wizard and "Bien démarrer" checklist for the current organization,
         separately from `GET /v1/me/home`. Before the first write it returns the initial state at
-        version 1. The result is private to this caller and organization. Scope `tasks:read`
-        for a personal API token.
+        version 1. The result is private to this caller and organization and cannot be cached.
+        The ETag is the version for a subsequent write. Conditional reads return the current
+        state without reusing a cached representation. Scope `tasks:read` for a personal API token.
       tags: [my-tasks]
       security:
         - sessionCookie: []
@@ -2801,6 +2804,8 @@ paths:
         '200':
           description: The caller's onboarding state.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/TaskDetailNoStore'
             ETag:
               $ref: '#/components/headers/OnboardingETag'
           content:
@@ -2827,7 +2832,8 @@ paths:
         `dismissed: true`, closes the wizard at the current draft. Dismissal requires only current
         organization membership. Finishing or dismissing the wizard closes it permanently. A
         repeated dismissal or another change that leaves the saved state identical preserves its
-        version.
+        version. `If-Organization-Match` optionally pins the write to the expected organization.
+        All responses carry `Cache-Control: private, no-store`.
         Scope `tasks:write` for a personal API token.
       tags: [my-tasks]
       security:
@@ -2835,6 +2841,7 @@ paths:
         - apiToken: [tasks:write]
       parameters:
         - $ref: '#/components/parameters/OnboardingIfMatch'
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       requestBody:
         required: true
         content:
@@ -2851,6 +2858,8 @@ paths:
         '200':
           description: The caller's updated onboarding state.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/TaskDetailNoStore'
             ETag:
               $ref: '#/components/headers/OnboardingETag'
           content:
@@ -2884,7 +2893,8 @@ paths:
         separately under its normal authorization. Record only the marker after a successful
         invitation result. Normal task creation updates `firstTaskCreated`. Reminder and mobile
         actions depend on their own capabilities. A matching repeated marker preserves the current
-        version.
+        version. `If-Organization-Match` optionally pins the write to the expected organization.
+        All responses carry `Cache-Control: private, no-store`.
         Scope `tasks:write` for a personal API token.
       tags: [my-tasks]
       security:
@@ -2892,6 +2902,7 @@ paths:
         - apiToken: [tasks:write]
       parameters:
         - $ref: '#/components/parameters/OnboardingIfMatch'
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       requestBody:
         required: true
         content:
@@ -2905,6 +2916,8 @@ paths:
         '200':
           description: The caller's updated onboarding state.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/TaskDetailNoStore'
             ETag:
               $ref: '#/components/headers/OnboardingETag'
           content:
@@ -2955,6 +2968,8 @@ paths:
         A matching `Idempotency-Key` replay within 24 hours returns the original status, state
         and space location. Provisioning is limited to one space per caller and organization.
         If provisioning fails, the wizard can still be resumed with the same draft.
+        `If-Organization-Match` optionally pins the write to the expected organization.
+        All responses carry `Cache-Control: private, no-store`.
         Scope `tasks:write` for a personal API token.
       tags: [my-tasks]
       security:
@@ -2962,6 +2977,7 @@ paths:
         - apiToken: [tasks:write]
       parameters:
         - $ref: '#/components/parameters/OnboardingIfMatch'
+        - $ref: '#/components/parameters/IfOrganizationMatch'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
@@ -2978,6 +2994,8 @@ paths:
         '201':
           description: The space exists and the state names it and its first list.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/TaskDetailNoStore'
             Location:
               description: Relative URL `/v1/spaces/<spaceId>` of the space.
               schema:
@@ -3535,18 +3553,30 @@ components:
             keyReused:
               $ref: '#/components/examples/IdempotencyKeyReused'
     OnboardingVersionMismatch:
-      description: '`request.version-mismatch`: `details.version` is the current onboarding version to read again.'
+      description: |
+        - `organization.context-changed`: `If-Organization-Match` differs from the organization
+          verified for this request. The request is refused before contacting task-service and
+          the problem gives no organization or onboarding data.
+        - `request.version-mismatch`: `If-Match` differs from the current onboarding version,
+          given in `details.version`.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/TaskDetailNoStore'
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-            status: 412
-            code: request.version-mismatch
-            details:
-              version: 4
+          examples:
+            organizationContextChanged:
+              $ref: '#/components/examples/OrganizationContextChanged'
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 4
     TaskDuplicateConflict:
       description: '`task.archived` or `idempotency.request-in-progress`.'
       content:

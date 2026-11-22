@@ -5,18 +5,50 @@
 import * as zod from 'zod';
 
 /**
+ * Available on the configured upload origin when Storage issues ticket-based capabilities.
+ * Only the opaque URL and fields returned by the reservation authorize the transfer. Send
+ * the `ticket` form field unchanged, followed by exactly one file part. Send no application
+ * cookies, personal API token or internal token. The file part must match the exact byte
+ * length and media type of the reservation. The maximum is 25 MiB for an attachment or
+ * intake file and 5 MiB for an avatar or logo. The ticket expires at the original expiry,
+ * at most five minutes after issuance.
+ *
+ * Storage durably claims the ticket before sending one write to its object store. The claim
+ * cannot be reopened, including after an interrupted or uncertain write. Another request with
+ * a consumed ticket does not write any bytes. If the transfer result is uncertain, the caller
+ * can verify through the same reservation's completion or image update. A new transfer needs
+ * a new reservation. Restarting Storage also invalidates outstanding tickets, including when
+ * restarting after a restore. Upload URLs, ticket values and file data are omitted from logs
+ * and traces.
+ *
+ * This transfer alone does not publish an attachment or update the current image.
+ * @summary Consume a temporary upload ticket
+ */
+
+
+
+export const ReceiveUploadTransferInternalBody = zod.object({
+  "ticket": zod.string().min(1).describe('Opaque bearer credential in the reservation\'s returned form fields.'),
+  "file": zod.instanceof(Blob).or(zod.string())
+})
+
+export const ReceiveUploadTransferInternalResponse = zod.void()
+
+
+/**
  * Internal token: api-gateway, actor system, with the organization returned by
  * task-service for this reservation. The gateway must first obtain the same tenant,
  * publication, attachment ID and draft expiry from the Task allocation operation.
  * The body supplies the trusted allocated ID, expiry and file declaration.
  *
  * Issue one multipart upload capability for the same tenant, publication and allocated
- * ID. Only the first declaration for that binding can be reserved. The staging
- * destination exposed in the signed form is opaque and contains no organization,
- * list or publication identifiers. The capability is valid for at most five minutes
- * and never after the supplied draft expiry. A retry of the same reservation replays
- * the original signed response and expiry. A terminal release already recorded for
- * the allocation prevents issuance.
+ * ID. Only the first declaration for that binding can be reserved. The destination is
+ * opaque and contains no organization, list or publication identifiers. A `ticket` form
+ * field selects the transfer accepted by `receiveUploadTransferInternal`, with one durable
+ * claim for the declared length and media type. The capability is valid for at most five
+ * minutes and never after the supplied draft expiry. A retry of the same reservation
+ * replays the original response and expiry. A terminal release already recorded for the
+ * allocation prevents issuance.
  * @summary Sign an upload previously allocated by task-service
  */
 export const startIntakeAttachmentUploadInternalPathPublicationIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
@@ -151,8 +183,9 @@ export const ListTaskAttachmentsInternalResponse = zod.object({
  * Reserves one upload for the verified editor of the active task. The file-size limit is
  * 26,214,400 bytes (25 MiB). A larger declared size answers `422 attachment.file-too-large`
  * before a URL is issued. The media type must match the registered type of the final file
- * extension, ignoring case. The response authorizes a five-minute multipart POST to a temporary
- * object, restricted to that object, the declared media type and 1 to 26,214,400 file bytes.
+ * extension, ignoring case. The response authorizes a five-minute multipart POST to the opaque
+ * URL returned by the server. A `ticket` form field selects the transfer accepted by
+ * `receiveUploadTransferInternal`, with one durable claim for the declared length and media type.
  * Append all returned form fields unchanged to FormData, then append the file as its final
  * part named `file`. Complete the upload before the expiry instant.
  * Keep the URL and form fields out of logs. While authorization still holds, an equivalent
@@ -351,13 +384,15 @@ export const GetTaskAttachmentDownloadInternalResponse = zod.object({
 
 /**
  * The gateway calls only after the owning service allocated this id for the verified actor,
- * scope, declaration and expiry. The signed multipart POST is restricted to one staging key,
- * an exact media type and a size range up to 5,242,880 bytes. The capability expires at the
- * owner's original expiry, at most five minutes after reservation. An authorized repeat for
- * the same reservation and declaration returns the original signed response, never a renewed
- * capability. If there is no signed response and the reserved expiry has passed, the
- * operation refuses to sign it. Do not log the destination or form fields. The issuer is api-gateway with actor
- * user. An avatar uses the account id with no organization scope, while a logo uses the
+ * scope, declaration and expiry. The multipart POST is restricted to one staging key,
+ * the declared media type and at most 5,242,880 bytes. A `ticket` form field selects the
+ * transfer accepted by `receiveUploadTransferInternal`, with one durable claim for the exact
+ * declared length and media type. The capability expires at the owner's original expiry,
+ * at most five minutes after reservation. An authorized repeat for the same reservation and
+ * declaration returns the original response with the same expiry. If there is no issued
+ * response and the reserved expiry has passed, the operation refuses to issue the transfer.
+ * Do not log the destination or form fields. The issuer is api-gateway with actor user.
+ * An avatar uses the account id with no organization scope, while a logo uses the
  * organization in the token and the id of the verified uploader.
  * @summary Sign a reserved profile image transfer
  */

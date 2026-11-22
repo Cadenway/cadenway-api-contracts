@@ -43,9 +43,10 @@ paths:
         processing a supported event.
 
         Integration atomically admits one delivery per receiver and SHA-256 digest of the
-        authenticated body, regardless of the supplied `X-GitHub-Delivery`. It retains that
-        receipt while the signing key can still be accepted. Reuse of the provider delivery ID
-        with different authenticated bytes is rejected.
+        authenticated body, regardless of the supplied `X-GitHub-Delivery`. It retains the
+        receipt while the signing key can still be accepted. A recognized digest returns
+        `204` without storing a new alias or admitting more work. Reuse of a registered delivery
+        ID with different authenticated bytes is rejected, including previously stored aliases.
         A pull request opened in `atelier-nord/cadenway-web` from
         `cad-482-ecran-connexion-sso` is an example of a delivery that can initiate Task work.
       externalDocs:

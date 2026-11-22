@@ -391,7 +391,9 @@ paths:
           a space `organization` the owner and the admins of the organization) change it
           (`403 space.visibility-forbidden`). An admin who makes the space private gets the answer,
           then no longer sees it, unless it is shared with them. The grants and the switches of the
-          lists stay as they are.
+          lists stay as they are. Making a private space visible to the organization also returns
+          `403 space.visibility-forbidden` if a task template could expose content from an
+          unavailable or restricted source list.
         - `If-Match` is optional (`412 request.version-mismatch`).
 
         Emits `space.updated.v1` when something changed; a patch that changes nothing answers `200`
@@ -1918,7 +1920,8 @@ components:
     SpaceWriteForbidden:
       description: |
         - `space.visibility-forbidden`: only the owner of the space, and the owner and the admins
-          of the organization, change its visibility;
+          of the organization, change its visibility. The space also stays private if widening
+          visibility could expose a template from an unavailable or restricted source list.
         - `access.role-insufficient`: the caller sees the space without `edit` on it;
           `details.role` is their role there (`null` for a space they see only through some of its
           lists), `details.requiredRole` is `edit`;

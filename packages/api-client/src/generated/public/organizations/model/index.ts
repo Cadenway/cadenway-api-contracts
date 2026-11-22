@@ -23,6 +23,7 @@ export * from './organizationChoice';
 export * from './organizationChoiceForbiddenResponse';
 export * from './organizationCreated';
 export * from './organizationCreation';
+export * from './organizationCreationLimitedResponse';
 export * from './organizationCreationPrimaryUse';
 export * from './organizationCreationTeamSize';
 export * from './organizationName';

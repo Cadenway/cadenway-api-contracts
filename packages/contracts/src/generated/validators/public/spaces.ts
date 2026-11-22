@@ -350,7 +350,9 @@ export const GetSpaceResponse = zod.object({
  *   a space `organization` the owner and the admins of the organization) change it
  *   (`403 space.visibility-forbidden`). An admin who makes the space private gets the answer,
  *   then no longer sees it, unless it is shared with them. The grants and the switches of the
- *   lists stay as they are.
+ *   lists stay as they are. Making a private space visible to the organization also returns
+ *   `403 space.visibility-forbidden` if a task template could expose content from an
+ *   unavailable or restricted source list.
  * - `If-Match` is optional (`412 request.version-mismatch`).
  *
  * Emits `space.updated.v1` when something changed; a patch that changes nothing answers `200`

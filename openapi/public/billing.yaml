@@ -84,9 +84,14 @@ paths:
         available through self-service checkout. Billing supplies the price, seat quantity and
         return destinations from its configuration and the organization's current state.
 
-        This action returns a Stripe Checkout URL. A later verified Stripe event determines the
-        subscription change. The same key and equivalent body replay the original response for
-        24 hours while the caller remains authorized.
+        This action returns a Stripe Checkout URL. Billing confirms the payment and subscription
+        against current Stripe state. A verified Stripe webhook or recovery of the original
+        session on a retry can trigger the same reconciliation.
+
+        The same key and equivalent body replay the original response for 24 hours while the
+        caller remains authorized. Billing keeps the original reservation while its outcome is
+        uncertain. A replacement requires Stripe to confirm that the previous session expired
+        without payment.
       tags: [billing]
       security:
         - sessionCookie: []
@@ -117,6 +122,10 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
+          description: |
+            `auth.api-token-not-accepted`, `organization.not-selected`, `organization.mfa-required`,
+            or `organization.role-forbidden` when the current active membership lacks the owner role.
+            `auth.csrf-rejected` applies when the gateway refuses the `Origin` or `Content-Type`.
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
         '409':

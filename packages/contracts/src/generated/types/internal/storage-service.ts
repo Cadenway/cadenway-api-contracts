@@ -132,6 +132,31 @@ export interface ResolveAttachmentSearchProjectionsResult {
 }
 
 /**
+ * Members specific to the code, for example the fields that failed validation.
+ */
+export type ProblemDetails = { [key: string]: unknown };
+
+/**
+ * RFC 9457 problem with the Cadenway extensions `code` and `details`.
+ */
+export interface Problem {
+  /** URI reference that identifies the problem type. */
+  type: string;
+  /** Short summary of the problem type, the same for every occurrence. */
+  title: string;
+  /** HTTP status of the response. */
+  status: number;
+  /** Explanation specific to this occurrence. */
+  detail?: string;
+  /** URI reference that identifies this occurrence. */
+  instance?: string;
+  /** Stable machine code, `<domain>.<reason>`. */
+  code: string;
+  /** Members specific to the code, for example the fields that failed validation. */
+  details?: ProblemDetails;
+}
+
+/**
  * Form heading supplied by a list editor. The service trims surrounding whitespace.
  * @minLength 1
  * @maxLength 300
@@ -2608,31 +2633,6 @@ export interface AccessRequestApproval {
   role: AccessRole;
 }
 
-/**
- * Members specific to the code, for example the fields that failed validation.
- */
-export type ProblemDetails = { [key: string]: unknown };
-
-/**
- * RFC 9457 problem with the Cadenway extensions `code` and `details`.
- */
-export interface Problem {
-  /** URI reference that identifies the problem type. */
-  type: string;
-  /** Short summary of the problem type, the same for every occurrence. */
-  title: string;
-  /** HTTP status of the response. */
-  status: number;
-  /** Explanation specific to this occurrence. */
-  detail?: string;
-  /** URI reference that identifies this occurrence. */
-  instance?: string;
-  /** Stable machine code, `<domain>.<reason>`. */
-  code: string;
-  /** Members specific to the code, for example the fields that failed validation. */
-  details?: ProblemDetails;
-}
-
 export interface StartAttachmentUpload {
   fileName: AttachmentFileName;
   contentType: AttachmentContentType;
@@ -2989,7 +2989,9 @@ export type AttachmentNotFoundResponse = Problem;
 export type IntakeAttachmentNotFoundResponse = Problem;
 
 /**
- * `idempotency.request-in-progress` while the equivalent upload reservation is running.
+ * `idempotency.request-in-progress` while the equivalent upload reservation is running,
+ * or `attachment.storage-quota-exceeded` when the organization cannot reserve the
+ * declared bytes for a temporary upload. The refusal omits plan, limit and usage.
  */
 export type UploadReservationConflictResponse = Problem;
 
@@ -3041,6 +3043,16 @@ export type IdempotencyKeyParameter = string;
  * Strong ETag of the attachment version when a conditional deletion is needed.
  */
 export type IfMatchParameter = string;
+
+export type ReceiveUploadTransferInternalBody = {
+  /**
+     * Opaque bearer credential in the reservation's returned form fields.
+     * @minLength 1
+     */
+  ticket: string;
+  /** The file as the final part with the media type of the reservation. */
+  file: Blob | File | string;
+};
 
 export type ListTaskAttachmentsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
