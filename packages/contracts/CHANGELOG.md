@@ -1,5 +1,34 @@
 # @cadenway/contracts
 
+## 0.36.0
+
+### Minor Changes
+
+- a47f0cf: Document current membership checks for SAML, two-step sign-in, realtime ticket redemption,
+  authentication policy mutation and delegated Task actions. Include internal temporary failures
+  when authorization cannot be verified. Require Realtime to negotiate source membership support
+  before redeeming a SAML session's ticket and document the visibility required to replay a task copy.
+- a47f0cf: Document the `trash.tree-too-large` conflict when a single task trash entry would exceed 1000 tasks.
+- a47f0cf: Permit Task to obtain a current Organization membership proof for authorized delegated actions.
+- a47f0cf: Allow Identity to verify active memberships through Organization and document the temporary
+  introspection failure response. Define a tenant-scoped membership rebuild export and a durable
+  account deletion reservation for the subsequent producer and consumer changes.
+- a47f0cf: Document invitation sending limits per account and organization, and the temporary upload quota
+  for attachment reservations, including the draft limit per Intake publication. Describe reset
+  link invalidation after a password change, acknowledgement of duplicate GitHub delivery digests
+  and restrictions on widening visibility for spaces with private-source task templates.
+- a47f0cf: Keep onboarding reads private and non-cacheable. Document the optional organization precondition
+  for onboarding writes alongside the existing version precondition.
+- a47f0cf: Document single-use multipart upload tickets for task attachments, intake files and profile images.
+  The reservation response keeps the existing POST method, URL, form fields and expiry. The Storage
+  transfer operation consumes a ticket before writing its temporary object.
+- a47f0cf: Define an Organization-only Identity operation to verify the current address used to authorize
+  received invitations. Document the verification and temporary failure on the invitation routes.
+
+### Patch Changes
+
+- a47f0cf: Document how Checkout recovers an earlier Stripe session and when Gateway rejects a request for CSRF.
+
 ## 0.35.0
 
 ### Minor Changes
