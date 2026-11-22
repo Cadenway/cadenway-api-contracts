@@ -5,6 +5,8 @@
 import type { Problem } from './problem';
 
 /**
- * `task.archived`: the task is archived; it is deleted once restored. `details.key` names it.
+ * `task.archived` (the root is archived, named by `details.key`) or
+ * `trash.tree-too-large` (the tree or the cumulative lock budget exceeds `details.limit`,
+ * currently 1000 tasks).
  */
 export type TaskArchivedResponse = Problem;

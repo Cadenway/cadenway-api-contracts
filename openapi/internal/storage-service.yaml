@@ -19,7 +19,8 @@ info:
     pending upload to the verified uploader. A task key remains stable through moves. A purge
     permanently revokes the task key for attachments and schedules removal of pending and ready
     objects. Temporary URL cleanup covers expired reservations and leftover staged objects.
-    Signed URLs are sensitive and must be omitted from logs and traces.
+    Upload URLs and form fields and signed download URLs are sensitive and must be omitted from
+    logs and traces. The gateway forwards the returned upload capability unchanged.
 
     For applicant uploads the gateway obtains the trusted tenant, publication, reservation ID and
     draft expiry from task-service. Storage verifies and pins the immutable candidate for the
@@ -36,6 +37,8 @@ info:
   x-consumers:
     - repository: cadenway-api-gateway
       uses: Authorizes task and applicant upload access through task-service and relays attachment and profile image operations using the generated internal client. Profile images require current owner or directory access.
+    - repository: cadenway-webapp
+      uses: Sends the file to the opaque upload URL returned by the gateway using the returned multipart fields.
     - repository: cadenway-search-service
       uses: Rebuilds and refreshes its index of ready task attachment filenames through the internal search projection routes.
     - repository: cadenway-billing-service
@@ -52,11 +55,78 @@ tags:
     description: Unbound applicant uploads awaiting an authoritative task claim or release.
   - name: profile-media
     description: Signed transfers, verified raster preparation and authorized image reads.
+  - name: upload-transfers
+    description: Temporary capability transfers for attachments and profile images.
   - name: search-projections
     description: Bounded snapshots and current attachment metadata for the search index.
   - name: billing-usage
     description: Verified attachment usage snapshots for Billing reconciliation.
 paths:
+  /internal/v1/upload-transfers:
+    post:
+      operationId: receiveUploadTransferInternal
+      summary: Consume a temporary upload ticket
+      description: |
+        Available on the configured upload origin when Storage issues ticket-based capabilities.
+        Only the opaque URL and fields returned by the reservation authorize the transfer. Send
+        the `ticket` form field unchanged, followed by exactly one file part. Send no application
+        cookies, personal API token or internal token. The file part must match the exact byte
+        length and media type of the reservation. The maximum is 25 MiB for an attachment or
+        intake file and 5 MiB for an avatar or logo. The ticket expires at the original expiry,
+        at most five minutes after issuance.
+
+        Storage durably claims the ticket before sending one write to its object store. The claim
+        cannot be reopened, including after an interrupted or uncertain write. Another request with
+        a consumed ticket does not write any bytes. If the transfer result is uncertain, the caller
+        can verify through the same reservation's completion or image update. A new transfer needs
+        a new reservation. Restarting Storage also invalidates outstanding tickets, including when
+        restarting after a restore. Upload URLs, ticket values and file data are omitted from logs
+        and traces.
+
+        This transfer alone does not publish an attachment or update the current image.
+      tags: [upload-transfers]
+      security: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ticket, file]
+              properties:
+                ticket:
+                  type: string
+                  minLength: 1
+                  description: Opaque bearer credential in the reservation's returned form fields.
+                file:
+                  type: string
+                  format: binary
+                  description: The file as the final part with the media type of the reservation.
+            encoding:
+              file:
+                contentType: '*/*'
+      responses:
+        '204':
+          description: The temporary object was written.
+        '400':
+          description: '`storage.upload-transfer-invalid` for a malformed, expired or invalid transfer, or an upload that violates its file declaration or maximum size.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '../../components/http.yaml#/components/schemas/Problem'
+        '409':
+          description: '`storage.upload-transfer-consumed` when the ticket has already been claimed.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '../../components/http.yaml#/components/schemas/Problem'
+        '503':
+          description: '`storage.unavailable` for a durable state or object-store failure, including when the write outcome is uncertain.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '../../components/http.yaml#/components/schemas/Problem'
   /internal/v1/intake-publications/{publicationId}/attachments:
     parameters:
       - $ref: '#/components/parameters/IntakePublicationId'
@@ -70,12 +140,13 @@ paths:
         The body supplies the trusted allocated ID, expiry and file declaration.
 
         Issue one multipart upload capability for the same tenant, publication and allocated
-        ID. Only the first declaration for that binding can be reserved. The staging
-        destination exposed in the signed form is opaque and contains no organization,
-        list or publication identifiers. The capability is valid for at most five minutes
-        and never after the supplied draft expiry. A retry of the same reservation replays
-        the original signed response and expiry. A terminal release already recorded for
-        the allocation prevents issuance.
+        ID. Only the first declaration for that binding can be reserved. The destination is
+        opaque and contains no organization, list or publication identifiers. A `ticket` form
+        field selects the transfer accepted by `receiveUploadTransferInternal`, with one durable
+        claim for the declared length and media type. The capability is valid for at most five
+        minutes and never after the supplied draft expiry. A retry of the same reservation
+        replays the original response and expiry. A terminal release already recorded for the
+        allocation prevents issuance.
       tags: [intake-attachments]
       requestBody:
         required: true
@@ -217,8 +288,9 @@ paths:
         Reserves one upload for the verified editor of the active task. The file-size limit is
         26,214,400 bytes (25 MiB). A larger declared size answers `422 attachment.file-too-large`
         before a URL is issued. The media type must match the registered type of the final file
-        extension, ignoring case. The response authorizes a five-minute multipart POST to a temporary
-        object, restricted to that object, the declared media type and 1 to 26,214,400 file bytes.
+        extension, ignoring case. The response authorizes a five-minute multipart POST to the opaque
+        URL returned by the server. A `ticket` form field selects the transfer accepted by
+        `receiveUploadTransferInternal`, with one durable claim for the declared length and media type.
         Append all returned form fields unchanged to FormData, then append the file as its final
         part named `file`. Complete the upload before the expiry instant.
         Keep the URL and form fields out of logs. While authorization still holds, an equivalent
@@ -439,13 +511,15 @@ paths:
       summary: Sign a reserved profile image transfer
       description: |
         The gateway calls only after the owning service allocated this id for the verified actor,
-        scope, declaration and expiry. The signed multipart POST is restricted to one staging key,
-        an exact media type and a size range up to 5,242,880 bytes. The capability expires at the
-        owner's original expiry, at most five minutes after reservation. An authorized repeat for
-        the same reservation and declaration returns the original signed response, never a renewed
-        capability. If there is no signed response and the reserved expiry has passed, the
-        operation refuses to sign it. Do not log the destination or form fields. The issuer is api-gateway with actor
-        user. An avatar uses the account id with no organization scope, while a logo uses the
+        scope, declaration and expiry. The multipart POST is restricted to one staging key,
+        the declared media type and at most 5,242,880 bytes. A `ticket` form field selects the
+        transfer accepted by `receiveUploadTransferInternal`, with one durable claim for the exact
+        declared length and media type. The capability expires at the owner's original expiry,
+        at most five minutes after reservation. An authorized repeat for the same reservation and
+        declaration returns the original response with the same expiry. If there is no issued
+        response and the reserved expiry has passed, the operation refuses to issue the transfer.
+        Do not log the destination or form fields. The issuer is api-gateway with actor user.
+        An avatar uses the account id with no organization scope, while a logo uses the
         organization in the token and the id of the verified uploader.
       tags: [profile-media]
       x-cadenway-strict-body: true
@@ -1108,11 +1182,26 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
     UploadReservationConflict:
       description: |
-        `idempotency.request-in-progress` while the equivalent upload reservation is running.
+        `idempotency.request-in-progress` while the equivalent upload reservation is running,
+        or `attachment.storage-quota-exceeded` when the organization cannot reserve the
+        declared bytes for a temporary upload. The refusal omits plan, limit and usage.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            requestInProgress:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: idempotency.request-in-progress
+            storageQuotaExceeded:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: attachment.storage-quota-exceeded
     UploadStateConflict:
       description: |
         `attachment.upload-expired` for an expired pending reservation,

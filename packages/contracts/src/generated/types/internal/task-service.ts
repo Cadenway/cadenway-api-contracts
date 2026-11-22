@@ -4647,8 +4647,11 @@ export type IntakeAttachmentSubmissionConflictResponse = Problem;
 /**
  * `attachment.file-too-large` above 26,214,400 bytes,
  * `intake-form.attachments-disabled` if the form disallows attachments,
- * `intake-form.attachment-limit-exceeded` if the draft holds five active
- * reservations, or `idempotency.key-reused` on a mismatched declaration for this key.
+ * `intake-form.attachment-limit-exceeded` if the draft holds five active reservations
+ * or a new draft would exceed the publication's limit of 10,000 distinct attachment
+ * drafts. Only a new publication key starts a new allowance. Releasing a reservation
+ * does not restore this allowance. Existing drafts keep their original lifetime and
+ * replay rules. `idempotency.key-reused` on a mismatched declaration for this key.
  */
 export type IntakeAttachmentAllocationRefusedResponse = Problem;
 
@@ -4953,7 +4956,8 @@ export type RoleForbiddenResponse = Problem;
 
 /**
  * - `space.visibility-forbidden`: only the owner of the space, and the owner and the admins
- *   of the organization, change its visibility;
+ *   of the organization, change its visibility. The space also stays private if widening
+ *   visibility could expose a template from an unavailable or restricted source list.
  * - `access.role-insufficient`: the actor sees the space without `edit` on it;
  *   `details.role` is their role there (`null` for a space they see only through some of its
  *   lists), `details.requiredRole` is `edit`;
@@ -5136,6 +5140,13 @@ export type OwnerUnchangeableResponse = Problem;
  * `task.archived`: the task, or the parent a patch names, is archived; `details.key` names it.
  */
 export type TaskArchivedResponse = Problem;
+
+/**
+ * `task.archived` (the root is archived, named by `details.key`) or
+ * `trash.tree-too-large` (the tree or the cumulative lock budget exceeds `details.limit`,
+ * currently 1000 tasks).
+ */
+export type TaskTrashConflictResponse = Problem;
 
 /**
  * `task.archived` (`details.key`): the task that would hold the new subtask or checklist item

@@ -760,8 +760,8 @@ export type SearchOrganizationAccessRefusedResponse = Problem;
 
 /**
  * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for a non-user
- * actor or for delegated Identity role or scopes, or `auth.organization-required` for
- * an unscoped token.
+ * actor or for a delegated role or scope from Identity, Task or Realtime, or
+ * `auth.organization-required` for an unscoped token.
  */
 export type SearchMembershipAccessRefusedResponse = Problem;
 
@@ -877,6 +877,11 @@ export type InternalAccessRefusedResponse = Problem;
 export type RoleForbiddenResponse = Problem;
 
 /**
+ * `upstream.unavailable` when Organization cannot verify the current address with Identity.
+ */
+export type InvitationAuthorityUnavailableResponse = Problem;
+
+/**
  * - `invitation.email-mismatch`: the invitation was sent to another address than the verified
  *   address of the actor;
  * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`: see the internal token.
@@ -929,19 +934,20 @@ export type InvitationAnsweredResponse = Problem;
 export type InvitationClosedResponse = Problem;
 
 /**
- * `invitation.daily-limit-reached`: the addresses that would be invited need more invitation
- * emails than the organization has left of its 100 in any 24 hours; `details.remaining` is
- * what it has left, and nothing was created, sent or emitted. `details.nextAvailableAt` is
- * when the oldest email counted leaves the 24 hours and `Retry-After` the seconds until then.
+ * `invitation.daily-limit-reached` when the requested emails exceed the sender's or
+ * organization's rolling allowance. `details.remaining` is the smaller allowance
+ * remaining. `details.nextAvailableAt` reports when the limiting allowance next grows or
+ * when both will have grown if they are equal. `Retry-After` is the delay in seconds.
+ * Nothing was created, sent or emitted.
  */
 export type InvitationBatchLimitedResponse = Problem;
 
 /**
  * - `invitation.resend-throttled`: the email of the invitation went out less than an hour
  *   ago; `details.resendAvailableAt` is `sentAt` plus one hour;
- * - `invitation.daily-limit-reached`: the organization has no invitation email left of its
- *   100 in any 24 hours; `details.remaining` is `0` and `details.nextAvailableAt` says when
- *   the oldest email counted leaves the 24 hours.
+ * - `invitation.daily-limit-reached` when the organization or sender has no invitation
+ *   email left in their rolling allowance. `details.remaining` is `0` and
+ *   `details.nextAvailableAt` reports when both allowances permit another email.
  *
  * `Retry-After` is the seconds until the resend can succeed. Nothing changed and nothing was
  * emitted.

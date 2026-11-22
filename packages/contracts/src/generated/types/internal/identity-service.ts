@@ -161,6 +161,17 @@ export interface RealtimeTicketRedemption {
 }
 
 /**
+ * The active membership that authorized the SAML sign-in. Present in every successful
+ * redemption for a SAML session. It can differ from the connection's current
+ * organization membership. Realtime verifies both for the authenticated user and
+ * closes the socket if either membership ceases to grant access.
+ */
+export type RealtimeSessionSamlSourceMembership = {
+  organizationId: string;
+  memberId: string;
+};
+
+/**
  * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
  * ("Membre") or `guest` ("Invité").
  */
@@ -199,6 +210,13 @@ export interface RealtimeSession {
      * @pattern Z$
      */
   sessionExpiresAt: string;
+  /**
+     * The active membership that authorized the SAML sign-in. Present in every successful
+     * redemption for a SAML session. It can differ from the connection's current
+     * organization membership. Realtime verifies both for the authenticated user and
+     * closes the socket if either membership ceases to grant access.
+     */
+  samlSourceMembership?: RealtimeSessionSamlSourceMembership;
 }
 
 /**
@@ -211,6 +229,10 @@ export type Email = string;
  * BCP 47 language tag of the account, used for its emails. `fr` by default.
  */
 export type Language = string;
+
+export interface VerifiedEmail {
+  email: Email;
+}
 
 export interface NotificationRecipient {
   email: Email;
@@ -1498,10 +1520,18 @@ export type FederatedSignInRefusedResponse = Problem;
 export type FederatedAuthorityUnavailableResponse = Problem;
 
 /**
- * `organization.unavailable` when Identity cannot verify the credential's current membership.
- * The caller may retry introspection. A temporary failure does not invalidate the credential.
+ * `organization.unavailable` when Identity cannot verify the required membership with
+ * Organization. No success or authorization proof is produced. A temporary failure of
+ * introspection does not invalidate the credential.
  */
 export type MembershipAuthorityUnavailableResponse = Problem;
+
+/**
+ * `auth.federated-unavailable` when a provider or sign-in authority is unavailable, or
+ * `organization.unavailable` when Identity cannot verify the originating SAML membership.
+ * No receipt, challenge or session can be issued without the required verification.
+ */
+export type SamlAuthorityUnavailableResponse = Problem;
 
 /**
  * `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
@@ -1686,8 +1716,9 @@ export type RealtimeTicketSessionNotFoundResponse = Problem;
 export type RealtimeTicketRedemptionRefusedResponse = Problem;
 
 /**
- * `realtime-ticket.not-found`: no usable ticket was found. There is no detail identifying
- * its state, session, organization or former holder.
+ * `realtime-ticket.not-found`: no usable ticket was found. This includes a SAML ticket
+ * when the caller did not negotiate source membership revalidation. The response gives no
+ * detail about the reason, ticket state, session, organization or former holder.
  */
 export type RealtimeTicketNotFoundResponse = Problem;
 

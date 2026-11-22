@@ -8,9 +8,11 @@ import * as zod from 'zod';
  * Creates an organization owned by the actor, with the plan `free`, its owner member and the
  * invitations of `inviteEmails` as `member`, in one transaction; derives the slug as
  * `POST /v1/organizations` says. Emits `organization.created.v1`, `member.joined.v1` and one
- * `invitation.issued.v1` per invited address. These invitations take their emails from the
- * daily allowance of the new organization (`POST /internal/v1/invitations`), which a
- * creation, 50 addresses at most, never exceeds.
+ * `invitation.issued.v1` per invited address. The actor's invitation emails count toward
+ * their rolling 24-hour allowance of 100 across all organizations. They also count toward
+ * the new organization's allowance. If the actor cannot send all requested emails, return
+ * `429 invitation.daily-limit-reached` and create nothing. An address that sends no email
+ * consumes no allowance.
  *
  * An actor that is not in the user directory yet answers `404 user.not-synchronized` and
  * creates nothing. Internal token: actor `user`, no organization.
@@ -489,16 +491,15 @@ export const RemoveMemberInternalResponse = zod.void()
  * `POST /v1/invitations` says. Owner and admins only. Emits one `invitation.issued.v1` per
  * `invited` address. Internal token: actor `user`, organization required.
  *
- * **Daily allowance.** organization-service counts the invitation emails of each
- * organization over a rolling 24 hours: every `invitation.issued.v1`, from this route, from
- * the creation of the organization or from a resend, takes one, and the organization has
- * 100. Once the body and the role are accepted, a batch whose addresses that would be
- * `invited` need more emails than remain is refused as a whole with
- * `429 invitation.daily-limit-reached`: nothing is created, sent or emitted.
- * `details.remaining` is what remains, `0` or more; `details.nextAvailableAt` is when the
- * allowance grows again, the oldest email counted plus 24 hours; `Retry-After` is the
- * seconds until then, rounded up. A batch whose addresses are all members or already invited
- * needs none and is never refused.
+ * **Daily allowances.** Organization-service allows at most 100 invitation emails per
+ * organization and 100 per sender across all organizations in any rolling 24 hours.
+ * Each email from this route, organization creation or resend uses both allowances.
+ * Once the body and role are accepted, a batch that would exceed either allowance returns
+ * `429 invitation.daily-limit-reached`. Nothing is created, sent or emitted.
+ * `details.remaining` is the smaller allowance remaining. `details.nextAvailableAt` is
+ * when the limiting allowance next grows. If both remaining allowances are equal, it is
+ * when both will have grown. `Retry-After` is the delay in seconds rounded up.
+ * A batch whose addresses are all members or already invited uses neither allowance.
  * @summary Invite people
  */
 export const inviteMembersInternalBodyEmailsItemMax = 254;
@@ -592,8 +593,8 @@ export const RevokeInvitationInternalResponse = zod.void()
  *    (the invitation itself or the previous resend), answers
  *    `429 invitation.resend-throttled` with `details.resendAvailableAt`, `sentAt` plus one
  *    hour, and `Retry-After`, the seconds until then, rounded up.
- * 2. A resend takes one email of the daily allowance of the organization (see
- *    `POST /internal/v1/invitations`): with none left, it answers
+ * 2. A resend takes one email from both the organization and sender daily allowances
+ *    (see `POST /internal/v1/invitations`). When either is empty, it answers
  *    `429 invitation.daily-limit-reached` with `details.remaining: 0`,
  *    `details.nextAvailableAt` and `Retry-After`.
  *
@@ -629,11 +630,11 @@ export const ResendInvitationInternalResponse = zod.object({
 
 
 /**
- * Lists the pending invitations, not expired, addressed to the verified address the user
- * directory holds for the actor, from every organization, the most recently sent first.
- * Reads across organizations with a filter on that address. Without a verified address in the
- * directory yet, the list is empty. A `userId` other than the actor answers
- * `404 user.not-found`. Internal token: actor `user`, no organization.
+ * Lists the pending invitations, not expired, addressed to the actor's current verified
+ * address from Identity, from every organization, the most recently sent first. Reads across
+ * organizations with a filter on that address. Without a current verified address the list
+ * is empty. If Identity is unavailable the list fails. A `userId` other than the actor
+ * answers `404 user.not-found`. Internal token: actor `user`, no organization.
  * @summary List the invitations addressed to the actor
  */
 export const ListReceivedInvitationsInternalParams = zod.object({
@@ -676,11 +677,11 @@ export const ListReceivedInvitationsInternalResponse = zod.object({
 
 /**
  * Makes the actor a member of the organization of the invitation, with its role, in the
- * tenant transaction of that organization. Checks, in this order: the invitation exists
- * (`404 invitation.not-found`, also while the directory holds no verified address for the
- * actor); its address is the verified address of the actor (`403 invitation.email-mismatch`);
- * it is pending (`409 invitation.revoked`, `409 invitation.answered`,
- * `409 invitation.expired`). If acceptance would add a seat beyond the organization's
+ * tenant transaction of that organization. First resolves the actor's current verified
+ * address from Identity. Checks that the invitation exists and the actor has a current
+ * verified address (`404 invitation.not-found`); the two addresses match
+ * (`403 invitation.email-mismatch`); the invitation is pending (`409 invitation.revoked`,
+ * `409 invitation.answered`, `409 invitation.expired`). If acceptance would add a seat beyond the organization's
  * plan limit, `409 organization.seat-quota-exceeded` leaves the invitation pending. Guests
  * and existing active memberships do not add a seat. Emits `member.joined.v1`. A `userId`
  * other than the actor answers `404 user.not-found`. Internal token: actor `user`, no
@@ -711,9 +712,9 @@ export const AcceptInvitationInternalResponse = zod.object({
 
 
 /**
- * Refuses an invitation addressed to the actor. Checks that the invitation exists, is
- * addressed to the actor's verified address and is still pending. Emits nothing. Internal
- * token: actor `user`, no organization.
+ * Refuses an invitation addressed to the actor. First resolves the actor's current verified
+ * address from Identity. Checks that the invitation exists, is addressed to that verified
+ * address and is still pending. Emits nothing. Internal token: actor `user`, no organization.
  * @summary Refuse an invitation
  */
 export const RefuseInvitationInternalParams = zod.object({
@@ -954,11 +955,13 @@ export const LookupQuotaNotificationRecipientsInternalResponse = zod.object({
 
 
 /**
- * Requires issuer `search-service` or `identity-service`, an actor of type `user` and an
- * organization in the signed token. Search delegates the user and organization of the
- * authenticated search request. Identity signs the account and organization bound to a
- * locally verified credential, with no delegated role or scopes. Every response carries
- * `Cache-Control: private, no-store`.
+ * Requires issuer `search-service`, `identity-service`, `task-service` or `realtime-gateway`,
+ * an actor of type `user` and an organization in the signed token. Search delegates the user
+ * and organization of the authenticated search request. Identity signs the account and
+ * organization bound to a locally verified credential. Task signs the author or recipient
+ * and organization from an authorized Git or Automation action. Realtime signs the account
+ * and organization of an authenticated connection. Identity, Task and Realtime send no
+ * delegated role or scopes. Every response carries `Cache-Control: private, no-store`.
  *
  * Returns the active membership's ID, version and role in one current tenant snapshot.
  * The membership ID changes after removal and rejoining. The version is the version of
@@ -966,7 +969,9 @@ export const LookupQuotaNotificationRecipientsInternalResponse = zod.object({
  * absent active membership yields the same `404 organization.not-found`. Search uses this
  * proof to check that Task evaluates candidate access against the same membership identity
  * and version. Identity uses the current role and compares the membership ID before exposing
- * a session's selected organization. The proof alone grants no access to search results.
+ * a session's selected organization. Task checks the current membership before applying
+ * delegated actions. Realtime uses it to revalidate membership for an admitted connection.
+ * The proof alone grants no access to a task or search result.
  * @summary Prove current organization membership
  */
 export const getSearchMembershipInternalResponseVersionMax = 9007199254740991;

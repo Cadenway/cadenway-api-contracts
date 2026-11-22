@@ -12,11 +12,15 @@ info:
     Every response to a matched image GET carries `Cache-Control: private, no-store`, including
     errors produced by the gateway before the route handler runs.
 
-    Uploads go directly to the temporary object via a signed multipart POST for at most five minutes.
-    Append every form field unchanged before the final part named `file`. Up to 5 MiB (5,242,880
-    bytes) per source is allowed. The fully decoded source must be one square still image with
-    dimensions at most 4,096 pixels per side and no more than 16,777,216 pixels. Avatars require at
-    least 256 pixels per side and accept PNG, JPEG or WebP. Organization logos accept PNG or SVG.
+    The opaque upload URL authorizes a multipart POST for at most five minutes. Append every form
+    field unchanged before the final part named `file` and send the transfer without application
+    credentials. When the returned fields contain a `ticket`, the transfer accepts the exact
+    declared file length and media type and can be consumed only once. After an uncertain transfer
+    outcome, try setting the image with the same upload ID before starting a new reservation.
+    Up to 5 MiB (5,242,880 bytes) per source is allowed. The fully decoded source must be one square
+    still image with dimensions at most 4,096 pixels per side and no more than 16,777,216 pixels.
+    Avatars require at least 256 pixels per side and accept PNG, JPEG or WebP. Organization logos
+    accept PNG or SVG.
     A 512 pixel logo is recommended. An SVG must be static and renderable without external resources.
     Storage re-encodes the verified result as PNG, strips source metadata and caps it at 512 pixels
     per side without upscaling. Source bytes and signed upload details are excluded from published

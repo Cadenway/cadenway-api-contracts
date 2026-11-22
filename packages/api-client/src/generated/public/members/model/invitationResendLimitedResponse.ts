@@ -7,9 +7,9 @@ import type { Problem } from './problem';
 /**
  * - `invitation.resend-throttled`: the email of the invitation went out less than an hour
  *   ago; `details.resendAvailableAt` says when it can go out again;
- * - `invitation.daily-limit-reached`: the organization has no invitation email left of its
- *   100 in any 24 hours; `details.remaining` is `0`, and `details.nextAvailableAt` says
- *   when the oldest invitation email counted leaves the 24 hours;
+ * - `invitation.daily-limit-reached` when the organization or sender has no invitation
+ *   email left in their rolling allowance. `details.remaining` is `0` and
+ *   `details.nextAvailableAt` reports when both allowances permit another email.
  * - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
  *
  * `Retry-After` says how many seconds to wait: until `details.resendAvailableAt` for

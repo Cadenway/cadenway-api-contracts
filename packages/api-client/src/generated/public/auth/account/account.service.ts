@@ -84,8 +84,9 @@ type HttpClientObserveOptions = HttpClientOptions & {
 export class AccountService {
   private readonly http = inject(HttpClient);
 /**
- * Replaces the password of the account ("Modifier le mot de passe"). The other sessions stay
- * open ("Vos autres sessions resteront ouvertes."), and so do the personal API tokens.
+ * Replaces the password of the account ("Modifier le mot de passe") and invalidates any open
+ * password reset link in the same transaction. The other sessions stay open ("Vos autres
+ * sessions resteront ouvertes."), and so do the personal API tokens.
  *
  * The checks run in this order:
  *

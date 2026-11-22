@@ -12,8 +12,10 @@ import * as zod from 'zod';
  *
  * The receiver and SHA-256 digest of the authenticated body identify one admitted
  * delivery independently of `X-GitHub-Delivery`. Persist the receipt and accepted
- * work atomically and reject reuse of the delivery ID with different authenticated
- * bytes. Retain the receipt while the signing key can still be accepted.
+ * work atomically. A recognized digest returns `204` without storing a new alias
+ * or admitting more work. Reject reuse of a registered delivery ID with different
+ * authenticated bytes, including previously stored aliases. Retain the receipt while
+ * the signing key can still be accepted.
  * A pull request opened in `atelier-nord/cadenway-web` from
  * `cad-482-ecran-connexion-sso` is an example of a delivery that can initiate Task work.
  * @summary Receive a signed GitHub webhook delivery

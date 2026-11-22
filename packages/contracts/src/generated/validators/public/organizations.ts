@@ -19,9 +19,11 @@ import * as zod from 'zod';
  *   or not.
  * - Each address of `inviteEmails` gets its own outcome in `invitations`, as
  *   `POST /v1/invitations` does; an address of the caller answers `already-member`. These
- *   invitations take their emails from the daily allowance of the new organization, 100
- *   invitation emails in any 24 hours (`openapi/public/members.yaml`), which a creation, 50
- *   addresses at most, never exceeds.
+ *   invitations charge the caller's allowance of 100 invitation emails across all
+ *   organizations in a rolling 24-hour window. The caller's own address and other outcomes
+ *   that send no email do not consume the allowance. If the emails would exceed it, the
+ *   entire creation answers `429 invitation.daily-limit-reached` with `details.remaining`,
+ *   `details.nextAvailableAt` and `Retry-After`. No organization or invitation is created.
  * - organization-service knows the caller from the events of their sign-up, which precede
  *   their first session. In the rare case it has not applied them yet, the creation answers
  *   `404 user.not-synchronized` and nothing is created: the web application retries after a
@@ -275,10 +277,11 @@ export const GetAuthenticationPolicyResponse = zod.object({
 
 /**
  * Applies a JSON Merge Patch (RFC 7396) to the authentication policy of the current
- * organization: a member left out is unchanged. Owner and admins only
- * (`403 organization.role-forbidden`). The change applies from the next request of every
- * session and personal token acting on the organization (toast "Politique de session mise à
- * jour", "Les sessions inactives expirent désormais après 12 heures.").
+ * organization: a member left out is unchanged. Identity checks the caller's current role
+ * with Organization. Owner and admins only (`403 organization.role-forbidden`). The change
+ * applies from the next request of every session and personal token acting on the organization
+ * (toast "Politique de session mise à jour", "Les sessions inactives expirent désormais après
+ * 12 heures.").
  *
  * - `twoStepVerificationRequiredFor`: `admins` ("Propriétaire et administrateurs ne peuvent
  *   plus se connecter sans elle.") or `everyone` withholds the organization from the people

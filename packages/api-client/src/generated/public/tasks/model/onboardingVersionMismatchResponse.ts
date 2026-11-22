@@ -5,6 +5,10 @@
 import type { Problem } from './problem';
 
 /**
- * `request.version-mismatch`: `details.version` is the current onboarding version to read again.
+ * - `organization.context-changed`: `If-Organization-Match` differs from the organization
+ *   verified for this request. The request is refused before contacting task-service and
+ *   the problem gives no organization or onboarding data.
+ * - `request.version-mismatch`: `If-Match` differs from the current onboarding version,
+ *   given in `details.version`.
  */
 export type OnboardingVersionMismatchResponse = Problem;

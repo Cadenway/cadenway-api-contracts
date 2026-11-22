@@ -173,17 +173,15 @@ export const RemoveMemberResponse = zod.void()
  * for either. The web application counts the `invited` outcomes ("{n} invitations
  * envoyées"). Owner and admins only. Sending an invitation does not consume a seat.
  *
- * **Daily allowance.** An organization causes at most 100 invitation emails in any 24 hours:
- * the invitations of this route, those of the creation of the organization and the resends
- * count together. Each address that would be `invited` needs one email of the allowance;
- * when the batch needs more than what remains, the whole batch is refused with
- * `429 invitation.daily-limit-reached` ("Limite d’invitations atteinte pour aujourd’hui :
- * réessayez plus tard."), and nothing is created, sent or emitted. `details.remaining` says
- * how many invitation emails the organization can still cause now, `0` or more, so that the
- * web application can offer to invite fewer addresses; `details.nextAvailableAt` says when
- * the oldest email counted leaves the 24 hours, which is when the allowance grows again,
- * and `Retry-After` the seconds until then. The allowance is checked once the body and the
- * role of the caller are accepted.
+ * **Daily allowances.** An organization and a sender each have an allowance of
+ * 100 invitation emails in any rolling 24-hour window. The sender allowance applies
+ * across all organizations. This route, organization creation and resends charge both
+ * allowances for each email sent. A batch that would exceed either allowance returns
+ * `429 invitation.daily-limit-reached` and nothing is created, sent or emitted.
+ * `details.remaining` is the smaller number of emails still available, so the web
+ * application can offer to invite fewer addresses. `details.nextAvailableAt` is when
+ * the limiting allowance next grows or when both will have grown if they are equal.
+ * `Retry-After` gives the delay in seconds. These checks follow body and role validation.
  *
  * A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
  * `invitation.issued.v1` per `invited` address. Session only.
@@ -281,8 +279,8 @@ export const RevokeInvitationResponse = zod.void()
  *    answers `429 invitation.resend-throttled` ("Cette invitation vient d’être renvoyée :
  *    réessayez dans une heure."). `details.resendAvailableAt` is `sentAt` plus one hour,
  *    and `Retry-After` the seconds until then.
- * 2. A resend takes one email of the daily allowance of the organization, 100 invitation
- *    emails in any 24 hours (see `POST /v1/invitations`): with none left, it answers
+ * 2. A resend takes one email from the organization and sender allowances
+ *    (see `POST /v1/invitations`). When either is empty, it answers
  *    `429 invitation.daily-limit-reached` with `details.remaining: 0`;
  *    `details.nextAvailableAt` and `Retry-After` say when the allowance grows again.
  *
@@ -323,7 +321,7 @@ export const ResendInvitationResponse = zod.object({
 /**
  * Lists the pending invitations, not expired, addressed to the verified address of the
  * caller, from every organization ("Invitation en attente"), the most recently sent first.
- * Works without a current organization. Session only.
+ * The list uses the current verified address. Works without a current organization. Session only.
  * @summary List the invitations addressed to the caller
  */
 export const listReceivedInvitationsQueryLimitDefault = 50;
@@ -367,9 +365,9 @@ export const ListReceivedInvitationsResponse = zod.object({
  *
  * The checks run in this order:
  *
- * 1. The invitation exists: `404 invitation.not-found` otherwise, also for a few seconds
- *    after the verification of the address of the caller.
- * 2. Its address is the verified address of the caller: `403 invitation.email-mismatch`
+ * 1. The invitation exists and the caller has a current verified address:
+ *    `404 invitation.not-found` otherwise.
+ * 2. Its address is the current verified address of the caller: `403 invitation.email-mismatch`
  *    otherwise.
  * 3. It is still pending: `409 invitation.revoked`, `409 invitation.answered` (accepted or
  *    refused already) or `409 invitation.expired`.
@@ -406,7 +404,7 @@ export const AcceptInvitationResponse = zod.object({
 /**
  * Refuses an invitation addressed to the caller ("Refuser"): it leaves both lists, and the
  * person who invited can send a new one ("Inès Robert pourra vous en envoyer une nouvelle.").
- * Checks that the invitation exists, is addressed to the caller's verified address and is
+ * Checks that the invitation exists, is addressed to the caller's current verified address and is
  * still pending. Emits nothing. Session only.
  * @summary Refuse an invitation
  */

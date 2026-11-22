@@ -164,6 +164,10 @@ export class TrashService {
  * the trash already `404 task.trashed`. `If-Match` is optional
  * (`412 request.version-mismatch`), with the version of the task.
  *
+ * Trees of more than 1000 tasks, including archived descendants, return
+ * `409 trash.tree-too-large` before moving any task. Concurrent changes can also exhaust the
+ * cumulative 1000-task lock budget.
+ *
  * An action: answers `200`. Not recorded in the activity log. Emits `task.trashed.v1` for
  * each task of the entry, the root first. Scope `tasks:write` for a personal API token.
  * @summary Delete a task with its subtasks

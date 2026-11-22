@@ -458,6 +458,15 @@ export type SlugInvalidResponse = Problem;
 export type VersionMismatchResponse = Problem;
 
 /**
+ * `invitation.daily-limit-reached` when the caller cannot send all requested invitation
+ * emails within their rolling allowance. `details.remaining` is the number of emails
+ * the caller can still send and `details.nextAvailableAt` is when the allowance next grows.
+ * `rate-limit.exceeded` when the gateway limits the request. `Retry-After` gives the delay
+ * in seconds for either refusal.
+ */
+export type OrganizationCreationLimitedResponse = Problem;
+
+/**
  * `rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.
  */
 export type RateLimitedResponse = Problem;

@@ -771,8 +771,9 @@ export const UpdateTaskResponse = zod.object({
  * dependencies, recurrence, files, time or approvals. A copy in done gets its own completedAt.
  * Requires edit on the list; an archived task refuses changes. If-Match checks the source
  * task version. An optional Idempotency-Key replays the original 201 and Location for 24
- * hours; changed payload and concurrent replay use the standard idempotency problems. Emits
- * the ordinary task creation and assignment facts in the creation transaction.
+ * hours. Replaying requires current visibility of the original list and both tasks.
+ * Changed payload and concurrent replay use the standard idempotency problems. Emits the
+ * ordinary task creation and assignment facts in the creation transaction.
  * Scope `tasks:write` for a personal API token.
  * @summary Duplicate a task
  */
@@ -3363,8 +3364,9 @@ export const GetHomeResponse = zod.object({
 /**
  * Returns the caller's own wizard and "Bien démarrer" checklist for the current organization,
  * separately from `GET /v1/me/home`. Before the first write it returns the initial state at
- * version 1. The result is private to this caller and organization. Scope `tasks:read`
- * for a personal API token.
+ * version 1. The result is private to this caller and organization and cannot be cached.
+ * The ETag is the version for a subsequent write. Conditional reads return the current
+ * state without reusing a cached representation. Scope `tasks:read` for a personal API token.
  * @summary Read first-launch progress
  */
 
@@ -3401,12 +3403,17 @@ export const GetOnboardingResponse = zod.object({
  * `dismissed: true`, closes the wizard at the current draft. Dismissal requires only current
  * organization membership. Finishing or dismissing the wizard closes it permanently. A
  * repeated dismissal or another change that leaves the saved state identical preserves its
- * version.
+ * version. `If-Organization-Match` optionally pins the write to the expected organization.
+ * All responses carry `Cache-Control: private, no-store`.
  * Scope `tasks:write` for a personal API token.
  * @summary Save or dismiss the first-launch wizard
  */
+export const updateOnboardingHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const UpdateOnboardingHeader = zod.object({
-  "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.')
+  "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.'),
+  "If-Organization-Match": zod.uuid().regex(updateOnboardingHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before calling task-service. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const updateOnboardingBodyNameOneMax = 80;
@@ -3459,12 +3466,17 @@ export const UpdateOnboardingResponse = zod.object({
  * separately under its normal authorization. Record only the marker after a successful
  * invitation result. Normal task creation updates `firstTaskCreated`. Reminder and mobile
  * actions depend on their own capabilities. A matching repeated marker preserves the current
- * version.
+ * version. `If-Organization-Match` optionally pins the write to the expected organization.
+ * All responses carry `Cache-Control: private, no-store`.
  * Scope `tasks:write` for a personal API token.
  * @summary Save the onboarding checklist presentation and markers
  */
+export const updateOnboardingChecklistHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const UpdateOnboardingChecklistHeader = zod.object({
-  "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.')
+  "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.'),
+  "If-Organization-Match": zod.uuid().regex(updateOnboardingChecklistHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before calling task-service. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const UpdateOnboardingChecklistBody = zod.strictObject({
@@ -3526,15 +3538,19 @@ export const UpdateOnboardingChecklistResponse = zod.object({
  * A matching `Idempotency-Key` replay within 24 hours returns the original status, state
  * and space location. Provisioning is limited to one space per caller and organization.
  * If provisioning fails, the wizard can still be resumed with the same draft.
+ * `If-Organization-Match` optionally pins the write to the expected organization.
+ * All responses carry `Cache-Control: private, no-store`.
  * Scope `tasks:write` for a personal API token.
  * @summary Provision the space selected in the first-launch wizard
  */
+export const finishOnboardingHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const finishOnboardingHeaderIdempotencyKeyMax = 255;
 
 
 
 export const FinishOnboardingHeader = zod.object({
   "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.'),
+  "If-Organization-Match": zod.uuid().regex(finishOnboardingHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before calling task-service. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(finishOnboardingHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
 })
 

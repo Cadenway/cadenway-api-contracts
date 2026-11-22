@@ -256,7 +256,8 @@ export const CompleteOAuthSignInResponse = zod.void()
  * It never authenticates through the session cookie. Identity verifies the browser binding,
  * the one-use RelayState, and the provider assertion against the configured trust and the
  * original request. Unsolicited responses are refused. The raw form and decoded assertion
- * are bounded before processing. The callback opens no session. All responses have
+ * are bounded before processing. A continuation requires current membership in the
+ * organization bound to the SAML flow. The callback opens no session. All responses have
  * private, no-store caching and no-referrer policy. No session needed. Scopes: none.
  * @summary Receive a SAML identity provider's browser callback
  */
@@ -284,7 +285,9 @@ export const CompleteSamlSignInResponse = zod.void()
  * operation. The gateway clears it, never copies it into JSON, and applies private,
  * no-store caching on all outcomes. Identity resolves the previously linked account
  * from the verified external subject, applies current account and organization policies
- * and uses the ordinary sign-in session and two-step flow. Neither an email claim nor a
+ * and uses the ordinary sign-in session and two-step flow. A SAML session remains bound to
+ * the membership of the organization that initiated the sign-in, including when the
+ * session's active organization changes. Neither an email claim nor a
  * provider's multi-factor assertion bypasses Cadenway's two-step verification. An
  * already trusted device may be used according to the existing policy. Only a 200
  * establishes the Cadenway session. No session needed. Scopes: none.
@@ -778,6 +781,7 @@ export const SignOutResponse = zod.void()
  *   opened on another device.
  * - A new request makes the previous link stop working ("Un nouveau lien vient de partir ;
  *   le précédent ne fonctionne plus."). Asking again is how the link is resent.
+ *   Changing the password while signed in also invalidates any open reset link.
  * - Throttled per address, account or not, apart from the codes: a request is refused less
  *   than 45 seconds after the last accepted one, and once 5 were accepted in the current
  *   hour (`resendAvailableAt`, else `429 auth.reset-throttled`).
@@ -817,8 +821,8 @@ export const RequestPasswordResetResponse = zod.object({
  *
  * `sessionCount` counts every open session of the account: the reset runs without a session,
  * so none of them is "this device" (the mockup's "sauf celui-ci" does not apply). A link that
- * expired, was used, was replaced by a newer one or is unknown answers
- * `422 auth.reset-link-expired` ("Ce lien a expiré"): the web application offers to ask for a
+ * expired, was used, was replaced, was invalidated by a password or address change, or is
+ * unknown answers `422 auth.reset-link-expired` ("Ce lien a expiré"): the web application offers to ask for a
  * new one. No session needed. Scopes: none.
  * @summary Read the account of a password reset link
  */
@@ -855,8 +859,8 @@ export const InspectPasswordResetLinkResponse = zod.object({
  *   composition rule (the four rules of the mockup's reset screen do not apply), not in the
  *   list of compromised passwords (`422 auth.password-too-short`,
  *   `422 auth.password-compromised`). A refused password leaves the link usable.
- * - A link that expired, was used, was replaced or is unknown answers
- *   `422 auth.reset-link-expired`.
+ * - A link that expired, was used, was replaced, was invalidated by a password or address
+ *   change, or is unknown answers `422 auth.reset-link-expired`.
  * - The reset ends the lockout of the password sign-in of the address, drops a pending change
  *   of address, ends the recent authentication of every session it leaves open, drops the open
  *   two-step challenge and every pending two-step setup and key registration of the account,
@@ -1029,8 +1033,9 @@ export const UpdateCurrentUserResponse = zod.object({
 
 
 /**
- * Replaces the password of the account ("Modifier le mot de passe"). The other sessions stay
- * open ("Vos autres sessions resteront ouvertes."), and so do the personal API tokens.
+ * Replaces the password of the account ("Modifier le mot de passe") and invalidates any open
+ * password reset link in the same transaction. The other sessions stay open ("Vos autres
+ * sessions resteront ouvertes."), and so do the personal API tokens.
  *
  * The checks run in this order:
  *

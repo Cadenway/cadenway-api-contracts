@@ -7,8 +7,8 @@ info:
     gateway checks current task access in one task-service decision before relaying each request
     to storage-service. A task that is unreadable, in the trash, erased or in another organization
     answers `404 task.not-found`. A readable archived task remains available for reads. Edits
-    require the `edit` list role and an active task and list. The signed object-storage URL has
-    its own expiration and carries no application credentials.
+    require the `edit` list role and an active task and list. The upload and download capabilities
+    have their own expiration. Send them without application credentials.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -82,13 +82,16 @@ paths:
         Reserves one upload for the verified editor of the active task. The file-size limit is
         26,214,400 bytes (25 MiB). A larger declared size answers `422 attachment.file-too-large`
         before a URL is issued. The media type must match the registered type of the final file
-        extension, ignoring case. The response authorizes a five-minute multipart POST to a temporary
-        object, restricted to that object, the declared media type and 1 to 26,214,400 file bytes.
-        Append all returned form fields unchanged to FormData, then append the file as its final
-        part named `file`. Complete the upload before the expiry instant.
-        Keep the URL and form fields out of logs. While authorization still holds, an equivalent
-        request with the same Idempotency-Key replays the original response and Location for 24 hours,
-        with the original URL expiry. Use a fresh key for a new reservation.
+        extension, ignoring case. The response authorizes a five-minute multipart POST to the opaque
+        URL returned by the server. Append all returned form fields unchanged to FormData, then
+        append the file as its final part named `file`. Complete the upload before the expiry instant.
+        When the returned fields contain a `ticket`, the transfer accepts the exact declared file
+        length and media type and can be consumed only once. After an uncertain transfer outcome,
+        try completion before starting a new reservation. Keep the URL and fields out of logs.
+
+        While authorization still holds, an equivalent request with the same Idempotency-Key
+        replays the original response and Location for 24 hours, with the original URL expiry.
+        Use a fresh key for a new reservation.
       tags: [attachments]
       security:
         - sessionCookie: []
@@ -436,11 +439,27 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
     UploadStartConflict:
       description: |
-        `task.archived` when the target task or its list is archived, or `idempotency.request-in-progress` while the equivalent reservation is running.
+        `task.archived` when the target task or its list is archived,
+        `idempotency.request-in-progress` while the equivalent reservation is running, or
+        `attachment.storage-quota-exceeded` when the organization cannot reserve the declared
+        bytes for a temporary upload. This refusal includes no plan, limit or usage details.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            requestInProgress:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: idempotency.request-in-progress
+            storageQuotaExceeded:
+              value:
+                type: about:blank
+                title: Cette pièce jointe ne peut pas être reçue.
+                status: 409
+                code: attachment.storage-quota-exceeded
     UploadCompletionConflict:
       description: |
         `task.archived` when the target task or its list is archived, `attachment.upload-expired`

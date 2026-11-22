@@ -184,12 +184,19 @@ export class PublicIntakeService {
  * private draft key once for this submission and keep it with the draft. Use a distinct
  * idempotency key for each new file. The draft starts with its first reservation and
  * accepts up to five active reservations within its 30-minute lifetime.
+ * A publication accepts attachments from up to 10,000 distinct drafts. Existing
+ * drafts keep their original lifetime and replay rules after the limit is reached.
+ * Only a new publication key starts a new allowance.
  *
- * The signed multipart POST permits up to 25 MiB and expires after five minutes at
- * most, bounded by the draft expiry. Append the returned fields unchanged to FormData,
- * then append the file as the final part named `file`. Call completion after transfer.
- * The declared media type must match the registered final filename extension. The
- * temporary destination does not identify the organization, list or publication.
+ * The opaque upload URL authorizes a multipart POST of up to 25 MiB and expires after five
+ * minutes at most, bounded by the draft expiry. Append the returned fields unchanged to
+ * FormData, then append the file as the final part named `file`. Send it without application
+ * credentials or the draft key. When the returned fields contain a `ticket`, the transfer
+ * accepts the exact declared file length and media type and can be consumed only once.
+ * Call completion after transfer, including after an uncertain transfer outcome before
+ * starting a replacement reservation. The declared media type must match the registered
+ * final filename extension. The temporary destination does not identify the organization,
+ * list or publication.
  *
  * The service retains the reservation key for 24 hours. While the draft and publication
  * remain eligible, a matching start replays the original signed response without
