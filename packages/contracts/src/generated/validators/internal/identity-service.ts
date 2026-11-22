@@ -1177,11 +1177,13 @@ export const UpdateUserResponse = zod.object({
 
 /**
  * Makes an organization the current organization of a session of the actor, and the one the
- * next sessions of the actor start in. The membership is checked against the copy of the
- * memberships: an organization the actor does not belong to, or one whose
- * `member.joined.v1` has not arrived yet, answers `404 organization.not-found`. A session of
- * another user, or an unknown id, answers `404 session.not-found`, which the gateway answers
- * as `401 auth.session-expired`: the session ended since its introspection. Choosing the
+ * next sessions of the actor start in. Organization must confirm the target membership, and
+ * its identifier and role must agree with Identity's copy. A missing or out-of-sync
+ * membership answers `404 organization.not-found`. A SAML-bound session whose originating
+ * membership is no longer active answers `404 session.not-found`, as does a session of
+ * another user or an unknown id. The gateway maps that problem to `401 auth.session-expired`.
+ * If Identity cannot obtain either required membership proof, it answers
+ * `503 organization.unavailable`; the session and last choice remain unchanged. Choosing the
  * current organization of the session again answers `200` and leaves the session as it is,
  * but records the organization as the last choice of the actor again, the one their next
  * sessions start in, also when another session of theirs chose another organization since.
