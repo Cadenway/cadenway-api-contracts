@@ -25,6 +25,14 @@ export interface QuotaNotificationRecipientLookupResult {
   items: QuotaNotificationRecipientIds;
 }
 
+export interface BillingActiveSeatCount {
+  /**
+     * Total number of memberships using a seat at the time of the read.
+     * @minimum 0
+     */
+  activeSeatCount: number;
+}
+
 /**
  * @nullable
  */
@@ -736,7 +744,7 @@ export type BillingMembershipAccessRefusedResponse = Problem;
 export type BillingOrganizationNotFoundResponse = Problem;
 
 /**
- * `organization.unavailable` when Organization cannot complete the snapshot page.
+ * `organization.unavailable` when Organization cannot complete the usage read.
  */
 export type BillingUsageUnavailableResponse = Problem;
 
