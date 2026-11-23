@@ -1,5 +1,17 @@
 # @cadenway/api-client
 
+## 0.31.0
+
+### Minor Changes
+
+- b33f98e: Allow callers to pin space and board reads to their expected organization. Provide an internal
+  task visibility batch for filtering automation run history.
+
+### Patch Changes
+
+- 37a78a6: Document when a confirmed rejection of the first Stripe creation request allows another Checkout
+  attempt.
+
 ## 0.30.0
 
 ### Minor Changes
