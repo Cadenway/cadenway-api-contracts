@@ -826,7 +826,8 @@ export type AccountDeletionReservationNotFoundResponse = Problem;
 
 /**
  * `account.organization-owner` when the account still owns an organization, with
- * `details.organizationIds` listing the owned organizations.
+ * `details.organizationIds` containing a nonempty list of up to 100 owned organizations
+ * that prevent deletion. Other owned organizations may be omitted.
  * `account.deletion-reservation-conflict` when another attempt has already reserved the account.
  */
 export type AccountDeletionReservationConflictResponse = Problem;
