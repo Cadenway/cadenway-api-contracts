@@ -11,7 +11,8 @@ import { ListBillingAttachmentUsageInternalQueryParams } from '../../packages/co
 
 describe('Billing snapshot and notification recipient pagination', () => {
   it('accepts only a nonnegative integer seat count', () => {
-    const seats = GetBillingActiveSeatCountInternalResponse;
+    const seats: typeof GetBillingActiveSeatCountInternalResponse =
+      GetBillingActiveSeatCountInternalResponse;
     expect(seats.safeParse({ activeSeatCount: 0 }).success).toBe(true);
     expect(seats.safeParse({ activeSeatCount: 4 }).success).toBe(true);
     expect(seats.safeParse({ activeSeatCount: -1 }).success).toBe(false);

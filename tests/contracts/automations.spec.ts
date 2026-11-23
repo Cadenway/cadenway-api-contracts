@@ -17,8 +17,11 @@ import {
 
 describe('Task visibility proof', () => {
   it('accepts a bounded request without duplicates or an extra tenant selector', () => {
-    const taskKeys = Array.from({ length: 101 }, (_, index) => `CAD-${index + 1}`);
-    const valid = { taskKeys: taskKeys.slice(0, 100) };
+    const taskKeys: string[] = Array.from(
+      { length: 101 },
+      (_, index) => `CAD-${String(index + 1)}`,
+    );
+    const valid: { taskKeys: string[] } = { taskKeys: taskKeys.slice(0, 100) };
     expect(GetTaskVisibilityInternalBody.safeParse(valid).success).toBe(true);
     expect(GetTaskVisibilityInternalBody.safeParse({ taskKeys: [] }).success).toBe(false);
     expect(GetTaskVisibilityInternalBody.safeParse({ taskKeys }).success).toBe(false);
