@@ -11,10 +11,7 @@ import type {
   HttpParams
 } from '@angular/common/http';
 
-import {
-  Injectable,
-  inject
-} from '@angular/core';
+import { inject, Service } from '@angular/core';
 
 import type {
   Observable
@@ -80,7 +77,7 @@ type HttpClientObserveOptions = HttpClientOptions & {
 
 
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class AccountService {
   private readonly http = inject(HttpClient);
 /**

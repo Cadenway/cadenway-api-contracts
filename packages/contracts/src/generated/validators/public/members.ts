@@ -417,3 +417,62 @@ export const RefuseInvitationBody = zod.object({
 }).describe('Empty object `{}`; it exists so that the request carries `Content-Type: application/json`.')
 
 export const RefuseInvitationResponse = zod.void()
+
+
+/**
+ * Equivalent to `GET /v1/members`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary List the members using a JSON query
+ */
+export const queryListMembersBodySearchMax = 100;
+
+export const queryListMembersBodyRoleMax = 4;
+
+export const queryListMembersBodyLimitDefault = 50;
+export const queryListMembersBodyLimitMax = 100;
+
+
+
+export const QueryListMembersBody = zod.strictObject({
+  "search": zod.string().min(1).max(queryListMembersBodySearchMax).optional().describe('Text to find in the name or address, without regard to case or accents.'),
+  "role": zod.array(zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n')).min(1).max(queryListMembersBodyRoleMax).optional(),
+  "cursor": zod.string().optional(),
+  "limit": zod.int().min(1).max(queryListMembersBodyLimitMax).default(queryListMembersBodyLimitDefault)
+})
+
+export const queryListMembersResponseItemsItemEmailMax = 254;
+
+
+export const queryListMembersResponseTotalMin = 0;
+
+export const queryListMembersResponseCountsOwnerMin = 0;
+
+export const queryListMembersResponseCountsAdminMin = 0;
+
+export const queryListMembersResponseCountsMemberMin = 0;
+
+export const queryListMembersResponseCountsGuestMin = 0;
+
+
+
+export const QueryListMembersResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid().describe('Id of the membership, the `memberId` of the routes.'),
+  "userId": zod.uuid().describe('Id of the account; the web application marks its own row "(vous)" with it.'),
+  "avatarId": zod.uuid().nullish().describe('Last observed opaque avatar reference or null, for display only.\nGET /v1/members/{memberId}/avatar checks live access and resolves the current image.\n'),
+  "name": zod.string().describe('Full name of the account; the web application derives the initials from it.'),
+  "email": zod.email().max(queryListMembersResponseItemsItemEmailMax).describe('Email address, compared without regard to case.'),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
+  "joinedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the membership, also sent as `ETag`.'),
+  "twoStepVerificationEnabled": zod.boolean().optional().describe('Whether the account of the member has two-step verification ("Deux étapes":\n"Configurée" / "Non configurée"), as organization-service last learnt it from\n`user.two-step-verification-changed.v1`; `false` until it learns otherwise. Present for\nthe owner and the admins only, absent for a member or a personal API token of a member,\nso that nobody else learns which accounts have none. Present for them once the gateway\nand organization-service run this version of the contracts.\n')
+})),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(queryListMembersResponseTotalMin).describe('Members that match `search` and `role`, on every page.'),
+  "counts": zod.object({
+  "owner": zod.int().min(queryListMembersResponseCountsOwnerMin),
+  "admin": zod.int().min(queryListMembersResponseCountsAdminMin),
+  "member": zod.int().min(queryListMembersResponseCountsMemberMin),
+  "guest": zod.int().min(queryListMembersResponseCountsGuestMin)
+}).describe('Members of the organization by role, whatever the filters of the request.')
+})

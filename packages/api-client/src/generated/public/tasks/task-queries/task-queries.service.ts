@@ -11,10 +11,7 @@ import type {
   HttpParams
 } from '@angular/common/http';
 
-import {
-  Injectable,
-  inject
-} from '@angular/core';
+import { inject, Service } from '@angular/core';
 
 import type {
   Observable
@@ -22,8 +19,12 @@ import type {
 
 import type {
   CountTaskGroupsParams,
+  CountTaskGroupsSuccessResponse,
   ListTasksParams,
+  ListTasksQuery,
+  ListTasksSuccessResponse,
   TaskGroupPage,
+  TaskGroupsQuery,
   TaskSummaryPage
 } from '../model';
 
@@ -148,7 +149,7 @@ function filterParams(
 
 
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class TaskQueriesService {
   private readonly http = inject(HttpClient);
 /**
@@ -220,6 +221,48 @@ export class TaskQueriesService {
     );
   }
 /**
+ * Equivalent to `GET /v1/lists/{listId}/tasks`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary List the tasks of a list using a JSON query
+ */
+ queryListTasks<TData = ListTasksSuccessResponse>(listId: string,
+    listTasksQuery: ListTasksQuery, options?: HttpClientBodyOptions): Observable<TData>;
+ queryListTasks<TData = ListTasksSuccessResponse>(listId: string,
+    listTasksQuery: ListTasksQuery, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ queryListTasks<TData = ListTasksSuccessResponse>(listId: string,
+    listTasksQuery: ListTasksQuery, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  queryListTasks<TData = ListTasksSuccessResponse>(
+    listId: string,
+    listTasksQuery: ListTasksQuery, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.query<TData>(
+      `/v1/lists/${listId}/tasks`,
+      listTasksQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.query<TData>(
+      `/v1/lists/${listId}/tasks`,
+      listTasksQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.query<TData>(
+      `/v1/lists/${listId}/tasks`,
+      listTasksQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
  * Counts the tasks of a list that match the filters of `GET /v1/lists/{listId}/tasks`, by
  * status, by priority or by assignee ("Grouper : statut"); `total` counts each task once.
  *
@@ -274,7 +317,51 @@ export class TaskQueriesService {
         params: filteredParams,}
     );
   }
+/**
+ * Equivalent to `GET /v1/lists/{listId}/task-groups`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Count the tasks of a list by group using a JSON query
+ */
+ queryCountTaskGroups<TData = CountTaskGroupsSuccessResponse>(listId: string,
+    taskGroupsQuery: TaskGroupsQuery, options?: HttpClientBodyOptions): Observable<TData>;
+ queryCountTaskGroups<TData = CountTaskGroupsSuccessResponse>(listId: string,
+    taskGroupsQuery: TaskGroupsQuery, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ queryCountTaskGroups<TData = CountTaskGroupsSuccessResponse>(listId: string,
+    taskGroupsQuery: TaskGroupsQuery, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  queryCountTaskGroups<TData = CountTaskGroupsSuccessResponse>(
+    listId: string,
+    taskGroupsQuery: TaskGroupsQuery, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.query<TData>(
+      `/v1/lists/${listId}/task-groups`,
+      taskGroupsQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.query<TData>(
+      `/v1/lists/${listId}/task-groups`,
+      taskGroupsQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.query<TData>(
+      `/v1/lists/${listId}/task-groups`,
+      taskGroupsQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
 };
 
 export type ListTasksClientResult = NonNullable<TaskSummaryPage>
+export type QueryListTasksClientResult = NonNullable<ListTasksSuccessResponse>
 export type CountTaskGroupsClientResult = NonNullable<TaskGroupPage>
+export type QueryCountTaskGroupsClientResult = NonNullable<CountTaskGroupsSuccessResponse>

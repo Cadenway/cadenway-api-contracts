@@ -25,6 +25,8 @@ import {
 import {
   ListTasksQueryParams,
   ListTasksResponse,
+  QueryTasksBody,
+  QueryTasksResponse,
   UpdateTaskBody,
 } from './generated/contracts/validators/public/tasks';
 
@@ -170,6 +172,14 @@ describe('code generated from a fixture event', () => {
 });
 
 describe('code generated from a fixture route', () => {
+  it('validates a QUERY body and its page response', () => {
+    expect(QueryTasksBody.parse({})).toEqual({ limit: 50 });
+    expect(QueryTasksBody.safeParse({ limit: 101 }).success).toBe(false);
+    expect(QueryTasksBody.safeParse({ unexpected: true }).success).toBe(false);
+    expect(QueryTasksResponse.safeParse({ items: [], nextCursor: null }).success).toBe(true);
+    expect(QueryTasksResponse.safeParse({ items: [] }).success).toBe(false);
+  });
+
   it('validates query parameters and applies the default page size', () => {
     expect(ListTasksQueryParams.parse({})).toEqual({ limit: 50 });
     expect(ListTasksQueryParams.safeParse({ limit: 101 }).success).toBe(false);

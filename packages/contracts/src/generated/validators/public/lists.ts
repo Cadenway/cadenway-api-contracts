@@ -1324,3 +1324,206 @@ export const ListListCustomFieldsResponse = zod.object({
 }).describe('An active definition of a custom column in a space.')),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
 })
+
+
+/**
+ * Equivalent to `GET /v1/lists/{listId}/workload`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Read scheduled work for two calendar weeks using a JSON query
+ */
+export const QueryGetListWorkloadParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const queryGetListWorkloadBodyWeekStartRegExp = new RegExp('^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$');
+export const queryGetListWorkloadBodyStatusMax = 10;
+
+export const queryGetListWorkloadBodyPriorityMax = 4;
+
+export const queryGetListWorkloadBodyAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const queryGetListWorkloadBodyAssigneeMax = 20;
+
+export const queryGetListWorkloadBodyLabelItemMax = 32;
+
+export const queryGetListWorkloadBodyLabelMax = 20;
+
+export const queryGetListWorkloadBodySearchMax = 100;
+
+export const queryGetListWorkloadBodyLevelDefault = `roots`;
+export const queryGetListWorkloadBodyLimitDefault = 50;
+export const queryGetListWorkloadBodyLimitMax = 100;
+
+
+
+export const QueryGetListWorkloadBody = zod.strictObject({
+  "weekStart": zod.iso.date().regex(queryGetListWorkloadBodyWeekStartRegExp).describe('Work date in the caller\'s time zone from 0001-01-01 to 9999-12-31, independent of the UTC creation instant.'),
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(queryGetListWorkloadBodyStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(queryGetListWorkloadBodyPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(queryGetListWorkloadBodyAssigneeItemRegExp)).min(1).max(queryGetListWorkloadBodyAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(queryGetListWorkloadBodyLabelItemMax)).min(1).max(queryGetListWorkloadBodyLabelMax).optional(),
+  "search": zod.string().min(1).max(queryGetListWorkloadBodySearchMax).optional(),
+  "dueFrom": zod.iso.date().optional(),
+  "dueTo": zod.iso.date().optional(),
+  "level": zod.enum(['roots', 'all']).default(queryGetListWorkloadBodyLevelDefault),
+  "milestone": zod.boolean().optional(),
+  "cursor": zod.string().optional(),
+  "limit": zod.int().min(1).max(queryGetListWorkloadBodyLimitMax).default(queryGetListWorkloadBodyLimitDefault)
+})
+
+export const queryGetListWorkloadResponseDaysItemOneTotalMinutesMin = 0;
+
+export const queryGetListWorkloadResponseDaysMin = 14;
+export const queryGetListWorkloadResponseDaysMax = 14;
+
+export const queryGetListWorkloadResponseTotalMinutesMin = 0;
+
+export const queryGetListWorkloadResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const queryGetListWorkloadResponseItemsItemMinutesByDayItemMin = 0;
+
+export const queryGetListWorkloadResponseItemsItemMinutesByDayMin = 14;
+export const queryGetListWorkloadResponseItemsItemMinutesByDayMax = 14;
+
+export const queryGetListWorkloadResponseItemsItemTotalMinutesMin = 0;
+
+
+
+export const QueryGetListWorkloadResponse = zod.object({
+  "listId": zod.uuid(),
+  "weekStart": zod.iso.date().describe('Monday of the first week.'),
+  "days": zod.array(zod.object({
+  "date": zod.iso.date().describe('Date in the returned reporting window.'),
+  "totalMinutes": zod.int().min(queryGetListWorkloadResponseDaysItemOneTotalMinutesMin).describe('Sum across all visible rows for this date, independent of pagination.')
+}).and(zod.object({
+  "dailyCapacityMinutes": zod.union([zod.literal(0),zod.literal(360)]).describe('Per-person capacity of 360 minutes on weekdays and zero on weekends.')
+}))).min(queryGetListWorkloadResponseDaysMin).max(queryGetListWorkloadResponseDaysMax).describe('All fourteen calendar days in order, including weekends with zero capacity.'),
+  "totalMinutes": zod.int().min(queryGetListWorkloadResponseTotalMinutesMin).describe('Allocated minutes in the visible window across all rows.'),
+  "items": zod.array(zod.object({
+  "assignee": zod.union([zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n'),zod.null()]).describe('Assignee account, or null for the unassigned bucket.'),
+  "taskKey": zod.string().regex(queryGetListWorkloadResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "minutesByDay": zod.array(zod.int().min(queryGetListWorkloadResponseItemsItemMinutesByDayItemMin)).min(queryGetListWorkloadResponseItemsItemMinutesByDayMin).max(queryGetListWorkloadResponseItemsItemMinutesByDayMax).describe('Whole minutes per date aligned with the days of the page.'),
+  "totalMinutes": zod.int().min(queryGetListWorkloadResponseItemsItemTotalMinutesMin).describe('Sum of this row\'s allocations within the returned window.')
+}).describe('One task\'s allocation to an assignee or the unassigned bucket in this window.')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('Workload for the filtered live list over two calendar weeks. Only noncancelled tasks\nwith a due date and a positive estimate contribute. Split each estimate over the\nweekdays of its full task interval then across its assignees. If only the due date is\nset it defines the interval. If the interval contains only weekend dates, use the\npreceding working day. Allocate all estimated minutes with stable remainder handling\nbefore selecting the requested date window and page.\n')
+
+
+/**
+ * Equivalent to `GET /v1/lists/{listId}/tasks/export`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Download the visible list tasks as CSV using a JSON query
+ */
+export const QueryExportListTasksParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const queryExportListTasksBodyStatusMax = 10;
+
+export const queryExportListTasksBodyPriorityMax = 4;
+
+export const queryExportListTasksBodyAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const queryExportListTasksBodyAssigneeMax = 20;
+
+export const queryExportListTasksBodyLabelItemMax = 32;
+
+export const queryExportListTasksBodyLabelMax = 20;
+
+export const queryExportListTasksBodySearchMax = 100;
+
+export const queryExportListTasksBodyLevelDefault = `roots`;
+export const queryExportListTasksBodySortDefault = `manual`;
+export const queryExportListTasksBodySheetSortColumnTwoRegExp = new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+
+
+export const QueryExportListTasksBody = zod.strictObject({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(queryExportListTasksBodyStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(queryExportListTasksBodyPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(queryExportListTasksBodyAssigneeItemRegExp)).min(1).max(queryExportListTasksBodyAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(queryExportListTasksBodyLabelItemMax)).min(1).max(queryExportListTasksBodyLabelMax).optional(),
+  "search": zod.string().min(1).max(queryExportListTasksBodySearchMax).optional(),
+  "dueFrom": zod.iso.date().optional(),
+  "dueTo": zod.iso.date().optional(),
+  "level": zod.enum(['roots', 'all']).default(queryExportListTasksBodyLevelDefault),
+  "milestone": zod.boolean().optional(),
+  "sort": zod.enum(['manual', '-manual', 'dueDate', '-dueDate', 'priority', '-priority', 'name', '-name', 'createdAt', '-createdAt']).default(queryExportListTasksBodySortDefault),
+  "sheetSortColumn": zod.union([zod.enum(['name', 'status', 'priority', 'people', 'due', 'estimate', 'spent', 'labels', 'list', 'points', 'client']).describe('Feuille column key from the mockup.'),zod.uuid().regex(queryExportListTasksBodySheetSortColumnTwoRegExp).describe('A stable UUID v7 identifying one custom field definition, in lowercase.')]).optional().describe('Existing sheet column or stable ID of a custom field.'),
+  "sheetSortDirection": zod.enum(['asc', 'desc']).optional().describe('Order of the selected sheet column in the CSV export.')
+})
+
+export const QueryExportListTasksResponse = zod.string()
+
+
+/**
+ * Equivalent to `GET /v1/lists/{listId}/activity`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Read the activity log of a list using a JSON query
+ */
+export const QueryListListActivityParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const queryListListActivityBodyKindMax = 6;
+
+export const queryListListActivityBodyActorIdItemMax = 100;
+
+export const queryListListActivityBodyActorIdMax = 20;
+
+export const queryListListActivityBodyLimitDefault = 50;
+export const queryListListActivityBodyLimitMax = 100;
+
+
+
+export const QueryListListActivityBody = zod.strictObject({
+  "kind": zod.array(zod.enum(['create', 'status', 'priority', 'due', 'assign', 'comment'])).min(1).max(queryListListActivityBodyKindMax).optional(),
+  "actorId": zod.array(zod.string().min(1).max(queryListListActivityBodyActorIdItemMax)).min(1).max(queryListListActivityBodyActorIdMax).optional(),
+  "cursor": zod.string().optional(),
+  "limit": zod.int().min(1).max(queryListListActivityBodyLimitMax).default(queryListListActivityBodyLimitDefault)
+})
+
+
+export const queryListListActivityResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const queryListListActivityResponseTotalMin = 0;
+
+
+
+export const QueryListListActivityResponse = zod.object({
+  "items": zod.array(zod.object({
+  "commentId": zod.uuid().optional().describe('Comment associated with a comment activity entry.'),
+  "commentExcerpt": zod.string().optional().describe('Up to 240 Unicode code points of the current comment body.'),
+  "id": zod.uuid(),
+  "occurredAt": zod.iso.datetime({"offset":true}).describe('When the change was made; for merged changes, the last of them.'),
+  "kind": zod.string().describe('`create` records creation, `status` a status change, `priority` a priority change,\n`due` a due-date change, `assign` an assignment change, and `comment` a new comment.\nFuture kinds may be added; render unknown kinds as a generic task change.\n'),
+  "actor": zod.object({
+  "type": zod.string(),
+  "id": zod.string().min(1),
+  "provider": zod.string().optional().describe('Verified provider for Git activity. Other actors and earlier Git activity omit it.')
+}).describe('Who made a change: a person (`user`, `id` is the account), an automation rule\n(`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for\nexample `task-service` when a removed member leaves the assignees). A client can show an\nunknown type as is. Git activity can identify the verified provider.\n'),
+  "task": zod.object({
+  "key": zod.string().regex(queryListListActivityResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string(),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
+}).describe('A task named by another resource, with its name and status as they are now.'),
+  "listId": zod.uuid().describe('The list the task was in when the change was made, an id only, which may be a list the\ncaller no longer sees.\n'),
+  "status": zod.object({
+  "from": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "to": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')
+}).optional().describe('For `status`, the status before and after.'),
+  "priority": zod.object({
+  "from": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "to": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')
+}).optional().describe('For `priority`, the priority before and after.'),
+  "dueDate": zod.object({
+  "from": zod.iso.date().nullable(),
+  "to": zod.iso.date().nullable()
+}).optional().describe('For `due`, the due date before and after; `from` is `null` when one is set, `to` when it is removed.'),
+  "assignee": zod.object({
+  "userId": zod.uuid(),
+  "added": zod.boolean()
+}).optional().describe('For `assign`, who was assigned (`added: true`) or left the assignees (`added: false`);\nthe person themself when `userId` is the id of the actor.\n')
+}).describe('One entry of the activity log of a task ("Activité"); every entry names a task, and an entry\nabout a list or a space would come on a route of its own. The member that names the change\nis the one of its `kind`: `status`, `priority`, `dueDate`, `assignee` or `commentId`; a creation has\nnone. Comment creation records its ID and an excerpt of the current body; deleting the comment\nremoves the entry. Edits and deletions do not create separate entries. Later versions add kinds: a client shows an unknown kind\nas "a modifié la tâche".\n')).describe('The entries, the most recent first.'),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(queryListListActivityResponseTotalMin).describe('Entries that match the filters, on every page ("18 événements").')
+})

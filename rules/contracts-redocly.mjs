@@ -1,4 +1,4 @@
-const HTTP_METHODS = ['get', 'put', 'post', 'patch', 'delete'];
+const HTTP_METHODS = ['get', 'put', 'post', 'patch', 'delete', 'query'];
 const ERROR_STATUSES = new Set(['400', '401', '403', '404', '409', '412', '422', '429', '503']);
 const ACTORS = ['user', 'automation', 'git', 'system'];
 const EVENT_NAME = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+\.v[1-9][0-9]*$/;
@@ -59,6 +59,13 @@ function hasRequired(schema, names) {
   return names.every(
     (name) => schema.required.includes(name) && Object.hasOwn(schema.properties, name),
   );
+}
+
+// QUERY carries pagination in its JSON body instead of the URL.
+function queryBodyProperties(operation, context) {
+  const body = resolve(operation.requestBody, context);
+  const schema = resolve(body?.content?.['application/json']?.schema, context);
+  return schema?.properties ?? {};
 }
 
 function operations(root, context) {
@@ -223,7 +230,7 @@ function sameValues(values, expected) {
 
 const openapi = {
   'openapi-version': (root) =>
-    invalid(!/^3\.1\.\d+$/.test(root.openapi ?? ''), 'OpenAPI must use version 3.1.x.'),
+    invalid(!/^3\.[12]\.\d+$/.test(root.openapi ?? ''), 'OpenAPI must use version 3.1.x or 3.2.x.'),
   'openapi-no-dynamic-ref': (root, context) =>
     invalid(hasDynamicRef(root, context), '$dynamicRef is not allowed.'),
   'openapi-no-path-items-component': (root) =>
@@ -317,16 +324,22 @@ const openapi = {
         message: 'Invalid problem schema.',
         path: ['paths', path, method, 'responses', status],
       })),
-  'pagination-no-offset': (root, context) =>
-    parameters(root, context)
+  'pagination-no-offset': (root, context) => [
+    ...parameters(root, context)
       .filter(
         (parameter) =>
           parameter?.in === 'query' &&
           /^(page|pageNumber|pageSize|perPage|per_page|offset|skip)$/.test(parameter.name),
       )
       .map((parameter) => `Unsupported pagination parameter: ${parameter.name}`),
-  'pagination-limit': (root, context) =>
-    parameters(root, context)
+    ...operations(root, context)
+      .filter(({ method }) => method === 'query')
+      .flatMap(({ operation }) => Object.keys(queryBodyProperties(operation, context)))
+      .filter((name) => /^(page|pageNumber|pageSize|perPage|per_page|offset|skip)$/.test(name))
+      .map((name) => `Unsupported pagination parameter: ${name}`),
+  ],
+  'pagination-limit': (root, context) => [
+    ...parameters(root, context)
       .filter((parameter) => {
         if (parameter?.in !== 'query' || parameter.name !== 'limit' || !parameter.schema)
           return false;
@@ -341,14 +354,32 @@ const openapi = {
         );
       })
       .map(() => 'Invalid pagination limit.'),
+    ...operations(root, context)
+      .filter(({ method }) => method === 'query')
+      .map(({ operation }) => resolve(queryBodyProperties(operation, context).limit, context))
+      .filter(
+        (schema) =>
+          schema &&
+          (schema.type !== 'integer' ||
+            schema.minimum !== 1 ||
+            !Number.isInteger(schema.maximum) ||
+            schema.maximum < 1 ||
+            schema.maximum > 100 ||
+            schema.default !== 50),
+      )
+      .map(() => 'Invalid pagination limit.'),
+  ],
   'pagination-cursor': (root, context) =>
     operations(root, context)
       .filter(({ method, operation }) => {
-        if (method !== 'get') return false;
+        if (method !== 'get' && method !== 'query') return false;
         const params = (operation.parameters ?? []).map((parameter) => resolve(parameter, context));
-        const names = params
-          .filter((parameter) => parameter?.in === 'query')
-          .map((parameter) => parameter.name);
+        const names =
+          method === 'query'
+            ? Object.keys(queryBodyProperties(operation, context))
+            : params
+                .filter((parameter) => parameter?.in === 'query')
+                .map((parameter) => parameter.name);
         if (!names.includes('cursor') && !names.includes('limit')) return false;
         const response = resolve(operation.responses?.['200'], context);
         const schema = resolve(response?.content?.['application/json']?.schema, context);

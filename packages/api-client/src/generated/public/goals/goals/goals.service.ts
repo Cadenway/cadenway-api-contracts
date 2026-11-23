@@ -11,10 +11,7 @@ import type {
   HttpParams
 } from '@angular/common/http';
 
-import {
-  Injectable,
-  inject
-} from '@angular/core';
+import { inject, Service } from '@angular/core';
 
 import type {
   Observable
@@ -155,7 +152,7 @@ function filterParams(
 
 
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class GoalsService {
   private readonly http = inject(HttpClient);
 /**

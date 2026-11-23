@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { bundleSpecs } from '../../scripts/lib/bundle-specs.mjs';
+import { rewriteAngularQueryCalls } from '../../scripts/lib/angular-query-client.mjs';
 import { strengthenBulkTaskValidator } from '../../scripts/lib/bulk-task-validator.mjs';
 import {
   collectEvents,
@@ -15,6 +16,30 @@ import { convertSchema, quote } from '../../scripts/lib/json-schema.mjs';
 import { ROOTS } from '../../scripts/lib/roots.mjs';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+describe('Angular QUERY text response generation', () => {
+  it('leaves JSON QUERY operations unchanged', () => {
+    const source = `class Client { read(body, options) {
+      return this.http.query<Result>('/v1/tasks', body, { ...options, observe: 'response' });
+    } }`;
+    const result = rewriteAngularQueryCalls(source, 'service.ts');
+    expect(result).toBe(source);
+  });
+
+  it('uses text decoding and the correct result type for a CSV QUERY', () => {
+    const source = `class Client { download<TData>(body, options) {
+      if (options?.observe === 'events') return this.http.query<TData>('/v1/export', body, { observe: 'events' });
+      if (options?.observe === 'response') return this.http.query<TData>('/v1/export', body, { observe: 'response' });
+      return this.http.query<TData>('/v1/export', body, { observe: 'body' });
+    } }`;
+    const result = rewriteAngularQueryCalls(source, 'service.ts', new Set(['download']));
+    expect(result).not.toContain('http.query<TData>');
+    expect(result.match(/responseType: 'text'/g)).toHaveLength(3);
+    expect(result).toContain('as Observable<HttpEvent<TData>>');
+    expect(result).toContain('as Observable<AngularHttpResponse<TData>>');
+    expect(result).toContain('as Observable<TData>');
+  });
+});
 
 const envelope = {
   type: 'object',

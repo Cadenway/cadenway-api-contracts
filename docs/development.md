@@ -39,7 +39,10 @@ and `$cw-quality` in Codex.
    and package archive verification.
 2. Run `pnpm changeset status` when checking a change to a published package.
 
-`generate:openapi` runs Orval followed by `scripts/postprocess-validators.mjs`. The postprocessor
+`generate:openapi` runs Orval, the validator and Angular client postprocessors, and Angular's service
+migration for the published client. Orval's Zod generator receives a temporary transformed view of
+`QUERY` operations so that it generates their request and response validators. The Angular client
+postprocessor enables text decoding for text-only `QUERY` operations. The validator postprocessor
 reads dereferenced operations to parse boolean query strings, applies strict empty-body validators
 only where new operations opt in with `x-cadenway-strict-empty`, and corrects the documented
 Unicode-length, milestone and bulk-action validators. Published empty-body validators retain their
@@ -54,7 +57,7 @@ change. CI requires the committed generated files to match regeneration.
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm lint:specs` | Redocly on `openapi/`, `asyncapi/`, `components/` and `tests/redocly/valid/`                                                                                                          |
 | `pnpm breaking`   | OpenAPI and AsyncAPI compared with `origin/main` (`--base <ref>` for another commit). OpenAPI uses oasdiff in composed mode with failure on `ERR`, from the PATH or its Docker image. |
-| `pnpm generate`   | `generate:clean`, `generate:openapi` (orval and postprocessor), `generate:events`; the result is committed                                                                            |
+| `pnpm generate`   | `generate:clean`, `generate:openapi` (Orval, postprocessors and service migration), `generate:events`; the result is committed                                                        |
 | `pnpm typecheck`  | the two packages, the tests, and `tests/codegen/generated/` with the compiler options of each package                                                                                 |
 | `pnpm test`       | the Redocly rules, the generators, the generated fixture code, the enumerations                                                                                                       |
 | `pnpm build`      | both packages; the build of `@cadenway/contracts` also writes `packages/contracts/specs/`                                                                                             |

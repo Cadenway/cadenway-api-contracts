@@ -1,6 +1,6 @@
 # Fixture of tests/redocly/ruleset.spec.ts and of `pnpm lint:specs`: a document that follows the
 # contract style. It is not a Cadenway contract; the contracts live in openapi/ and asyncapi/.
-openapi: 3.1.0
+openapi: 3.2.0
 info:
   title: Contract style reference, public routes
   version: 1.0.0
@@ -18,6 +18,39 @@ tags:
     description: Tasks of a list.
 paths:
   /v1/tasks:
+    query:
+      operationId: queryTasks
+      summary: Query tasks
+      description: Lists visible tasks using filters in a JSON body.
+      tags: [tasks]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                cursor:
+                  $ref: '../../../../../components/http.yaml#/components/parameters/Cursor/schema'
+                limit:
+                  $ref: '../../../../../components/http.yaml#/components/parameters/Limit/schema'
+      responses:
+        '200':
+          description: One page of tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskPage'
+        '400':
+          $ref: '../../../../../components/http.yaml#/components/responses/Problem'
+        '401':
+          $ref: '../../../../../components/http.yaml#/components/responses/Problem'
+        '429':
+          $ref: '../../../../../components/http.yaml#/components/responses/Problem'
     get:
       operationId: listTasks
       summary: List tasks

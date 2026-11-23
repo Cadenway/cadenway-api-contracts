@@ -3,12 +3,6 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
- * Email address, compared without regard to case.
- * @maxLength 254
- */
-export type Email = string;
-
-/**
  * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
  * ("Membre") or `guest` ("Invité").
  */
@@ -21,6 +15,32 @@ export const Role = {
   member: 'member',
   guest: 'guest',
 } as const;
+
+export interface ListMembersQuery {
+  /**
+     * Text to find in the name or address, without regard to case or accents.
+     * @minLength 1
+     * @maxLength 100
+     */
+  search?: string;
+  /**
+     * @minItems 1
+     * @maxItems 4
+     */
+  role?: Role[];
+  cursor?: string;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  limit?: number;
+}
+
+/**
+ * Email address, compared without regard to case.
+ * @maxLength 254
+ */
+export type Email = string;
 
 /**
  * A role that can be given: `admin` ("Administrateur — gère membres et réglages"), `member`
@@ -266,6 +286,11 @@ export interface Problem {
   /** Members specific to the code, for example the fields that failed validation. */
   details?: ProblemDetails;
 }
+
+/**
+ * One page of members.
+ */
+export type ListMembersSuccessResponse = MemberPage;
 
 /**
  * The request does not match the schema: `request.invalid`, with one `details.issues` entry

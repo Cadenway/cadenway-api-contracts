@@ -22,6 +22,7 @@ import type {
 
 import type {
   ListTasksParams,
+  QueryTasksBody,
   Task,
   TaskPage,
   TaskPatch
@@ -152,6 +153,43 @@ function filterParams(
 export class TasksService {
   private readonly http = inject(HttpClient);
 /**
+ * Lists visible tasks using filters in a JSON body.
+ * @summary Query tasks
+ */
+ queryTasks<TData = TaskPage>(queryTasksBody: QueryTasksBody, options?: HttpClientBodyOptions): Observable<TData>;
+ queryTasks<TData = TaskPage>(queryTasksBody: QueryTasksBody, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ queryTasks<TData = TaskPage>(queryTasksBody: QueryTasksBody, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  queryTasks<TData = TaskPage>(
+    queryTasksBody: QueryTasksBody, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.query<TData>(
+      `/v1/tasks`,
+      queryTasksBody,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.query<TData>(
+      `/v1/tasks`,
+      queryTasksBody,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.query<TData>(
+      `/v1/tasks`,
+      queryTasksBody,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
  * Lists the tasks the caller can read, by cursor.
  * @summary List tasks
  */
@@ -264,6 +302,7 @@ export class TasksService {
   }
 };
 
+export type QueryTasksClientResult = NonNullable<TaskPage>
 export type ListTasksClientResult = NonNullable<TaskPage>
 export type GetTaskClientResult = NonNullable<Task>
 export type UpdateTaskClientResult = NonNullable<Task>

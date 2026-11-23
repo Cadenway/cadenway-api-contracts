@@ -3,7 +3,7 @@
 # checklist, its detail and its activity log; the filtered and sorted tasks of a list and their
 # group counts; the labels; "Mes tâches" and the task part of "Accueil". Served by
 # cadenway-api-gateway, which calls openapi/internal/task-service.yaml for each of them.
-openapi: 3.1.0
+openapi: 3.2.0
 info:
   title: Cadenway tasks
   version: 1.0.0
@@ -336,6 +336,46 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+    query:
+      operationId: queryListTasks
+      summary: List the tasks of a list using a JSON query
+      description: |
+        Equivalent to `GET /v1/lists/{listId}/tasks`, with filters in the JSON body.
+        A body exceeding the JSON body limit yields `400 request.body-too-large`.
+      tags: [task-queries]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListTasksQuery'
+            example:
+              status: [progress, review]
+              assignee: [me]
+              sort: dueDate
+              limit: 50
+      responses:
+        '200':
+          $ref: '#/components/responses/ListTasksSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/OrganizationContextChanged'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/task-groups:
     parameters:
       - $ref: '#/components/parameters/ListId'
@@ -393,6 +433,45 @@ paths:
                   - { value: basse, count: 16 }
                 nextCursor: null
                 total: 98
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '#/components/responses/OrganizationContextChanged'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    query:
+      operationId: queryCountTaskGroups
+      summary: Count the tasks of a list by group using a JSON query
+      description: |
+        Equivalent to `GET /v1/lists/{listId}/task-groups`, with filters in the JSON body.
+        A body exceeding the JSON body limit yields `400 request.body-too-large`.
+      tags: [task-queries]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskGroupsQuery'
+            example:
+              groupBy: status
+              priority: [urgente, haute]
+              limit: 50
+      responses:
+        '200':
+          $ref: '#/components/responses/CountTaskGroupsSuccess'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -3528,6 +3607,51 @@ components:
         status: 429
         code: rate-limit.exceeded
   responses:
+    ListTasksSuccess:
+      description: One page of tasks.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TaskSummaryPage'
+          example:
+            items:
+              - key: CAD-482
+                name: Refondre l’écran de connexion SSO
+                status: progress
+                cancelReason: null
+                priority: haute
+                assignees:
+                  - userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                  - userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                dueDate: '2026-11-12'
+                startDate: '2026-11-11'
+                estimateMinutes: 480
+                labels: [Auth, Front]
+                parentKey: null
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+                subtaskCounts: { total: 3, closed: 1 }
+                checklistCounts: { total: 3, done: 3 }
+                completedAt: null
+                createdAt: '2026-11-03T09:00:00Z'
+                version: 12
+            nextCursor: null
+            total: 1
+    CountTaskGroupsSuccess:
+      description: One page of groups.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TaskGroupPage'
+          example:
+            groupBy: priority
+            items:
+              - { value: urgente, count: 9 }
+              - { value: haute, count: 31 }
+              - { value: moyenne, count: 42 }
+              - { value: basse, count: 16 }
+            nextCursor: null
+            total: 98
     OnboardingWizardClosed:
       description: '`onboarding.wizard-closed`: the wizard has already finished or was dismissed.'
       content:
@@ -4680,6 +4804,63 @@ components:
             details:
               service: task-service
   schemas:
+    ListTasksQuery:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          $ref: '../../components/task.yaml#/components/parameters/StatusFilter/schema'
+        priority:
+          $ref: '../../components/task.yaml#/components/parameters/PriorityFilter/schema'
+        assignee:
+          $ref: '../../components/task.yaml#/components/parameters/AssigneeFilter/schema'
+        label:
+          $ref: '../../components/task.yaml#/components/parameters/LabelFilter/schema'
+        search:
+          $ref: '../../components/task.yaml#/components/parameters/Search/schema'
+        dueFrom:
+          $ref: '../../components/task.yaml#/components/parameters/DueFrom/schema'
+        dueTo:
+          $ref: '../../components/task.yaml#/components/parameters/DueTo/schema'
+        level:
+          $ref: '../../components/task.yaml#/components/parameters/Level/schema'
+        milestone:
+          $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter/schema'
+        sort:
+          $ref: '../../components/task.yaml#/components/parameters/TaskSort/schema'
+        cursor:
+          $ref: '../../components/http.yaml#/components/parameters/Cursor/schema'
+        limit:
+          $ref: '../../components/http.yaml#/components/parameters/Limit/schema'
+    TaskGroupsQuery:
+      type: object
+      additionalProperties: false
+      required: [groupBy]
+      properties:
+        groupBy:
+          $ref: '../../components/task.yaml#/components/parameters/GroupBy/schema'
+        status:
+          $ref: '../../components/task.yaml#/components/parameters/StatusFilter/schema'
+        priority:
+          $ref: '../../components/task.yaml#/components/parameters/PriorityFilter/schema'
+        assignee:
+          $ref: '../../components/task.yaml#/components/parameters/AssigneeFilter/schema'
+        label:
+          $ref: '../../components/task.yaml#/components/parameters/LabelFilter/schema'
+        search:
+          $ref: '../../components/task.yaml#/components/parameters/Search/schema'
+        dueFrom:
+          $ref: '../../components/task.yaml#/components/parameters/DueFrom/schema'
+        dueTo:
+          $ref: '../../components/task.yaml#/components/parameters/DueTo/schema'
+        level:
+          $ref: '../../components/task.yaml#/components/parameters/Level/schema'
+        milestone:
+          $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter/schema'
+        cursor:
+          $ref: '../../components/http.yaml#/components/parameters/Cursor/schema'
+        limit:
+          $ref: '../../components/http.yaml#/components/parameters/Limit/schema'
     TaskDuplicate:
       $ref: '../../components/task.yaml#/components/schemas/TaskDuplicate'
     BulkTaskAction:

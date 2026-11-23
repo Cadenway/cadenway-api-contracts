@@ -3744,3 +3744,174 @@ export const FinishOnboardingResponse = zod.object({
   "boardTried": zod.boolean().describe('The caller recorded trying the Board view.')
 }).describe('Personal progress markers for checklist actions available in this delivery.')
 }).describe('First-launch state scoped to the verified caller and organization.')
+
+
+/**
+ * Equivalent to `GET /v1/lists/{listId}/tasks`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary List the tasks of a list using a JSON query
+ */
+export const QueryListTasksParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const queryListTasksHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const QueryListTasksHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(queryListTasksHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
+export const queryListTasksBodyStatusMax = 10;
+
+export const queryListTasksBodyPriorityMax = 4;
+
+export const queryListTasksBodyAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const queryListTasksBodyAssigneeMax = 20;
+
+export const queryListTasksBodyLabelItemMax = 32;
+
+export const queryListTasksBodyLabelMax = 20;
+
+export const queryListTasksBodySearchMax = 100;
+
+export const queryListTasksBodyLevelDefault = `roots`;
+export const queryListTasksBodySortDefault = `manual`;
+export const queryListTasksBodyLimitDefault = 50;
+export const queryListTasksBodyLimitMax = 100;
+
+
+
+export const QueryListTasksBody = zod.strictObject({
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(queryListTasksBodyStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(queryListTasksBodyPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(queryListTasksBodyAssigneeItemRegExp)).min(1).max(queryListTasksBodyAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(queryListTasksBodyLabelItemMax)).min(1).max(queryListTasksBodyLabelMax).optional(),
+  "search": zod.string().min(1).max(queryListTasksBodySearchMax).optional(),
+  "dueFrom": zod.iso.date().optional(),
+  "dueTo": zod.iso.date().optional(),
+  "level": zod.enum(['roots', 'all']).default(queryListTasksBodyLevelDefault),
+  "milestone": zod.boolean().optional(),
+  "sort": zod.enum(['manual', '-manual', 'dueDate', '-dueDate', 'priority', '-priority', 'name', '-name', 'createdAt', '-createdAt']).default(queryListTasksBodySortDefault),
+  "cursor": zod.string().optional(),
+  "limit": zod.int().min(1).max(queryListTasksBodyLimitMax).default(queryListTasksBodyLimitDefault)
+})
+
+export const queryListTasksResponseItemsItemKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+export const queryListTasksResponseItemsItemParentKeyOneRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const queryListTasksResponseItemsItemSubtaskCountsTotalMin = 0;
+
+export const queryListTasksResponseItemsItemSubtaskCountsClosedMin = 0;
+
+export const queryListTasksResponseItemsItemChecklistCountsTotalMin = 0;
+
+export const queryListTasksResponseItemsItemChecklistCountsDoneMin = 0;
+
+
+export const queryListTasksResponseTotalMin = 0;
+
+
+
+export const QueryListTasksResponse = zod.object({
+  "items": zod.array(zod.object({
+  "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
+  "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
+  "customFieldValues": zod.record(zod.string().regex(new RegExp("^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")), zod.union([zod.number(),zod.string()])).optional().describe('Sparse values keyed by lowercase stable custom field ID. Only active definitions of the readable\ntask\'s current space are included. Missing entries have no value. Absence of the member\nmeans the producer has not reported these values. Numeric zero and empty text are values.\n'),
+  "key": zod.string().regex(queryListTasksResponseItemsItemKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "name": zod.string().describe('"Nom de la tâche", 300 characters at most.'),
+  "status": zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n'),
+  "cancelReason": zod.union([zod.enum(['duplicate', 'wontdo', 'scope', 'obsolete']).describe('Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera\npas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of\n`@cadenway/contracts`. A closed set: another reason would be a breaking change.\n'),zod.null()]).describe('Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`.'),
+  "priority": zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n'),
+  "assignees": zod.array(zod.object({
+  "userId": zod.uuid()
+}).describe('A person, by account. Only the account id in this version: the web application takes the\nname and the initials from the member list. It may name a former member, for example the\nowner of a space of the whole organization who left it. Later versions may add members.\n')).describe('"Assignés", 20 at most, in the order they were assigned; empty for "Non assignée".'),
+  "dueDate": zod.iso.date().nullable().describe('"Échéance", a calendar date; `null` when there is none.'),
+  "startDate": zod.iso.date().nullable().describe('First day of the work, for the Gantt view; `null` when there is none, always `null`\nwithout a due date, and never after the due date.\n'),
+  "estimateMinutes": zod.int().min(1).nullable().describe('"Estimation", in whole minutes, 60,000 at most; `null` when there is none.'),
+  "labels": zod.array(zod.string()).describe('"Étiquettes", 20 at most, in the order they were added.'),
+  "parentKey": zod.union([zod.string().regex(queryListTasksResponseItemsItemParentKeyOneRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),zod.null()]).describe('The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task.'),
+  "listId": zod.uuid().describe('The list of the task; a subtask is always in the list of its parent.'),
+  "spaceId": zod.uuid().describe('The space of that list, which may not be the space of the prefix of the key.'),
+  "subtaskCounts": zod.object({
+  "total": zod.int().min(queryListTasksResponseItemsItemSubtaskCountsTotalMin),
+  "closed": zod.int().min(queryListTasksResponseItemsItemSubtaskCountsClosedMin)
+}).describe('Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.'),
+  "checklistCounts": zod.object({
+  "total": zod.int().min(queryListTasksResponseItemsItemChecklistCountsTotalMin),
+  "done": zod.int().min(queryListTasksResponseItemsItemChecklistCountsDoneMin)
+}).describe('Items of the checklist of a task, and those ticked ("3 / 3").'),
+  "completedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the task last entered `done`; `null` while its status is not `done`.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
+}).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(queryListTasksResponseTotalMin).describe('Tasks that match the filters, on every page ("12 sur 98 tâches").')
+})
+
+
+/**
+ * Equivalent to `GET /v1/lists/{listId}/task-groups`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Count the tasks of a list by group using a JSON query
+ */
+export const QueryCountTaskGroupsParams = zod.object({
+  "listId": zod.uuid().describe('Id of the list or the sprint.')
+})
+
+export const queryCountTaskGroupsHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const QueryCountTaskGroupsHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(queryCountTaskGroupsHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
+export const queryCountTaskGroupsBodyStatusMax = 10;
+
+export const queryCountTaskGroupsBodyPriorityMax = 4;
+
+export const queryCountTaskGroupsBodyAssigneeItemRegExp = new RegExp('^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$');
+export const queryCountTaskGroupsBodyAssigneeMax = 20;
+
+export const queryCountTaskGroupsBodyLabelItemMax = 32;
+
+export const queryCountTaskGroupsBodyLabelMax = 20;
+
+export const queryCountTaskGroupsBodySearchMax = 100;
+
+export const queryCountTaskGroupsBodyLevelDefault = `roots`;
+export const queryCountTaskGroupsBodyLimitDefault = 50;
+export const queryCountTaskGroupsBodyLimitMax = 100;
+
+
+
+export const QueryCountTaskGroupsBody = zod.strictObject({
+  "groupBy": zod.enum(['status', 'priority', 'assignee']),
+  "status": zod.array(zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']).describe('Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À\nplanifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`\n("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and\n`cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a\nstatus, it never adds or removes a key.\n')).min(1).max(queryCountTaskGroupsBodyStatusMax).optional(),
+  "priority": zod.array(zod.enum(['urgente', 'haute', 'moyenne', 'basse']).describe('Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`\n("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of\n`@cadenway/contracts`. A closed set: another priority would be a breaking change.\n')).min(1).max(queryCountTaskGroupsBodyPriorityMax).optional(),
+  "assignee": zod.array(zod.string().regex(queryCountTaskGroupsBodyAssigneeItemRegExp)).min(1).max(queryCountTaskGroupsBodyAssigneeMax).optional(),
+  "label": zod.array(zod.string().min(1).max(queryCountTaskGroupsBodyLabelItemMax)).min(1).max(queryCountTaskGroupsBodyLabelMax).optional(),
+  "search": zod.string().min(1).max(queryCountTaskGroupsBodySearchMax).optional(),
+  "dueFrom": zod.iso.date().optional(),
+  "dueTo": zod.iso.date().optional(),
+  "level": zod.enum(['roots', 'all']).default(queryCountTaskGroupsBodyLevelDefault),
+  "milestone": zod.boolean().optional(),
+  "cursor": zod.string().optional(),
+  "limit": zod.int().min(1).max(queryCountTaskGroupsBodyLimitMax).default(queryCountTaskGroupsBodyLimitDefault)
+})
+
+export const queryCountTaskGroupsResponseItemsItemCountMin = 0;
+
+export const queryCountTaskGroupsResponseTotalMin = 0;
+
+
+
+export const QueryCountTaskGroupsResponse = zod.object({
+  "groupBy": zod.string().describe('`status`, `priority` or `assignee`, as asked; later versions may add groupings (`x-extensible-enum`).'),
+  "items": zod.array(zod.object({
+  "value": zod.string().describe('The value of the group, to add to the filters to read its tasks: a status key, a\npriority, an account id, or `none` for the tasks nobody is assigned.\n'),
+  "count": zod.int().min(queryCountTaskGroupsResponseItemsItemCountMin).describe('Tasks of the group that match the filters.')
+})),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(queryCountTaskGroupsResponseTotalMin).describe('Tasks that match the filters, each counted once.')
+})

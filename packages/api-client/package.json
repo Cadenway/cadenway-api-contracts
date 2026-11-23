@@ -18,8 +18,8 @@
     "typecheck": "ngc --noEmit -p tsconfig.lib.json"
   },
   "peerDependencies": {
-    "@angular/common": "^22.0.0",
-    "@angular/core": "^22.0.0",
+    "@angular/common": "^22.3.0",
+    "@angular/core": "^22.3.0",
     "rxjs": "^7.4.0"
   },
   "dependencies": {

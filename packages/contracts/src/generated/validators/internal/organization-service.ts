@@ -1101,3 +1101,62 @@ export const ReserveAccountDeletionInternalParams = zod.object({
 })
 
 export const ReserveAccountDeletionInternalResponse = zod.void()
+
+
+/**
+ * Equivalent to `GET /internal/v1/members`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary List the members using a JSON query
+ */
+export const queryListMembersInternalBodySearchMax = 100;
+
+export const queryListMembersInternalBodyRoleMax = 4;
+
+export const queryListMembersInternalBodyLimitDefault = 50;
+export const queryListMembersInternalBodyLimitMax = 100;
+
+
+
+export const QueryListMembersInternalBody = zod.strictObject({
+  "search": zod.string().min(1).max(queryListMembersInternalBodySearchMax).optional().describe('Text to find in the name or address, without regard to case or accents.'),
+  "role": zod.array(zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n')).min(1).max(queryListMembersInternalBodyRoleMax).optional(),
+  "cursor": zod.string().optional(),
+  "limit": zod.int().min(1).max(queryListMembersInternalBodyLimitMax).default(queryListMembersInternalBodyLimitDefault)
+})
+
+export const queryListMembersInternalResponseItemsItemEmailMax = 254;
+
+
+export const queryListMembersInternalResponseTotalMin = 0;
+
+export const queryListMembersInternalResponseCountsOwnerMin = 0;
+
+export const queryListMembersInternalResponseCountsAdminMin = 0;
+
+export const queryListMembersInternalResponseCountsMemberMin = 0;
+
+export const queryListMembersInternalResponseCountsGuestMin = 0;
+
+
+
+export const QueryListMembersInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid(),
+  "userId": zod.uuid(),
+  "avatarId": zod.uuid().nullish().describe('Last observed directory avatar reference or null. It does not grant image access.'),
+  "name": zod.string().describe('Full name, from the user directory.'),
+  "email": zod.email().max(queryListMembersInternalResponseItemsItemEmailMax).describe('Email address, compared without regard to case.'),
+  "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
+  "joinedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1),
+  "twoStepVerificationEnabled": zod.boolean().optional().describe('Whether the account has two-step verification, from the user directory\n(`user.two-step-verification-changed.v1`), `false` until an event says otherwise.\nPresent when the actor is the owner or an admin of the organization, absent otherwise;\nthe gateway passes it on as is.\n')
+})),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
+  "total": zod.int().min(queryListMembersInternalResponseTotalMin),
+  "counts": zod.object({
+  "owner": zod.int().min(queryListMembersInternalResponseCountsOwnerMin),
+  "admin": zod.int().min(queryListMembersInternalResponseCountsAdminMin),
+  "member": zod.int().min(queryListMembersInternalResponseCountsMemberMin),
+  "guest": zod.int().min(queryListMembersInternalResponseCountsGuestMin)
+}).describe('Members of the organization by role, whatever the filters of the request.')
+})
