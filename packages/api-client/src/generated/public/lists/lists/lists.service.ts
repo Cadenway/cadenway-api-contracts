@@ -11,10 +11,7 @@ import type {
   HttpParams
 } from '@angular/common/http';
 
-import {
-  Injectable,
-  inject
-} from '@angular/core';
+import { inject, Service } from '@angular/core';
 
 import type {
   Observable
@@ -27,6 +24,8 @@ import type {
   GetListCountsParams,
   GetListWorkloadParams,
   GetSprintReportParams,
+  ListActivityQuery,
+  ListActivitySuccessResponse,
   ListCreation,
   ListDuplicate,
   ListDuplication,
@@ -36,7 +35,11 @@ import type {
   ListPatch,
   ListSavedViewsParams,
   ListSummary,
+  ListTaskExportQuery,
+  ListTaskExportSuccessResponse,
   ListWorkloadPage,
+  ListWorkloadQuery,
+  ListWorkloadSuccessResponse,
   SavedView,
   SavedViewCreation,
   SavedViewDuplicate,
@@ -168,7 +171,7 @@ function filterParams(
 
 
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ListsService {
   private readonly http = inject(HttpClient);
 /**
@@ -583,6 +586,48 @@ export class ListsService {
     );
   }
 /**
+ * Equivalent to `GET /v1/lists/{listId}/workload`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Read scheduled work for two calendar weeks using a JSON query
+ */
+ queryGetListWorkload<TData = ListWorkloadSuccessResponse>(listId: string,
+    listWorkloadQuery: ListWorkloadQuery, options?: HttpClientBodyOptions): Observable<TData>;
+ queryGetListWorkload<TData = ListWorkloadSuccessResponse>(listId: string,
+    listWorkloadQuery: ListWorkloadQuery, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ queryGetListWorkload<TData = ListWorkloadSuccessResponse>(listId: string,
+    listWorkloadQuery: ListWorkloadQuery, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  queryGetListWorkload<TData = ListWorkloadSuccessResponse>(
+    listId: string,
+    listWorkloadQuery: ListWorkloadQuery, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.query<TData>(
+      `/v1/lists/${listId}/workload`,
+      listWorkloadQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.query<TData>(
+      `/v1/lists/${listId}/workload`,
+      listWorkloadQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.query<TData>(
+      `/v1/lists/${listId}/workload`,
+      listWorkloadQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
  * Exports the filtered rows the caller can see in the list ("Exporter CSV"). It uses the
  * same filters, stable order and root or subtask selection as `GET /v1/lists/{listId}/tasks`.
  * It includes the entire logical result across API pages. An optional Feuille sort
@@ -647,6 +692,51 @@ export class ListsService {
         observe: 'body',
         params: filteredParams,}
     ) as Observable<string>;
+  }
+/**
+ * Equivalent to `GET /v1/lists/{listId}/tasks/export`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Download the visible list tasks as CSV using a JSON query
+ */
+ queryExportListTasks<TData = ListTaskExportSuccessResponse>(listId: string,
+    listTaskExportQuery: ListTaskExportQuery, options?: HttpClientBodyOptions): Observable<TData>;
+ queryExportListTasks<TData = ListTaskExportSuccessResponse>(listId: string,
+    listTaskExportQuery: ListTaskExportQuery, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ queryExportListTasks<TData = ListTaskExportSuccessResponse>(listId: string,
+    listTaskExportQuery: ListTaskExportQuery, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  queryExportListTasks<TData = ListTaskExportSuccessResponse>(
+    listId: string,
+    listTaskExportQuery: ListTaskExportQuery, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.query(
+      `/v1/lists/${listId}/tasks/export`,
+      listTaskExportQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+        responseType: 'text',
+      }
+    ) as Observable<HttpEvent<TData>>;
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.query(
+      `/v1/lists/${listId}/tasks/export`,
+      listTaskExportQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+        responseType: 'text',
+      }
+    ) as Observable<AngularHttpResponse<TData>>;
+    }
+
+    return this.http.query(
+      `/v1/lists/${listId}/tasks/export`,
+      listTaskExportQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+        responseType: 'text',
+      }
+    ) as Observable<TData>;
   }
 /**
  * Returns a list with the counts of its top-level tasks, for its header ("Sprint du 3 – 17
@@ -738,6 +828,48 @@ export class ListsService {
     ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
         params: filteredParams,}
+    );
+  }
+/**
+ * Equivalent to `GET /v1/lists/{listId}/activity`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Read the activity log of a list using a JSON query
+ */
+ queryListListActivity<TData = ListActivitySuccessResponse>(listId: string,
+    listActivityQuery: ListActivityQuery, options?: HttpClientBodyOptions): Observable<TData>;
+ queryListListActivity<TData = ListActivitySuccessResponse>(listId: string,
+    listActivityQuery: ListActivityQuery, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ queryListListActivity<TData = ListActivitySuccessResponse>(listId: string,
+    listActivityQuery: ListActivityQuery, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  queryListListActivity<TData = ListActivitySuccessResponse>(
+    listId: string,
+    listActivityQuery: ListActivityQuery, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.query<TData>(
+      `/v1/lists/${listId}/activity`,
+      listActivityQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.query<TData>(
+      `/v1/lists/${listId}/activity`,
+      listActivityQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.query<TData>(
+      `/v1/lists/${listId}/activity`,
+      listActivityQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
     );
   }
 /**
@@ -1095,9 +1227,12 @@ export type DeleteListClientResult = NonNullable<void>
 export type DuplicateListClientResult = NonNullable<ListDuplication>
 export type GetSprintReportClientResult = NonNullable<SprintReport>
 export type GetListWorkloadClientResult = NonNullable<ListWorkloadPage>
+export type QueryGetListWorkloadClientResult = NonNullable<ListWorkloadSuccessResponse>
 export type ExportListTasksClientResult = NonNullable<string>
+export type QueryExportListTasksClientResult = NonNullable<ListTaskExportSuccessResponse>
 export type GetListCountsClientResult = NonNullable<ListSummary>
 export type ListListActivityClientResult = NonNullable<ActivityPage>
+export type QueryListListActivityClientResult = NonNullable<ListActivitySuccessResponse>
 export type ListSavedViewsClientResult = NonNullable<SavedViewPage>
 export type CreateSavedViewClientResult = NonNullable<SavedView>
 export type GetSavedViewClientResult = NonNullable<SavedView>

@@ -1,7 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { Component, inject, provideZonelessChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
-import { AuthService } from '@cadenway/api-client';
+import { AuthService, TaskQueriesService, type ListTasksQuery } from '@cadenway/api-client';
 import { STATUS_KEYS, type StatusKey } from '@cadenway/contracts';
 import type { CurrentUser } from '@cadenway/contracts/types/public/auth';
 
@@ -11,6 +11,9 @@ import type { CurrentUser } from '@cadenway/contracts/types/public/auth';
 })
 class SmokeRoot {
   readonly auth = inject(AuthService);
+  readonly tasks = inject(TaskQueriesService);
+  readonly query: ListTasksQuery = { status: ['progress', 'review'] };
+  readonly page = this.tasks.queryListTasks('019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f', this.query);
   readonly status: StatusKey = STATUS_KEYS[0];
   readonly currentUser?: CurrentUser;
 }

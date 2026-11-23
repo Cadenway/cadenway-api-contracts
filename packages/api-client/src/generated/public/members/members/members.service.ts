@@ -11,10 +11,7 @@ import type {
   HttpParams
 } from '@angular/common/http';
 
-import {
-  Injectable,
-  inject
-} from '@angular/core';
+import { inject, Service } from '@angular/core';
 
 import type {
   Observable
@@ -22,6 +19,8 @@ import type {
 
 import type {
   ListMembersParams,
+  ListMembersQuery,
+  ListMembersSuccessResponse,
   Member,
   MemberPage,
   MemberPatch
@@ -148,7 +147,7 @@ function filterParams(
 
 
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class MembersService {
   private readonly http = inject(HttpClient);
 /**
@@ -194,6 +193,44 @@ export class MembersService {
     ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
         params: filteredParams,}
+    );
+  }
+/**
+ * Equivalent to `GET /v1/members`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary List the members using a JSON query
+ */
+ queryListMembers<TData = ListMembersSuccessResponse>(listMembersQuery: ListMembersQuery, options?: HttpClientBodyOptions): Observable<TData>;
+ queryListMembers<TData = ListMembersSuccessResponse>(listMembersQuery: ListMembersQuery, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ queryListMembers<TData = ListMembersSuccessResponse>(listMembersQuery: ListMembersQuery, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  queryListMembers<TData = ListMembersSuccessResponse>(
+    listMembersQuery: ListMembersQuery, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.query<TData>(
+      `/v1/members`,
+      listMembersQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.query<TData>(
+      `/v1/members`,
+      listMembersQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.query<TData>(
+      `/v1/members`,
+      listMembersQuery,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
     );
   }
 /**
@@ -331,6 +368,7 @@ export class MembersService {
 };
 
 export type ListMembersClientResult = NonNullable<MemberPage>
+export type QueryListMembersClientResult = NonNullable<ListMembersSuccessResponse>
 export type GetMemberClientResult = NonNullable<Member>
 export type ChangeMemberRoleClientResult = NonNullable<Member>
 export type RemoveMemberClientResult = NonNullable<void>

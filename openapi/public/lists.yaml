@@ -2,7 +2,7 @@
 # (name, appearance, sprint dates and goal, the switch "Accès de l’organisation"), read a list's
 # counts, activity log and reports, and export its tasks. The API gateway calls
 # openapi/internal/task-service.yaml for these operations.
-openapi: 3.1.0
+openapi: 3.2.0
 info:
   title: Cadenway lists and sprints
   version: 1.0.0
@@ -674,6 +674,41 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+    query:
+      operationId: queryGetListWorkload
+      summary: Read scheduled work for two calendar weeks using a JSON query
+      description: |
+        Equivalent to `GET /v1/lists/{listId}/workload`, with filters in the JSON body.
+        A body exceeding the JSON body limit yields `400 request.body-too-large`.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListWorkloadQuery'
+            example:
+              weekStart: '2026-11-09'
+              status: [progress, review]
+              limit: 50
+      responses:
+        '200':
+          $ref: '#/components/responses/ListWorkloadSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/tasks/export:
     parameters:
       - $ref: '#/components/parameters/ListId'
@@ -739,6 +774,44 @@ paths:
               example: |
                 "Identifiant";"Nom";"Statut";"Priorité";"Assignés";"Échéance";"Étiquettes";"Points";"Client"
                 "CAD-482";"Refondre l’écran de connexion SSO";"En cours";"Haute";"Camille Martin, Inès Robert";"2026-11-12";"Auth, Front";"5";"Coopérative Lumen"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '422':
+          $ref: '#/components/responses/ExportRowLimitReached'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    query:
+      operationId: queryExportListTasks
+      summary: Download the visible list tasks as CSV using a JSON query
+      description: |
+        Equivalent to `GET /v1/lists/{listId}/tasks/export`, with filters in the JSON body.
+        A body exceeding the JSON body limit yields `400 request.body-too-large`.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListTaskExportQuery'
+            example:
+              status: [progress, review]
+              sort: manual
+              sheetSortColumn: client
+              sheetSortDirection: asc
+      responses:
+        '200':
+          $ref: '#/components/responses/ListTaskExportSuccess'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -887,6 +960,41 @@ paths:
                       to: '2026-11-18'
                 nextCursor: eyJhdCI6IjIwMjYtMTEtMDZUMDg6MzA6MDBaIn0
                 total: 15
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/TasksReadForbidden'
+        '404':
+          $ref: '#/components/responses/ListNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    query:
+      operationId: queryListListActivity
+      summary: Read the activity log of a list using a JSON query
+      description: |
+        Equivalent to `GET /v1/lists/{listId}/activity`, with filters in the JSON body.
+        A body exceeding the JSON body limit yields `400 request.body-too-large`.
+      tags: [lists]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListActivityQuery'
+            example:
+              kind: [status, assign]
+              actorId: [019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32]
+              limit: 50
+      responses:
+        '200':
+          $ref: '#/components/responses/ListActivitySuccess'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1517,6 +1625,113 @@ components:
         status: 429
         code: rate-limit.exceeded
   responses:
+    ListWorkloadSuccess:
+      description: Workload totals and one page of task and assignee rows.
+      content:
+        application/json:
+          schema:
+            $ref: '../../components/reporting.yaml#/components/schemas/ListWorkloadPage'
+          example:
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            weekStart: '2026-11-02'
+            days:
+              - { date: '2026-11-02', totalMinutes: 0, dailyCapacityMinutes: 360 }
+              - { date: '2026-11-03', totalMinutes: 0, dailyCapacityMinutes: 360 }
+              - { date: '2026-11-04', totalMinutes: 0, dailyCapacityMinutes: 360 }
+              - { date: '2026-11-05', totalMinutes: 0, dailyCapacityMinutes: 360 }
+              - { date: '2026-11-06', totalMinutes: 96, dailyCapacityMinutes: 360 }
+              - { date: '2026-11-07', totalMinutes: 0, dailyCapacityMinutes: 0 }
+              - { date: '2026-11-08', totalMinutes: 0, dailyCapacityMinutes: 0 }
+              - { date: '2026-11-09', totalMinutes: 96, dailyCapacityMinutes: 360 }
+              - { date: '2026-11-10', totalMinutes: 96, dailyCapacityMinutes: 360 }
+              - { date: '2026-11-11', totalMinutes: 96, dailyCapacityMinutes: 360 }
+              - { date: '2026-11-12', totalMinutes: 96, dailyCapacityMinutes: 360 }
+              - { date: '2026-11-13', totalMinutes: 0, dailyCapacityMinutes: 360 }
+              - { date: '2026-11-14', totalMinutes: 0, dailyCapacityMinutes: 0 }
+              - { date: '2026-11-15', totalMinutes: 0, dailyCapacityMinutes: 0 }
+            totalMinutes: 480
+            items:
+              - assignee: { userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+                taskKey: CAD-482
+                name: Refondre l’écran de connexion SSO
+                status: progress
+                minutesByDay: [0, 0, 0, 0, 48, 0, 0, 48, 48, 48, 48, 0, 0, 0]
+                totalMinutes: 240
+              - assignee: { userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b31 }
+                taskKey: CAD-482
+                name: Refondre l’écran de connexion SSO
+                status: progress
+                minutesByDay: [0, 0, 0, 0, 48, 0, 0, 48, 48, 48, 48, 0, 0, 0]
+                totalMinutes: 240
+            nextCursor: null
+    ListTaskExportSuccess:
+      description: The complete CSV file, including headers for an empty result.
+      headers:
+        Content-Disposition:
+          required: true
+          description: Safe attachment basename with the .csv extension, without path segments or control characters.
+          schema:
+            type: string
+            examples: ['attachment; filename="sprint-14.csv"']
+      content:
+        text/csv:
+          schema:
+            type: string
+          example: |
+            "Identifiant";"Nom";"Statut";"Priorité";"Assignés";"Échéance";"Étiquettes";"Points";"Client"
+            "CAD-482";"Refondre l’écran de connexion SSO";"En cours";"Haute";"Camille Martin, Inès Robert";"2026-11-12";"Auth, Front";"5";"Coopérative Lumen"
+    ListActivitySuccess:
+      description: One page of entries.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ActivityPage'
+          example:
+            items:
+              - id: 019a7004-5e6f-7a8b-9c0d-1e2f3a4b5c02
+                occurredAt: '2026-11-08T07:40:00Z'
+                kind: status
+                actor:
+                  type: user
+                  id: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                task:
+                  key: CAD-479
+                  name: Corriger la redirection après connexion
+                  status: progress
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                status:
+                  from: todo
+                  to: progress
+              - id: 019a7004-5e6f-7a8b-9c0d-1e2f3a4b5c05
+                occurredAt: '2026-11-07T10:02:00Z'
+                kind: assign
+                actor:
+                  type: user
+                  id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                task:
+                  key: CAD-490
+                  name: Journaliser les connexions SSO
+                  status: todo
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                assignee:
+                  userId: 019a5f3c-a0b1-7c2d-9e3f-5a6b7c8d9e32
+                  added: true
+              - id: 019a7004-5e6f-7a8b-9c0d-1e2f3a4b5c09
+                occurredAt: '2026-11-06T08:30:00Z'
+                kind: due
+                actor:
+                  type: user
+                  id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+                task:
+                  key: CAD-488
+                  name: Page des quotas d’organisation
+                  status: todo
+                listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+                dueDate:
+                  from: '2026-11-16'
+                  to: '2026-11-18'
+            nextCursor: eyJhdCI6IjIwMjYtMTEtMDZUMDg6MzA6MDBaIn0
+            total: 15
     SprintReportNotFound:
       description: |
         `list.not-found` when the list is not a readable sprint. `organization.not-found`
@@ -1846,6 +2061,75 @@ components:
             details:
               service: task-service
   schemas:
+    ListWorkloadQuery:
+      type: object
+      additionalProperties: false
+      required: [weekStart]
+      properties:
+        weekStart:
+          $ref: '../../components/reporting.yaml#/components/parameters/ReportWeekStart/schema'
+        status:
+          $ref: '../../components/task.yaml#/components/parameters/StatusFilter/schema'
+        priority:
+          $ref: '../../components/task.yaml#/components/parameters/PriorityFilter/schema'
+        assignee:
+          $ref: '../../components/task.yaml#/components/parameters/AssigneeFilter/schema'
+        label:
+          $ref: '../../components/task.yaml#/components/parameters/LabelFilter/schema'
+        search:
+          $ref: '../../components/task.yaml#/components/parameters/Search/schema'
+        dueFrom:
+          $ref: '../../components/task.yaml#/components/parameters/DueFrom/schema'
+        dueTo:
+          $ref: '../../components/task.yaml#/components/parameters/DueTo/schema'
+        level:
+          $ref: '../../components/task.yaml#/components/parameters/Level/schema'
+        milestone:
+          $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter/schema'
+        cursor:
+          $ref: '../../components/http.yaml#/components/parameters/Cursor/schema'
+        limit:
+          $ref: '../../components/http.yaml#/components/parameters/Limit/schema'
+    ListTaskExportQuery:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          $ref: '../../components/task.yaml#/components/parameters/StatusFilter/schema'
+        priority:
+          $ref: '../../components/task.yaml#/components/parameters/PriorityFilter/schema'
+        assignee:
+          $ref: '../../components/task.yaml#/components/parameters/AssigneeFilter/schema'
+        label:
+          $ref: '../../components/task.yaml#/components/parameters/LabelFilter/schema'
+        search:
+          $ref: '../../components/task.yaml#/components/parameters/Search/schema'
+        dueFrom:
+          $ref: '../../components/task.yaml#/components/parameters/DueFrom/schema'
+        dueTo:
+          $ref: '../../components/task.yaml#/components/parameters/DueTo/schema'
+        level:
+          $ref: '../../components/task.yaml#/components/parameters/Level/schema'
+        milestone:
+          $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter/schema'
+        sort:
+          $ref: '../../components/task.yaml#/components/parameters/TaskSort/schema'
+        sheetSortColumn:
+          $ref: '#/components/parameters/SheetExportColumn/schema'
+        sheetSortDirection:
+          $ref: '#/components/parameters/SheetExportDirection/schema'
+    ListActivityQuery:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          $ref: '../../components/task.yaml#/components/parameters/ActivityKind/schema'
+        actorId:
+          $ref: '../../components/task.yaml#/components/parameters/ActorId/schema'
+        cursor:
+          $ref: '../../components/http.yaml#/components/parameters/Cursor/schema'
+        limit:
+          $ref: '../../components/http.yaml#/components/parameters/Limit/schema'
     CustomFieldDefinitionPage:
       $ref: '../../components/task.yaml#/components/schemas/CustomFieldDefinitionPage'
     SavedView:

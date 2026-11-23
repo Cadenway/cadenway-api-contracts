@@ -65,3 +65,27 @@ export const UpdateTaskResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })
+
+
+/**
+ * Lists visible tasks using filters in a JSON body.
+ * @summary Query tasks
+ */
+export const queryTasksBodyLimitDefault = 50;
+export const queryTasksBodyLimitMax = 100;
+
+
+
+export const QueryTasksBody = zod.strictObject({
+  "cursor": zod.string().optional(),
+  "limit": zod.int().min(1).max(queryTasksBodyLimitMax).default(queryTasksBodyLimitDefault)
+})
+
+export const QueryTasksResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+})

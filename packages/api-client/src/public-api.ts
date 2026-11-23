@@ -481,6 +481,7 @@ export {
   type ChangeMemberRoleClientResult,
   type GetMemberClientResult,
   type ListMembersClientResult,
+  type QueryListMembersClientResult,
   type RemoveMemberClientResult,
 } from './generated/public/members/members/members.service';
 export { AssignableRole } from './generated/public/members/model/assignableRole';
@@ -500,6 +501,7 @@ export type { InvitingOrganization } from './generated/public/members/model/invi
 export type { JoinedOrganization } from './generated/public/members/model/joinedOrganization';
 export type { ListInvitationsParams } from './generated/public/members/model/listInvitationsParams';
 export type { ListMembersParams } from './generated/public/members/model/listMembersParams';
+export type { ListMembersQuery } from './generated/public/members/model/listMembersQuery';
 export type { ListReceivedInvitationsParams } from './generated/public/members/model/listReceivedInvitationsParams';
 export type { Member } from './generated/public/members/model/member';
 export type { MemberNotFoundResponse } from './generated/public/members/model/memberNotFoundResponse';
@@ -700,12 +702,18 @@ export {
   type ListListActivityClientResult,
   type ListListCustomFieldsClientResult,
   type ListListsClientResult,
+  type QueryExportListTasksClientResult,
+  type QueryGetListWorkloadClientResult,
+  type QueryListListActivityClientResult,
   type UpdateListClientResult,
 } from './generated/public/lists/lists/lists.service';
 export type { ActivityKindParameter } from './generated/public/lists/model/activityKindParameter';
 export { ActivityKindParameterItem } from './generated/public/lists/model/activityKindParameterItem';
 export type { ActivityPage } from './generated/public/lists/model/activityPage';
 export type { ActorIdParameter } from './generated/public/lists/model/actorIdParameter';
+export type { ListActivityQuery } from './generated/public/lists/model/listActivityQuery';
+export type { ListTaskExportQuery } from './generated/public/lists/model/listTaskExportQuery';
+export type { ListWorkloadQuery } from './generated/public/lists/model/listWorkloadQuery';
 export type { ExportListTasksParams } from './generated/public/lists/model/exportListTasksParams';
 export type { GetListCountsParams } from './generated/public/lists/model/getListCountsParams';
 export type { GetListWorkloadParams } from './generated/public/lists/model/getListWorkloadParams';
@@ -805,6 +813,8 @@ export {
   TaskQueriesService,
   type CountTaskGroupsClientResult,
   type ListTasksClientResult,
+  type QueryCountTaskGroupsClientResult,
+  type QueryListTasksClientResult,
 } from './generated/public/tasks/task-queries/task-queries.service';
 export {
   TaskActivityService,
@@ -897,6 +907,8 @@ export type { ListMyTasksParams } from './generated/public/tasks/model/listMyTas
 export type { ListSubtasksParams } from './generated/public/tasks/model/listSubtasksParams';
 export type { ListTaskActivityParams } from './generated/public/tasks/model/listTaskActivityParams';
 export type { ListTasksParams } from './generated/public/tasks/model/listTasksParams';
+export type { ListTasksQuery } from './generated/public/tasks/model/listTasksQuery';
+export type { TaskGroupsQuery } from './generated/public/tasks/model/taskGroupsQuery';
 export type { MyTaskCounts } from './generated/public/tasks/model/myTaskCounts';
 export type { MyTaskPage } from './generated/public/tasks/model/myTaskPage';
 export { MyTaskStateParameter } from './generated/public/tasks/model/myTaskStateParameter';

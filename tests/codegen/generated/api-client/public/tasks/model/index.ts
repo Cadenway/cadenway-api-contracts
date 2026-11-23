@@ -7,6 +7,7 @@ export * from './listTasksParams';
 export * from './nextCursor';
 export * from './problem';
 export * from './problemDetails';
+export * from './queryTasksBody';
 export * from './task';
 export * from './taskPage';
 export * from './taskPatch';

@@ -40,7 +40,7 @@ for (const root of ROOTS) {
     const target = `${root.contracts}/validators/${spec}.ts`;
     let generated = readFileSync(target, 'utf8');
     for (const path of Object.values(document.paths ?? {})) {
-      for (const operation of Object.values(path)) {
+      for (const [method, operation] of Object.entries(path)) {
         if (!operation?.operationId) continue;
         // Orval emits unknown for a textual response even when its schema is a plain string.
         const successResponses = Object.entries(operation.responses ?? {})
@@ -112,8 +112,9 @@ for (const root of ROOTS) {
           );
         }
         const strictEmpty = operation['x-cadenway-strict-empty'] === true;
-        if (!strictEmpty && operation['x-cadenway-strict-body'] !== true) continue;
         const schema = operation.requestBody?.content?.['application/json']?.schema;
+        const strictQuery = method === 'query' && schema?.additionalProperties === false;
+        if (!strictEmpty && !strictQuery && operation['x-cadenway-strict-body'] !== true) continue;
         const alternatives = schema?.oneOf ?? [schema];
         if (
           alternatives.length === 0 ||

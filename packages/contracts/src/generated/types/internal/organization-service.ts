@@ -3,6 +3,40 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
+ * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
+ * ("Membre") or `guest` ("Invité").
+ */
+export type Role = typeof Role[keyof typeof Role];
+
+
+export const Role = {
+  owner: 'owner',
+  admin: 'admin',
+  member: 'member',
+  guest: 'guest',
+} as const;
+
+export interface ListMembersQuery {
+  /**
+     * Text to find in the name or address, without regard to case or accents.
+     * @minLength 1
+     * @maxLength 100
+     */
+  search?: string;
+  /**
+     * @minItems 1
+     * @maxItems 4
+     */
+  role?: Role[];
+  cursor?: string;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  limit?: number;
+}
+
+/**
  * @maxItems 100
  */
 export type QuotaNotificationRecipientIds = string[];
@@ -49,20 +83,6 @@ export type BillingActiveMembershipState = typeof BillingActiveMembershipState[k
 
 export const BillingActiveMembershipState = {
   active: 'active',
-} as const;
-
-/**
- * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
- * ("Membre") or `guest` ("Invité").
- */
-export type Role = typeof Role[keyof typeof Role];
-
-
-export const Role = {
-  owner: 'owner',
-  admin: 'admin',
-  member: 'member',
-  guest: 'guest',
 } as const;
 
 export interface BillingActiveMembership {
@@ -684,6 +704,11 @@ export interface BillingSubscription {
   guestCount: number;
   storage: BillingStorage;
 }
+
+/**
+ * One page of members.
+ */
+export type ListMembersSuccessResponse = MemberPage;
 
 /**
  * `request.invalid` for malformed input, including a cursor issued for another tenant or

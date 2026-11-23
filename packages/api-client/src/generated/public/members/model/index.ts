@@ -26,6 +26,8 @@ export * from './invitingOrganization';
 export * from './joinedOrganization';
 export * from './listInvitationsParams';
 export * from './listMembersParams';
+export * from './listMembersQuery';
+export * from './listMembersSuccessResponse';
 export * from './listReceivedInvitationsParams';
 export * from './member';
 export * from './memberNotFoundResponse';

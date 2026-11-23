@@ -5,7 +5,7 @@ paths:
 
 # OpenAPI specs
 
-Use `cw-contract-style` and the [HTTP API rules](../../docs/integration.md#http-api) for OpenAPI 3.1,
+Use `cw-contract-style` and the [HTTP API rules](../../docs/integration.md#http-api) for OpenAPI 3.1 or 3.2,
 paths, field types, pagination, concurrency, idempotency, security and errors. Public paths belong to
 the gateway and internal paths to services. Each public operation declares security. A route without
 `apiToken` refuses personal API tokens. Check the

@@ -60,7 +60,10 @@ for (const root of ROOTS) {
     // `style: form`, `explode: false`) still arrives as one comma-separated text the consumer
     // splits before the validator.
     entries[`${id}-validators`] = {
-      input,
+      input: {
+        ...input,
+        override: { transformer: './scripts/query-validator-transformer.mjs' },
+      },
       output: {
         client: 'zod',
         mode: 'single',

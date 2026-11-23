@@ -133,6 +133,21 @@ const TIMEOUT: number = 60_000;
 
 describe('Redocly ruleset', () => {
   it(
+    'checks QUERY authorization and JSON pagination',
+    () => {
+      expect(cadenwayCodes('tests/redocly/references/openapi/public/invalid-query.yaml')).toEqual(
+        expect.arrayContaining([
+          'cadenway/pagination-cursor',
+          'cadenway/pagination-limit',
+          'cadenway/pagination-no-offset',
+          'cadenway/security-declared',
+        ]),
+      );
+    },
+    TIMEOUT,
+  );
+
+  it(
     'accepts a nullable cursor schema referenced from a page',
     () => {
       expect(
