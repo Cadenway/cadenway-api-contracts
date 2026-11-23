@@ -247,11 +247,14 @@ paths:
       description: |
         Returns a list or a sprint the caller sees, an archived one included (`archivedAt`), with
         the role of the caller on it (`callerRole`). A deleted list answers `404 list.not-found`.
+        `If-Organization-Match` optionally pins the read to the caller's expected organization.
         Scope `tasks:read` for a personal API token.
       tags: [lists]
       security:
         - sessionCookie: []
         - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       responses:
         '200':
           description: The list.
@@ -273,6 +276,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':

@@ -883,6 +883,28 @@ export const ListBillingMembershipsInternalResponse = zod.object({
 
 
 /**
+ * Requires issuer `billing-service`, actor `{ type: 'system', id: 'billing-service' }`,
+ * and an organization in the verified internal token. The token determines the tenant.
+ * Every response carries `Cache-Control: private, no-store`.
+ *
+ * Organization checks that the tenant exists and counts its active owners, administrators
+ * and members in one read snapshot. Guests, pending invitations and removed memberships
+ * contribute zero seats. The response contains only the total for that snapshot.
+ *
+ * Billing uses this read to determine the quantity for a new Checkout attempt. The
+ * API gateway verifies the current owner role before forwarding the Checkout request.
+ * @summary Read the current active seat count for Checkout
+ */
+export const getBillingActiveSeatCountInternalResponseActiveSeatCountMin = 0;
+
+
+
+export const GetBillingActiveSeatCountInternalResponse = zod.object({
+  "activeSeatCount": zod.int().min(getBillingActiveSeatCountInternalResponseActiveSeatCountMin).describe('Total number of memberships using a seat at the time of the read.')
+})
+
+
+/**
  * Returns the user IDs of active owners and administrators of the organization of the
  * `quota.threshold-reached.v1` event. Notification signs the event organization in the
  * internal token. Organization takes the tenant from that verified claim and reads its

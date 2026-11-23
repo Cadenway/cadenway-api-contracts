@@ -2159,6 +2159,38 @@ export const ExecuteBulkTaskActionInternalResponse = zod.object({
 
 
 /**
+ * Requires issuer `api-gateway`, a user actor and an organization in the verified internal
+ * token. Uses that actor's current task access in that organization.
+ *
+ * Applies the same visibility policy as `GET /internal/v1/tasks/{taskKey}`. Visible archived
+ * tasks are included. Trashed, inaccessible and nonexistent tasks are all omitted, without a
+ * per-key reason. Returns the visible subset in request order. If Task cannot establish a
+ * reliable decision, it answers `503 task.visibility-unavailable` without a partial result.
+ *
+ * The API gateway uses this batch to filter candidate automation runs without reading
+ * each task's details.
+ * @summary Resolve visibility for a batch of task keys
+ */
+export const getTaskVisibilityInternalBodyTaskKeysItemRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getTaskVisibilityInternalBodyTaskKeysMax = 100;
+
+
+
+export const GetTaskVisibilityInternalBody = zod.object({
+  "taskKeys": zod.array(zod.string().regex(getTaskVisibilityInternalBodyTaskKeysItemRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n')).min(1).max(getTaskVisibilityInternalBodyTaskKeysMax).describe('The task keys to check, in the caller\'s preferred order.')
+})
+
+export const getTaskVisibilityInternalResponseVisibleTaskKeysItemRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getTaskVisibilityInternalResponseVisibleTaskKeysMax = 100;
+
+
+
+export const GetTaskVisibilityInternalResponse = zod.object({
+  "visibleTaskKeys": zod.array(zod.string().regex(getTaskVisibilityInternalResponseVisibleTaskKeysItemRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n')).max(getTaskVisibilityInternalResponseVisibleTaskKeysMax).describe('The visible subset of the requested task keys, in request order.')
+})
+
+
+/**
  * Returns a task the actor sees, an archived one included; any other key answers
  * `404 task.not-found`, and a task in the trash `404 task.trashed` with its `details` when
  * the actor could change its list. Every route of a key answers a task in the trash so.

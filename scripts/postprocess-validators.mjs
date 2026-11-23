@@ -1,5 +1,6 @@
 /** Postprocess Orval validators to preserve published behavior and enforce documented contracts. */
 import { readFileSync, writeFileSync } from 'node:fs';
+import { strengthenBulkTaskValidator } from './lib/bulk-task-validator.mjs';
 import { dereference } from './lib/dereference.mjs';
 import { ROOTS, listYaml } from './lib/roots.mjs';
 
@@ -409,18 +410,12 @@ for (const root of ROOTS) {
     ) {
       const suffix = spec === 'public/tasks' ? '' : 'Internal';
       const name = `ExecuteBulkTaskAction${suffix}Body`;
-      const start = generated.indexOf(`export const ${name} = zod.object({`);
-      const end = generated.indexOf('\nexport const ', start + 1);
-      if (start < 0 || end < 0)
-        throw new Error(`${source}: missing bulk request validator ${name}`);
-      let body = generated.slice(start, end).replaceAll('zod.object({', 'zod.strictObject({');
-      const original = "}).describe('One atomic action over 1 to 50 distinct task keys.";
-      if (!body.includes(original))
-        throw new Error(`${source}: missing bulk request description ${name}`);
-      body = body.replace(
-        original,
-        "}).refine((value) => new Set(value.selection.map((entry) => entry.taskKey)).size === value.selection.length, { path: ['selection'], message: 'Task keys must be distinct' }).describe('One atomic action over 1 to 50 distinct task keys.",
-      );
+      const prefix = `export const ${name} = `;
+      const start = generated.indexOf(prefix);
+      if (start < 0) throw new Error(`${source}: missing bulk request validator ${name}`);
+      const next = generated.indexOf('\nexport const ', start + prefix.length);
+      const end = next < 0 ? generated.length : next;
+      const body = strengthenBulkTaskValidator(generated.slice(start, end), name, source);
       generated = generated.slice(0, start) + body + generated.slice(end);
     }
     // Orval omits propertyNames, maxProperties and additionalProperties on these schemas.

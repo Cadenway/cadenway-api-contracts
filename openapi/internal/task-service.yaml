@@ -215,7 +215,7 @@ info:
         openapi/public/time.yaml, openapi/public/goals.yaml, openapi/public/reports.yaml and
         openapi/public/intake.yaml. It checks access for openapi/public/attachments.yaml before
         relaying to storage-service. It also composes the task detail and checks visibility and
-        display data for the inbox and reminders.
+        display data for the inbox and reminders and checks task visibility for automation runs.
     - repository: cadenway-realtime-gateway
       uses: Checks list or task access before a room join and verifies notification subject visibility before relay.
     - repository: cadenway-document-service
@@ -622,6 +622,8 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/StatusRequired'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
     delete:
       operationId: deleteSpaceInternal
       summary: Delete a space
@@ -648,6 +650,8 @@ paths:
           $ref: '#/components/responses/SpaceNotFound'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/spaces/{spaceId}/milestones:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -1428,6 +1432,47 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/BulkRefused'
+  /internal/v1/tasks/visibility:
+    post:
+      operationId: getTaskVisibilityInternal
+      summary: Resolve visibility for a batch of task keys
+      description: |
+        Requires issuer `api-gateway`, a user actor and an organization in the verified internal
+        token. Uses that actor's current task access in that organization.
+
+        Applies the same visibility policy as `GET /internal/v1/tasks/{taskKey}`. Visible archived
+        tasks are included. Trashed, inaccessible and nonexistent tasks are all omitted, without a
+        per-key reason. Returns the visible subset in request order. If Task cannot establish a
+        reliable decision, it answers `503 task.visibility-unavailable` without a partial result.
+
+        The API gateway uses this batch to filter candidate automation runs without reading
+        each task's details.
+      tags: [tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVisibilityRequest'
+            example:
+              taskKeys: [CAD-482, CAD-483]
+      responses:
+        '200':
+          description: The visible task keys, in request order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskVisibility'
+              example:
+                visibleTaskKeys: [CAD-482]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '503':
+          $ref: '#/components/responses/TaskVisibilityUnavailable'
   /internal/v1/tasks/{taskKey}:
     parameters:
       - $ref: '#/components/parameters/TaskKey'
@@ -3594,6 +3639,8 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/SpaceNotFound'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/spaces/{spaceId}/grants/{userId}:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -3642,6 +3689,8 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/GrantRefused'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
     delete:
       operationId: removeSpaceGrantInternal
       summary: Remove a role on a space
@@ -3672,6 +3721,8 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/OwnerUnchangeable'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/lists/{listId}/grants:
     parameters:
       - $ref: '#/components/parameters/ListId'
@@ -3700,6 +3751,8 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/lists/{listId}/grants/{userId}:
     parameters:
       - $ref: '#/components/parameters/ListId'
@@ -3747,6 +3800,8 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/GrantRefused'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
     delete:
       operationId: removeListGrantInternal
       summary: Remove a role on a list
@@ -3777,6 +3832,8 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/OwnerUnchangeable'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/access-requests:
     post:
       operationId: createAccessRequestInternal
@@ -3840,6 +3897,8 @@ paths:
           $ref: '#/components/responses/InternalAccessRefused'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/access-requests/{accessRequestId}/approval:
     parameters:
       - $ref: '#/components/parameters/AccessRequestId'
@@ -3881,6 +3940,8 @@ paths:
           $ref: '#/components/responses/AccessRequestDecided'
         '422':
           $ref: '#/components/responses/GrantRefused'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/access-requests/{accessRequestId}/refusal:
     parameters:
       - $ref: '#/components/parameters/AccessRequestId'
@@ -3917,6 +3978,8 @@ paths:
           $ref: '#/components/responses/AccessRequestNotFound'
         '409':
           $ref: '#/components/responses/AccessRequestDecided'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/lists/{listId}/archive:
     parameters:
       - $ref: '#/components/parameters/ListId'
@@ -5615,6 +5678,8 @@ paths:
           $ref: '#/components/responses/RequestInProgress'
         '422':
           $ref: '#/components/responses/GoalCreationRefused'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/goals/{goalId}:
     get:
       operationId: getGoalInternal
@@ -5687,6 +5752,8 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/GoalChangeRefused'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
     delete:
       operationId: deleteGoalInternal
       summary: Delete a goal
@@ -5710,6 +5777,8 @@ paths:
           $ref: '#/components/responses/GoalNotFound'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/goals/{goalId}/results:
     post:
       operationId: createGoalResultInternal
@@ -5760,6 +5829,8 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/GoalResultCreationRefused'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/goals/{goalId}/results/{resultId}:
     get:
       operationId: getGoalResultInternal
@@ -5833,6 +5904,8 @@ paths:
           $ref: '#/components/responses/VersionMismatch'
         '422':
           $ref: '#/components/responses/GoalResultChangeRefused'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
     delete:
       operationId: deleteGoalResultInternal
       summary: Delete a goal result
@@ -5857,6 +5930,8 @@ paths:
           $ref: '#/components/responses/GoalResultNotFound'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+        '503':
+          $ref: '#/components/responses/CurrentMembershipUnavailable'
   /internal/v1/reports/team-dashboard:
     get:
       operationId: getTeamDashboardInternal
@@ -7071,6 +7146,28 @@ components:
               $ref: '#/components/examples/ActorNotAllowed'
             organizationRequired:
               $ref: '#/components/examples/OrganizationRequired'
+    TaskVisibilityUnavailable:
+      description: '`task.visibility-unavailable`: Task could not establish current visibility for the batch.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: task.visibility-unavailable
+    CurrentMembershipUnavailable:
+      description: '`http.service-unavailable`: Task could not verify current organization membership.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: http.service-unavailable
     SearchAccessUnavailable:
       description: '`task.search-access-unavailable`: current membership or candidate access could not be proved.'
       headers:
@@ -9067,6 +9164,31 @@ components:
             details:
               version: 13
   schemas:
+    TaskVisibilityRequest:
+      type: object
+      additionalProperties: false
+      required: [taskKeys]
+      properties:
+        taskKeys:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          description: The task keys to check, in the caller's preferred order.
+          items:
+            $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+    TaskVisibility:
+      type: object
+      additionalProperties: false
+      required: [visibleTaskKeys]
+      properties:
+        visibleTaskKeys:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          description: The visible subset of the requested task keys, in request order.
+          items:
+            $ref: '../../components/task.yaml#/components/schemas/TaskKey'
     SearchProjectionKind:
       type: string
       enum: [task, list, space]

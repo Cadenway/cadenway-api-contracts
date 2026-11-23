@@ -177,6 +177,7 @@ export class TaskQueriesService {
  * `GET /v1/lists/{listId}/task-groups`, then the tasks of each group it shows with the value of
  * the group added to the filters.
  *
+ * `If-Organization-Match` optionally pins every page to the caller's expected organization.
  * Scope `tasks:read` for a personal API token.
  * The optional milestone filter is part of the cursor fingerprint and grouped counts;
  * omitting it preserves the existing filter. It does not change unfiltered totals.
@@ -231,6 +232,7 @@ export class TaskQueriesService {
  *   then `none` for the tasks nobody is assigned ("Non assignées"), always last. A task with
  *   two assignees counts in both groups.
  *
+ * `If-Organization-Match` optionally pins the counts to the caller's expected organization.
  * Scope `tasks:read` for a personal API token.
  * The optional milestone filter is part of the cursor fingerprint and grouped counts;
  * omitting it preserves the existing filter. It does not change unfiltered totals.

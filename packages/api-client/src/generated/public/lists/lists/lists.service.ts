@@ -270,6 +270,7 @@ export class ListsService {
 /**
  * Returns a list or a sprint the caller sees, an archived one included (`archivedAt`), with
  * the role of the caller on it (`callerRole`). A deleted list answers `404 list.not-found`.
+ * `If-Organization-Match` optionally pins the read to the caller's expected organization.
  * Scope `tasks:read` for a personal API token.
  * @summary Read a list
  */
