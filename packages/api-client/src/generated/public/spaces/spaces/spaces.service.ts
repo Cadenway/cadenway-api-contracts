@@ -264,6 +264,7 @@ export class SpacesService {
  * ("Les tâches seront numérotées CAD-1, CAD-2…"). A space the caller does not see answers
  * `404 space.not-found`.
  *
+ * `If-Organization-Match` optionally pins the read to the caller's expected organization.
  * Scope `tasks:read` for a personal API token.
  * @summary Read a space
  */

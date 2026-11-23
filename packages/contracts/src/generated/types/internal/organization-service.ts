@@ -25,6 +25,14 @@ export interface QuotaNotificationRecipientLookupResult {
   items: QuotaNotificationRecipientIds;
 }
 
+export interface BillingActiveSeatCount {
+  /**
+     * Total number of memberships using a seat at the time of the read.
+     * @minimum 0
+     */
+  activeSeatCount: number;
+}
+
 /**
  * @nullable
  */
@@ -270,7 +278,7 @@ export interface Organization {
      */
   logoId?: string | null;
   defaultLanguage: string;
-  /** Always `free` until billing exists. */
+  /** Latest plan entitlement applied from Billing, or `free` before the first entitlement. */
   plan: string;
   /**
      * Members that take a seat; guests are not counted.
@@ -303,6 +311,7 @@ export interface MyOrganization {
   role: Role;
   /** @minimum 1 */
   memberCount: number;
+  /** Latest plan entitlement applied from Billing, or `free` before the first entitlement. */
   plan: string;
   joinedAt: string;
 }
@@ -736,7 +745,7 @@ export type BillingMembershipAccessRefusedResponse = Problem;
 export type BillingOrganizationNotFoundResponse = Problem;
 
 /**
- * `organization.unavailable` when Organization cannot complete the snapshot page.
+ * `organization.unavailable` when Organization cannot complete the usage read.
  */
 export type BillingUsageUnavailableResponse = Problem;
 

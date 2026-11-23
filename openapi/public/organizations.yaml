@@ -1085,7 +1085,9 @@ components:
           type: string
           description: |
             Plan of the organization: `free` ("Gratuit"), `team` ("Équipe") or `enterprise`
-            ("Entreprise"). Read-only, and always `free` until billing exists.
+            ("Entreprise"). Read-only. This is the latest Billing entitlement applied by
+            Organization, or `free` before the first entitlement. A recent change may take
+            time to reach this view.
           x-extensible-enum: [free, team, enterprise]
         memberCount:
           type: integer
@@ -1155,7 +1157,9 @@ components:
           description: Members that take a seat; guests are not counted.
         plan:
           type: string
-          description: '`free`, `team` or `enterprise`; always `free` until billing exists.'
+          description: |
+            Latest Billing entitlement applied by Organization, or `free` before the first
+            entitlement. A recent change may take time to reach this view.
           x-extensible-enum: [free, team, enterprise]
         joinedAt:
           type: string

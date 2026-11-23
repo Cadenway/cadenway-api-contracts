@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { bundleSpecs } from '../../scripts/lib/bundle-specs.mjs';
+import { strengthenBulkTaskValidator } from '../../scripts/lib/bulk-task-validator.mjs';
 import {
   collectEvents,
   identifiers,
@@ -24,6 +25,23 @@ const envelope = {
 function documentWith(messages) {
   return { asyncapi: '3.0.0', components: { messages } };
 }
+
+describe('bulk task request validator postprocessing', () => {
+  const name = 'ExecuteBulkTaskActionBody';
+  const generated = `export const ${name} = zod.object({
+  selection: zod.array(zod.object({ taskKey: zod.string(), version: zod.number() }))
+})`;
+
+  it.each(['', ".describe('A changed description with }).describe( in the text.')"])(
+    'adds validation independently of the description (%s)',
+    (description) => {
+      const result = strengthenBulkTaskValidator(`${generated}${description}`, name, 'tasks.yaml');
+      expect(result.match(/zod\.strictObject/g)).toHaveLength(2);
+      expect(result).toContain('}).refine((value) => new Set(value.selection.map');
+      expect(result.endsWith(`: 'Task keys must be distinct' })${description}`)).toBe(true);
+    },
+  );
+});
 
 describe('schema conversion of the event generator', () => {
   it('writes the type and the validator of each string format', () => {

@@ -18,7 +18,10 @@ export interface MyOrganization {
      * @minimum 1
      */
   memberCount: number;
-  /** `free`, `team` or `enterprise`; always `free` until billing exists. */
+  /**
+     * Latest Billing entitlement applied by Organization, or `free` before the first
+     * entitlement. A recent change may take time to reach this view.
+     */
   plan: string;
   /** When the caller joined it; the web application marks a recent one "Nouveau". */
   joinedAt: string;

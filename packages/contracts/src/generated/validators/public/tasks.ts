@@ -208,6 +208,7 @@ export const CreateTaskResponse = zod.object({
  * `GET /v1/lists/{listId}/task-groups`, then the tasks of each group it shows with the value of
  * the group added to the filters.
  *
+ * `If-Organization-Match` optionally pins every page to the caller's expected organization.
  * Scope `tasks:read` for a personal API token.
  * The optional milestone filter is part of the cursor fingerprint and grouped counts;
  * omitting it preserves the existing filter. It does not change unfiltered totals.
@@ -250,6 +251,13 @@ export const ListTasksQueryParams = zod.object({
   "sort": zod.enum(['manual', '-manual', 'dueDate', '-dueDate', 'priority', '-priority', 'name', '-name', 'createdAt', '-createdAt']).default(listTasksQuerySortDefault).describe('Order of the tasks; a leading `-` reverses it.'),
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.coerce.number().int().min(1).max(listTasksQueryLimitMax).default(listTasksQueryLimitDefault).describe('Page size.')
+})
+
+export const listTasksHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListTasksHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listTasksHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const listTasksResponseItemsItemKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
@@ -318,6 +326,7 @@ export const ListTasksResponse = zod.object({
  *   then `none` for the tasks nobody is assigned ("Non assignées"), always last. A task with
  *   two assignees counts in both groups.
  *
+ * `If-Organization-Match` optionally pins the counts to the caller's expected organization.
  * Scope `tasks:read` for a personal API token.
  * The optional milestone filter is part of the cursor fingerprint and grouped counts;
  * omitting it preserves the existing filter. It does not change unfiltered totals.
@@ -359,6 +368,13 @@ export const CountTaskGroupsQueryParams = zod.object({
   "level": zod.enum(['roots', 'all']).default(countTaskGroupsQueryLevelDefault).describe('`roots` for the top-level tasks only, `all` for the subtasks too.'),
   "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
   "limit": zod.coerce.number().int().min(1).max(countTaskGroupsQueryLimitMax).default(countTaskGroupsQueryLimitDefault).describe('Page size.')
+})
+
+export const countTaskGroupsHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const CountTaskGroupsHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(countTaskGroupsHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const countTaskGroupsResponseItemsItemCountMin = 0;

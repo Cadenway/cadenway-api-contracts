@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  GetBillingActiveSeatCountInternalResponse,
   ListBillingMembershipsInternalQueryParams,
   ListBillingOrganizationsInternalQueryParams,
   ListQuotaNotificationRecipientsInternalQueryParams,
@@ -9,6 +10,16 @@ import {
 import { ListBillingAttachmentUsageInternalQueryParams } from '../../packages/contracts/src/generated/validators/internal/storage-service';
 
 describe('Billing snapshot and notification recipient pagination', () => {
+  it('accepts only a nonnegative integer seat count', () => {
+    const seats: typeof GetBillingActiveSeatCountInternalResponse =
+      GetBillingActiveSeatCountInternalResponse;
+    expect(seats.safeParse({ activeSeatCount: 0 }).success).toBe(true);
+    expect(seats.safeParse({ activeSeatCount: 4 }).success).toBe(true);
+    expect(seats.safeParse({ activeSeatCount: -1 }).success).toBe(false);
+    expect(seats.safeParse({ activeSeatCount: 1.5 }).success).toBe(false);
+    expect(seats.safeParse({ activeSeatCount: 1, memberIds: [] }).success).toBe(false);
+  });
+
   it.each([
     ['organization roster', ListBillingOrganizationsInternalQueryParams],
     ['membership snapshot', ListBillingMembershipsInternalQueryParams],
