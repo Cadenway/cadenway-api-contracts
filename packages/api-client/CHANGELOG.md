@@ -1,5 +1,12 @@
 # @cadenway/api-client
 
+## 1.0.0
+
+### Major Changes
+
+- 2b69649: Add safe HTTP QUERY operations for filtered task lists, activity, reports and members. The Angular
+  API client now requires Angular 22.3 or newer and uses its native HttpClient.query method.
+
 ## 0.32.0
 
 ### Minor Changes
