@@ -27,7 +27,9 @@ export interface Organization {
   defaultLanguage: string;
   /**
      * Plan of the organization: `free` ("Gratuit"), `team` ("Équipe") or `enterprise`
-     * ("Entreprise"). Read-only, and always `free` until billing exists.
+     * ("Entreprise"). Read-only. This is the latest Billing entitlement applied by
+     * Organization, or `free` before the first entitlement. A recent change may take
+     * time to reach this view.
      */
   plan: string;
   /**

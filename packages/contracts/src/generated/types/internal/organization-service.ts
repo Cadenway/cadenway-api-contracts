@@ -278,7 +278,7 @@ export interface Organization {
      */
   logoId?: string | null;
   defaultLanguage: string;
-  /** Always `free` until billing exists. */
+  /** Latest plan entitlement applied from Billing, or `free` before the first entitlement. */
   plan: string;
   /**
      * Members that take a seat; guests are not counted.
@@ -311,6 +311,7 @@ export interface MyOrganization {
   role: Role;
   /** @minimum 1 */
   memberCount: number;
+  /** Latest plan entitlement applied from Billing, or `free` before the first entitlement. */
   plan: string;
   joinedAt: string;
 }

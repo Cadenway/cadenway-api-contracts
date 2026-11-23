@@ -57,7 +57,7 @@ export const CreateOrganizationInternalResponse = zod.object({
   "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
   "logoId": zod.uuid().nullish().describe('Current opaque logo reference or null.'),
   "defaultLanguage": zod.string(),
-  "plan": zod.string().describe('Always `free` until billing exists.'),
+  "plan": zod.string().describe('Latest plan entitlement applied from Billing, or `free` before the first entitlement.'),
   "memberCount": zod.int().min(1).describe('Members that take a seat; guests are not counted.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role of the actor in this organization, from the members of this service.'),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -97,7 +97,7 @@ export const ListMyOrganizationsInternalResponse = zod.object({
   "slug": zod.string(),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "memberCount": zod.int().min(1),
-  "plan": zod.string(),
+  "plan": zod.string().describe('Latest plan entitlement applied from Billing, or `free` before the first entitlement.'),
   "joinedAt": zod.iso.datetime({"offset":true})
 })),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
@@ -122,7 +122,7 @@ export const GetOrganizationInternalResponse = zod.object({
   "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
   "logoId": zod.uuid().nullish().describe('Current opaque logo reference or null.'),
   "defaultLanguage": zod.string(),
-  "plan": zod.string().describe('Always `free` until billing exists.'),
+  "plan": zod.string().describe('Latest plan entitlement applied from Billing, or `free` before the first entitlement.'),
   "memberCount": zod.int().min(1).describe('Members that take a seat; guests are not counted.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role of the actor in this organization, from the members of this service.'),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -174,7 +174,7 @@ export const UpdateOrganizationInternalResponse = zod.object({
   "website": zod.string().nullable().describe('Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.'),
   "logoId": zod.uuid().nullish().describe('Current opaque logo reference or null.'),
   "defaultLanguage": zod.string(),
-  "plan": zod.string().describe('Always `free` until billing exists.'),
+  "plan": zod.string().describe('Latest plan entitlement applied from Billing, or `free` before the first entitlement.'),
   "memberCount": zod.int().min(1).describe('Members that take a seat; guests are not counted.'),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role of the actor in this organization, from the members of this service.'),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -706,7 +706,7 @@ export const AcceptInvitationInternalResponse = zod.object({
   "slug": zod.string(),
   "role": zod.enum(['owner', 'admin', 'member', 'guest']).describe('Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`\n("Membre") or `guest` ("Invité").\n'),
   "memberCount": zod.int().min(1),
-  "plan": zod.string(),
+  "plan": zod.string().describe('Latest plan entitlement applied from Billing, or `free` before the first entitlement.'),
   "joinedAt": zod.iso.datetime({"offset":true})
 })
 
@@ -899,7 +899,7 @@ export const getBillingActiveSeatCountInternalResponseActiveSeatCountMin = 0;
 
 
 
-export const GetBillingActiveSeatCountInternalResponse = zod.object({
+export const GetBillingActiveSeatCountInternalResponse = zod.strictObject({
   "activeSeatCount": zod.int().min(getBillingActiveSeatCountInternalResponseActiveSeatCountMin).describe('Total number of memberships using a seat at the time of the read.')
 })
 

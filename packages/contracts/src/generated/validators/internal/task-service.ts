@@ -2176,18 +2176,18 @@ export const getTaskVisibilityInternalBodyTaskKeysMax = 100;
 
 
 
-export const GetTaskVisibilityInternalBody = zod.object({
+export const GetTaskVisibilityInternalBody = zod.strictObject({
   "taskKeys": zod.array(zod.string().regex(getTaskVisibilityInternalBodyTaskKeysItemRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n')).min(1).max(getTaskVisibilityInternalBodyTaskKeysMax).describe('The task keys to check, in the caller\'s preferred order.')
-})
+}).refine((value) => new Set(value.taskKeys).size === value.taskKeys.length, { path: ['taskKeys'], message: 'Task keys must be distinct' })
 
 export const getTaskVisibilityInternalResponseVisibleTaskKeysItemRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const getTaskVisibilityInternalResponseVisibleTaskKeysMax = 100;
 
 
 
-export const GetTaskVisibilityInternalResponse = zod.object({
+export const GetTaskVisibilityInternalResponse = zod.strictObject({
   "visibleTaskKeys": zod.array(zod.string().regex(getTaskVisibilityInternalResponseVisibleTaskKeysItemRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n')).max(getTaskVisibilityInternalResponseVisibleTaskKeysMax).describe('The visible subset of the requested task keys, in request order.')
-})
+}).refine((value) => new Set(value.visibleTaskKeys).size === value.visibleTaskKeys.length, { path: ['visibleTaskKeys'], message: 'Task keys must be distinct' })
 
 
 /**

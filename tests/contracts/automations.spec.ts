@@ -6,10 +6,45 @@ import {
   UpdateAutomationRuleInternalBody,
 } from '../../packages/contracts/src/generated/validators/internal/automation-service';
 import {
+  GetTaskVisibilityInternalBody,
+  GetTaskVisibilityInternalResponse,
+} from '../../packages/contracts/src/generated/validators/internal/task-service';
+import {
   CreateAutomationRuleBody,
   ListRecentAutomationRunsResponse,
   UpdateAutomationRuleBody,
 } from '../../packages/contracts/src/generated/validators/public/automations';
+
+describe('Task visibility proof', () => {
+  it('accepts a bounded request without duplicates or an extra tenant selector', () => {
+    const taskKeys = Array.from({ length: 101 }, (_, index) => `CAD-${index + 1}`);
+    const valid = { taskKeys: taskKeys.slice(0, 100) };
+    expect(GetTaskVisibilityInternalBody.safeParse(valid).success).toBe(true);
+    expect(GetTaskVisibilityInternalBody.safeParse({ taskKeys: [] }).success).toBe(false);
+    expect(GetTaskVisibilityInternalBody.safeParse({ taskKeys }).success).toBe(false);
+    expect(
+      GetTaskVisibilityInternalBody.safeParse({ taskKeys: ['CAD-482', 'CAD-482'] }).success,
+    ).toBe(false);
+    expect(
+      GetTaskVisibilityInternalBody.safeParse({ ...valid, organizationId: 'other' }).success,
+    ).toBe(false);
+  });
+
+  it('accepts an empty visible subset and rejects repeated keys and extra fields', () => {
+    expect(GetTaskVisibilityInternalResponse.safeParse({ visibleTaskKeys: [] }).success).toBe(true);
+    expect(
+      GetTaskVisibilityInternalResponse.safeParse({ visibleTaskKeys: ['CAD-482'] }).success,
+    ).toBe(true);
+    expect(
+      GetTaskVisibilityInternalResponse.safeParse({ visibleTaskKeys: ['CAD-482', 'CAD-482'] })
+        .success,
+    ).toBe(false);
+    expect(
+      GetTaskVisibilityInternalResponse.safeParse({ visibleTaskKeys: [], hiddenTaskKeys: [] })
+        .success,
+    ).toBe(false);
+  });
+});
 
 describe('Automation rules', () => {
   it.each([CreateAutomationRuleBody, CreateAutomationRuleInternalBody])(
