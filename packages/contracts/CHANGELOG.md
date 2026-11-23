@@ -1,5 +1,25 @@
 # @cadenway/contracts
 
+## 0.38.0
+
+### Minor Changes
+
+- b33f98e: Allow callers to pin space and board reads to their expected organization. Provide an internal
+  task visibility batch for filtering automation run history.
+- b33f98e: Define an internal Organization route for Billing to read the current active seat count in one
+  snapshot when pricing a new Checkout attempt.
+  
+  Describe the projected Billing plan returned in Organization profiles and lists.
+
+### Patch Changes
+
+- 7651ca2: Document the bounded list of owned organizations returned when ownership prevents a
+  reservation for account deletion.
+- 37a78a6: Document when a confirmed rejection of the first Stripe creation request allows another Checkout
+  attempt.
+- 49fb92a: Document the versioned Free entitlement after confirmed Stripe cancellation and admission
+  behavior once consumers apply it.
+
 ## 0.37.0
 
 ### Minor Changes
