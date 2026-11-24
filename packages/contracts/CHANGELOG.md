@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.41.0
+
+### Minor Changes
+
+- ebf5744: Let the realtime gateway consume `notification.created.v1` and `reminder.due.v1` to send personal inbox and reminder notices, and add the `presence:list` snapshot of the organization's visible members to its Socket.IO protocol.
+
 ## 0.40.0
 
 ### Minor Changes
