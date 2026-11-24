@@ -354,18 +354,26 @@ x-cadenway-socket-io:
         hello and after every reconnect, so the client shows who is visible before any
         `user.status-changed.v1` notice arrives. The request carries no organization or member
         selector. Omit `cursor` for the first page, then pass back each `nextCursor` unchanged
-        until it is null. A continuation accepts only the cursor of this connection's previous
-        page; any other cursor answers `request.invalid` and the client starts again from the
-        first page. One presence operation per connection can be in flight. A connection can
-        start a new snapshot every 5 seconds. A busy or too frequent request answers
-        `realtime.unavailable` without closing the connection.
+        until it is null. Only a first page request starts a snapshot, at most once every 5
+        seconds per connection. A continuation accepts only the cursor of this connection's
+        previous page; any other cursor answers `request.invalid`, and the client starts again
+        with a first page no sooner than 5 seconds after the previous one. One `presence:list`
+        request per connection can be in flight, independently of heartbeats and status
+        changes. A busy or too frequent request answers `realtime.unavailable` without closing
+        the connection, and a continuation refused that way keeps its cursor for a retry.
 
         A page lists at most 100 members whose visible status is online, away or do not
         disturb, and can hold fewer before the last page. A member absent from every page is
         offline, an invisible member included. The audience is the one of the presence notices:
-        every ready connection of the organization with a current session and membership.
+        every ready connection of the organization with a current session and membership,
+        guests included. Both disclose only member IDs and visible statuses, which a client maps
+        to people only through its own authorized reads. A member whose last lease expired is
+        omitted, even before its offline notice arrives.
+
         `status` is the caller's own selected status, the only place where `invisible` appears.
-        A member whose last lease expired is omitted, even before its offline notice arrives.
+        Notices never change it: a notice about the caller's own member ID reports what other
+        members see. After the status was changed from another connection, a new snapshot
+        returns the current one.
 
         Pages follow member ID order, and a cursor marks the last member ID covered, never an
         offset. A member visible during the whole traversal therefore appears in exactly one
@@ -375,8 +383,9 @@ x-cadenway-socket-io:
         notices received after sending the first page request, apply the pages, then apply the
         kept notices in arrival order: a member's later notice replaces its snapshot status. A
         connection receives a member's notices in the order of the transitions, and a newer
-        transition can replace an older one not yet delivered. Notices are volatile: after a
-        reconnect or a suspected gap, request a new snapshot.
+        transition can replace an older one not yet delivered. Notices are volatile and carry
+        no sequence number: request a new snapshot after every reconnect, and whenever the
+        client wants to resynchronize, for example when its page becomes visible again.
       payload:
         $ref: '#/x-cadenway-socket-io/schemas/presenceListRequest'
       acknowledgement:
@@ -516,7 +525,9 @@ x-cadenway-socket-io:
         and visibility fences, then ask Task, as that account in that organization, for the
         current visibility of the inbox subject or of the reminder's task. A subjectless inbox
         fact needs only the current membership. A missing, hidden, deleted or trashed subject
-        withholds the notice. An unavailable decision leaves the fact for broker redelivery.
+        withholds the notice, and so does Task's `404 organization.not-found` for an account
+        without an active membership. An unavailable decision leaves the fact for broker
+        redelivery.
         Require the fences to remain current through delivery. Personal notices are not
         replayed: the client reads its badge and reminders through HTTP on load and after
         every reconnect.
