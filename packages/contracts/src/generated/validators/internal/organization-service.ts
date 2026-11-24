@@ -7,8 +7,10 @@ import * as zod from 'zod';
 /**
  * Creates an organization owned by the actor, with the plan `free`, its owner member and the
  * invitations of `inviteEmails` as `member`, in one transaction; derives the slug as
- * `POST /v1/organizations` says. Emits `organization.created.v1`, `member.joined.v1` and one
- * `invitation.issued.v1` per invited address. The actor's invitation emails count toward
+ * `POST /v1/organizations` says and refuses, given or derived, the addresses that the `Slug`
+ * schema of `openapi/public/organizations.yaml` reserves (`422 organization.slug-reserved`).
+ * Emits `organization.created.v1`, `member.joined.v1` and one `invitation.issued.v1` per
+ * invited address. The actor's invitation emails count toward
  * their rolling 24-hour allowance of 100 across all organizations. They also count toward
  * the new organization's allowance. If the actor cannot send all requested emails, return
  * `429 invitation.daily-limit-reached` and create nothing. An address that sends no email
@@ -132,8 +134,11 @@ export const GetOrganizationInternalResponse = zod.object({
 
 /**
  * Applies a JSON Merge Patch to the organization of the token. Owner and admins only
- * (`403 organization.role-forbidden`); `409 organization.slug-taken`; `If-Match` optional
- * (`412 request.version-mismatch`). Emits `organization.updated.v1` when something changed.
+ * (`403 organization.role-forbidden`); `409 organization.slug-taken`; a new address that the
+ * `Slug` schema of `openapi/public/organizations.yaml` reserves answers
+ * `422 organization.slug-reserved`, the current address sent back unchanged is accepted;
+ * `If-Match` optional (`412 request.version-mismatch`). Emits `organization.updated.v1` when
+ * something changed.
  * Internal token: actor `user`, organization required.
  * @summary Update the organization of the token
  */

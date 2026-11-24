@@ -6,6 +6,14 @@
 /**
  * Address of the organization ("Adresse", `app.cadenway.example/<slug>`): lowercase letters,
  * digits and single dashes, unique across organizations.
+ *
+ * The first path segments of the web application are reserved and answer
+ * `422 organization.slug-reserved`: its pages `login`, `signup`, `forgot`, `reset`, `invite`,
+ * `auth`, `organizations`, `home`, `account`, `org`, `logged-out`, the paths `api`, `assets`
+ * and `media` that its web server may answer itself, and the language tags `en`, `fr` and
+ * `de`. Its page `f` is reserved too, but already shorter than an address can be. Later
+ * versions may reserve more; an organization keeps an address that became reserved after it
+ * was chosen.
  * @minLength 2
  * @maxLength 63
  * @pattern ^[a-z0-9]+(-[a-z0-9]+)*$

@@ -1018,9 +1018,18 @@ export type OwnerProtectedResponse = Problem;
 export type SlugTakenResponse = Problem;
 
 /**
- * `organization.slug-invalid`: the address derived from the name has fewer than 2 characters, with `details.slug`.
+ * - `organization.slug-invalid`: the address derived from the name has fewer than 2
+ *   characters, with `details.slug`.
+ * - `organization.slug-reserved`: the address, given or derived, is reserved by the `Slug`
+ *   schema of `openapi/public/organizations.yaml`, with `details.slug`.
  */
 export type SlugInvalidResponse = Problem;
+
+/**
+ * `organization.slug-reserved`: the new address is reserved by the `Slug` schema of
+ * `openapi/public/organizations.yaml`, with `details.slug`.
+ */
+export type SlugReservedResponse = Problem;
 
 /**
  * `request.version-mismatch`: `If-Match` is not the current version, with `details.version`.

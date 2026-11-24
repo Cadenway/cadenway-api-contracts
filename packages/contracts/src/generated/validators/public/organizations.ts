@@ -15,6 +15,8 @@ import * as zod from 'zod';
  *   accents removed, lowercase, every run of other characters turned into `-`, dashes
  *   trimmed at both ends, cut to 63 characters. A derived address shorter than 2 characters
  *   answers `422 organization.slug-invalid`.
+ * - An address the web application keeps for its own pages (the list of `Slug`) answers
+ *   `422 organization.slug-reserved`, derived or not.
  * - An address used by another organization answers `409 organization.slug-taken`, derived
  *   or not.
  * - Each address of `inviteEmails` gets its own outcome in `invitations`, as
@@ -163,6 +165,9 @@ export const GetCurrentOrganizationResponse = zod.object({
  * ("Les membres voient le nouveau nom et la nouvelle adresse.").
  *
  * - An address used by another organization answers `409 organization.slug-taken`.
+ * - An address the web application keeps for its own pages (the list of `Slug`) answers
+ *   `422 organization.slug-reserved`. The current address of the organization, sent back
+ *   unchanged, is accepted even if it became reserved after it was chosen.
  * - `If-Match` is optional; a version that is no longer the current one answers
  *   `412 request.version-mismatch`.
  *
@@ -194,7 +199,7 @@ export const updateCurrentOrganizationBodyWebsiteMax = 2048;
 
 export const UpdateCurrentOrganizationBody = zod.object({
   "name": zod.string().min(1).max(updateCurrentOrganizationBodyNameMax).optional().describe('Name of the organization ("Nom"), as typed; surrounding spaces are removed, and a name made\nonly of spaces is refused with `400 request.invalid`.\n'),
-  "slug": zod.string().min(updateCurrentOrganizationBodySlugMin).max(updateCurrentOrganizationBodySlugMax).regex(updateCurrentOrganizationBodySlugRegExp).optional().describe('Address of the organization ("Adresse", `app.cadenway.example/<slug>`): lowercase letters,\ndigits and single dashes, unique across organizations.\n'),
+  "slug": zod.string().min(updateCurrentOrganizationBodySlugMin).max(updateCurrentOrganizationBodySlugMax).regex(updateCurrentOrganizationBodySlugRegExp).optional().describe('Address of the organization ("Adresse", `app.cadenway.example/<slug>`): lowercase letters,\ndigits and single dashes, unique across organizations.\n\nThe first path segments of the web application are reserved and answer\n`422 organization.slug-reserved`: its pages `login`, `signup`, `forgot`, `reset`, `invite`,\n`auth`, `organizations`, `home`, `account`, `org`, `logged-out`, the paths `api`, `assets`\nand `media` that its web server may answer itself, and the language tags `en`, `fr` and\n`de`. Its page `f` is reserved too, but already shorter than an address can be. Later\nversions may reserve more; an organization keeps an address that became reserved after it\nwas chosen.\n'),
   "description": zod.string().max(updateCurrentOrganizationBodyDescriptionMax).nullish().describe('"Description (facultatif)", shown on the invitation page; `null` clears it.'),
   "website": zod.url().max(updateCurrentOrganizationBodyWebsiteMax).nullish().describe('"Site web", an absolute URL; `null` clears it. Only the schemes `https` and `http` are\naccepted: any other (`javascript:`, `data:`, `mailto:`, `ftp:`) answers\n`400 request.invalid` with an issue on `website`.\n'),
   "defaultLanguage": zod.enum(['fr', 'en', 'de']).optional().describe('Default language of the organization ("Langue par défaut"), a BCP 47 tag: `fr` (Français),\n`en` (English) or `de` (Deutsch). Later versions may accept more.\n')

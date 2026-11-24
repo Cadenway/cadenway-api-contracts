@@ -33,6 +33,14 @@ export type OrganizationName = string;
 /**
  * Address of the organization ("Adresse", `app.cadenway.example/<slug>`): lowercase letters,
  * digits and single dashes, unique across organizations.
+ *
+ * The first path segments of the web application are reserved and answer
+ * `422 organization.slug-reserved`: its pages `login`, `signup`, `forgot`, `reset`, `invite`,
+ * `auth`, `organizations`, `home`, `account`, `org`, `logged-out`, the paths `api`, `assets`
+ * and `media` that its web server may answer itself, and the language tags `en`, `fr` and
+ * `de`. Its page `f` is reserved too, but already shorter than an address can be. Later
+ * versions may reserve more; an organization keeps an address that became reserved after it
+ * was chosen.
  * @minLength 2
  * @maxLength 63
  * @pattern ^[a-z0-9]+(-[a-z0-9]+)*$
@@ -452,10 +460,18 @@ export type CreatorUnknownResponse = Problem;
 export type SlugTakenResponse = Problem;
 
 /**
- * `organization.slug-invalid`: the address derived from the name has fewer than 2 characters;
- * `details.slug` is what the derivation gave.
+ * - `organization.slug-invalid`: the address derived from the name has fewer than 2
+ *   characters; `details.slug` is what the derivation gave.
+ * - `organization.slug-reserved`: the address, given or derived, is one the web application
+ *   keeps for its own pages (the list of `Slug`); `details.slug` is that address.
  */
 export type SlugInvalidResponse = Problem;
+
+/**
+ * `organization.slug-reserved`: the new address is one the web application keeps for its own
+ * pages (the list of `Slug`); `details.slug` is that address.
+ */
+export type SlugReservedResponse = Problem;
 
 /**
  * - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.

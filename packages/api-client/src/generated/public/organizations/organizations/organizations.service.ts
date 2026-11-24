@@ -163,6 +163,8 @@ export class OrganizationsService {
  *   accents removed, lowercase, every run of other characters turned into `-`, dashes
  *   trimmed at both ends, cut to 63 characters. A derived address shorter than 2 characters
  *   answers `422 organization.slug-invalid`.
+ * - An address the web application keeps for its own pages (the list of `Slug`) answers
+ *   `422 organization.slug-reserved`, derived or not.
  * - An address used by another organization answers `409 organization.slug-taken`, derived
  *   or not.
  * - Each address of `inviteEmails` gets its own outcome in `invitations`, as
@@ -299,6 +301,9 @@ export class OrganizationsService {
  * ("Les membres voient le nouveau nom et la nouvelle adresse.").
  *
  * - An address used by another organization answers `409 organization.slug-taken`.
+ * - An address the web application keeps for its own pages (the list of `Slug`) answers
+ *   `422 organization.slug-reserved`. The current address of the organization, sent back
+ *   unchanged, is accepted even if it became reserved after it was chosen.
  * - `If-Match` is optional; a version that is no longer the current one answers
  *   `412 request.version-mismatch`.
  *
