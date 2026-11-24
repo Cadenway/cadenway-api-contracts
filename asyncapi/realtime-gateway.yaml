@@ -16,7 +16,7 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-webapp
-      uses: The Socket.IO protocol for invalidation of open tasks, lists and Git links, and organization presence.
+      uses: The Socket.IO protocol for invalidation of open tasks, lists and Git links, organization presence and its snapshot, and personal inbox and reminder notices.
 servers:
   nats:
     host: nats:4222
@@ -143,6 +143,18 @@ channels:
     messages:
       gitChecksCompletedV1:
         $ref: './integration-service.yaml#/components/messages/gitChecksCompletedV1'
+  notificationCreatedV1:
+    address: evt.notification.created.v1
+    description: Produced by notification-service. Consumed by realtime-gateway.
+    messages:
+      notificationCreatedV1:
+        $ref: './notification-service.yaml#/components/messages/notificationCreatedV1'
+  reminderDueV1:
+    address: evt.reminder.due.v1
+    description: Produced by notification-service. Consumed by realtime-gateway.
+    messages:
+      reminderDueV1:
+        $ref: './notification-service.yaml#/components/messages/reminderDueV1'
 operations:
   receiveSessionRevokedV1:
     action: receive
@@ -244,6 +256,16 @@ operations:
     summary: Invalidate Git links for authorized task readers.
     channel:
       $ref: '#/channels/gitChecksCompletedV1'
+  receiveNotificationCreatedV1:
+    action: receive
+    summary: Relay an inbox invalidation to the recipient's authorized personal room.
+    channel:
+      $ref: '#/channels/notificationCreatedV1'
+  receiveReminderDueV1:
+    action: receive
+    summary: Relay a due reminder's IDs to the recipient's authorized personal room.
+    channel:
+      $ref: '#/channels/reminderDueV1'
 # Socket.IO uses application events and acknowledgements rather than NATS subjects.
 x-cadenway-socket-io:
   version: 1
@@ -326,6 +348,33 @@ x-cadenway-socket-io:
             enum: [online, away, do-not-disturb, invisible]
       acknowledgement:
         $ref: '#/x-cadenway-socket-io/schemas/acknowledgement'
+    'presence:list':
+      description: |
+        Read one page of the presence snapshot of the verified organization. Request it after
+        hello and after every reconnect, so the client shows who is visible before any
+        `user.status-changed.v1` notice arrives. The request carries no organization or member
+        selector. Omit `cursor` for the first page, then pass back each `nextCursor` unchanged
+        until it is null. A continuation accepts only the cursor of this connection's previous
+        page; any other cursor answers `request.invalid` and the client starts again from the
+        first page. One presence operation per connection can be in flight. A connection can
+        start a new snapshot every 5 seconds. A busy or too frequent request answers
+        `realtime.unavailable` without closing the connection.
+
+        A page lists at most 100 members whose visible status is online, away or do not
+        disturb, and can hold fewer before the last page. A member absent from every page is
+        offline, an invisible member included. The audience is the one of the presence notices:
+        every ready connection of the organization with a current session and membership.
+        `status` is the caller's own selected status, the only place where `invisible` appears.
+        A member whose last lease expired is omitted, even before its offline notice arrives.
+
+        The gateway reads each page when it handles the request, so notices can cross it. Keep
+        the `user.status-changed.v1` notices received after sending the first page request,
+        apply the pages, then apply the kept notices in arrival order: a member's later notice
+        replaces its snapshot status.
+      payload:
+        $ref: '#/x-cadenway-socket-io/schemas/presenceListRequest'
+      acknowledgement:
+        $ref: '#/x-cadenway-socket-io/schemas/presenceListAcknowledgement'
   serverEvents:
     hello:
       description: Sent once when a connection can receive messages. Uses the common envelope.
@@ -406,6 +455,33 @@ x-cadenway-socket-io:
               status:
                 type: string
                 enum: [online, away, do-not-disturb, offline]
+        notification.created.v1:
+          description: |
+            Inbox invalidation in the recipient's personal room. Preserve the producer event ID,
+            time and version. Refetch the badge through `GET /v1/inbox/unread-count`, and an open
+            inbox through its authorized HTTP routes. The data is empty: no notification ID,
+            subject, text or count.
+          rooms: ['member:<memberId>']
+          data:
+            $ref: '#/x-cadenway-socket-io/schemas/emptyPayload'
+        reminder.due.v1:
+          description: |
+            A reminder of the recipient fired. Preserve the producer event ID, time and version.
+            The data carries only the reminder and task IDs. Before presenting it, refetch the
+            reminder through `GET /v1/reminders/{reminderId}`, which reflects a later snooze,
+            completion or access change.
+          rooms: ['member:<memberId>']
+          data:
+            type: object
+            additionalProperties: false
+            required: [reminderId, taskId]
+            properties:
+              reminderId:
+                type: string
+                format: uuid
+              taskId:
+                type: string
+                format: uuid
       audience: |
         A room is a delivery index. Each delivery uses the receiver's still-valid session and
         organization and current permission to see the resource. Resolve the task's UUID and
@@ -426,9 +502,18 @@ x-cadenway-socket-io:
         Require the session and membership fences to remain current through delivery. Relay only
         to the verified task and list rooms. Deduplicate delivery to a socket subscribed to both
         eligible rooms.
-      reservedPersonalNotices: |
-        Inbox badges and due reminders use only the verified membership's personal room once
-        Notification publishes their producer facts and the gateway consumes those contracts.
+
+        Personal notices answer a Notification fact that names an account, `recipientId` or
+        `userId`, in the fact's organization. Look up only the ready connections authenticated as
+        that account in that organization, and deliver through the personal room of each
+        connection's verified membership. Capture each connection's current session, membership
+        and visibility fences, then ask Task, as that account in that organization, for the
+        current visibility of the inbox subject or of the reminder's task. A subjectless inbox
+        fact needs only the current membership. A missing, hidden, deleted or trashed subject
+        withholds the notice. An unavailable decision leaves the fact for broker redelivery.
+        Require the fences to remain current through delivery. Personal notices are not
+        replayed: the client reads its badge and reminders through HTTP on load and after
+        every reconnect.
   schemas:
     emptyPayload:
       type: object
@@ -450,6 +535,55 @@ x-cadenway-socket-io:
             code:
               type: string
               enum: [request.invalid, room.not-found, room.limit-reached, realtime.unavailable]
+    presenceListRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        cursor:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The opaque `nextCursor` of this connection's previous page. Absent for the first page.
+    presenceListAcknowledgement:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [ok, status, members, nextCursor]
+          properties:
+            ok:
+              const: true
+            status:
+              type: string
+              enum: [online, away, do-not-disturb, invisible]
+              description: The caller's own selected status. Other members see `invisible` as offline.
+            members:
+              type: array
+              maxItems: 100
+              items:
+                $ref: '#/x-cadenway-socket-io/schemas/memberPresence'
+            nextCursor:
+              type: [string, 'null']
+              description: Opaque cursor of the next page, or null on the last page.
+        - type: object
+          additionalProperties: false
+          required: [ok, code]
+          properties:
+            ok:
+              const: false
+            code:
+              type: string
+              enum: [request.invalid, realtime.unavailable]
+    memberPresence:
+      type: object
+      additionalProperties: false
+      required: [memberId, status]
+      properties:
+        memberId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [online, away, do-not-disturb]
     roomSelection:
       oneOf:
         - type: object
@@ -538,4 +672,28 @@ x-cadenway-socket-io:
       at: '2026-11-08T10:41:00Z'
       version: 1
       data:
+        taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23
+    presenceListFirstPage: {}
+    presenceListPage:
+      ok: true
+      status: invisible
+      members:
+        - memberId: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e41
+          status: away
+        - memberId: 019a5f3d-1a2b-7c3d-8e4f-5a6b7c8d9e42
+          status: do-not-disturb
+      nextCursor: null
+    inboxChanged:
+      id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d10
+      type: notification.created.v1
+      at: '2026-11-08T10:40:00Z'
+      version: 1
+      data: {}
+    reminderDue:
+      id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d11
+      type: reminder.due.v1
+      at: '2026-11-08T11:00:00Z'
+      version: 2
+      data:
+        reminderId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12
         taskId: 019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23

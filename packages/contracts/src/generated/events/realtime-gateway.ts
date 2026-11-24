@@ -521,6 +521,124 @@ export const memberRoleChangedV1Schema = zod.object({
   previousRole: zod.enum(['owner', 'admin', 'member', 'guest']),
 }) satisfies zod.ZodType<MemberRoleChangedV1>;
 
+/** Name of the event `notification.created.v1`. An inbox notification was created for one recipient. */
+export const NOTIFICATION_CREATED_V1 = 'notification.created.v1';
+
+/** Payload of the event `notification.created.v1`. */
+export interface NotificationCreatedV1 {
+  /** Event ID, the deduplication key. */
+  id: string;
+  /** UTC commit instant. */
+  occurredAt: string;
+  /** Organization that owns the inbox record. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** The initial version of this notification. */
+  version: number;
+  /** The created record in the recipient's inbox. */
+  notificationId: string;
+  /** Account of the recipient in the event's organization. */
+  recipientId: string;
+  /** Resource whose current visibility is required, or null for a subjectless receipt. */
+  subject: {
+    kind: 'task-id';
+    taskId: string;
+  } | {
+    kind: 'task-key';
+    /**
+     * Key of a task, the only way a task is named outside task-service: the prefix of the space
+     * it was created in, a dash and a number. A key never changes, also when the task moves to
+     * another space or its space changes prefix, and is never given to another task.
+     */
+    taskKey: string;
+  } | {
+    kind: 'list';
+    listId: string;
+  } | {
+    kind: 'space';
+    spaceId: string;
+  } | null;
+  /** UTC creation instant stored on the notification. */
+  createdAt: string;
+}
+
+/** Validator of the payload of the event `notification.created.v1`. */
+export const notificationCreatedV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1).max(1),
+  notificationId: zod.uuid(),
+  recipientId: zod.uuid(),
+  subject: zod.union([zod.union([zod.strictObject({
+    kind: zod.literal('task-id'),
+    taskId: zod.uuid(),
+  }), zod.strictObject({
+    kind: zod.literal('task-key'),
+    taskKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
+  }), zod.strictObject({
+    kind: zod.literal('list'),
+    listId: zod.uuid(),
+  }), zod.strictObject({
+    kind: zod.literal('space'),
+    spaceId: zod.uuid(),
+  })]), zod.null()]),
+  createdAt: zod.iso.datetime(),
+}) satisfies zod.ZodType<NotificationCreatedV1>;
+
+/** Name of the event `reminder.due.v1`. A personal task reminder reached its active schedule and fired. */
+export const REMINDER_DUE_V1 = 'reminder.due.v1';
+
+/** Payload of the event `reminder.due.v1`. */
+export interface ReminderDueV1 {
+  /** Event ID, the deduplication key. */
+  id: string;
+  /** UTC firing instant. */
+  occurredAt: string;
+  /** Organization of the reminder and its task. */
+  organizationId: string;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /** Version of the reminder after recording this firing. */
+  version: number;
+  /** ID of the recipient's reminder. */
+  reminderId: string;
+  /** Account of the recipient in the event's organization. */
+  userId: string;
+  /** Stable Task UUID for current visibility verification before delivery. */
+  taskId: string;
+}
+
+/** Validator of the payload of the event `reminder.due.v1`. */
+export const reminderDueV1Schema = zod.strictObject({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.uuid(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(2).max(9007199254740991),
+  reminderId: zod.uuid(),
+  userId: zod.uuid(),
+  taskId: zod.uuid(),
+}) satisfies zod.ZodType<ReminderDueV1>;
+
 /** Name of the event `session.organization-changed.v1`. The active organization or membership of a session changed. */
 export const SESSION_ORGANIZATION_CHANGED_V1 = 'session.organization-changed.v1';
 
@@ -1210,7 +1328,7 @@ export const taskUpdatedV1Schema = zod.object({
 }) satisfies zod.ZodType<TaskUpdatedV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [COMMENT_CREATED_V1, GIT_BRANCH_CREATED_V1, GIT_CHECKS_COMPLETED_V1, GIT_PR_CLOSED_V1, GIT_PR_MERGED_V1, GIT_PR_OPENED_V1, LIST_ACCESS_CHANGED_V1, LIST_DELETED_V1, MEMBER_REMOVED_V1, MEMBER_ROLE_CHANGED_V1, SESSION_ORGANIZATION_CHANGED_V1, SESSION_REVOKED_V1, SPACE_ACCESS_CHANGED_V1, SPACE_ACCESS_REPUBLISHED_V1, SPACE_DELETED_V1, SPACE_UPDATED_V1, TASK_PURGED_V1, TASK_STATUS_CHANGED_V1, TASK_TRASHED_V1, TASK_UPDATED_V1] as const;
+export const EVENT_NAMES = [COMMENT_CREATED_V1, GIT_BRANCH_CREATED_V1, GIT_CHECKS_COMPLETED_V1, GIT_PR_CLOSED_V1, GIT_PR_MERGED_V1, GIT_PR_OPENED_V1, LIST_ACCESS_CHANGED_V1, LIST_DELETED_V1, MEMBER_REMOVED_V1, MEMBER_ROLE_CHANGED_V1, NOTIFICATION_CREATED_V1, REMINDER_DUE_V1, SESSION_ORGANIZATION_CHANGED_V1, SESSION_REVOKED_V1, SPACE_ACCESS_CHANGED_V1, SPACE_ACCESS_REPUBLISHED_V1, SPACE_DELETED_V1, SPACE_UPDATED_V1, TASK_PURGED_V1, TASK_STATUS_CHANGED_V1, TASK_TRASHED_V1, TASK_UPDATED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -1237,6 +1355,8 @@ export interface EventPayloads {
   'list.deleted.v1': ListDeletedV1;
   'member.removed.v1': MemberRemovedV1;
   'member.role-changed.v1': MemberRoleChangedV1;
+  'notification.created.v1': NotificationCreatedV1;
+  'reminder.due.v1': ReminderDueV1;
   'session.organization-changed.v1': SessionOrganizationChangedV1;
   'session.revoked.v1': SessionRevokedV1;
   'space.access-changed.v1': SpaceAccessChangedV1;
@@ -1261,6 +1381,8 @@ export const eventSchemas = {
   'list.deleted.v1': listDeletedV1Schema,
   'member.removed.v1': memberRemovedV1Schema,
   'member.role-changed.v1': memberRoleChangedV1Schema,
+  'notification.created.v1': notificationCreatedV1Schema,
+  'reminder.due.v1': reminderDueV1Schema,
   'session.organization-changed.v1': sessionOrganizationChangedV1Schema,
   'session.revoked.v1': sessionRevokedV1Schema,
   'space.access-changed.v1': spaceAccessChangedV1Schema,
