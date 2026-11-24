@@ -367,10 +367,16 @@ x-cadenway-socket-io:
         `status` is the caller's own selected status, the only place where `invisible` appears.
         A member whose last lease expired is omitted, even before its offline notice arrives.
 
-        The gateway reads each page when it handles the request, so notices can cross it. Keep
-        the `user.status-changed.v1` notices received after sending the first page request,
-        apply the pages, then apply the kept notices in arrival order: a member's later notice
-        replaces its snapshot status.
+        Pages follow member ID order, and a cursor marks the last member ID covered, never an
+        offset. A member visible during the whole traversal therefore appears in exactly one
+        page, whatever changes for other members. The gateway reads each page when it handles
+        the request, so only members whose status changes during the traversal can be missed
+        or stale, and each such change produces a notice. Keep the `user.status-changed.v1`
+        notices received after sending the first page request, apply the pages, then apply the
+        kept notices in arrival order: a member's later notice replaces its snapshot status. A
+        connection receives a member's notices in the order of the transitions, and a newer
+        transition can replace an older one not yet delivered. Notices are volatile: after a
+        reconnect or a suspected gap, request a new snapshot.
       payload:
         $ref: '#/x-cadenway-socket-io/schemas/presenceListRequest'
       acknowledgement:
@@ -563,6 +569,8 @@ x-cadenway-socket-io:
                 $ref: '#/x-cadenway-socket-io/schemas/memberPresence'
             nextCursor:
               type: [string, 'null']
+              minLength: 1
+              maxLength: 128
               description: Opaque cursor of the next page, or null on the last page.
         - type: object
           additionalProperties: false
