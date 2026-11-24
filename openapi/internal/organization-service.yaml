@@ -149,8 +149,10 @@ paths:
       description: |
         Creates an organization owned by the actor, with the plan `free`, its owner member and the
         invitations of `inviteEmails` as `member`, in one transaction; derives the slug as
-        `POST /v1/organizations` says. Emits `organization.created.v1`, `member.joined.v1` and one
-        `invitation.issued.v1` per invited address. The actor's invitation emails count toward
+        `POST /v1/organizations` says and refuses, given or derived, the addresses that the `Slug`
+        schema of `openapi/public/organizations.yaml` reserves (`422 organization.slug-reserved`).
+        Emits `organization.created.v1`, `member.joined.v1` and one `invitation.issued.v1` per
+        invited address. The actor's invitation emails count toward
         their rolling 24-hour allowance of 100 across all organizations. They also count toward
         the new organization's allowance. If the actor cannot send all requested emails, return
         `429 invitation.daily-limit-reached` and create nothing. An address that sends no email
@@ -283,8 +285,11 @@ paths:
       summary: Update the organization of the token
       description: |
         Applies a JSON Merge Patch to the organization of the token. Owner and admins only
-        (`403 organization.role-forbidden`); `409 organization.slug-taken`; `If-Match` optional
-        (`412 request.version-mismatch`). Emits `organization.updated.v1` when something changed.
+        (`403 organization.role-forbidden`); `409 organization.slug-taken`; a new address that the
+        `Slug` schema of `openapi/public/organizations.yaml` reserves answers
+        `422 organization.slug-reserved`, the current address sent back unchanged is accepted;
+        `If-Match` optional (`412 request.version-mismatch`). Emits `organization.updated.v1` when
+        something changed.
         Internal token: actor `user`, organization required.
       tags: [organizations]
       parameters:
@@ -322,6 +327,8 @@ paths:
           $ref: '#/components/responses/SlugTaken'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/SlugReserved'
   /internal/v1/organization/logo/uploads:
     post:
       operationId: reserveOrganizationLogoUploadInternal
@@ -2410,7 +2417,36 @@ components:
             details:
               slug: atelier-nord
     SlugInvalid:
-      description: '`organization.slug-invalid`: the address derived from the name has fewer than 2 characters, with `details.slug`.'
+      description: |
+        - `organization.slug-invalid`: the address derived from the name has fewer than 2
+          characters, with `details.slug`.
+        - `organization.slug-reserved`: the address, given or derived, is reserved by the `Slug`
+          schema of `openapi/public/organizations.yaml`, with `details.slug`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            slugInvalid:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: organization.slug-invalid
+                details:
+                  slug: e
+            slugReserved:
+              value:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                code: organization.slug-reserved
+                details:
+                  slug: home
+    SlugReserved:
+      description: |
+        `organization.slug-reserved`: the new address is reserved by the `Slug` schema of
+        `openapi/public/organizations.yaml`, with `details.slug`.
       content:
         application/problem+json:
           schema:
@@ -2419,9 +2455,9 @@ components:
             type: about:blank
             title: Unprocessable Content
             status: 422
-            code: organization.slug-invalid
+            code: organization.slug-reserved
             details:
-              slug: e
+              slug: home
     VersionMismatch:
       description: '`request.version-mismatch`: `If-Match` is not the current version, with `details.version`.'
       content:

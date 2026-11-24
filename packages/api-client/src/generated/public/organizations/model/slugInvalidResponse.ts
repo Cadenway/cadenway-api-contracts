@@ -5,7 +5,9 @@
 import type { Problem } from './problem';
 
 /**
- * `organization.slug-invalid`: the address derived from the name has fewer than 2 characters;
- * `details.slug` is what the derivation gave.
+ * - `organization.slug-invalid`: the address derived from the name has fewer than 2
+ *   characters; `details.slug` is what the derivation gave.
+ * - `organization.slug-reserved`: the address, given or derived, is one the web application
+ *   keeps for its own pages (the list of `Slug`); `details.slug` is that address.
  */
 export type SlugInvalidResponse = Problem;

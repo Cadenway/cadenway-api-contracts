@@ -109,6 +109,8 @@ paths:
           accents removed, lowercase, every run of other characters turned into `-`, dashes
           trimmed at both ends, cut to 63 characters. A derived address shorter than 2 characters
           answers `422 organization.slug-invalid`.
+        - An address the web application keeps for its own pages (the list of `Slug`) answers
+          `422 organization.slug-reserved`, derived or not.
         - An address used by another organization answers `409 organization.slug-taken`, derived
           or not.
         - Each address of `inviteEmails` gets its own outcome in `invitations`, as
@@ -293,6 +295,9 @@ paths:
         ("Les membres voient le nouveau nom et la nouvelle adresse.").
 
         - An address used by another organization answers `409 organization.slug-taken`.
+        - An address the web application keeps for its own pages (the list of `Slug`) answers
+          `422 organization.slug-reserved`. The current address of the organization, sent back
+          unchanged, is accepted even if it became reserved after it was chosen.
         - `If-Match` is optional; a version that is no longer the current one answers
           `412 request.version-mismatch`.
 
@@ -338,6 +343,8 @@ paths:
           $ref: '#/components/responses/SlugTaken'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+        '422':
+          $ref: '#/components/responses/SlugReserved'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -631,6 +638,15 @@ components:
         title: 'Trop de requêtes : réessayez dans un instant.'
         status: 429
         code: rate-limit.exceeded
+    SlugReserved:
+      summary: Address kept for a page of the web application
+      value:
+        type: about:blank
+        title: 'Cette adresse est réservée : choisissez-en une autre.'
+        status: 422
+        code: organization.slug-reserved
+        details:
+          slug: home
   responses:
     BadRequest:
       description: |
@@ -857,19 +873,36 @@ components:
               slug: atelier-nord
     SlugInvalid:
       description: |
-        `organization.slug-invalid`: the address derived from the name has fewer than 2 characters;
-        `details.slug` is what the derivation gave.
+        - `organization.slug-invalid`: the address derived from the name has fewer than 2
+          characters; `details.slug` is what the derivation gave.
+        - `organization.slug-reserved`: the address, given or derived, is one the web application
+          keeps for its own pages (the list of `Slug`); `details.slug` is that address.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: L’adresse doit compter au moins 2 caractères.
-            status: 422
-            code: organization.slug-invalid
-            details:
-              slug: e
+          examples:
+            slugInvalid:
+              value:
+                type: about:blank
+                title: L’adresse doit compter au moins 2 caractères.
+                status: 422
+                code: organization.slug-invalid
+                details:
+                  slug: e
+            slugReserved:
+              $ref: '#/components/examples/SlugReserved'
+    SlugReserved:
+      description: |
+        `organization.slug-reserved`: the new address is one the web application keeps for its own
+        pages (the list of `Slug`); `details.slug` is that address.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            slugReserved:
+              $ref: '#/components/examples/SlugReserved'
     VersionMismatch:
       description: |
         - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
@@ -970,6 +1003,14 @@ components:
       description: |
         Address of the organization ("Adresse", `app.cadenway.example/<slug>`): lowercase letters,
         digits and single dashes, unique across organizations.
+
+        The first path segments of the web application are reserved and answer
+        `422 organization.slug-reserved`: its pages `login`, `signup`, `forgot`, `reset`, `invite`,
+        `auth`, `organizations`, `home`, `account`, `org`, `logged-out`, the paths `api`, `assets`
+        and `media` that its web server may answer itself, and the language tags `en`, `fr` and
+        `de`. Its page `f` is reserved too, but already shorter than an address can be. Later
+        versions may reserve more; an organization keeps an address that became reserved after it
+        was chosen.
       examples: [atelier-nord]
     DefaultLanguage:
       type: string

@@ -41,6 +41,7 @@ export * from './sessionReadForbiddenResponse';
 export * from './sessionWriteForbiddenResponse';
 export * from './slug';
 export * from './slugInvalidResponse';
+export * from './slugReservedResponse';
 export * from './slugTakenResponse';
 export * from './twoStepNotEnabledResponse';
 export * from './unauthenticatedResponse';
