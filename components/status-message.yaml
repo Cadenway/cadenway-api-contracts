@@ -1,0 +1,141 @@
+openapi: 3.1.0
+info:
+  title: Cadenway shared status message components
+  version: 1.0.0
+  description: |
+    The personal status message of an account ("Message de statut"): a pictogram, a short text and
+    when it is cleared. identity-service owns it; the public and internal routes of
+    `openapi/public/auth.yaml` and `openapi/internal/identity-service.yaml` and the event
+    `user.status-message-changed.v1` of `asyncapi/identity-service.yaml` share these schemas.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    StatusMessageIcon:
+      type: string
+      description: |
+        Pictogram of a status message, in the order of the picker of the dialog ("Icône du
+        message"): `chat` ("Message"), `users` ("Réunion"), `airplane` ("Voyage"), `car`
+        ("Trajet"), `train` ("Train"), `house` ("Télétravail"), `headphones` ("Concentration"),
+        `code` ("Développement"), `pencil` ("Rédaction"), `lightbulb` ("Idée"), `calendar`
+        ("Agenda"), `coffee` ("Pause"), `fork-knife` ("Repas"), `barbell` ("Sport"), `book`
+        ("Formation"), `thermometer` ("Malade"), `sun-horizon` ("Congé") or `moon` ("Repos"), the
+        entries of `STATUS_ICONS` of the mockup. The web application sends `chat` when the person
+        picked none.
+      enum:
+        [
+          chat,
+          users,
+          airplane,
+          car,
+          train,
+          house,
+          headphones,
+          code,
+          pencil,
+          lightbulb,
+          calendar,
+          coffee,
+          fork-knife,
+          barbell,
+          book,
+          thermometer,
+          sun-horizon,
+          moon,
+        ]
+    StatusMessageIconValue:
+      type: string
+      description: |
+        A pictogram of `StatusMessageIcon`, as a status message carries it. Later versions add
+        pictograms (`x-extensible-enum`): a client shows an unknown one as `chat`.
+      x-extensible-enum:
+        [
+          chat,
+          users,
+          airplane,
+          car,
+          train,
+          house,
+          headphones,
+          code,
+          pencil,
+          lightbulb,
+          calendar,
+          coffee,
+          fork-knife,
+          barbell,
+          book,
+          thermometer,
+          sun-horizon,
+          moon,
+        ]
+    StatusMessageText:
+      type: string
+      minLength: 1
+      maxLength: 80
+      pattern: '^[^\S\u0000-\u001F\u007F-\u009F  ]*[^\s\u0000-\u001F\u007F-\u009F  ][^\u0000-\u001F\u007F-\u009F  ]*$'
+      description: |
+        Text of a status message ("Que faites-vous ?"), one line of 80 characters at most (the
+        counter "n / 80"). The generated validators count UTF-16 code units, as the input of the
+        web application does; a JSON Schema validator counts code points, so a text that fits the
+        first count always fits the second. The pattern refuses a control character (U+0000 to
+        U+001F and U+007F to U+009F, line breaks and tabs included), the line and paragraph
+        separators (U+2028, U+2029) and a text made only of white space;
+        its leading run matches white space only, so it runs in linear time on any input.
+        identity-service removes the surrounding white space before it stores the text, and the
+        responses and events return the stored text.
+      examples: [En réunion]
+    StatusMessageInput:
+      type: object
+      additionalProperties: false
+      required: [icon, text, clearsAt]
+      description: |
+        The whole status message, as the dialog saves it ("Enregistrer"). Every member is
+        required: a save replaces the current message.
+      properties:
+        icon:
+          $ref: '#/components/schemas/StatusMessageIcon'
+        text:
+          $ref: '#/components/schemas/StatusMessageText'
+        clearsAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            UTC instant from which the message no longer exists ("Effacer après"); `null` for
+            "Jamais". The web application computes it when the person saves: 30 minutes ("30
+            min"), 1 hour ("1 h") or 4 hours ("4 h") after now, or the end of the current day in
+            the time zone of the account (`timeZone` of the profile) for "Aujourd’hui". It must be
+            later than the moment identity-service handles the request, else
+            `422 status-message.clears-at-passed`.
+          examples: ['2026-11-24T10:00:00Z']
+    StatusMessage:
+      type: object
+      required: [icon, text, clearsAt]
+      description: The current status message of an account, as identity-service stored it.
+      properties:
+        icon:
+          $ref: '#/components/schemas/StatusMessageIconValue'
+        text:
+          $ref: '#/components/schemas/StatusMessageText'
+        clearsAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            UTC instant from which the message no longer exists, always later than the moment it
+            was read; `null` when it stays until the person clears it ("Jamais"). A client that
+            keeps a copy hides it at this instant without waiting for an event.
+          examples: ['2026-11-24T10:00:00Z']
+    CurrentStatusMessage:
+      type: object
+      required: [statusMessage]
+      description: The status message of the account, read or just saved.
+      properties:
+        statusMessage:
+          oneOf:
+            - $ref: '#/components/schemas/StatusMessage'
+            - type: 'null'
+          description: The current message, or `null` when the person has none or it expired.

@@ -250,6 +250,7 @@ describe('events of identity-service', () => {
       'user.password-changed.v1',
       'user.profile-updated.v1',
       'user.signed-up.v1',
+      'user.status-message-changed.v1',
       'user.two-step-verification-changed.v1',
     ]);
   });

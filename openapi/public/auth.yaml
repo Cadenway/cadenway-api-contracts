@@ -1,17 +1,17 @@
 # Public routes of authentication: sign-up, email verification, federated sign-in, sign-in by password or by email
 # code and its two-step challenge, sign-out, password reset and recent re-authentication, the
-# current user and its profile, and the security of the account (password, address, two-step
-# verification, open sessions, deletion). Served by cadenway-api-gateway, which calls
-# openapi/internal/identity-service.yaml for each of them.
+# current user, its profile and its status message, and the security of the account (password,
+# address, two-step verification, open sessions, deletion). Served by cadenway-api-gateway, which
+# calls openapi/internal/identity-service.yaml for each of them.
 openapi: 3.1.0
 info:
   title: Cadenway authentication
   version: 1.0.0
   description: |
-    How a person creates an account, proves the address, signs in and out, reads who they are, and
-    keeps the account safe: the password, its reset, the two-step verification, the open sessions,
-    the address and the deletion of the account. The API gateway serves these routes and answers
-    them through identity-service.
+    How a person creates an account, proves the address, signs in and out, reads who they are, sets
+    their status message, and keeps the account safe: the password, its reset, the two-step
+    verification, the open sessions, the address and the deletion of the account. The API gateway
+    serves these routes and answers them through identity-service.
 
     **Sessions.** A session travels only in the cookie `__Host-cw_session`, set by the gateway on the
     responses that sign in (`Set-Cookie`) and cleared by the sign-out and by the scheduling of the
@@ -20,8 +20,9 @@ info:
     application never reads it (`HttpOnly`). A route without a session (`security: []`) ignores the
     cookie and any bearer token: a stale one never makes it fail. The responses that sign in,
     carry a two-step challenge (the `202` of the sign-ins, the inspection of a challenge, the
-    WebAuthn options) or answer one, `GET /v1/me` and the routes of the tags `account`,
-    `two-step-verification` and `sessions` carry `Cache-Control: no-store`. The person lists their
+    WebAuthn options) or answer one, `GET /v1/me`, the routes of `/v1/me/status-message` and the
+    routes of the tags `account`, `two-step-verification` and `sessions` carry
+    `Cache-Control: no-store`. The person lists their
     open sessions and closes them (`GET /v1/sessions`, `DELETE /v1/sessions/{sessionId}`,
     `POST /v1/sessions/revoke-others`). A session ends after the inactivity the authentication
     policy of its current organization sets (1 hour, 12 hours, 7 days or 30 days;
@@ -154,9 +155,10 @@ info:
 
     **Later versions** add OAuth and SAML method discovery and new two-step methods (new values of the
     method lists, which a client ignores when it does not know them); the list of the trusted
-    devices; the reset of the two-step verification of a member by an administrator; and the
-    photo. The organizations, the current organization of the session, its authentication policy
-    and the personal API tokens are in `openapi/public/organizations.yaml`,
+    devices; the reset of the two-step verification of a member by an administrator; the photo;
+    and reading the status messages of colleagues (today only the person reads their own). The
+    organizations, the current organization of the session, its authentication policy and the
+    personal API tokens are in `openapi/public/organizations.yaml`,
     `openapi/public/members.yaml` and `openapi/public/api-tokens.yaml`.
   contact:
     name: Cadenway
@@ -168,7 +170,7 @@ info:
     - repository: cadenway-api-gateway
       uses: Serves every route, through openapi/internal/identity-service.yaml.
     - repository: cadenway-webapp
-      uses: Calls every route through @cadenway/api-client (sign-in, sign-up, code, two-step challenge, password reset and sign-out screens, account "Profil", "Préférences" and "Sécurité").
+      uses: Calls every route through @cadenway/api-client (sign-in, sign-up, code, two-step challenge, password reset and sign-out screens, account "Profil", "Préférences" and "Sécurité", the user menu "Définir un message de statut" and the "Message de statut" field of Compte › Profil).
 servers:
   - url: https://api.cadenway.com
     description: Production.
@@ -180,7 +182,7 @@ tags:
   - name: auth
     description: |
       Sign-up, email verification, sign-in and its two-step challenge, sign-out, password reset,
-      recent re-authentication, and the current user and its profile.
+      recent re-authentication, and the current user, its profile and its status message.
   - name: account
     description: The security of the account of the signed-in person, its password, its address and its deletion.
   - name: two-step-verification
@@ -1316,6 +1318,132 @@ paths:
           $ref: '#/components/responses/ProfileForbidden'
         '412':
           $ref: '#/components/responses/VersionMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/me/status-message:
+    get:
+      operationId: getStatusMessage
+      summary: Read the status message of the current user
+      description: |
+        Returns the personal status message of the account ("Message de statut"), which the user
+        menu shows in its header with a clear button and Compte › Profil in its "Message de
+        statut" field. `statusMessage` is `null` when the person has none or when its `clearsAt`
+        has passed: the expiry is computed when the message is read, not run by a job, so from
+        `clearsAt` on the message no longer exists for any route, and nothing is emitted at that
+        instant. A client that keeps a copy hides it at `clearsAt` itself. The message belongs to
+        the account, not to an organization; today only the person reads it. Session only: a
+        personal API token gets `403 auth.api-token-not-accepted`.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The current status message, or `null`.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/status-message.yaml#/components/schemas/CurrentStatusMessage'
+              examples:
+                inAMeeting:
+                  $ref: '#/components/examples/StatusMessageInAMeeting'
+                none:
+                  $ref: '#/components/examples/NoStatusMessage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ApiTokenNotAccepted'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    put:
+      operationId: setStatusMessage
+      summary: Set the status message of the current user
+      description: |
+        Replaces the whole status message of the account with the one of the dialog "Message de
+        statut" ("Enregistrer"): its pictogram, its text and when it is cleared ("Effacer
+        après"). identity-service removes the surrounding white space of the text and returns the
+        stored message. A `clearsAt` that is not later than the moment identity-service handles
+        the request answers `422 status-message.clears-at-passed`; the web application then lets
+        the person choose another duration.
+
+        - No version, no `ETag` and no `If-Match`: this deliberately departs from the version of
+          each aggregate, because the message is small, always replaced as a whole and never
+          merged, so the last write wins.
+        - A message whose `icon`, `text` and `clearsAt` equal the current one answers `200` and
+          emits nothing; a message that changes the current one, or that replaces an expired
+          one, emits `user.status-message-changed.v1` (`asyncapi/identity-service.yaml`).
+        - A save with an empty text clears the message: the web application sends
+          `DELETE /v1/me/status-message` for it, since an empty or blank `text` answers
+          `400 request.invalid`.
+
+        Session only: a personal API token gets `403 auth.api-token-not-accepted`.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/status-message.yaml#/components/schemas/StatusMessageInput'
+            examples:
+              inAMeeting:
+                summary: '"En réunion" for 1 hour'
+                value:
+                  icon: users
+                  text: En réunion
+                  clearsAt: '2026-11-24T10:00:00Z'
+              focusUntilCleared:
+                summary: '"Concentration" until the person clears it ("Jamais")'
+                value:
+                  icon: headphones
+                  text: Concentration
+                  clearsAt: null
+      responses:
+        '200':
+          description: The status message after the change.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/status-message.yaml#/components/schemas/CurrentStatusMessage'
+              examples:
+                inAMeeting:
+                  $ref: '#/components/examples/StatusMessageInAMeeting'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ProfileForbidden'
+        '422':
+          $ref: '#/components/responses/StatusMessageClearsAtPassed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      operationId: clearStatusMessage
+      summary: Clear the status message of the current user
+      description: |
+        Removes the status message of the account: the clear button of the header of the user
+        menu, and "Effacer" of Compte › Profil. Answers `204` also when there is none, or when it
+        has expired. Removing a current message emits `user.status-message-changed.v1` with
+        `statusMessage: null`; removing nothing emits nothing. Session only: a personal API token
+        gets `403 auth.api-token-not-accepted`.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: The account has no status message.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ProfileForbidden'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -2835,6 +2963,20 @@ components:
                 code: auth.csrf-rejected
             apiTokenNotAccepted:
               $ref: '#/components/examples/ApiTokenNotAccepted'
+    StatusMessageClearsAtPassed:
+      description: |
+        `status-message.clears-at-passed`: `clearsAt` is not later than the moment identity-service
+        handled the request, so the message would already be cleared. The web application shows
+        the title as is and lets the person choose another duration.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: 'Cette échéance est déjà passée : choisissez une autre durée.'
+            status: 422
+            code: status-message.clears-at-passed
     VersionMismatch:
       description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
       content:
@@ -3276,6 +3418,17 @@ components:
         timeZone: Europe/Paris
         passwordChangedAt: '2026-08-12T09:30:00Z'
         version: 3
+    StatusMessageInAMeeting:
+      summary: Camille Martin is in a meeting for 1 hour
+      value:
+        statusMessage:
+          icon: users
+          text: En réunion
+          clearsAt: '2026-11-24T10:00:00Z'
+    NoStatusMessage:
+      summary: No status message, or it expired
+      value:
+        statusMessage: null
     CrossSiteRefused:
       summary: Request from another site
       value:

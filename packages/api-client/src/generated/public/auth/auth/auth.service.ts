@@ -27,6 +27,7 @@ import type {
   CodeSent,
   CodeVerification,
   CompleteOAuthSignInParams,
+  CurrentStatusMessage,
   CurrentUser,
   EmptyRequest,
   FederatedAuthorization,
@@ -53,7 +54,8 @@ import type {
   SignOutRequest,
   SignUpRequest,
   SignUpVerification,
-  SignedInResponse
+  SignedInResponse,
+  StatusMessageInput
 } from '../model';
 
 import type {
@@ -1316,6 +1318,139 @@ formUrlEncoded.append(`RelayState`, samlSignInCallback.RelayState);
       }
     );
   }
+/**
+ * Returns the personal status message of the account ("Message de statut"), which the user
+ * menu shows in its header with a clear button and Compte › Profil in its "Message de
+ * statut" field. `statusMessage` is `null` when the person has none or when its `clearsAt`
+ * has passed: the expiry is computed when the message is read, not run by a job, so from
+ * `clearsAt` on the message no longer exists for any route, and nothing is emitted at that
+ * instant. A client that keeps a copy hides it at `clearsAt` itself. The message belongs to
+ * the account, not to an organization; today only the person reads it. Session only: a
+ * personal API token gets `403 auth.api-token-not-accepted`.
+ * @summary Read the status message of the current user
+ */
+ getStatusMessage<TData = CurrentStatusMessage>( options?: HttpClientBodyOptions): Observable<TData>;
+ getStatusMessage<TData = CurrentStatusMessage>( options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getStatusMessage<TData = CurrentStatusMessage>( options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getStatusMessage<TData = CurrentStatusMessage>(
+     options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/me/status-message`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/me/status-message`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/me/status-message`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Replaces the whole status message of the account with the one of the dialog "Message de
+ * statut" ("Enregistrer"): its pictogram, its text and when it is cleared ("Effacer
+ * après"). identity-service removes the surrounding white space of the text and returns the
+ * stored message. A `clearsAt` that is not later than the moment identity-service handles
+ * the request answers `422 status-message.clears-at-passed`; the web application then lets
+ * the person choose another duration.
+ *
+ * - No version, no `ETag` and no `If-Match`: this deliberately departs from the version of
+ *   each aggregate, because the message is small, always replaced as a whole and never
+ *   merged, so the last write wins.
+ * - A message whose `icon`, `text` and `clearsAt` equal the current one answers `200` and
+ *   emits nothing; a message that changes the current one, or that replaces an expired
+ *   one, emits `user.status-message-changed.v1` (`asyncapi/identity-service.yaml`).
+ * - A save with an empty text clears the message: the web application sends
+ *   `DELETE /v1/me/status-message` for it, since an empty or blank `text` answers
+ *   `400 request.invalid`.
+ *
+ * Session only: a personal API token gets `403 auth.api-token-not-accepted`.
+ * @summary Set the status message of the current user
+ */
+ setStatusMessage<TData = CurrentStatusMessage>(statusMessageInput: StatusMessageInput, options?: HttpClientBodyOptions): Observable<TData>;
+ setStatusMessage<TData = CurrentStatusMessage>(statusMessageInput: StatusMessageInput, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ setStatusMessage<TData = CurrentStatusMessage>(statusMessageInput: StatusMessageInput, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  setStatusMessage<TData = CurrentStatusMessage>(
+    statusMessageInput: StatusMessageInput, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.put<TData>(
+      `/v1/me/status-message`,
+      statusMessageInput,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.put<TData>(
+      `/v1/me/status-message`,
+      statusMessageInput,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.put<TData>(
+      `/v1/me/status-message`,
+      statusMessageInput,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Removes the status message of the account: the clear button of the header of the user
+ * menu, and "Effacer" of Compte › Profil. Answers `204` also when there is none, or when it
+ * has expired. Removing a current message emits `user.status-message-changed.v1` with
+ * `statusMessage: null`; removing nothing emits nothing. Session only: a personal API token
+ * gets `403 auth.api-token-not-accepted`.
+ * @summary Clear the status message of the current user
+ */
+ clearStatusMessage<TData = void>( options?: HttpClientBodyOptions): Observable<TData>;
+ clearStatusMessage<TData = void>( options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ clearStatusMessage<TData = void>( options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  clearStatusMessage<TData = void>(
+     options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.delete<TData>(
+      `/v1/me/status-message`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.delete<TData>(
+      `/v1/me/status-message`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.delete<TData>(
+      `/v1/me/status-message`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
 };
 
 export type DiscoverSignInMethodsClientResult = NonNullable<SignInMethods>
@@ -1341,3 +1476,6 @@ export type ConfirmPasswordResetClientResult = NonNullable<PasswordResetComplete
 export type ReauthenticateClientResult = NonNullable<RecentAuthentication>
 export type GetCurrentUserClientResult = NonNullable<CurrentUser>
 export type UpdateCurrentUserClientResult = NonNullable<CurrentUser>
+export type GetStatusMessageClientResult = NonNullable<CurrentStatusMessage>
+export type SetStatusMessageClientResult = NonNullable<CurrentStatusMessage>
+export type ClearStatusMessageClientResult = NonNullable<void>

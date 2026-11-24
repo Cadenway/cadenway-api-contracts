@@ -15,6 +15,7 @@
 /openapi/public/site.yaml @Cadenway/maintainers
 /openapi/public/webhooks.yaml @Cadenway/maintainers
 /components/public-site.yaml @Cadenway/maintainers
+/components/status-message.yaml @Cadenway/maintainers
 
 # Events.
 /asyncapi/ @Cadenway/maintainers

@@ -1,6 +1,6 @@
-# Events of identity-service: accounts, their verified address, profile, password, address change,
-# two-step verification and deletion, sessions, and the restricted events that carry a single-use
-# code or link to cadenway-notification-service only.
+# Events of identity-service: accounts, their verified address, profile, status message, password,
+# address change, two-step verification and deletion, sessions, and the restricted events that carry
+# a single-use code or link to cadenway-notification-service only.
 asyncapi: 3.0.0
 info:
   title: identity-service events
@@ -18,8 +18,10 @@ info:
     the sign-up, the verification, a change of the profile, of the password, of the address or of
     the two-step verification, the scheduling and the cancellation of the deletion, and the
     deletion each move to the next one. Avatar events track the image generation or the
-    terminal upload reservation version independently of the account profile. An event of a
-    session (`session.*`) carries the version of the session. A consumer that keeps
+    terminal upload reservation version independently of the account profile. Status message
+    events carry the version of the status message of the account, independently of the account
+    version, as avatar events do. An event of a session (`session.*`) carries the version of the
+    session. A consumer that keeps
     several parts of the account, as the directory of organization-service keeps the name and the
     address, orders each part by the versions of the events that carry it.
 
@@ -58,7 +60,7 @@ info:
     - repository: cadenway-notification-service
       uses: one-time-code.issued.v1, to send the verification, sign-in and change of address code emails; password-reset-link.issued.v1, user.password-changed.v1, user.email-changed.v1, session.opened-on-new-device.v1, user.deletion-scheduled.v1, user.deletion-cancelled.v1 and user.two-step-verification-changed.v1, to send the security emails. Planned, user.signed-up.v1, user.profile-updated.v1, user.email-changed.v1 and user.deleted.v1 for its projection of user profiles.
     - repository: cadenway-realtime-gateway
-      uses: Planned, session.revoked.v1 and session.organization-changed.v1, to close revoked sockets and sockets bound to a previous organization context.
+      uses: Planned, session.revoked.v1 and session.organization-changed.v1, to close revoked sockets and sockets bound to a previous organization context. Planned, user.status-message-changed.v1, to refresh the status message in the other tabs of the person and, once a screen shows colleagues' messages, in their organizations.
     - repository: cadenway-organization-service
       uses: user.signed-up.v1, user.email-verified.v1, user.profile-updated.v1 and user.email-changed.v1, for its user directory (names and addresses of the members, invitations matched with the account that verified their address); user.two-step-verification-changed.v1, for the column "Deux étapes" of its member list; user.deleted.v1, to remove the memberships of a deleted account. Planned, user.avatar-changed.v1 for the directory's avatar hint.
     - repository: cadenway-storage-service
@@ -101,6 +103,14 @@ channels:
     messages:
       userAvatarChangedV1:
         $ref: '#/components/messages/userAvatarChangedV1'
+  userStatusMessageChangedV1:
+    address: evt.user.status-message-changed.v1
+    description: |
+      The status message of an account was set, replaced or cleared. Emitted by identity-service.
+      Planned consumer: cadenway-realtime-gateway.
+    messages:
+      userStatusMessageChangedV1:
+        $ref: '#/components/messages/userStatusMessageChangedV1'
   userAvatarUploadAbandonedV1:
     address: evt.user.avatar-upload-abandoned.v1
     description: |
@@ -233,6 +243,14 @@ operations:
       $ref: '#/channels/userAvatarChangedV1'
     messages:
       - $ref: '#/channels/userAvatarChangedV1/messages/userAvatarChangedV1'
+  publishUserStatusMessageChangedV1:
+    action: send
+    summary: identity-service publishes a change of the status message of an account.
+    description: Sent from the outbox of identity-service once the change is committed, at least once.
+    channel:
+      $ref: '#/channels/userStatusMessageChangedV1'
+    messages:
+      - $ref: '#/channels/userStatusMessageChangedV1/messages/userStatusMessageChangedV1'
   publishUserAvatarUploadAbandonedV1:
     action: send
     summary: identity-service publishes the terminal decision on an unused avatar reservation.
@@ -677,6 +695,84 @@ components:
             userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
             assetId: null
             oldAssetId: 019a7006-2c3d-7e4f-8a5b-6c7d8e9f0a14
+    userStatusMessageChangedV1:
+      name: user.status-message-changed.v1
+      title: Status message changed
+      summary: The status message of an account was set, replaced or cleared.
+      description: |
+        Emitted when `PUT /v1/me/status-message` changes the current status message of the account
+        (a message equal to the current one emits nothing) or `DELETE /v1/me/status-message`
+        removes one (removing nothing emits nothing). `actor` is the user. Carries the whole
+        message after the change, or `null` once cleared, so that a consumer keeps its copy
+        without calling identity-service.
+
+        Nothing is emitted when a message expires: from its `clearsAt` on, the message no longer
+        exists for identity-service, and a consumer that keeps a copy hides it at `clearsAt`
+        itself. A consumer applies a `version` greater than the one it holds and ignores the
+        others.
+
+        Personal data: `text`, the free text the person wrote, which the product shows to the
+        organizations of the account. No address or other profile member.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        required: [id, occurredAt, organizationId, actor, version, userId, statusMessage]
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Id of the event, the deduplication key.
+          occurredAt:
+            type: string
+            format: date-time
+            description: When the change was committed.
+          organizationId:
+            type: 'null'
+            description: Always `null`, a status message belongs to the account outside any organization.
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+            description: |
+              Version of the status message of the account after this change, separate from the
+              version of the account: each set or clear that changes the current message moves it
+              to the next one.
+          userId:
+            type: string
+            format: uuid
+            description: Account whose status message changed.
+          statusMessage:
+            oneOf:
+              - $ref: '../components/status-message.yaml#/components/schemas/StatusMessage'
+              - type: 'null'
+            description: The status message after the change; `null` when it was cleared.
+      examples:
+        - name: set
+          summary: Camille Martin is in a meeting for 1 hour
+          payload:
+            id: 019a7a10-3b4c-7d5e-8f6a-1b2c3d4e5f60
+            occurredAt: '2026-11-24T09:00:00Z'
+            organizationId: null
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 4
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            statusMessage:
+              icon: users
+              text: En réunion
+              clearsAt: '2026-11-24T10:00:00Z'
+        - name: cleared
+          summary: Camille Martin cleared the status message
+          payload:
+            id: 019a7a10-3b4c-7d5e-8f6a-1b2c3d4e5f61
+            occurredAt: '2026-11-24T09:20:00Z'
+            organizationId: null
+            actor: { type: user, id: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30 }
+            version: 5
+            userId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30
+            statusMessage: null
     userAvatarUploadAbandonedV1:
       name: user.avatar-upload-abandoned.v1
       title: Avatar upload abandoned
