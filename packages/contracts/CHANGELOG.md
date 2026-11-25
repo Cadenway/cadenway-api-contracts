@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.43.0
+
+### Minor Changes
+
+- 1054d3a: Add realtime notices for task list membership changes.
+
 ## 0.42.0
 
 ### Minor Changes
