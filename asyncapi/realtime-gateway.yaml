@@ -83,6 +83,30 @@ channels:
     messages:
       listDeletedV1:
         $ref: './task-service.yaml#/components/messages/listDeletedV1'
+  taskCreatedV1:
+    address: evt.task.created.v1
+    description: Produced by task-service. Consumed by realtime-gateway.
+    messages:
+      taskCreatedV1:
+        $ref: './task-service.yaml#/components/messages/taskCreatedV1'
+  taskArchivedV1:
+    address: evt.task.archived.v1
+    description: Produced by task-service. Consumed by realtime-gateway.
+    messages:
+      taskArchivedV1:
+        $ref: './task-service.yaml#/components/messages/taskArchivedV1'
+  taskUnarchivedV1:
+    address: evt.task.unarchived.v1
+    description: Produced by task-service. Consumed by realtime-gateway.
+    messages:
+      taskUnarchivedV1:
+        $ref: './task-service.yaml#/components/messages/taskUnarchivedV1'
+  taskRestoredV1:
+    address: evt.task.restored.v1
+    description: Produced by task-service. Consumed by realtime-gateway.
+    messages:
+      taskRestoredV1:
+        $ref: './task-service.yaml#/components/messages/taskRestoredV1'
   taskUpdatedV1:
     address: evt.task.updated.v1
     description: Produced by task-service. Consumed by realtime-gateway.
@@ -206,9 +230,29 @@ operations:
     summary: Invalidate the deleted list room and its task room memberships.
     channel:
       $ref: '#/channels/listDeletedV1'
+  receiveTaskCreatedV1:
+    action: receive
+    summary: Send list.tasks-changed.v1 to the list room of the task.
+    channel:
+      $ref: '#/channels/taskCreatedV1'
+  receiveTaskArchivedV1:
+    action: receive
+    summary: Send list.tasks-changed.v1 to the list room of the task.
+    channel:
+      $ref: '#/channels/taskArchivedV1'
+  receiveTaskUnarchivedV1:
+    action: receive
+    summary: Send list.tasks-changed.v1 to the list room of the task.
+    channel:
+      $ref: '#/channels/taskUnarchivedV1'
+  receiveTaskRestoredV1:
+    action: receive
+    summary: Send list.tasks-changed.v1 to the list room of the task.
+    channel:
+      $ref: '#/channels/taskRestoredV1'
   receiveTaskUpdatedV1:
     action: receive
-    summary: Recheck moved task subscriptions and relay a minimal task notice in its current placement.
+    summary: Recheck moved task subscriptions, relay a minimal task notice in its current placement, and send list.tasks-changed.v1 to the former list on a move.
     channel:
       $ref: '#/channels/taskUpdatedV1'
   receiveTaskStatusChangedV1:
@@ -218,7 +262,7 @@ operations:
       $ref: '#/channels/taskStatusChangedV1'
   receiveTaskTrashedV1:
     action: receive
-    summary: Invalidate the task room following logical deletion.
+    summary: Invalidate the task room, then send list.tasks-changed.v1 to its list room.
     channel:
       $ref: '#/channels/taskTrashedV1'
   receiveTaskPurgedV1:
@@ -418,9 +462,33 @@ x-cadenway-socket-io:
         understands that different facts can share an aggregate version. For a presence change
         or Git links invalidation, `version` is the browser protocol version. Clients refetch
         business state via the API.
+
+        `list.tasks-changed.v1` tells a list room that the set of its tasks changed, after a
+        task-service fact: evt.task.created.v1, evt.task.archived.v1, evt.task.unarchived.v1,
+        evt.task.trashed.v1 or evt.task.restored.v1 for the task's list, and evt.task.updated.v1
+        carrying previousListId (a move) for the former list. It carries neither the task's
+        version nor the fact's time: `version` is the browser protocol version and `at` the time
+        the gateway sends it. Its id is its own, the UUID version 5 of the name
+        `urn:cadenway:list.tasks-changed.v1:<fact id>` in the URL namespace
+        (`6ba7b811-9dad-11d1-80b4-00c04fd430c8`): stable across redeliveries of the fact, and
+        never equal to the id of another notice, so a client that deduplicates by id alone keeps
+        both the `task.updated.v1` and the `list.tasks-changed.v1` of a move. It names neither the
+        task nor what happened to it, and the client refetches the list through the API, which
+        applies the task permissions (a trashed task stays unknown to a reader who cannot change
+        its list). A client ignores an unsupported notice type. evt.task.trashed.v1 also closes
+        the task's room.
       envelope:
         $ref: '#/x-cadenway-socket-io/schemas/envelope'
       notices:
+        list.tasks-changed.v1:
+          description: |
+            The set of tasks of this list changed: a task was created, archived, unarchived,
+            trashed or restored in it, or moved out of it (to `list:<previousListId>` of an
+            evt.task.updated.v1 fact carrying previousListId; the new list receives the
+            `task.updated.v1` notice). One notice per fact.
+          rooms: ['list:<listId>', 'list:<previousListId>']
+          data:
+            $ref: '#/x-cadenway-socket-io/schemas/listTasksChange'
         task.updated.v1:
           rooms: ['task:<taskId>', 'list:<listId>']
           data:
@@ -517,6 +585,26 @@ x-cadenway-socket-io:
         Require the session and membership fences to remain current through delivery. Relay only
         to the verified task and list rooms. Deduplicate delivery to a socket subscribed to both
         eligible rooms.
+
+        `list.tasks-changed.v1` is the exception to the task-based rule above, because it is
+        about a list, not a task: a task is seen by whoever sees its list (`openapi/public/
+        tasks.yaml`, "Who sees a task"), an archived one too, by its key and in the archives
+        ("Archives"). Each fact the notice answers concerns a task that a reader of the list sees
+        on one side of it: a created, unarchived or restored task after it, an archived, trashed
+        or moved task before it, so the notice tells the reader nothing it could not read through
+        the API, even when a subtree emits one fact per task. The task itself may no longer be
+        visible (trashed: Task answers `task.not-found` for it) or may have left the list
+        (moved). The gateway therefore does not resolve the task. For each candidate
+        subscription of `list:<listId>` (`list:<previousListId>` for a move), it confirms the
+        receiver's current session, its membership fences and its current permission to see
+        that list in the fact's organization, through the same check as a list room join,
+        which holds for a delayed or redelivered fact as for a fresh one, and requires the fences
+        to remain current through delivery. Suppress delivery to a receiver that check denies. An
+        unavailable decision (the check cannot conclude) leaves the fact for broker redelivery,
+        as for personal notices, so the notice reaches the receivers once the check answers. The
+        notice names neither the task nor its fact, and carries neither the task's version nor
+        the fact's time: it tells an authorized reader of the list only that it should refetch
+        the list.
 
         Personal notices answer a Notification fact that names an account, `recipientId` or
         `userId`, in the fact's organization. Look up only the ready connections authenticated as
@@ -648,6 +736,15 @@ x-cadenway-socket-io:
           minimum: 1
         data:
           type: object
+    listTasksChange:
+      type: object
+      additionalProperties: false
+      required: [listId]
+      properties:
+        listId:
+          type: string
+          format: uuid
+          description: The list whose set of tasks changed, the one of the room it is sent to.
     taskChange:
       type: object
       additionalProperties: false
@@ -677,6 +774,13 @@ x-cadenway-socket-io:
     deniedTaskJoin:
       ok: false
       code: room.not-found
+    listTasksChanged:
+      id: f780e4c6-ffdd-5c26-9f98-2f2494099eb8
+      type: list.tasks-changed.v1
+      at: '2026-11-08T10:41:00Z'
+      version: 1
+      data:
+        listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
     statusChange:
       id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d4d
       type: task.status-changed.v1

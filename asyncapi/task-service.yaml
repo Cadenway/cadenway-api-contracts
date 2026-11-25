@@ -252,6 +252,7 @@ channels:
     description: |
       A task was created. Emitted by task-service. Consumers: none yet; planned,
       cadenway-search-service, cadenway-realtime-gateway and cadenway-automation-service.
+      The realtime gateway relays this fact to the list room.
     messages:
       taskCreatedV1:
         $ref: '#/components/messages/taskCreatedV1'
@@ -407,6 +408,7 @@ channels:
     description: |
       A task was archived, alone or with the subtree it belongs to. Emitted by task-service.
       Consumers: none yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+      The realtime gateway relays this fact to the list room.
     messages:
       taskArchivedV1:
         $ref: '#/components/messages/taskArchivedV1'
@@ -415,6 +417,7 @@ channels:
     description: |
       An archived task was restored with its archive. Emitted by task-service. Consumers: none
       yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+      The realtime gateway relays this fact to the list room.
     messages:
       taskUnarchivedV1:
         $ref: '#/components/messages/taskUnarchivedV1'
@@ -423,6 +426,7 @@ channels:
     description: |
       A task went to the trash, with the entry it belongs to. Emitted by task-service. Consumers:
       none yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+      The realtime gateway relays this fact to the list room.
     messages:
       taskTrashedV1:
         $ref: '#/components/messages/taskTrashedV1'
@@ -431,6 +435,7 @@ channels:
     description: |
       A task came back from the trash with its entry. Emitted by task-service. Consumers: none
       yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+      The realtime gateway relays this fact to the list room.
     messages:
       taskRestoredV1:
         $ref: '#/components/messages/taskRestoredV1'
@@ -2677,6 +2682,15 @@ components:
           listId:
             type: string
             format: uuid
+          previousListId:
+            type: string
+            format: uuid
+            description: |
+              The list the task was in before the change. task-service sets it on every fact
+              whose `changed` holds `listId` (a move), and only there. Lets a consumer that
+              shows the former list learn that the task left it. A fact from a release before
+              this field cannot name the former list: such a move tells only the new list, and
+              the former list's readers see it at their next refetch or reconnection.
           parentKey:
             type: [string, 'null']
             pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
@@ -2732,6 +2746,7 @@ components:
             key: CAD-482
             spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
             listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f13
+            previousListId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
             parentKey: null
             name: Refondre l’écran de connexion SSO
             status: progress
