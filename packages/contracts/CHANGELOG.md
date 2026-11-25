@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.43.1
+
+### Patch Changes
+
+- 0e7f4ea: Derive the list.tasks-changed.v1 example id from a stated task-service fact.
+
 ## 0.43.0
 
 ### Minor Changes
