@@ -1,6 +1,6 @@
 {
   "name": "@cadenway/api-client",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Angular HttpClient services for the Cadenway public API, generated from the OpenAPI specs.",
   "license": "UNLICENSED",
   "repository": {
