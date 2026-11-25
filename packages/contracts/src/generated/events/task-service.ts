@@ -2783,9 +2783,11 @@ export interface TaskUpdatedV1 {
   spaceId: string;
   listId: string;
   /**
-   * The list the task was in before the change, present only when `changed` holds
-   * `listId` (a move); absent from an older producer. Lets a consumer that shows the
-   * former list learn that the task left it.
+   * The list the task was in before the change. task-service sets it on every fact
+   * whose `changed` holds `listId` (a move), and only there. Lets a consumer that
+   * shows the former list learn that the task left it. A fact from a release before
+   * this field cannot name the former list: such a move tells only the new list, and
+   * the former list's readers see it at their next refetch or reconnection.
    */
   previousListId?: string;
   parentKey: string | null;

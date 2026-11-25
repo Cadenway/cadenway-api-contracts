@@ -588,9 +588,11 @@ x-cadenway-socket-io:
         subscription of `list:<listId>` (`list:<previousListId>` for a move), confirm the
         receiver's current session, its membership fences and its current permission to see that
         list in the fact's organization, through the same check as a list room join, and require
-        the fences to remain current through delivery. Suppress delivery when that check denies
-        access or cannot conclude. The notice tells an authorized reader of the list only that it
-        should refetch the list.
+        the fences to remain current through delivery. Suppress delivery to a receiver the
+        check denies. An unavailable decision (the check cannot conclude) leaves the fact for
+        broker redelivery, as for personal notices, so the notice reaches the receivers once the
+        check answers. The notice tells an authorized reader of the list only that it should
+        refetch the list.
 
         Personal notices answer a Notification fact that names an account, `recipientId` or
         `userId`, in the fact's organization. Look up only the ready connections authenticated as

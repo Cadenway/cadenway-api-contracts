@@ -2686,9 +2686,11 @@ components:
             type: string
             format: uuid
             description: |
-              The list the task was in before the change, present only when `changed` holds
-              `listId` (a move); absent from an older producer. Lets a consumer that shows the
-              former list learn that the task left it.
+              The list the task was in before the change. task-service sets it on every fact
+              whose `changed` holds `listId` (a move), and only there. Lets a consumer that
+              shows the former list learn that the task left it. A fact from a release before
+              this field cannot name the former list: such a move tells only the new list, and
+              the former list's readers see it at their next refetch or reconnection.
           parentKey:
             type: [string, 'null']
             pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
