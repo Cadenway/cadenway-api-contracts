@@ -36,6 +36,8 @@ tags:
     description: Space-scoped documents and their Markdown content.
 paths:
   /v1/documents:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listDocuments
       summary: List visible documents
@@ -79,6 +81,8 @@ paths:
           $ref: '#/components/responses/ReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -135,6 +139,8 @@ paths:
           $ref: '#/components/responses/CreationTargetNotFound'
         '409':
           $ref: '#/components/responses/RequestInProgress'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/IdempotencyKeyReused'
         '429':
@@ -143,6 +149,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/documents/{documentId}:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '../../components/documents.yaml#/components/parameters/DocumentId'
     get:
       operationId: getDocument
@@ -162,6 +169,8 @@ paths:
           $ref: '#/components/responses/ReadForbidden'
         '404':
           $ref: '#/components/responses/DocumentNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -360,9 +369,12 @@ components:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
     VersionMismatch:
       description: |
-        `request.version-mismatch` when `If-Match` differs from the current strong document ETag.
-        After live write authorization, `details.version` carries the current document version as
-        an integer.
+        - `request.version-mismatch` when `If-Match` differs from the current strong document ETag.
+          After live write authorization, `details.version` carries the current document version as
+          an integer.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
       headers:
         Cache-Control:
           $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
@@ -370,13 +382,17 @@ components:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-            status: 412
-            code: request.version-mismatch
-            details:
-              version: 3
+          examples:
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 3
+            organizationContextChanged:
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
     RateLimited:
       description: |
         `rate-limit.exceeded`. Retry after the delay in `Retry-After`.

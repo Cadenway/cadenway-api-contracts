@@ -167,6 +167,7 @@ paths:
         - sessionCookie: []
         - apiToken: [tasks:write]
       parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
@@ -234,6 +235,8 @@ paths:
           $ref: '#/components/responses/ListNotFound'
         '409':
           $ref: '#/components/responses/RequestInProgress'
+        '412':
+          $ref: '#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/TaskCreationRefused'
         '429':
@@ -2724,6 +2727,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/labels:
+    parameters:
+      - $ref: '#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listLabels
       summary: List the labels
@@ -2771,11 +2776,15 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/me/tasks:
+    parameters:
+      - $ref: '#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listMyTasks
       summary: List the tasks of the caller
@@ -2839,11 +2848,15 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/me/home:
+    parameters:
+      - $ref: '#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getHome
       summary: Read the task part of "Accueil"
@@ -2950,6 +2963,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -2968,6 +2983,8 @@ paths:
       security:
         - sessionCookie: []
         - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       responses:
         '200':
           description: The caller's onboarding state.
@@ -2988,6 +3005,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':

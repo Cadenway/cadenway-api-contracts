@@ -46,6 +46,7 @@ tags:
 paths:
   /v1/lists/{listId}/intake-form:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/IntakeListId'
     get:
       operationId: getIntakeFormConfiguration
@@ -71,6 +72,8 @@ paths:
           $ref: '#/components/responses/IntakeEditorReadForbidden'
         '404':
           $ref: '#/components/responses/IntakeListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -124,6 +127,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/intake-form/publish:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/IntakeListId'
     post:
       operationId: publishIntakeForm
@@ -162,6 +166,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/intake-form/publication:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/IntakeListId'
     delete:
       operationId: disableIntakeForm
@@ -806,17 +811,26 @@ components:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
     IntakeVersionMismatch:
-      description: '`request.version-mismatch`: `If-Match` is stale. `details.version` is the current form version.'
+      description: |
+        - `request.version-mismatch`: `If-Match` is stale. `details.version` is the current form version.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-            status: 412
-            code: request.version-mismatch
-            details: { version: 2 }
+          examples:
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 2
+            organizationContextChanged:
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
     IntakeDefaultsInvalid:
       description: '`intake-form.defaults-invalid`: the configured status or assignee is invalid for this list.'
       content:

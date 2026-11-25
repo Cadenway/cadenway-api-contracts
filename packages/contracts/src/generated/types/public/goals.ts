@@ -282,6 +282,31 @@ export interface GoalResultPatch {
 }
 
 /**
+ * Members specific to the code, for example the fields that failed validation.
+ */
+export type ProblemDetails = { [key: string]: unknown };
+
+/**
+ * RFC 9457 problem with the Cadenway extensions `code` and `details`.
+ */
+export interface Problem {
+  /** URI reference that identifies the problem type. */
+  type: string;
+  /** Short summary of the problem type, the same for every occurrence. */
+  title: string;
+  /** HTTP status of the response. */
+  status: number;
+  /** Explanation specific to this occurrence. */
+  detail?: string;
+  /** URI reference that identifies this occurrence. */
+  instance?: string;
+  /** Stable machine code, `<domain>.<reason>`. */
+  code: string;
+  /** Members specific to the code, for example the fields that failed validation. */
+  details?: ProblemDetails;
+}
+
+/**
  * A nonblank saved view or template name, at most 80 characters.
  * @minLength 1
  * @maxLength 80
@@ -2558,31 +2583,6 @@ export interface AccessRequestApproval {
 }
 
 /**
- * Members specific to the code, for example the fields that failed validation.
- */
-export type ProblemDetails = { [key: string]: unknown };
-
-/**
- * RFC 9457 problem with the Cadenway extensions `code` and `details`.
- */
-export interface Problem {
-  /** URI reference that identifies the problem type. */
-  type: string;
-  /** Short summary of the problem type, the same for every occurrence. */
-  title: string;
-  /** HTTP status of the response. */
-  status: number;
-  /** Explanation specific to this occurrence. */
-  detail?: string;
-  /** URI reference that identifies this occurrence. */
-  instance?: string;
-  /** Stable machine code, `<domain>.<reason>`. */
-  code: string;
-  /** Members specific to the code, for example the fields that failed validation. */
-  details?: ProblemDetails;
-}
-
-/**
  * `request.invalid`: the request does not match the contract. `details.issues` identifies
  * invalid parameters or body fields.
  */
@@ -2629,7 +2629,10 @@ export type RateLimitedResponse = Problem;
 export type UnavailableResponse = Problem;
 
 /**
- * `request.version-mismatch`: If-Match names an older goal version. `details.version` gives the current version.
+ * - `request.version-mismatch`: If-Match names an older goal version. `details.version` gives the current version.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
  */
 export type GoalVersionMismatchResponse = Problem;
 

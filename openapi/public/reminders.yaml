@@ -35,6 +35,8 @@ tags:
     description: Personal reminders for tasks in the selected organization.
 paths:
   /v1/reminders:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listReminders
       summary: List pending task reminders
@@ -82,6 +84,8 @@ paths:
           $ref: '#/components/responses/OrganizationReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -227,6 +231,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/reminders/{reminderId}:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getReminder
       summary: Read a reminder by identifier
@@ -268,6 +274,8 @@ paths:
           $ref: '#/components/responses/OrganizationReadForbidden'
         '404':
           $ref: '#/components/responses/ReminderNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -325,7 +333,7 @@ paths:
         '409':
           $ref: '#/components/responses/AlreadyCompleted'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -357,12 +365,14 @@ paths:
         '404':
           $ref: '#/components/responses/ReminderNotFound'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/reminders/{reminderId}/snooze:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: snoozeReminder
       summary: Postpone a reminder
@@ -417,7 +427,7 @@ paths:
         '409':
           $ref: '#/components/responses/AlreadyCompleted'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '422':
           $ref: '#/components/responses/InvalidSchedule'
         '429':
@@ -425,6 +435,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/reminders/{reminderId}/complete:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: completeReminder
       summary: Mark a reminder as complete
@@ -469,7 +481,7 @@ paths:
         '404':
           $ref: '#/components/responses/ReminderNotFound'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':

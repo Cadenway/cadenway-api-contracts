@@ -18,6 +18,13 @@ export const ListAutomationRulesQueryParams = zod.object({
   "limit": zod.coerce.number().int().min(1).max(listAutomationRulesQueryLimitMax).default(listAutomationRulesQueryLimitDefault).describe('Page size.')
 })
 
+export const listAutomationRulesHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListAutomationRulesHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listAutomationRulesHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const listAutomationRulesResponseItemsItemActionFourBodyMax = 5000;
 
 
@@ -61,11 +68,13 @@ export const ListAutomationRulesResponse = zod.strictObject({
  * The rule starts enabled at version 1. An optional idempotency key replays the original response for 24 hours.
  * @summary Create an enabled automation rule
  */
+export const createAutomationRuleHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const createAutomationRuleHeaderIdempotencyKeyMax = 255;
 
 
 
 export const CreateAutomationRuleHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(createAutomationRuleHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(createAutomationRuleHeaderIdempotencyKeyMax).optional().describe('A matching creation request replays its original response for 24 hours.')
 })
 
@@ -140,10 +149,12 @@ export const UpdateAutomationRuleParams = zod.object({
   "ruleId": zod.uuid().describe('UUIDv7 of the automation rule in the current organization.')
 })
 
+export const updateAutomationRuleHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const updateAutomationRuleHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
 
 
 export const UpdateAutomationRuleHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(updateAutomationRuleHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().regex(updateAutomationRuleHeaderIfMatchRegExp).optional().describe('Strong validator containing the rule version in double quotes.')
 })
 
@@ -194,10 +205,12 @@ export const DeleteAutomationRuleParams = zod.object({
   "ruleId": zod.uuid().describe('UUIDv7 of the automation rule in the current organization.')
 })
 
+export const deleteAutomationRuleHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const deleteAutomationRuleHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
 
 
 export const DeleteAutomationRuleHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(deleteAutomationRuleHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().regex(deleteAutomationRuleHeaderIfMatchRegExp).optional().describe('Strong validator containing the rule version in double quotes.')
 })
 
@@ -215,6 +228,13 @@ export const DeleteAutomationRuleResponse = zod.void()
  * The response contains no internal cursor or count of omitted executions.
  * @summary List up to eight visible recent automation executions
  */
+export const listRecentAutomationRunsHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListRecentAutomationRunsHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listRecentAutomationRunsHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const listRecentAutomationRunsResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const listRecentAutomationRunsResponseItemsMax = 8;
 

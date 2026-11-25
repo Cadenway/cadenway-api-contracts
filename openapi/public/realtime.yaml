@@ -32,6 +32,8 @@ tags:
     description: Realtime handshake credentials.
 paths:
   /v1/realtime/tickets:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: issueRealtimeTicket
       x-cadenway-strict-empty: true
@@ -78,6 +80,8 @@ paths:
           $ref: '#/components/responses/IssuanceForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':

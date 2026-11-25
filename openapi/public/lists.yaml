@@ -83,6 +83,7 @@ tags:
 paths:
   /v1/spaces/{spaceId}/lists:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/SpaceId'
     post:
       operationId: createList
@@ -165,6 +166,8 @@ paths:
           $ref: '#/components/responses/SpaceNotFound'
         '409':
           $ref: '#/components/responses/RequestInProgress'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/ListCreationRefused'
         '429':
@@ -234,12 +237,15 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/SpaceNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     get:
       operationId: getList
@@ -253,8 +259,6 @@ paths:
       security:
         - sessionCookie: []
         - apiToken: [tasks:read]
-      parameters:
-        - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       responses:
         '200':
           description: The list.
@@ -405,6 +409,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/duplicate:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     post:
       operationId: duplicateList
@@ -475,6 +480,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/sprint-report:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     get:
       operationId: getSprintReport
@@ -579,12 +585,15 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/SprintReportNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/workload:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     get:
       operationId: getListWorkload
@@ -670,6 +679,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -705,12 +716,15 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/tasks/export:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     get:
       operationId: exportListTasks
@@ -782,6 +796,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/ExportRowLimitReached'
         '429':
@@ -820,6 +836,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/ExportRowLimitReached'
         '429':
@@ -828,6 +846,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/counts:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     get:
       operationId: getListCounts
@@ -878,12 +897,15 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/activity:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     get:
       operationId: listListActivity
@@ -968,6 +990,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -1003,12 +1027,15 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/saved-views:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     get:
       operationId: listSavedViews
@@ -1061,6 +1088,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -1141,6 +1170,8 @@ paths:
           $ref: '#/components/responses/ListNotFound'
         '409':
           $ref: '#/components/responses/SavedViewCreateConflict'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/SavedViewCreateRefused'
         '429':
@@ -1149,6 +1180,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/saved-views/{viewId}:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
       - $ref: '#/components/parameters/SavedViewId'
     get:
@@ -1202,6 +1234,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/SavedViewNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -1300,6 +1334,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/saved-views/{viewId}/duplicate:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
       - $ref: '#/components/parameters/SavedViewId'
     post:
@@ -1387,6 +1422,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/custom-fields:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     get:
       operationId: listListCustomFields
@@ -1431,6 +1467,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -2020,18 +2058,26 @@ components:
             sprintDatesInvalid:
               $ref: '#/components/examples/SprintDatesInvalid'
     VersionMismatch:
-      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
+      description: |
+        - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-            status: 412
-            code: request.version-mismatch
-            details:
-              version: 3
+          examples:
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 3
+            organizationContextChanged:
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
     RateLimited:
       description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
       headers:

@@ -24,6 +24,13 @@ export const ListDocumentsQueryParams = zod.object({
   "limit": zod.coerce.number().int().min(1).max(listDocumentsQueryLimitMax).default(listDocumentsQueryLimitDefault).describe('Page size.')
 })
 
+export const listDocumentsHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListDocumentsHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listDocumentsHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const listDocumentsResponseItemsItemIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
 export const listDocumentsResponseItemsItemTitleMax = 200;
 
@@ -54,11 +61,13 @@ export const ListDocumentsResponse = zod.object({
  * retains edit access and the created document still exists.
  * @summary Create a document in a space
  */
+export const createDocumentHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const createDocumentHeaderIdempotencyKeyMax = 255;
 
 
 
 export const CreateDocumentHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(createDocumentHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(createDocumentHeaderIdempotencyKeyMax).optional().describe('Client-chosen key for one document creation.')
 })
 
@@ -111,6 +120,13 @@ export const GetDocumentParams = zod.object({
   "documentId": zod.uuid().regex(getDocumentPathDocumentIdRegExp).describe('Identifier of the document.')
 })
 
+export const getDocumentHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetDocumentHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getDocumentHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const getDocumentResponseOneIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
 export const getDocumentResponseOneTitleMax = 200;
 
@@ -149,10 +165,12 @@ export const UpdateDocumentParams = zod.object({
   "documentId": zod.uuid().regex(updateDocumentPathDocumentIdRegExp).describe('Identifier of the document.')
 })
 
+export const updateDocumentHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const updateDocumentHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
 
 
 export const UpdateDocumentHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(updateDocumentHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().regex(updateDocumentHeaderIfMatchRegExp).describe('The current strong document ETag. Weak tags, wildcards and tag lists are invalid.')
 })
 
@@ -206,10 +224,12 @@ export const DeleteDocumentParams = zod.object({
   "documentId": zod.uuid().regex(deleteDocumentPathDocumentIdRegExp).describe('Identifier of the document.')
 })
 
+export const deleteDocumentHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const deleteDocumentHeaderIfMatchRegExp = new RegExp('^"[1-9][0-9]*"$');
 
 
 export const DeleteDocumentHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(deleteDocumentHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().regex(deleteDocumentHeaderIfMatchRegExp).describe('The current strong document ETag. Weak tags, wildcards and tag lists are invalid.')
 })
 

@@ -59,6 +59,7 @@ tags:
 paths:
   /v1/lists/{listId}/archive:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     post:
       operationId: archiveList
@@ -105,13 +106,14 @@ paths:
         '404':
           $ref: '#/components/responses/ListNotFound'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/unarchive:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     post:
       operationId: unarchiveList
@@ -171,7 +173,7 @@ paths:
         '404':
           $ref: '#/components/responses/ListNotFound'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':

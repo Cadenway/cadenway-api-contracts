@@ -33,6 +33,8 @@ tags:
     description: Automation rules and their recent executions.
 paths:
   /v1/automations:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listAutomationRules
       summary: List the selected organization's automation rules
@@ -61,6 +63,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -118,6 +122,8 @@ paths:
           $ref: '#/components/responses/OrganizationNotFound'
         '409':
           $ref: '../../components/automation.yaml#/components/responses/RequestInProgress'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '../../components/automation.yaml#/components/responses/CreationRefused'
         '429':
@@ -126,6 +132,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/automations/{ruleId}:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '../../components/automation.yaml#/components/parameters/RuleId'
     patch:
       operationId: updateAutomationRule
@@ -167,7 +174,7 @@ paths:
         '404':
           $ref: '#/components/responses/RuleOrOrganizationNotFound'
         '412':
-          $ref: '../../components/automation.yaml#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/AutomationVersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -195,12 +202,14 @@ paths:
         '404':
           $ref: '#/components/responses/RuleOrOrganizationNotFound'
         '412':
-          $ref: '../../components/automation.yaml#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/AutomationVersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/automation-runs:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listRecentAutomationRuns
       summary: List up to eight visible recent automation executions
@@ -251,6 +260,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -263,6 +274,27 @@ components:
       name: __Host-cw_session
       description: Browser session with a selected organization.
   responses:
+    AutomationVersionOrOrganizationChanged:
+      description: |
+        - `request.version-mismatch`: `If-Match` names an older rule version. `details.version` gives the current version.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            organizationContextChanged:
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 4
     Unauthenticated:
       description: '`auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.'
       content:

@@ -30,6 +30,8 @@ tags:
     description: Reports over the caller's visible team work.
 paths:
   /v1/reports/team-dashboard:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getTeamDashboard
       summary: Read the dashboard of visible team work
@@ -73,6 +75,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':

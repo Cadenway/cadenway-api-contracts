@@ -104,6 +104,8 @@ tags:
     description: Invitations of the current organization, and those addressed to the caller.
 paths:
   /v1/members:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listMembers
       summary: List the members
@@ -195,6 +197,8 @@ paths:
           $ref: '#/components/responses/MembersReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -230,12 +234,15 @@ paths:
           $ref: '#/components/responses/MembersReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/members/{memberId}:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/MemberId'
     get:
       operationId: getMember
@@ -271,6 +278,8 @@ paths:
           $ref: '#/components/responses/MembersReadForbidden'
         '404':
           $ref: '#/components/responses/MemberNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -362,6 +371,8 @@ paths:
           $ref: '#/components/responses/OrganizationWriteForbidden'
         '404':
           $ref: '#/components/responses/MemberNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/OwnerProtected'
         '429':
@@ -369,6 +380,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/invitations:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: inviteMembers
       summary: Invite people
@@ -433,6 +446,8 @@ paths:
           $ref: '#/components/responses/OrganizationWriteForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/InvitationBatchLimited'
         '503':
@@ -499,12 +514,15 @@ paths:
           $ref: '#/components/responses/OrganizationReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/invitations/{invitationId}:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/InvitationId'
     delete:
       operationId: revokeInvitation
@@ -530,12 +548,15 @@ paths:
           $ref: '#/components/responses/InvitationNotFound'
         '409':
           $ref: '#/components/responses/InvitationAnswered'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/invitations/{invitationId}/resend:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/InvitationId'
     post:
       operationId: resendInvitation
@@ -602,6 +623,8 @@ paths:
           $ref: '#/components/responses/InvitationNotFound'
         '409':
           $ref: '#/components/responses/InvitationClosed'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/InvitationResendLimited'
         '503':
@@ -1230,18 +1253,26 @@ components:
             status: 422
             code: member.owner-protected
     VersionMismatch:
-      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
+      description: |
+        - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
       content:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-            status: 412
-            code: request.version-mismatch
-            details:
-              version: 3
+          examples:
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 3
+            organizationContextChanged:
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
     RateLimited:
       description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
       headers:

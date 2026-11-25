@@ -24,6 +24,8 @@ tags:
     description: Subscription, measured usage, payments and invoices.
 paths:
   /v1/billing/subscription:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getBillingSubscription
       summary: Read the current organization subscription
@@ -70,11 +72,15 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/billing/checkout:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: startBillingCheckout
       summary: Start hosted Checkout for the Team plan
@@ -131,6 +137,8 @@ paths:
           $ref: '#/components/responses/OrganizationNotFound'
         '409':
           $ref: '../../components/billing-payments.yaml#/components/responses/BillingCheckoutConflict'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '../../components/billing-payments.yaml#/components/responses/BillingCheckoutKeyReused'
         '429':
@@ -138,6 +146,8 @@ paths:
         '503':
           $ref: '#/components/responses/PaymentUnavailable'
   /v1/billing/invoices:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listBillingInvoices
       summary: List issued invoices for the selected organization
@@ -170,6 +180,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':

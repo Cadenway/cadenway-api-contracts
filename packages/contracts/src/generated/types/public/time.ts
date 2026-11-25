@@ -3,6 +3,37 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 /**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+/**
+ * Members specific to the code, for example the fields that failed validation.
+ */
+export type ProblemDetails = { [key: string]: unknown };
+
+/**
+ * RFC 9457 problem with the Cadenway extensions `code` and `details`.
+ */
+export interface Problem {
+  /** URI reference that identifies the problem type. */
+  type: string;
+  /** Short summary of the problem type, the same for every occurrence. */
+  title: string;
+  /** HTTP status of the response. */
+  status: number;
+  /** Explanation specific to this occurrence. */
+  detail?: string;
+  /** URI reference that identifies this occurrence. */
+  instance?: string;
+  /** Stable machine code, `<domain>.<reason>`. */
+  code: string;
+  /** Members specific to the code, for example the fields that failed validation. */
+  details?: ProblemDetails;
+}
+
+/**
  * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
  */
 export type TimeEntryId = string;
@@ -53,12 +84,6 @@ export interface TaskTimeEntry {
   /** Server creation instant in UTC. */
   createdAt: string;
 }
-
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
 
 export interface TaskTimeEntryPage {
   items: TaskTimeEntry[];
@@ -2388,31 +2413,6 @@ export interface AccessRequest {
  */
 export interface AccessRequestApproval {
   role: AccessRole;
-}
-
-/**
- * Members specific to the code, for example the fields that failed validation.
- */
-export type ProblemDetails = { [key: string]: unknown };
-
-/**
- * RFC 9457 problem with the Cadenway extensions `code` and `details`.
- */
-export interface Problem {
-  /** URI reference that identifies the problem type. */
-  type: string;
-  /** Short summary of the problem type, the same for every occurrence. */
-  title: string;
-  /** HTTP status of the response. */
-  status: number;
-  /** Explanation specific to this occurrence. */
-  detail?: string;
-  /** URI reference that identifies this occurrence. */
-  instance?: string;
-  /** Stable machine code, `<domain>.<reason>`. */
-  code: string;
-  /** Members specific to the code, for example the fields that failed validation. */
-  details?: ProblemDetails;
 }
 
 /**

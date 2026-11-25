@@ -2436,7 +2436,10 @@ export type GrantRefusedResponse = Problem;
 export type OwnerUnchangeableResponse = Problem;
 
 /**
- * `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+ * - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
  */
 export type VersionMismatchResponse = Problem;
 
