@@ -458,8 +458,11 @@ x-cadenway-socket-io:
     change:
       description: |
         An invalidation for an authorized receiver. The event id, time and version are taken
-        from the producer fact when one exists. A client deduplicates the same fact by id and
-        understands that different facts can share an aggregate version. For a presence change
+        from the producer fact when one exists. A client deduplicates by id and type together:
+        a fact gives one notice per type, and a move gives `task.updated.v1` to the new list and
+        `task.moved.v1` to the former list under the same id, both of which a socket subscribed
+        to the two lists must keep. A client understands that different facts can share an
+        aggregate version. For a presence change
         or Git links invalidation, `version` is the browser protocol version. Clients refetch
         business state via the API.
 
@@ -599,6 +602,18 @@ x-cadenway-socket-io:
         Require the session and membership fences to remain current through delivery. Relay only
         to the verified task and list rooms. Deduplicate delivery to a socket subscribed to both
         eligible rooms.
+
+        Membership notices (`task.created.v1`, `task.archived.v1`, `task.unarchived.v1`,
+        `task.trashed.v1`, `task.restored.v1` and `task.moved.v1`) are the exception to the
+        task-based rule above: the task may no longer be visible (trashed) or may have left the
+        room's list (moved), so they do not resolve the task and carry only its key. For each
+        candidate subscription of `list:<listId>` (`list:<previousListId>` for a move), confirm
+        the receiver's current session, its membership fences and its current permission to see
+        that list in the fact's organization, through the same check as a list room join, and
+        require the fences to remain current through delivery. Suppress delivery when that
+        check denies access or cannot conclude. These notices tell an authorized reader of the
+        list only that a task with that key joined or left it; the client refetches through the
+        API, which applies the task permissions.
 
         Personal notices answer a Notification fact that names an account, `recipientId` or
         `userId`, in the fact's organization. Look up only the ready connections authenticated as
