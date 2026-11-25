@@ -129,6 +129,13 @@ export const StartOrganizationLogoUploadResponse = zod.object({
  * The bytes are PNG even when the original upload was SVG.
  * @summary Read the current organization logo
  */
+export const getOrganizationLogoHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetOrganizationLogoHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getOrganizationLogoHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const GetOrganizationLogoResponse = zod.unknown()
 
 
@@ -185,6 +192,13 @@ export const DeleteOrganizationLogoResponse = zod.void()
  */
 export const GetMemberAvatarParams = zod.object({
   "memberId": zod.uuid().describe('Membership id in the current organization.')
+})
+
+export const getMemberAvatarHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetMemberAvatarHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getMemberAvatarHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const GetMemberAvatarResponse = zod.unknown()

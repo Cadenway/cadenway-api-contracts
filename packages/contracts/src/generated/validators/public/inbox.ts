@@ -24,6 +24,13 @@ export const ListInboxNotificationsQueryParams = zod.object({
   "state": zod.enum(['active', 'unread', 'archived']).default(listInboxNotificationsQueryStateDefault).describe('Active includes read and unread. Unread includes only active unread notices. Archived\nincludes archived notices.')
 })
 
+export const listInboxNotificationsHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListInboxNotificationsHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listInboxNotificationsHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const listInboxNotificationsResponseItemsItemTaskOneTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 
 export const listInboxNotificationsResponseItemsMax = 100;
@@ -62,6 +69,13 @@ export const ListInboxNotificationsResponse = zod.object({
  * Session only. The current organization is required.
  * @summary Read the inbox badge
  */
+export const getInboxUnreadCountHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetInboxUnreadCountHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getInboxUnreadCountHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const getInboxUnreadCountResponseUnreadCountMin = 0;
 
 
@@ -79,6 +93,13 @@ export const GetInboxUnreadCountResponse = zod.object({
  * Session only. The current organization is required.
  * @summary Mark all inbox notifications as read
  */
+export const markInboxNotificationsReadHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const MarkInboxNotificationsReadHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(markInboxNotificationsReadHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const markInboxNotificationsReadResponseMarkedReadMin = 0;
 
 export const markInboxNotificationsReadResponseUnreadCountMin = 0;
@@ -103,7 +124,11 @@ export const MarkInboxNotificationReadParams = zod.object({
   "notificationId": zod.uuid().describe('Notification identifier.')
 })
 
+export const markInboxNotificationReadHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const MarkInboxNotificationReadHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(markInboxNotificationReadHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('Optional strong validator of the current version.')
 })
 
@@ -143,7 +168,11 @@ export const ArchiveInboxNotificationParams = zod.object({
   "notificationId": zod.uuid().describe('Notification identifier.')
 })
 
+export const archiveInboxNotificationHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const ArchiveInboxNotificationHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(archiveInboxNotificationHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('Optional strong validator of the current version.')
 })
 

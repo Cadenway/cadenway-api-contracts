@@ -26,6 +26,13 @@ export const ListRemindersQueryParams = zod.object({
   "limit": zod.coerce.number().int().min(1).max(listRemindersQueryLimitMax).default(listRemindersQueryLimitDefault).describe('Page size.')
 })
 
+export const listRemindersHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListRemindersHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listRemindersHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const listRemindersResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const listRemindersResponseItemsItemNoteMax = 500;
 
@@ -155,6 +162,13 @@ export const GetReminderParams = zod.object({
   "reminderId": zod.uuid().describe('Reminder identifier.')
 })
 
+export const getReminderHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetReminderHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getReminderHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const getReminderResponseTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
 export const getReminderResponseNoteMax = 500;
 
@@ -184,7 +198,11 @@ export const UpdateReminderNoteParams = zod.object({
   "reminderId": zod.uuid().describe('Reminder identifier.')
 })
 
+export const updateReminderNoteHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const UpdateReminderNoteHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(updateReminderNoteHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('Optional strong validator of the current version.')
 })
 
@@ -225,7 +243,11 @@ export const DeleteReminderParams = zod.object({
   "reminderId": zod.uuid().describe('Reminder identifier.')
 })
 
+export const deleteReminderHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const DeleteReminderHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(deleteReminderHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('Optional strong validator of the current version.')
 })
 
@@ -244,7 +266,11 @@ export const SnoozeReminderParams = zod.object({
   "reminderId": zod.uuid().describe('Reminder identifier.')
 })
 
+export const snoozeReminderHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const SnoozeReminderHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(snoozeReminderHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('Optional strong validator of the current version.')
 })
 
@@ -282,7 +308,11 @@ export const CompleteReminderParams = zod.object({
   "reminderId": zod.uuid().describe('Reminder identifier.')
 })
 
+export const completeReminderHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
 export const CompleteReminderHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(completeReminderHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('Optional strong validator of the current version.')
 })
 

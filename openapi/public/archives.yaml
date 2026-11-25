@@ -59,6 +59,7 @@ tags:
 paths:
   /v1/lists/{listId}/archive:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     post:
       operationId: archiveList
@@ -112,6 +113,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/unarchive:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     post:
       operationId: unarchiveList
@@ -654,6 +656,28 @@ components:
         status: 429
         code: rate-limit.exceeded
   responses:
+    VersionMismatch:
+      description: |
+        `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+
+        `organization.context-changed` when the expected organization differs from the verified
+        context. This problem has no details or ETag and is returned with
+        `Cache-Control: private, no-store`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 4
+            organizationContextChanged:
+              $ref: ../../components/http.yaml#/components/examples/OrganizationContextChanged
     BadRequest:
       description: |
         The request does not match the schema: `request.invalid`, with one `details.issues` entry
@@ -790,19 +814,6 @@ components:
                 code: task.not-found
             taskTrashed:
               $ref: '#/components/examples/TaskTrashed'
-    VersionMismatch:
-      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
-      content:
-        application/problem+json:
-          schema:
-            $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-            status: 412
-            code: request.version-mismatch
-            details:
-              version: 4
     VersionOrOrganizationChanged:
       description: |
         - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.

@@ -87,6 +87,7 @@ tags:
 paths:
   /v1/spaces/{spaceId}/grants:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/SpaceId'
     get:
       operationId: listSpaceGrants
@@ -132,12 +133,15 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/SpaceNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/spaces/{spaceId}/grants/{userId}:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/SpaceId'
       - $ref: '#/components/parameters/GrantUserId'
     put:
@@ -243,6 +247,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/grants:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     get:
       operationId: listListGrants
@@ -279,12 +284,15 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/ListNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/grants/{userId}:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
       - $ref: '#/components/parameters/GrantUserId'
     put:
@@ -391,6 +399,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/access-requests:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: createAccessRequest
       summary: Ask for access
@@ -441,6 +451,8 @@ paths:
           $ref: '#/components/responses/TasksWriteForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/AccessRequestRateLimited'
         '503':
@@ -496,12 +508,15 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/access-requests/{accessRequestId}/approval:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/AccessRequestId'
     post:
       operationId: approveAccessRequest
@@ -564,6 +579,8 @@ paths:
           $ref: '#/components/responses/AccessRequestNotFound'
         '409':
           $ref: '#/components/responses/AccessRequestDecided'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/GrantRefused'
         '429':
@@ -572,6 +589,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/access-requests/{accessRequestId}/refusal:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/AccessRequestId'
     post:
       operationId: refuseAccessRequest
@@ -631,6 +649,8 @@ paths:
           $ref: '#/components/responses/AccessRequestNotFound'
         '409':
           $ref: '#/components/responses/AccessRequestDecided'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -828,6 +848,28 @@ components:
         status: 429
         code: rate-limit.exceeded
   responses:
+    VersionMismatch:
+      description: |
+        `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+
+        `organization.context-changed` when the expected organization differs from the verified
+        context. This problem has no details or ETag and is returned with
+        `Cache-Control: private, no-store`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 3
+            organizationContextChanged:
+              $ref: ../../components/http.yaml#/components/examples/OrganizationContextChanged
     BadRequest:
       description: |
         The request does not match the schema: `request.invalid`, with one `details.issues` entry
@@ -1071,19 +1113,6 @@ components:
           examples:
             ownerUnchangeable:
               $ref: '#/components/examples/OwnerUnchangeable'
-    VersionMismatch:
-      description: '`request.version-mismatch`: `If-Match` is not the current version; `details.version` is.'
-      content:
-        application/problem+json:
-          schema:
-            $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-            status: 412
-            code: request.version-mismatch
-            details:
-              version: 3
     RateLimited:
       description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
       headers:

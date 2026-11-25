@@ -2491,6 +2491,15 @@ export interface AccessRequestApproval {
 }
 
 /**
+ * `request.version-mismatch`: If-Match names an older rule version. `details.version` gives the current version.
+ *
+ * `organization.context-changed` when the expected organization differs from the verified
+ * context. This problem has no details or ETag and is returned with
+ * `Cache-Control: private, no-store`.
+ */
+export type AutomationVersionMismatchOrOrganizationChangedResponse = Problem;
+
+/**
  * `auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.
  */
 export type UnauthenticatedResponse = Problem;

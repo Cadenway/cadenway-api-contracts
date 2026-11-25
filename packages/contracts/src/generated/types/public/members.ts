@@ -288,6 +288,15 @@ export interface Problem {
 }
 
 /**
+ * `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+ *
+ * `organization.context-changed` when the expected organization differs from the verified
+ * context. This problem has no details or ETag and is returned with
+ * `Cache-Control: private, no-store`.
+ */
+export type VersionMismatchResponse = Problem;
+
+/**
  * One page of members.
  */
 export type ListMembersSuccessResponse = MemberPage;
@@ -403,11 +412,6 @@ export type SeatQuotaExceededResponse = Problem;
  * `member.owner-protected`: the owner is neither removed nor given another role.
  */
 export type OwnerProtectedResponse = Problem;
-
-/**
- * `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
- */
-export type VersionMismatchResponse = Problem;
 
 /**
  * `rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.

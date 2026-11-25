@@ -15,6 +15,13 @@ import * as zod from 'zod';
  * `details.methods`, and creates nothing. Session only.
  * @summary Create a personal API token
  */
+export const createApiTokenHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const CreateApiTokenHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(createApiTokenHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const createApiTokenBodyNameMax = 100;
 
 export const createApiTokenBodyScopesMax = 4;
@@ -64,6 +71,13 @@ export const ListApiTokensQueryParams = zod.object({
   "limit": zod.coerce.number().int().min(1).max(listApiTokensQueryLimitMax).default(listApiTokensQueryLimitDefault).describe('Page size.')
 })
 
+export const listApiTokensHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListApiTokensHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listApiTokensHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const listApiTokensResponseItemsItemPrefixMin = 11;
 export const listApiTokensResponseItemsItemPrefixMax = 11;
 
@@ -94,6 +108,13 @@ export const ListApiTokensResponse = zod.object({
  */
 export const RevokeApiTokenParams = zod.object({
   "apiTokenId": zod.uuid().describe('Id of the token, as the list gives it.')
+})
+
+export const revokeApiTokenHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const RevokeApiTokenHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(revokeApiTokenHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const RevokeApiTokenResponse = zod.void()

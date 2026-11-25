@@ -213,6 +213,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/organization/logo/uploads:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: startOrganizationLogoUpload
       summary: Reserve an organization logo upload
@@ -225,7 +227,6 @@ paths:
       security:
         - sessionCookie: []
       parameters:
-        - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
         - $ref: '#/components/parameters/IdempotencyKey'
       x-cadenway-strict-body: true
       requestBody:
@@ -276,6 +277,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/organization/logo:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getOrganizationLogo
       summary: Read the current organization logo
@@ -296,6 +299,8 @@ paths:
           $ref: '#/components/responses/OrganizationReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationMediaNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -313,7 +318,6 @@ paths:
       security:
         - sessionCookie: []
       parameters:
-        - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
         - $ref: '#/components/parameters/IfMatch'
       x-cadenway-strict-body: true
       requestBody:
@@ -357,7 +361,6 @@ paths:
       security:
         - sessionCookie: []
       parameters:
-        - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
         - $ref: '#/components/parameters/IfMatch'
       responses:
         '204':
@@ -381,6 +384,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/members/{memberId}/avatar:
     parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - name: memberId
         in: path
         required: true
@@ -412,6 +416,8 @@ paths:
           $ref: '#/components/responses/MemberReadForbidden'
         '404':
           $ref: '#/components/responses/MemberMediaNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':

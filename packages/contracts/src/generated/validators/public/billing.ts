@@ -16,6 +16,13 @@ import * as zod from 'zod';
  * allowance.
  * @summary Read the current organization subscription
  */
+export const getBillingSubscriptionHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetBillingSubscriptionHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getBillingSubscriptionHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
 export const getBillingSubscriptionResponseSeatsUsedMin = 0;
 export const getBillingSubscriptionResponseSeatsUsedMax = 9007199254740991;
 
@@ -62,6 +69,7 @@ export const GetBillingSubscriptionResponse = zod.object({
  * before creating a session.
  * @summary Start hosted Checkout for the Team plan
  */
+export const startBillingCheckoutHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
 export const startBillingCheckoutHeaderIdempotencyKeyMax = 255;
 
 
@@ -69,6 +77,7 @@ export const startBillingCheckoutHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]
 
 
 export const StartBillingCheckoutHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(startBillingCheckoutHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(startBillingCheckoutHeaderIdempotencyKeyMax).regex(startBillingCheckoutHeaderIdempotencyKeyRegExp).describe('Reuse this key when retrying the same checkout request.')
 })
 
@@ -101,6 +110,13 @@ export const listBillingInvoicesQueryLimitMax = 100;
 export const ListBillingInvoicesQueryParams = zod.object({
   "cursor": zod.string().and(zod.string().min(1).max(listBillingInvoicesQueryCursorTwoMax)).optional().describe('Opaque authenticated cursor returned as `nextCursor` by the preceding page.'),
   "limit": zod.coerce.number().int().min(1).max(listBillingInvoicesQueryLimitMax).default(listBillingInvoicesQueryLimitDefault).describe('Page size.')
+})
+
+export const listBillingInvoicesHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const ListBillingInvoicesHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(listBillingInvoicesHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 

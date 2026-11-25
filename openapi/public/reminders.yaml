@@ -35,6 +35,8 @@ tags:
     description: Personal reminders for tasks in the selected organization.
 paths:
   /v1/reminders:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listReminders
       summary: List pending task reminders
@@ -82,6 +84,8 @@ paths:
           $ref: '#/components/responses/OrganizationReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -227,6 +231,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/reminders/{reminderId}:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getReminder
       summary: Read a reminder by identifier
@@ -268,6 +274,8 @@ paths:
           $ref: '#/components/responses/OrganizationReadForbidden'
         '404':
           $ref: '#/components/responses/ReminderNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -363,6 +371,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/reminders/{reminderId}/snooze:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: snoozeReminder
       summary: Postpone a reminder
@@ -425,6 +435,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/reminders/{reminderId}/complete:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: completeReminder
       summary: Mark a reminder as complete
@@ -521,6 +533,32 @@ components:
         examples:
           - '"2"'
   responses:
+    VersionMismatch:
+      description: |
+        `request.version-mismatch`: the validator does not match. `details.version` gives the current
+        version when a representation exists.
+
+        `organization.context-changed` when the expected organization differs from the verified
+        context. This problem has no details or ETag and is returned with
+        `Cache-Control: private, no-store`.
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 2
+            organizationContextChanged:
+              $ref: ../../components/http.yaml#/components/examples/OrganizationContextChanged
     InvalidRequest:
       description: |-
         `request.invalid`: the request does not match this contract. `details.issues` identifies
@@ -625,24 +663,6 @@ components:
             title: Ce rappel est déjà terminé.
             status: 409
             code: reminder.already-completed
-    VersionMismatch:
-      description: |-
-        `request.version-mismatch`: the validator does not match. `details.version` gives the current
-        version when a representation exists.
-      headers:
-        ETag:
-          $ref: '#/components/headers/ETag'
-      content:
-        application/problem+json:
-          schema:
-            $ref: ../../components/http.yaml#/components/schemas/Problem
-          example:
-            type: about:blank
-            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-            status: 412
-            code: request.version-mismatch
-            details:
-              version: 2
     VersionOrOrganizationChanged:
       description: |
         - `request.version-mismatch`: the validator does not match. `details.version` gives the current

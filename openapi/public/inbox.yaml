@@ -39,6 +39,8 @@ tags:
     description: Notification settings of the current account.
 paths:
   /v1/inbox/notifications:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listInboxNotifications
       summary: List notifications in the inbox
@@ -90,11 +92,15 @@ paths:
           $ref: '#/components/responses/OrganizationReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/inbox/unread-count:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getInboxUnreadCount
       summary: Read the inbox badge
@@ -123,11 +129,15 @@ paths:
           $ref: '#/components/responses/OrganizationReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/inbox/notifications/read-all:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: markInboxNotificationsRead
       summary: Mark all inbox notifications as read
@@ -159,11 +169,15 @@ paths:
           $ref: '#/components/responses/OrganizationWriteForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/inbox/notifications/{notificationId}/read:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: markInboxNotificationRead
       summary: Mark a notification as read
@@ -214,12 +228,14 @@ paths:
         '404':
           $ref: '#/components/responses/NotificationNotFound'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionMismatchOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/inbox/notifications/{notificationId}/archive:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: archiveInboxNotification
       summary: Archive a notification
@@ -270,7 +286,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotificationNotFound'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionMismatchOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -442,6 +458,32 @@ components:
         examples:
           - '"2"'
   responses:
+    VersionMismatchOrOrganizationChanged:
+      description: |
+        `request.version-mismatch`: the validator does not match. `details.version` gives the current
+        version when a representation exists.
+
+        `organization.context-changed` when the expected organization differs from the verified
+        context. This problem has no details or ETag and is returned with
+        `Cache-Control: private, no-store`.
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 2
+            organizationContextChanged:
+              $ref: ../../components/http.yaml#/components/examples/OrganizationContextChanged
     InvalidRequest:
       description: |-
         `request.invalid`: the request does not match this contract. `details.issues` identifies

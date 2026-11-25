@@ -2344,6 +2344,15 @@ export interface TrashEmptied {
 }
 
 /**
+ * `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+ *
+ * `organization.context-changed` when the expected organization differs from the verified
+ * context. This problem has no details or ETag and is returned with
+ * `Cache-Control: private, no-store`.
+ */
+export type VersionMismatchResponse = Problem;
+
+/**
  * The request does not match the schema: `request.invalid`, with one `details.issues` entry
  * per failed member (`path` is the dotted path of the member, empty for the body itself). An
  * access request that names no target, or several, answers it with an issue on the body.
@@ -2434,11 +2443,6 @@ export type GrantRefusedResponse = Problem;
  * `access.owner-unchangeable`: the person is the owner of the space, who always has `edit`.
  */
 export type OwnerUnchangeableResponse = Problem;
-
-/**
- * `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
- */
-export type VersionMismatchResponse = Problem;
 
 /**
  * `rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.

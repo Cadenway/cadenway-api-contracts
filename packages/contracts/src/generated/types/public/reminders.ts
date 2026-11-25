@@ -2545,6 +2545,16 @@ export interface NotificationPreferencesPatch {
 }
 
 /**
+ * `request.version-mismatch`: the validator does not match. `details.version` gives the current
+ * version when a representation exists.
+ *
+ * `organization.context-changed` when the expected organization differs from the verified
+ * context. This problem has no details or ETag and is returned with
+ * `Cache-Control: private, no-store`.
+ */
+export type VersionMismatchResponse = Problem;
+
+/**
  * `request.invalid`: the request does not match this contract. `details.issues` identifies
  * invalid fields.
  */
@@ -2577,12 +2587,6 @@ export type ScheduleTaskNotFoundResponse = Problem;
  * `reminder.already-completed`: a completed reminder cannot be edited or snoozed.
  */
 export type AlreadyCompletedResponse = Problem;
-
-/**
- * `request.version-mismatch`: the validator does not match. `details.version` gives the current
- * version when a representation exists.
- */
-export type VersionMismatchResponse = Problem;
 
 /**
  * - `request.version-mismatch`: the validator does not match. `details.version` gives the current

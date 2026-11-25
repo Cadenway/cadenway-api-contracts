@@ -2345,6 +2345,15 @@ export interface AccessRequestApproval {
 }
 
 /**
+ * `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+ *
+ * `organization.context-changed` when the expected organization differs from the verified
+ * context. This problem has no details or ETag and is returned with
+ * `Cache-Control: private, no-store`.
+ */
+export type VersionMismatchResponse = Problem;
+
+/**
  * The request does not match the schema: `request.invalid`, with one `details.issues` entry
  * per failed member (`path` is the dotted path of the member, empty for the body itself).
  */
@@ -2394,11 +2403,6 @@ export type ListNotFoundResponse = Problem;
  * - `organization.not-found`: see `OrganizationNotFound`.
  */
 export type TaskNotFoundResponse = Problem;
-
-/**
- * `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
- */
-export type VersionMismatchResponse = Problem;
 
 /**
  * - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.

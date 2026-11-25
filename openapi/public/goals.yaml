@@ -47,6 +47,8 @@ tags:
     description: Quarterly goals and their key results.
 paths:
   /v1/goals:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listGoals
       summary: List the visible goals for a quarter
@@ -81,6 +83,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -153,6 +157,8 @@ paths:
           $ref: '#/components/responses/SpaceNotFound'
         '409':
           $ref: '#/components/responses/RequestInProgress'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/GoalCreationRefused'
         '429':
@@ -160,6 +166,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/goals/{goalId}:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getGoal
       summary: Read a goal and its visible results
@@ -195,6 +203,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/GoalNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -279,6 +289,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/goals/{goalId}/results:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: createGoalResult
       summary: Add a result to a goal
@@ -339,6 +351,8 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/goals/{goalId}/results/{resultId}:
+    parameters:
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getGoalResult
       summary: Read a goal result
@@ -373,6 +387,8 @@ paths:
           $ref: '#/components/responses/TasksReadForbidden'
         '404':
           $ref: '#/components/responses/GoalResultNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -552,6 +568,28 @@ components:
             /v1/goals/019a7008-8b9c-7d0e-8f1a-2b3c4d5e6f01/results/019a7008-8b9c-7d0e-8f1a-2b3c4d5e6f02,
           ]
   responses:
+    GoalVersionMismatch:
+      description: |
+        `request.version-mismatch`: If-Match names an older goal version. `details.version` gives the current version.
+
+        `organization.context-changed` when the expected organization differs from the verified
+        context. This problem has no details or ETag and is returned with
+        `Cache-Control: private, no-store`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          examples:
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 13
+            organizationContextChanged:
+              $ref: ../../components/http.yaml#/components/examples/OrganizationContextChanged
     BadRequest:
       description: |
         `request.invalid`: the request does not match the contract. `details.issues` identifies
@@ -664,19 +702,6 @@ components:
             code: upstream.unavailable
             details:
               service: task-service
-    GoalVersionMismatch:
-      description: '`request.version-mismatch`: If-Match names an older goal version. `details.version` gives the current version.'
-      content:
-        application/problem+json:
-          schema:
-            $ref: '../../components/http.yaml#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-            status: 412
-            code: request.version-mismatch
-            details:
-              version: 13
     GoalWriteForbidden:
       description: |
         - `organization.role-forbidden`: only an owner or admin writes organization goals.
