@@ -83,6 +83,30 @@ channels:
     messages:
       listDeletedV1:
         $ref: './task-service.yaml#/components/messages/listDeletedV1'
+  taskCreatedV1:
+    address: evt.task.created.v1
+    description: Produced by task-service. Consumed by realtime-gateway.
+    messages:
+      taskCreatedV1:
+        $ref: './task-service.yaml#/components/messages/taskCreatedV1'
+  taskArchivedV1:
+    address: evt.task.archived.v1
+    description: Produced by task-service. Consumed by realtime-gateway.
+    messages:
+      taskArchivedV1:
+        $ref: './task-service.yaml#/components/messages/taskArchivedV1'
+  taskUnarchivedV1:
+    address: evt.task.unarchived.v1
+    description: Produced by task-service. Consumed by realtime-gateway.
+    messages:
+      taskUnarchivedV1:
+        $ref: './task-service.yaml#/components/messages/taskUnarchivedV1'
+  taskRestoredV1:
+    address: evt.task.restored.v1
+    description: Produced by task-service. Consumed by realtime-gateway.
+    messages:
+      taskRestoredV1:
+        $ref: './task-service.yaml#/components/messages/taskRestoredV1'
   taskUpdatedV1:
     address: evt.task.updated.v1
     description: Produced by task-service. Consumed by realtime-gateway.
@@ -206,6 +230,26 @@ operations:
     summary: Invalidate the deleted list room and its task room memberships.
     channel:
       $ref: '#/channels/listDeletedV1'
+  receiveTaskCreatedV1:
+    action: receive
+    summary: Relay a task membership invalidation to the list room.
+    channel:
+      $ref: '#/channels/taskCreatedV1'
+  receiveTaskArchivedV1:
+    action: receive
+    summary: Relay a task membership invalidation to the list room.
+    channel:
+      $ref: '#/channels/taskArchivedV1'
+  receiveTaskUnarchivedV1:
+    action: receive
+    summary: Relay a task membership invalidation to the list room.
+    channel:
+      $ref: '#/channels/taskUnarchivedV1'
+  receiveTaskRestoredV1:
+    action: receive
+    summary: Relay a task membership invalidation to the list room.
+    channel:
+      $ref: '#/channels/taskRestoredV1'
   receiveTaskUpdatedV1:
     action: receive
     summary: Recheck moved task subscriptions and relay a minimal task notice in its current placement.
@@ -218,7 +262,7 @@ operations:
       $ref: '#/channels/taskStatusChangedV1'
   receiveTaskTrashedV1:
     action: receive
-    summary: Invalidate the task room following logical deletion.
+    summary: Relay a task membership invalidation to the list room and invalidate the task room.
     channel:
       $ref: '#/channels/taskTrashedV1'
   receiveTaskPurgedV1:
@@ -418,9 +462,37 @@ x-cadenway-socket-io:
         understands that different facts can share an aggregate version. For a presence change
         or Git links invalidation, `version` is the browser protocol version. Clients refetch
         business state via the API.
+
+        For task.created.v1, task.archived.v1, task.unarchived.v1, task.trashed.v1 and
+        task.restored.v1, the gateway emits a notice after the corresponding task-service
+        producer fact (evt.task.created.v1, evt.task.archived.v1, evt.task.unarchived.v1,
+        evt.task.trashed.v1 or evt.task.restored.v1), keeping its id, time and version. The
+        list room learns that its membership changed and refetches through the API; the data
+        is the task key, delivered to the receivers authorized for the list. A client ignores an
+        unsupported notice type. task.trashed.v1 also closes the task's room.
       envelope:
         $ref: '#/x-cadenway-socket-io/schemas/envelope'
       notices:
+        task.created.v1:
+          rooms: ['list:<listId>']
+          data:
+            $ref: '#/x-cadenway-socket-io/schemas/taskMembership'
+        task.archived.v1:
+          rooms: ['list:<listId>']
+          data:
+            $ref: '#/x-cadenway-socket-io/schemas/taskMembership'
+        task.unarchived.v1:
+          rooms: ['list:<listId>']
+          data:
+            $ref: '#/x-cadenway-socket-io/schemas/taskMembership'
+        task.trashed.v1:
+          rooms: ['list:<listId>']
+          data:
+            $ref: '#/x-cadenway-socket-io/schemas/taskMembership'
+        task.restored.v1:
+          rooms: ['list:<listId>']
+          data:
+            $ref: '#/x-cadenway-socket-io/schemas/taskMembership'
         task.updated.v1:
           rooms: ['task:<taskId>', 'list:<listId>']
           data:
@@ -648,6 +720,19 @@ x-cadenway-socket-io:
           minimum: 1
         data:
           type: object
+    taskMembership:
+      type: object
+      additionalProperties: false
+      required: [taskKey]
+      properties:
+        taskKey:
+          # Keep aligned with TaskKey. AsyncAPI extension references are not bundled.
+          type: string
+          pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
+          description: |
+            Key of the task that joined or left the list. A trashed task can no longer be
+            authorized by itself, so the gateway delivers these notices to the receivers it
+            authorizes for the list, and names the task by the key its fact carries.
     taskChange:
       type: object
       additionalProperties: false
@@ -677,6 +762,13 @@ x-cadenway-socket-io:
     deniedTaskJoin:
       ok: false
       code: room.not-found
+    taskCreated:
+      id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d51
+      type: task.created.v1
+      at: '2026-11-08T10:41:00Z'
+      version: 1
+      data:
+        taskKey: CAD-482
     statusChange:
       id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d4d
       type: task.status-changed.v1

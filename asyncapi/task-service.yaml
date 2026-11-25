@@ -252,6 +252,7 @@ channels:
     description: |
       A task was created. Emitted by task-service. Consumers: none yet; planned,
       cadenway-search-service, cadenway-realtime-gateway and cadenway-automation-service.
+      The realtime gateway relays this fact to the list room.
     messages:
       taskCreatedV1:
         $ref: '#/components/messages/taskCreatedV1'
@@ -407,6 +408,7 @@ channels:
     description: |
       A task was archived, alone or with the subtree it belongs to. Emitted by task-service.
       Consumers: none yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+      The realtime gateway relays this fact to the list room.
     messages:
       taskArchivedV1:
         $ref: '#/components/messages/taskArchivedV1'
@@ -415,6 +417,7 @@ channels:
     description: |
       An archived task was restored with its archive. Emitted by task-service. Consumers: none
       yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+      The realtime gateway relays this fact to the list room.
     messages:
       taskUnarchivedV1:
         $ref: '#/components/messages/taskUnarchivedV1'
@@ -423,6 +426,7 @@ channels:
     description: |
       A task went to the trash, with the entry it belongs to. Emitted by task-service. Consumers:
       none yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+      The realtime gateway relays this fact to the list room.
     messages:
       taskTrashedV1:
         $ref: '#/components/messages/taskTrashedV1'
@@ -431,6 +435,7 @@ channels:
     description: |
       A task came back from the trash with its entry. Emitted by task-service. Consumers: none
       yet; planned, cadenway-search-service and cadenway-realtime-gateway.
+      The realtime gateway relays this fact to the list room.
     messages:
       taskRestoredV1:
         $ref: '#/components/messages/taskRestoredV1'
