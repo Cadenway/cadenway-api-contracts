@@ -774,8 +774,10 @@ x-cadenway-socket-io:
     deniedTaskJoin:
       ok: false
       code: room.not-found
+    # The notice that the `moved` example of asyncapi/task-service.yaml (evt.task.updated.v1
+    # 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d06) sends to its former list.
     listTasksChanged:
-      id: f780e4c6-ffdd-5c26-9f98-2f2494099eb8
+      id: 1c864b77-2da4-5dfe-ba60-3872b4773f8b
       type: list.tasks-changed.v1
       at: '2026-11-08T10:41:00Z'
       version: 1
