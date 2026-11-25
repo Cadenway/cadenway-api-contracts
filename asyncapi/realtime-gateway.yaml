@@ -585,17 +585,20 @@ x-cadenway-socket-io:
         to the verified task and list rooms. Deduplicate delivery to a socket subscribed to both
         eligible rooms.
 
-        `list.tasks-changed.v1` is the exception to the task-based rule above: the task may no
-        longer be visible (trashed) or may have left the room's list (moved), so it does not
-        resolve the task and names neither the task nor its fact. For each candidate
-        subscription of `list:<listId>` (`list:<previousListId>` for a move), confirm the
-        receiver's current session, its membership fences and its current permission to see that
-        list in the fact's organization, through the same check as a list room join, and require
-        the fences to remain current through delivery. Suppress delivery to a receiver the
-        check denies. An unavailable decision (the check cannot conclude) leaves the fact for
-        broker redelivery, as for personal notices, so the notice reaches the receivers once the
-        check answers. The notice tells an authorized reader of the list only that it should
-        refetch the list.
+        `list.tasks-changed.v1` follows the task-based rule above: a receiver gets it only if
+        Task's permission check, as that user in the fact's organization, lets it see the task
+        now, so a task hidden from a reader never gives it a notice, not even its timing. A
+        trashed task stays visible only to the members who can change its list (the API answers
+        `task.not-found` to the others), so only they learn of the trash. The placement Task
+        returns must match the fact (its list for created, archived, unarchived, trashed and
+        restored facts; the new list for a move, whose notice goes to `list:<previousListId>`
+        only for the former list's subscribers who can still see the task). The candidate
+        subscriptions are those of the room, and the session and membership fences must remain
+        current through delivery. Suppress delivery to a receiver Task denies. An unavailable
+        decision (the check cannot conclude) leaves the fact for broker redelivery, as for
+        personal notices, so the notice reaches the receivers once the check answers. The notice
+        names neither the task nor its fact: it tells an authorized reader of the list only that
+        it should refetch the list.
 
         Personal notices answer a Notification fact that names an account, `recipientId` or
         `userId`, in the fact's organization. Look up only the ready connections authenticated as
