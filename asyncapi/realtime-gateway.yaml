@@ -458,21 +458,24 @@ x-cadenway-socket-io:
     change:
       description: |
         An invalidation for an authorized receiver. The event id, time and version are taken
-        from the producer fact when one exists. A client deduplicates by id and type together:
-        a fact gives one notice per type, and a move gives `task.updated.v1` to the new list and
-        `list.tasks-changed.v1` to the former list under the same id, both of which a socket
-        subscribed to the two lists must keep. A client understands that different facts can
-        share an aggregate version. For a presence change or Git links invalidation, `version`
-        is the browser protocol version. Clients refetch business state via the API.
+        from the producer fact when one exists. A client deduplicates the same fact by id and
+        understands that different facts can share an aggregate version. For a presence change
+        or Git links invalidation, `version` is the browser protocol version. Clients refetch
+        business state via the API.
 
         `list.tasks-changed.v1` tells a list room that the set of its tasks changed, after a
         task-service fact: evt.task.created.v1, evt.task.archived.v1, evt.task.unarchived.v1,
         evt.task.trashed.v1 or evt.task.restored.v1 for the task's list, and evt.task.updated.v1
-        carrying previousListId (a move) for the former list. It keeps the fact's id, time and
-        version, names neither the task nor what happened to it, and the client refetches the
-        list through the API, which applies the task permissions (a trashed task stays unknown
-        to a reader who cannot change its list). A client ignores an unsupported notice type.
-        evt.task.trashed.v1 also closes the task's room.
+        carrying previousListId (a move) for the former list. It keeps the fact's time and
+        version but has an id of its own, the UUID version 5 of the name
+        `urn:cadenway:list.tasks-changed.v1:<fact id>` in the URL namespace
+        (`6ba7b811-9dad-11d1-80b4-00c04fd430c8`): stable across redeliveries of the fact, and
+        never equal to the id of another notice, so a client that deduplicates by id alone keeps
+        both the `task.updated.v1` and the `list.tasks-changed.v1` of a move. It names neither the
+        task nor what happened to it, and the client refetches the list through the API, which
+        applies the task permissions (a trashed task stays unknown to a reader who cannot change
+        its list). A client ignores an unsupported notice type. evt.task.trashed.v1 also closes
+        the task's room.
       envelope:
         $ref: '#/x-cadenway-socket-io/schemas/envelope'
       notices:
@@ -763,7 +766,7 @@ x-cadenway-socket-io:
       ok: false
       code: room.not-found
     listTasksChanged:
-      id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d51
+      id: f780e4c6-ffdd-5c26-9f98-2f2494099eb8
       type: list.tasks-changed.v1
       at: '2026-11-08T10:41:00Z'
       version: 1
