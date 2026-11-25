@@ -1586,6 +1586,12 @@ export interface TaskUpdatedV1 {
   key: string;
   spaceId: string;
   listId: string;
+  /**
+   * The list the task was in before the change, present only when `changed` holds
+   * `listId` (a move); absent from an older producer. Lets a consumer that shows the
+   * former list learn that the task left it.
+   */
+  previousListId?: string;
   parentKey: string | null;
   name: string;
   /**
@@ -1631,6 +1637,7 @@ export const taskUpdatedV1Schema = zod.object({
   key: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')),
   spaceId: zod.uuid(),
   listId: zod.uuid(),
+  previousListId: zod.uuid().optional(),
   parentKey: zod.string().regex(new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$')).nullable(),
   name: zod.string().min(1),
   status: zod.enum(['triage', 'backlog', 'todo', 'progress', 'review', 'testing', 'waiting', 'blocked', 'done', 'cancelled']),

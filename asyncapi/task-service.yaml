@@ -2682,6 +2682,13 @@ components:
           listId:
             type: string
             format: uuid
+          previousListId:
+            type: string
+            format: uuid
+            description: |
+              The list the task was in before the change, present only when `changed` holds
+              `listId` (a move); absent from an older producer. Lets a consumer that shows the
+              former list learn that the task left it.
           parentKey:
             type: [string, 'null']
             pattern: '^[A-Z]{2,5}-[1-9][0-9]{0,8}$'
@@ -2737,6 +2744,7 @@ components:
             key: CAD-482
             spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
             listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f13
+            previousListId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
             parentKey: null
             name: Refondre l’écran de connexion SSO
             status: progress

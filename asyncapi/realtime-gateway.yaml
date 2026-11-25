@@ -466,13 +466,23 @@ x-cadenway-socket-io:
         For task.created.v1, task.archived.v1, task.unarchived.v1, task.trashed.v1 and
         task.restored.v1, the gateway emits a notice after the corresponding task-service
         producer fact (evt.task.created.v1, evt.task.archived.v1, evt.task.unarchived.v1,
-        evt.task.trashed.v1 or evt.task.restored.v1), keeping its id, time and version. The
-        list room learns that its membership changed and refetches through the API; the data
-        is the task key, delivered to the receivers authorized for the list. A client ignores an
+        evt.task.trashed.v1 or evt.task.restored.v1), and task.moved.v1 after a move
+        (evt.task.updated.v1 with previousListId), keeping its id, time and version. The list
+        room learns that its membership changed and refetches through the API; the data is the
+        task key, delivered to the receivers authorized for the list. A client ignores an
         unsupported notice type. task.trashed.v1 also closes the task's room.
       envelope:
         $ref: '#/x-cadenway-socket-io/schemas/envelope'
       notices:
+        task.moved.v1:
+          description: |
+            A task left this list by a move: emitted after a `task.updated.v1` fact whose
+            `changed` holds `listId` and that carries `previousListId`, to that former list's room
+            only (the new list receives the `task.updated.v1` notice). Keeps the fact's id, time
+            and version. Not emitted for a fact without `previousListId`.
+          rooms: ['list:<previousListId>']
+          data:
+            $ref: '#/x-cadenway-socket-io/schemas/taskMembership'
         task.created.v1:
           rooms: ['list:<listId>']
           data:
