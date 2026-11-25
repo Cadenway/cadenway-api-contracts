@@ -49,7 +49,7 @@ export * from './automationTaskCreatedTriggerType';
 export * from './automationTaskStatusTrigger';
 export * from './automationTaskStatusTriggerType';
 export * from './automationTrigger';
-export * from './automationVersionMismatchOrOrganizationChangedResponse';
+export * from './automationVersionOrOrganizationChangedResponse';
 export * from './bulkTaskAction';
 export * from './bulkTaskActionValue';
 export * from './bulkTaskAssignAction';

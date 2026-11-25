@@ -2583,15 +2583,6 @@ export interface AccessRequestApproval {
 }
 
 /**
- * `request.version-mismatch`: If-Match names an older goal version. `details.version` gives the current version.
- *
- * `organization.context-changed` when the expected organization differs from the verified
- * context. This problem has no details or ETag and is returned with
- * `Cache-Control: private, no-store`.
- */
-export type GoalVersionMismatchResponse = Problem;
-
-/**
  * `request.invalid`: the request does not match the contract. `details.issues` identifies
  * invalid parameters or body fields.
  */
@@ -2636,6 +2627,14 @@ export type RateLimitedResponse = Problem;
  * `upstream.failed`, `upstream.unauthorized` and `upstream.deadline-exceeded`.
  */
 export type UnavailableResponse = Problem;
+
+/**
+ * - `request.version-mismatch`: If-Match names an older goal version. `details.version` gives the current version.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
+ */
+export type GoalVersionMismatchResponse = Problem;
 
 /**
  * - `organization.role-forbidden`: only an owner or admin writes organization goals.

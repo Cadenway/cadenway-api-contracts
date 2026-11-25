@@ -2833,15 +2833,6 @@ export const SheetExportDirection = {
 } as const;
 
 /**
- * `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
- *
- * `organization.context-changed` when the expected organization differs from the verified
- * context. This problem has no details or ETag and is returned with
- * `Cache-Control: private, no-store`.
- */
-export type VersionMismatchResponse = Problem;
-
-/**
  * Workload totals and one page of task and assignee rows.
  */
 export type ListWorkloadSuccessResponse = ListWorkloadPage;
@@ -2960,6 +2951,14 @@ export type ListCreationRefusedResponse = Problem;
  * `list.sprint-dates-invalid`: the end of the sprint is before its start.
  */
 export type SprintDatesInvalidResponse = Problem;
+
+/**
+ * - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
+ */
+export type VersionMismatchResponse = Problem;
 
 /**
  * `rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.

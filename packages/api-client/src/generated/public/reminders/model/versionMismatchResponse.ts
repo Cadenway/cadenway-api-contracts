@@ -7,9 +7,5 @@ import type { Problem } from './problem';
 /**
  * `request.version-mismatch`: the validator does not match. `details.version` gives the current
  * version when a representation exists.
- *
- * `organization.context-changed` when the expected organization differs from the verified
- * context. This problem has no details or ETag and is returned with
- * `Cache-Control: private, no-store`.
  */
 export type VersionMismatchResponse = Problem;

@@ -228,7 +228,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotificationNotFound'
         '412':
-          $ref: '#/components/responses/VersionMismatchOrOrganizationChanged'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -286,7 +286,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotificationNotFound'
         '412':
-          $ref: '#/components/responses/VersionMismatchOrOrganizationChanged'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -458,21 +458,20 @@ components:
         examples:
           - '"2"'
   responses:
-    VersionMismatchOrOrganizationChanged:
+    VersionOrOrganizationChanged:
       description: |
-        `request.version-mismatch`: the validator does not match. `details.version` gives the current
-        version when a representation exists.
-
-        `organization.context-changed` when the expected organization differs from the verified
-        context. This problem has no details or ETag and is returned with
-        `Cache-Control: private, no-store`.
+        - `request.version-mismatch`: the validator does not match. `details.version` gives the current
+          version when a representation exists.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
       headers:
         ETag:
           $ref: '#/components/headers/ETag'
       content:
         application/problem+json:
           schema:
-            $ref: ../../components/http.yaml#/components/schemas/Problem
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
           examples:
             versionMismatch:
               value:
@@ -483,7 +482,7 @@ components:
                 details:
                   version: 2
             organizationContextChanged:
-              $ref: ../../components/http.yaml#/components/examples/OrganizationContextChanged
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
     InvalidRequest:
       description: |-
         `request.invalid`: the request does not match this contract. `details.issues` identifies

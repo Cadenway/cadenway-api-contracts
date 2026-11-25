@@ -133,7 +133,6 @@ tags:
 paths:
   /v1/lists/{listId}/tasks:
     parameters:
-      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     post:
       operationId: createTask
@@ -168,6 +167,7 @@ paths:
         - sessionCookie: []
         - apiToken: [tasks:write]
       parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
@@ -236,7 +236,7 @@ paths:
         '409':
           $ref: '#/components/responses/RequestInProgress'
         '412':
-          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
+          $ref: '#/components/responses/OrganizationContextChanged'
         '422':
           $ref: '#/components/responses/TaskCreationRefused'
         '429':
@@ -281,6 +281,7 @@ paths:
         - sessionCookie: []
         - apiToken: [tasks:read]
       parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
         - $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter'
         - $ref: '#/components/parameters/StatusFilter'
         - $ref: '#/components/parameters/PriorityFilter'
@@ -348,6 +349,8 @@ paths:
       security:
         - sessionCookie: []
         - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       requestBody:
         required: true
         content:
@@ -378,7 +381,6 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/lists/{listId}/task-groups:
     parameters:
-      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/ListId'
     get:
       operationId: countTaskGroups
@@ -405,6 +407,7 @@ paths:
         - sessionCookie: []
         - apiToken: [tasks:read]
       parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
         - $ref: '../../components/task.yaml#/components/parameters/MilestoneFilter'
         - $ref: '#/components/parameters/GroupBy'
         - $ref: '#/components/parameters/StatusFilter'
@@ -457,6 +460,8 @@ paths:
       security:
         - sessionCookie: []
         - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       requestBody:
         required: true
         content:
@@ -558,7 +563,6 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/tasks/{taskKey}:
     parameters:
-      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/TaskKey'
     get:
       operationId: getTask
@@ -573,6 +577,8 @@ paths:
       security:
         - sessionCookie: []
         - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       responses:
         '200':
           description: The task.
@@ -676,6 +682,7 @@ paths:
         - apiToken: [tasks:write]
       parameters:
         - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       requestBody:
         required: true
         content:
@@ -805,7 +812,6 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/tasks/{taskKey}/detail:
     parameters:
-      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/TaskKey'
     get:
       operationId: getTaskDetail
@@ -834,6 +840,8 @@ paths:
       security:
         - sessionCookie: []
         - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       responses:
         '200':
           description: The detail of the task.
@@ -2720,7 +2728,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
   /v1/labels:
     parameters:
-      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
+      - $ref: '#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listLabels
       summary: List the labels
@@ -2769,14 +2777,14 @@ paths:
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
         '412':
-          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
+          $ref: '#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/me/tasks:
     parameters:
-      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
+      - $ref: '#/components/parameters/IfOrganizationMatch'
     get:
       operationId: listMyTasks
       summary: List the tasks of the caller
@@ -2841,14 +2849,14 @@ paths:
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
         '412':
-          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
+          $ref: '#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/me/home:
     parameters:
-      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
+      - $ref: '#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getHome
       summary: Read the task part of "Accueil"
@@ -2956,14 +2964,12 @@ paths:
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
         '412':
-          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
+          $ref: '#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/me/onboarding:
-    parameters:
-      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     get:
       operationId: getOnboarding
       summary: Read first-launch progress
@@ -2977,6 +2983,8 @@ paths:
       security:
         - sessionCookie: []
         - apiToken: [tasks:read]
+      parameters:
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       responses:
         '200':
           description: The caller's onboarding state.
@@ -2998,7 +3006,7 @@ paths:
         '404':
           $ref: '#/components/responses/OrganizationNotFound'
         '412':
-          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
+          $ref: '#/components/responses/OrganizationContextChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -3020,6 +3028,7 @@ paths:
         - apiToken: [tasks:write]
       parameters:
         - $ref: '#/components/parameters/OnboardingIfMatch'
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       requestBody:
         required: true
         content:
@@ -3061,8 +3070,6 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/me/onboarding/checklist:
-    parameters:
-      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     patch:
       operationId: updateOnboardingChecklist
       summary: Save the onboarding checklist presentation and markers
@@ -3082,6 +3089,7 @@ paths:
         - apiToken: [tasks:write]
       parameters:
         - $ref: '#/components/parameters/OnboardingIfMatch'
+        - $ref: '#/components/parameters/IfOrganizationMatch'
       requestBody:
         required: true
         content:
@@ -3120,8 +3128,6 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/me/onboarding/finish:
-    parameters:
-      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
     post:
       operationId: finishOnboarding
       summary: Provision the space selected in the first-launch wizard
@@ -3158,6 +3164,7 @@ paths:
         - apiToken: [tasks:write]
       parameters:
         - $ref: '#/components/parameters/OnboardingIfMatch'
+        - $ref: '#/components/parameters/IfOrganizationMatch'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true

@@ -257,33 +257,6 @@ components:
       in: cookie
       name: __Host-cw_session
   responses:
-    VersionMismatch:
-      description: |
-        `request.version-mismatch` when `If-Match` differs from the current strong document ETag.
-        After live write authorization, `details.version` carries the current document version as
-        an integer.
-
-        `organization.context-changed` when the expected organization differs from the verified
-        context. This problem has no details or ETag and is returned with
-        `Cache-Control: private, no-store`.
-      headers:
-        Cache-Control:
-          $ref: ../../components/documents.yaml#/components/headers/PrivateNoStore
-      content:
-        application/problem+json:
-          schema:
-            $ref: ../../components/http.yaml#/components/schemas/Problem
-          examples:
-            versionMismatch:
-              value:
-                type: about:blank
-                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-                status: 412
-                code: request.version-mismatch
-                details:
-                  version: 3
-            organizationContextChanged:
-              $ref: ../../components/http.yaml#/components/examples/OrganizationContextChanged
     DocumentResult:
       description: The current document including its Markdown body.
       headers:
@@ -394,6 +367,32 @@ components:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
+    VersionMismatch:
+      description: |
+        - `request.version-mismatch` when `If-Match` differs from the current strong document ETag.
+          After live write authorization, `details.version` carries the current document version as
+          an integer.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
+      headers:
+        Cache-Control:
+          $ref: '../../components/documents.yaml#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 3
+            organizationContextChanged:
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
     RateLimited:
       description: |
         `rate-limit.exceeded`. Retry after the delay in `Retry-After`.

@@ -5,12 +5,11 @@
 import type { Problem } from './problem';
 
 /**
- * `request.version-mismatch` when `If-Match` differs from the current strong document ETag.
- * After live write authorization, `details.version` carries the current document version as
- * an integer.
- *
- * `organization.context-changed` when the expected organization differs from the verified
- * context. This problem has no details or ETag and is returned with
- * `Cache-Control: private, no-store`.
+ * - `request.version-mismatch` when `If-Match` differs from the current strong document ETag.
+ *   After live write authorization, `details.version` carries the current document version as
+ *   an integer.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
  */
 export type VersionMismatchResponse = Problem;

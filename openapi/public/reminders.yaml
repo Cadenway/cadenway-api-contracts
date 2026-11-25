@@ -333,7 +333,7 @@ paths:
         '409':
           $ref: '#/components/responses/AlreadyCompleted'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -365,7 +365,7 @@ paths:
         '404':
           $ref: '#/components/responses/ReminderNotFound'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -427,7 +427,7 @@ paths:
         '409':
           $ref: '#/components/responses/AlreadyCompleted'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '422':
           $ref: '#/components/responses/InvalidSchedule'
         '429':
@@ -481,7 +481,7 @@ paths:
         '404':
           $ref: '#/components/responses/ReminderNotFound'
         '412':
-          $ref: '#/components/responses/VersionMismatch'
+          $ref: '#/components/responses/VersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -533,32 +533,6 @@ components:
         examples:
           - '"2"'
   responses:
-    VersionMismatch:
-      description: |
-        `request.version-mismatch`: the validator does not match. `details.version` gives the current
-        version when a representation exists.
-
-        `organization.context-changed` when the expected organization differs from the verified
-        context. This problem has no details or ETag and is returned with
-        `Cache-Control: private, no-store`.
-      headers:
-        ETag:
-          $ref: '#/components/headers/ETag'
-      content:
-        application/problem+json:
-          schema:
-            $ref: ../../components/http.yaml#/components/schemas/Problem
-          examples:
-            versionMismatch:
-              value:
-                type: about:blank
-                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-                status: 412
-                code: request.version-mismatch
-                details:
-                  version: 2
-            organizationContextChanged:
-              $ref: ../../components/http.yaml#/components/examples/OrganizationContextChanged
     InvalidRequest:
       description: |-
         `request.invalid`: the request does not match this contract. `details.issues` identifies
@@ -663,6 +637,24 @@ components:
             title: Ce rappel est déjà terminé.
             status: 409
             code: reminder.already-completed
+    VersionMismatch:
+      description: |-
+        `request.version-mismatch`: the validator does not match. `details.version` gives the current
+        version when a representation exists.
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../../components/http.yaml#/components/schemas/Problem
+          example:
+            type: about:blank
+            title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+            status: 412
+            code: request.version-mismatch
+            details:
+              version: 2
     VersionOrOrganizationChanged:
       description: |
         - `request.version-mismatch`: the validator does not match. `details.version` gives the current

@@ -666,8 +666,8 @@ export const updateTaskHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f
 
 
 export const UpdateTaskHeader = zod.object({
-  "If-Organization-Match": zod.uuid().regex(updateTaskHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
-  "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.')
+  "If-Match": zod.string().optional().describe('`"<version>"` of the task the change was made from, as the `ETag` gave it.'),
+  "If-Organization-Match": zod.uuid().regex(updateTaskHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const updateTaskBodyCustomFieldValuesTwoMax = 500;
@@ -3593,8 +3593,8 @@ export const updateOnboardingHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9
 
 
 export const UpdateOnboardingHeader = zod.object({
-  "If-Organization-Match": zod.uuid().regex(updateOnboardingHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
-  "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.')
+  "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.'),
+  "If-Organization-Match": zod.uuid().regex(updateOnboardingHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const updateOnboardingBodyNameOneMax = 80;
@@ -3656,8 +3656,8 @@ export const updateOnboardingChecklistHeaderIfOrganizationMatchRegExp = new RegE
 
 
 export const UpdateOnboardingChecklistHeader = zod.object({
-  "If-Organization-Match": zod.uuid().regex(updateOnboardingChecklistHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
-  "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.')
+  "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.'),
+  "If-Organization-Match": zod.uuid().regex(updateOnboardingChecklistHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
 })
 
 export const UpdateOnboardingChecklistBody = zod.strictObject({
@@ -3730,8 +3730,8 @@ export const finishOnboardingHeaderIdempotencyKeyMax = 255;
 
 
 export const FinishOnboardingHeader = zod.object({
-  "If-Organization-Match": zod.uuid().regex(finishOnboardingHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "If-Match": zod.string().optional().describe('Onboarding version returned by the ETag, for example `"3"`.'),
+  "If-Organization-Match": zod.uuid().regex(finishOnboardingHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
   "Idempotency-Key": zod.string().min(1).max(finishOnboardingHeaderIdempotencyKeyMax).optional().describe('Key of this creation, chosen by the client, a UUID for example; the same key with the same\nbody within 24 hours answers what the first request answered.\n')
 })
 

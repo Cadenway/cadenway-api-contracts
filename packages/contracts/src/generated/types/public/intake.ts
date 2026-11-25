@@ -2589,15 +2589,6 @@ export interface AttachmentDownload {
 }
 
 /**
- * `request.version-mismatch`: `If-Match` is stale. `details.version` is the current form version.
- *
- * `organization.context-changed` when the expected organization differs from the verified
- * context. This problem has no details or ETag and is returned with
- * `Cache-Control: private, no-store`.
- */
-export type IntakeVersionMismatchResponse = Problem;
-
-/**
  * Current list form configuration.
  */
 export type IntakeConfigurationResponse = IntakeFormConfiguration;
@@ -2691,6 +2682,14 @@ export type IntakeAttachmentStartRefusedResponse = Problem;
  * detected type disagrees with the reservation.
  */
 export type IntakeAttachmentContentRefusedResponse = Problem;
+
+/**
+ * - `request.version-mismatch`: `If-Match` is stale. `details.version` is the current form version.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
+ */
+export type IntakeVersionMismatchResponse = Problem;
 
 /**
  * `intake-form.defaults-invalid`: the configured status or assignee is invalid for this list.

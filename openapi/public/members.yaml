@@ -951,28 +951,6 @@ components:
           remaining: 2
           nextAvailableAt: '2026-11-08T08:40:00Z'
   responses:
-    VersionMismatch:
-      description: |
-        `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
-
-        `organization.context-changed` when the expected organization differs from the verified
-        context. This problem has no details or ETag and is returned with
-        `Cache-Control: private, no-store`.
-      content:
-        application/problem+json:
-          schema:
-            $ref: ../../components/http.yaml#/components/schemas/Problem
-          examples:
-            versionMismatch:
-              value:
-                type: about:blank
-                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
-                status: 412
-                code: request.version-mismatch
-                details:
-                  version: 3
-            organizationContextChanged:
-              $ref: ../../components/http.yaml#/components/examples/OrganizationContextChanged
     ListMembersSuccess:
       description: One page of members.
       content:
@@ -1274,6 +1252,27 @@ components:
             title: Le propriétaire de l’organisation ne peut être ni retiré ni changé de rôle.
             status: 422
             code: member.owner-protected
+    VersionMismatch:
+      description: |
+        - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          examples:
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 3
+            organizationContextChanged:
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
     RateLimited:
       description: '`rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.'
       headers:

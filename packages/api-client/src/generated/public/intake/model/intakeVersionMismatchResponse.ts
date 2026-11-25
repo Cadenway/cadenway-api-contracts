@@ -5,10 +5,9 @@
 import type { Problem } from './problem';
 
 /**
- * `request.version-mismatch`: `If-Match` is stale. `details.version` is the current form version.
- *
- * `organization.context-changed` when the expected organization differs from the verified
- * context. This problem has no details or ETag and is returned with
- * `Cache-Control: private, no-store`.
+ * - `request.version-mismatch`: `If-Match` is stale. `details.version` is the current form version.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
  */
 export type IntakeVersionMismatchResponse = Problem;

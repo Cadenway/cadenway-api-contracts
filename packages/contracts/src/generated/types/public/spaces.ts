@@ -2346,15 +2346,6 @@ export interface AccessRequestApproval {
 }
 
 /**
- * `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
- *
- * `organization.context-changed` when the expected organization differs from the verified
- * context. This problem has no details or ETag and is returned with
- * `Cache-Control: private, no-store`.
- */
-export type VersionMismatchResponse = Problem;
-
-/**
  * - `space.manage-forbidden`: the caller does not manage the visible space.
  * - `auth.scope-missing`: the personal API token lacks `tasks:write`.
  * - `organization.not-selected`, `organization.mfa-required`: see `TasksReadForbidden`.
@@ -2525,6 +2516,14 @@ export type IdempotencyKeyReusedResponse = Problem;
  * `space.status-required`: the patch hides `todo` or `done`; `details.status` names it.
  */
 export type StatusRequiredResponse = Problem;
+
+/**
+ * - `request.version-mismatch`: `If-Match` is not the current version; `details.version` is.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
+ */
+export type VersionMismatchResponse = Problem;
 
 /**
  * `rate-limit.exceeded`: the gateway refuses more requests from this session or token for now.

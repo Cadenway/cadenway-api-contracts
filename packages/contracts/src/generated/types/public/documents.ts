@@ -99,17 +99,6 @@ export interface DocumentPatch {
 }
 
 /**
- * `request.version-mismatch` when `If-Match` differs from the current strong document ETag.
- * After live write authorization, `details.version` carries the current document version as
- * an integer.
- *
- * `organization.context-changed` when the expected organization differs from the verified
- * context. This problem has no details or ETag and is returned with
- * `Cache-Control: private, no-store`.
- */
-export type VersionMismatchResponse = Problem;
-
-/**
  * The current document including its Markdown body.
  */
 export type DocumentResultResponse = DocumentDetail;
@@ -164,6 +153,16 @@ export type RequestInProgressResponse = Problem;
  * `idempotency.key-reused` when the key was used for a different request.
  */
 export type IdempotencyKeyReusedResponse = Problem;
+
+/**
+ * - `request.version-mismatch` when `If-Match` differs from the current strong document ETag.
+ *   After live write authorization, `details.version` carries the current document version as
+ *   an integer.
+ * - `organization.context-changed` when the expected organization differs from the verified
+ *   context. This problem has no details or ETag and is returned with
+ *   `Cache-Control: private, no-store`.
+ */
+export type VersionMismatchResponse = Problem;
 
 /**
  * `rate-limit.exceeded`. Retry after the delay in `Retry-After`.

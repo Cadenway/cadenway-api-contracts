@@ -174,7 +174,7 @@ paths:
         '404':
           $ref: '#/components/responses/RuleOrOrganizationNotFound'
         '412':
-          $ref: '#/components/responses/AutomationVersionMismatchOrOrganizationChanged'
+          $ref: '#/components/responses/AutomationVersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -202,7 +202,7 @@ paths:
         '404':
           $ref: '#/components/responses/RuleOrOrganizationNotFound'
         '412':
-          $ref: '#/components/responses/AutomationVersionMismatchOrOrganizationChanged'
+          $ref: '#/components/responses/AutomationVersionOrOrganizationChanged'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -274,20 +274,27 @@ components:
       name: __Host-cw_session
       description: Browser session with a selected organization.
   responses:
-    AutomationVersionMismatchOrOrganizationChanged:
+    AutomationVersionOrOrganizationChanged:
       description: |
-        `request.version-mismatch`: If-Match names an older rule version. `details.version` gives the current version.
-
-        `organization.context-changed` when the expected organization differs from the verified
-        context. This problem has no details or ETag and is returned with
-        `Cache-Control: private, no-store`.
+        - `request.version-mismatch`: `If-Match` names an older rule version. `details.version` gives the current version.
+        - `organization.context-changed` when the expected organization differs from the verified
+          context. This problem has no details or ETag and is returned with
+          `Cache-Control: private, no-store`.
       content:
         application/problem+json:
           schema:
-            $ref: ../../components/http.yaml#/components/schemas/Problem
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
           examples:
             organizationContextChanged:
-              $ref: ../../components/http.yaml#/components/examples/OrganizationContextChanged
+              $ref: '../../components/http.yaml#/components/examples/OrganizationContextChanged'
+            versionMismatch:
+              value:
+                type: about:blank
+                title: 'Ces informations ont été modifiées entre-temps : rechargez la page.'
+                status: 412
+                code: request.version-mismatch
+                details:
+                  version: 4
     Unauthenticated:
       description: '`auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.'
       content:
