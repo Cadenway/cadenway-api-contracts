@@ -43,8 +43,10 @@ info:
     `stale` suite. A suite counts as failed with conclusion `failure`, `timed_out`,
     `cancelled`, `action_required` or `startup_failure`, and as passed with `success`,
     `neutral` or `skipped`. The aggregate is `failed` when any completed suite failed, else
-    `running` when any suite is queued, requested or in progress, else `passed`. `total` and
-    `failed` count suites. On GitLab, the stored pipeline of the current head with the highest
+    `running` when any suite is queued, requested or in progress, else `passed`; with no
+    eligible suite left (for example the only suite became `stale`) the aggregate is absent,
+    and leaving a present aggregate that way publishes `git.link-updated.v1` with `checks` in
+    `changed`. `total` and `failed` count suites. On GitLab, the stored pipeline of the current head with the highest
     pipeline ID gives the state, and `total` and `failed` count its jobs. When a head becomes
     current, the aggregate is computed from the observations already stored for that SHA, and
     is absent when there are none; that head change publishes `git.link-updated.v1` naming
