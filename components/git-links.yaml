@@ -4,10 +4,12 @@ info:
   version: 1.0.0
   description: |
     The Git links of a task as integration-service records them from verified GitHub and GitLab
-    deliveries: branches and pull or merge requests that cite the task key. A link carries what
-    Integration stores, its provider identity, lifecycle state and recorded head and check
-    observations. Provider content such as titles, authors, diff sizes, reviews and commits is not
-    recorded. Later versions may add it as optional members.
+    deliveries: branches and pull or merge requests that cite the task key. Every link carries
+    its provider identity, lifecycle state and recorded head and check observations. The optional
+    members (title, draft flag, web addresses, repository, source branch, author, checks, review
+    request, diff size and link source) come from the provider's webhook payloads; each is absent
+    until integration-service has recorded it, and some providers never send some of them.
+    Commits are not listed.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -42,8 +44,7 @@ components:
         Lifecycle of the linked object (`x-extensible-enum`). A branch is always `branch`. A pull
         or merge request is `open`, `merged` or `closed` (closed without merging). `merged` is
         final; a verified merge supersedes `closed`, and a closed request does not return to
-        `open`. Integration
-        does not record whether a request is a draft. Later versions may add `draft`.
+        `open`. A draft request is `open` with `draft: true`.
       x-extensible-enum: [branch, open, merged, closed]
       examples: [open]
     GitLink:
@@ -85,8 +86,8 @@ components:
           maximum: 9007199254740991
           description: |
             The provider's numeric ID of the repository (GitHub) or project (GitLab) of the
-            verified binding. A GitLab project ID is local to its GitLab instance. Integration
-            does not record the repository name or web address.
+            verified binding. A GitLab project ID is local to its GitLab instance. `repository`
+            gives its name and web address.
           examples: [734912058]
         number:
           type: [integer, 'null']
@@ -101,7 +102,7 @@ components:
           minLength: 1
           description: |
             The short name of a linked branch, without `refs/heads/`; `null` for a pull or merge
-            request, whose source branch Integration does not record.
+            request, whose source branch is `sourceBranch`.
           examples: [cad-482-ecran-connexion-sso]
         headSha:
           type: [string, 'null']
@@ -115,8 +116,7 @@ components:
           format: date-time
           description: |
             When the provider reported the latest completed checks for `headSha`; `null` when no
-            completion is recorded for it. Integration does not record the outcome or the number
-            of checks.
+            completion is recorded for it. `checks` gives the outcome.
           examples: ['2026-11-07T15:20:00Z']
         createdAt:
           type: string
@@ -136,6 +136,160 @@ components:
             Version of the link, the `version` of its latest Git fact. Ignore a fact whose version
             is not newer than the one read.
           examples: [1]
+        title:
+          type: string
+          minLength: 1
+          description: |
+            Title of the pull or merge request (`pull_request.title` on GitHub,
+            `object_attributes.title` on GitLab). Never present for a branch. Absent until
+            integration-service has recorded it from the provider's webhook.
+          examples: ['feat(auth): unified SSO sign-in screen']
+        draft:
+          type: boolean
+          description: |
+            Whether the pull or merge request is a draft (`pull_request.draft` on GitHub,
+            `object_attributes.draft` on GitLab). Never present for a branch. Absent until
+            integration-service has recorded it from the provider's webhook.
+          examples: [false]
+        url:
+          type: string
+          format: uri
+          description: |
+            Web address of the pull or merge request (`pull_request.html_url` on GitHub,
+            `object_attributes.url` on GitLab), or of a branch, built from the repository web
+            address and the branch name (`/tree/<branch>` on GitHub, `/-/tree/<branch>` on
+            GitLab). Absent until integration-service has recorded it from the provider's webhook.
+          examples: ['https://github.com/atelier-nord/cadenway-web/pull/214']
+        repository:
+          $ref: '#/components/schemas/GitRepository'
+        sourceBranch:
+          type: string
+          minLength: 1
+          description: |
+            Source branch of the pull or merge request (`pull_request.head.ref` on GitHub,
+            `object_attributes.source_branch` on GitLab). Never present for a branch, whose name
+            is `branch`. Absent until integration-service has recorded it from the provider's
+            webhook.
+          examples: [cad-482-ecran-connexion-sso]
+        author:
+          $ref: '#/components/schemas/GitAuthor'
+        checks:
+          $ref: '#/components/schemas/GitChecks'
+        reviewRequested:
+          type: boolean
+          description: |
+            Whether reviewers are requested on the pull or merge request (a non-empty
+            `pull_request.requested_reviewers` or `requested_teams` on GitHub, `reviewers` on
+            GitLab). Never present for a branch. Absent until integration-service has recorded it
+            from the provider's webhook.
+          examples: [true]
+        additions:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: |
+            Lines added by the pull request (`pull_request.additions`). GitHub only: GitLab's
+            merge request webhook carries no line counts. Absent until integration-service has
+            recorded it from the provider's webhook.
+          examples: [418]
+        deletions:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: |
+            Lines deleted by the pull request (`pull_request.deletions`). GitHub only, as
+            `additions`. Absent until integration-service has recorded it from the provider's
+            webhook.
+          examples: [132]
+        linkSource:
+          $ref: '#/components/schemas/GitLinkSource'
+    GitRepository:
+      type: object
+      required: [fullName, url]
+      description: |
+        Repository (GitHub) or project (GitLab) of the link, from the `repository` object on
+        GitHub and the `project` object on GitLab. Absent until integration-service has recorded
+        it from the provider's webhook.
+      properties:
+        fullName:
+          type: string
+          minLength: 1
+          description: |
+            Owner and name, `repository.full_name` on GitHub, `project.path_with_namespace` on
+            GitLab.
+          examples: [atelier-nord/cadenway-web]
+        url:
+          type: string
+          format: uri
+          description: Web address, `repository.html_url` on GitHub, `project.web_url` on GitLab.
+          examples: ['https://github.com/atelier-nord/cadenway-web']
+    GitAuthor:
+      type: object
+      required: [login]
+      description: |
+        Provider account that opened the pull or merge request or created the branch: the
+        `pull_request.user` of the opening delivery or the `sender` of the branch creation on
+        GitHub, the `user` of the opening merge request delivery or the pusher of the branch
+        creation on GitLab. It is a provider account, not a Cadenway member. Absent until
+        integration-service has recorded it from the provider's webhook.
+      properties:
+        login:
+          type: string
+          minLength: 1
+          description: Provider username (`login` on GitHub, `username` on GitLab).
+          examples: [cmartin]
+        name:
+          type: string
+          minLength: 1
+          description: |
+            Display name. GitLab sends it (`user.name`, `user_name`); GitHub webhook payloads
+            usually do not, so it is often absent there.
+          examples: [Camille Martin]
+    GitChecks:
+      type: object
+      required: [state]
+      description: |
+        Checks of the current head of a pull or merge request: GitHub's check suite
+        (`check_suite`), GitLab's merge request pipeline (`Pipeline Hook`). Never present for a
+        branch. Absent until integration-service has recorded it from the provider's webhook.
+      properties:
+        state:
+          type: string
+          description: |
+            `passed`, `failed` or `running` (`x-extensible-enum`). On GitHub, a completed suite
+            with conclusion `success`, `neutral` or `skipped` has passed and any other conclusion
+            has failed; a requested or in-progress suite is running. On GitLab, pipeline status
+            `success` or `skipped` has passed, `failed` or `canceled` has failed, and `created`,
+            `pending` or `running` is running.
+          x-extensible-enum: [passed, failed, running]
+          examples: [passed]
+        total:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: |
+            Number of checks: `check_suite.latest_check_runs_count` on GitHub, the jobs in
+            `builds` on GitLab. Absent when the payload does not carry it.
+          examples: [12]
+        failed:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: |
+            Number of failed checks, the jobs in `builds` with status `failed` on GitLab. GitHub's
+            check suite payload carries no per-run result, so it is absent for GitHub.
+          examples: [1]
+    GitLinkSource:
+      type: string
+      description: |
+        Where integration-service found the task key when it created the link
+        (`x-extensible-enum`): `branch` (the branch name or the request's source branch),
+        `title` (the request title), `description` (the request description) or `commit` (a
+        commit message of the branch creation push or the request's last commit), the first of
+        them in that order. Absent until integration-service has recorded it. Links are only
+        detected today; a later manual link route may add `manual`.
+      x-extensible-enum: [branch, title, description, commit]
+      examples: [branch]
     GitLinkPage:
       type: object
       required: [items, nextCursor]
@@ -165,6 +319,19 @@ components:
             createdAt: '2026-11-08T08:40:00Z'
             updatedAt: '2026-11-08T08:40:00Z'
             version: 1
+            title: 'feat(auth): unified SSO sign-in screen'
+            draft: false
+            url: https://github.com/atelier-nord/cadenway-web/pull/214
+            repository:
+              fullName: atelier-nord/cadenway-web
+              url: https://github.com/atelier-nord/cadenway-web
+            sourceBranch: cad-482-ecran-connexion-sso
+            author: { login: cmartin }
+            checks: { state: running }
+            reviewRequested: true
+            additions: 418
+            deletions: 132
+            linkSource: branch
           - id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e05
             taskKey: CAD-482
             provider: github
@@ -178,6 +345,19 @@ components:
             createdAt: '2026-11-06T16:05:00Z'
             updatedAt: '2026-11-07T16:30:00Z'
             version: 3
+            title: Resolve the SSO provider from the domain
+            draft: false
+            url: https://github.com/atelier-nord/cadenway-api/pull/388
+            repository:
+              fullName: atelier-nord/cadenway-api
+              url: https://github.com/atelier-nord/cadenway-api
+            sourceBranch: ir/sso-domain-lookup
+            author: { login: irobert }
+            checks: { state: passed, total: 12 }
+            reviewRequested: false
+            additions: 96
+            deletions: 12
+            linkSource: description
           - id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e02
             taskKey: CAD-482
             provider: github
@@ -191,4 +371,10 @@ components:
             createdAt: '2026-11-03T09:30:00Z'
             updatedAt: '2026-11-03T09:30:00Z'
             version: 1
+            url: https://github.com/atelier-nord/cadenway-web/tree/cad-482-ecran-connexion-sso
+            repository:
+              fullName: atelier-nord/cadenway-web
+              url: https://github.com/atelier-nord/cadenway-web
+            author: { login: irobert }
+            linkSource: branch
         nextCursor: null

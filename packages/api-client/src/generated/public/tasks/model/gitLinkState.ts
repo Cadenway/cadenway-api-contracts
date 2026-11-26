@@ -7,7 +7,6 @@
  * Lifecycle of the linked object (`x-extensible-enum`). A branch is always `branch`. A pull
  * or merge request is `open`, `merged` or `closed` (closed without merging). `merged` is
  * final; a verified merge supersedes `closed`, and a closed request does not return to
- * `open`. Integration
- * does not record whether a request is a draft. Later versions may add `draft`.
+ * `open`. A draft request is `open` with `draft: true`.
  */
 export type GitLinkState = string;

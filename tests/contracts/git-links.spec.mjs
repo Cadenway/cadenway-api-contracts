@@ -41,9 +41,78 @@ describe.each([
     );
   });
 
+  it('accepts a link before any provider field is recorded', () => {
+    const [pullRequest] = page.items;
+    const recorded = Object.fromEntries(
+      Object.entries(pullRequest).filter(([member]) =>
+        [
+          'id',
+          'taskKey',
+          'provider',
+          'kind',
+          'state',
+          'providerRepositoryId',
+          'number',
+          'branch',
+          'headSha',
+          'checksCompletedAt',
+          'createdAt',
+          'updatedAt',
+          'version',
+        ].includes(member),
+      ),
+    );
+
+    expect(response.safeParse({ ...page, items: [recorded] }).success).toBe(true);
+  });
+
+  it('accepts a GitLab merge request with failed check counts and an author name', () => {
+    const mergeRequest = {
+      ...page.items[0],
+      provider: 'gitlab',
+      number: 31,
+      title: 'Automatic rotation of session keys (CAD-466)',
+      url: 'https://gitlab.ateliernord.fr/nord/infra/-/merge_requests/31',
+      repository: { fullName: 'nord/infra', url: 'https://gitlab.ateliernord.fr/nord/infra' },
+      sourceBranch: 'rotation-cles',
+      author: { login: 'hdubois', name: 'Hugo Dubois' },
+      checks: { state: 'failed', total: 12, failed: 1 },
+      linkSource: 'title',
+    };
+    delete mergeRequest.additions;
+    delete mergeRequest.deletions;
+
+    expect(response.parse({ ...page, items: [mergeRequest] })).toEqual({
+      ...page,
+      items: [mergeRequest],
+    });
+  });
+
+  it('requires a check state, an author login and a full repository', () => {
+    const [pullRequest] = page.items;
+
+    for (const invalid of [
+      { checks: { total: 12 } },
+      { author: { name: 'Camille Martin' } },
+      { repository: { fullName: 'atelier-nord/cadenway-web' } },
+      { additions: -1 },
+    ]) {
+      expect(response.safeParse({ ...page, items: [{ ...pullRequest, ...invalid }] }).success).toBe(
+        false,
+      );
+    }
+  });
+
   it('keeps provider, kind and state open to later values', () => {
     const [pullRequest] = page.items;
-    const later = { ...pullRequest, provider: 'bitbucket', kind: 'commit', state: 'draft' };
+    const later = {
+      ...pullRequest,
+      provider: 'bitbucket',
+      kind: 'commit',
+      state: 'draft',
+      checks: { state: 'cancelled' },
+      linkSource: 'manual',
+    };
 
     expect(response.safeParse({ ...page, items: [later] }).success).toBe(true);
   });

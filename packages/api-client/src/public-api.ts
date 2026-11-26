@@ -165,12 +165,16 @@ export {
   type ListTaskGitLinksClientResult,
 } from './generated/public/git-links/git-links/git-links.service';
 export type {
+  GitAuthor,
+  GitChecks,
   GitLink,
   GitLinkId,
   GitLinkKind,
   GitLinkPage,
+  GitLinkSource,
   GitLinkState,
   GitProvider,
+  GitRepository,
   ListTaskGitLinksParams,
 } from './generated/public/git-links/model';
 export type { UploadContentRefusedResponse } from './generated/public/attachments/model/uploadContentRefusedResponse';

@@ -55,8 +55,7 @@ export type GitLinkKind = string;
  * Lifecycle of the linked object (`x-extensible-enum`). A branch is always `branch`. A pull
  * or merge request is `open`, `merged` or `closed` (closed without merging). `merged` is
  * final; a verified merge supersedes `closed`, and a closed request does not return to
- * `open`. Integration
- * does not record whether a request is a draft. Later versions may add `draft`.
+ * `open`. A draft request is `open` with `draft: true`.
  */
 export type GitLinkState = string;
 
@@ -67,6 +66,83 @@ export type GitLinkState = string;
  * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
  */
 export type TaskKey = string;
+
+/**
+ * Repository (GitHub) or project (GitLab) of the link, from the `repository` object on
+ * GitHub and the `project` object on GitLab. Absent until integration-service has recorded
+ * it from the provider's webhook.
+ */
+export interface GitRepository {
+  /**
+     * Owner and name, `repository.full_name` on GitHub, `project.path_with_namespace` on
+     * GitLab.
+     * @minLength 1
+     */
+  fullName: string;
+  /** Web address, `repository.html_url` on GitHub, `project.web_url` on GitLab. */
+  url: string;
+}
+
+/**
+ * Provider account that opened the pull or merge request or created the branch: the
+ * `pull_request.user` of the opening delivery or the `sender` of the branch creation on
+ * GitHub, the `user` of the opening merge request delivery or the pusher of the branch
+ * creation on GitLab. It is a provider account, not a Cadenway member. Absent until
+ * integration-service has recorded it from the provider's webhook.
+ */
+export interface GitAuthor {
+  /**
+     * Provider username (`login` on GitHub, `username` on GitLab).
+     * @minLength 1
+     */
+  login: string;
+  /**
+     * Display name. GitLab sends it (`user.name`, `user_name`); GitHub webhook payloads
+     * usually do not, so it is often absent there.
+     * @minLength 1
+     */
+  name?: string;
+}
+
+/**
+ * Checks of the current head of a pull or merge request: GitHub's check suite
+ * (`check_suite`), GitLab's merge request pipeline (`Pipeline Hook`). Never present for a
+ * branch. Absent until integration-service has recorded it from the provider's webhook.
+ */
+export interface GitChecks {
+  /**
+     * `passed`, `failed` or `running` (`x-extensible-enum`). On GitHub, a completed suite
+     * with conclusion `success`, `neutral` or `skipped` has passed and any other conclusion
+     * has failed; a requested or in-progress suite is running. On GitLab, pipeline status
+     * `success` or `skipped` has passed, `failed` or `canceled` has failed, and `created`,
+     * `pending` or `running` is running.
+     */
+  state: string;
+  /**
+     * Number of checks: `check_suite.latest_check_runs_count` on GitHub, the jobs in
+     * `builds` on GitLab. Absent when the payload does not carry it.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  total?: number;
+  /**
+     * Number of failed checks, the jobs in `builds` with status `failed` on GitLab. GitHub's
+     * check suite payload carries no per-run result, so it is absent for GitHub.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  failed?: number;
+}
+
+/**
+ * Where integration-service found the task key when it created the link
+ * (`x-extensible-enum`): `branch` (the branch name or the request's source branch),
+ * `title` (the request title), `description` (the request description) or `commit` (a
+ * commit message of the branch creation push or the request's last commit), the first of
+ * them in that order. Absent until integration-service has recorded it. Links are only
+ * detected today; a later manual link route may add `manual`.
+ */
+export type GitLinkSource = string;
 
 /**
  * One branch or pull or merge request linked to the task. The link is unique per verified
@@ -81,8 +157,8 @@ export interface GitLink {
   state: GitLinkState;
   /**
      * The provider's numeric ID of the repository (GitHub) or project (GitLab) of the
-     * verified binding. A GitLab project ID is local to its GitLab instance. Integration
-     * does not record the repository name or web address.
+     * verified binding. A GitLab project ID is local to its GitLab instance. `repository`
+     * gives its name and web address.
      * @minimum 1
      * @maximum 9007199254740991
      */
@@ -97,7 +173,7 @@ export interface GitLink {
   number: number | null;
   /**
      * The short name of a linked branch, without `refs/heads/`; `null` for a pull or merge
-     * request, whose source branch Integration does not record.
+     * request, whose source branch is `sourceBranch`.
      * @minLength 1
      * @nullable
      */
@@ -111,8 +187,7 @@ export interface GitLink {
   headSha: string | null;
   /**
      * When the provider reported the latest completed checks for `headSha`; `null` when no
-     * completion is recorded for it. Integration does not record the outcome or the number
-     * of checks.
+     * completion is recorded for it. `checks` gives the outcome.
      * @nullable
      */
   checksCompletedAt: string | null;
@@ -127,6 +202,61 @@ export interface GitLink {
      * @maximum 9007199254740991
      */
   version: number;
+  /**
+     * Title of the pull or merge request (`pull_request.title` on GitHub,
+     * `object_attributes.title` on GitLab). Never present for a branch. Absent until
+     * integration-service has recorded it from the provider's webhook.
+     * @minLength 1
+     */
+  title?: string;
+  /**
+     * Whether the pull or merge request is a draft (`pull_request.draft` on GitHub,
+     * `object_attributes.draft` on GitLab). Never present for a branch. Absent until
+     * integration-service has recorded it from the provider's webhook.
+     */
+  draft?: boolean;
+  /**
+     * Web address of the pull or merge request (`pull_request.html_url` on GitHub,
+     * `object_attributes.url` on GitLab), or of a branch, built from the repository web
+     * address and the branch name (`/tree/<branch>` on GitHub, `/-/tree/<branch>` on
+     * GitLab). Absent until integration-service has recorded it from the provider's webhook.
+     */
+  url?: string;
+  repository?: GitRepository;
+  /**
+     * Source branch of the pull or merge request (`pull_request.head.ref` on GitHub,
+     * `object_attributes.source_branch` on GitLab). Never present for a branch, whose name
+     * is `branch`. Absent until integration-service has recorded it from the provider's
+     * webhook.
+     * @minLength 1
+     */
+  sourceBranch?: string;
+  author?: GitAuthor;
+  checks?: GitChecks;
+  /**
+     * Whether reviewers are requested on the pull or merge request (a non-empty
+     * `pull_request.requested_reviewers` or `requested_teams` on GitHub, `reviewers` on
+     * GitLab). Never present for a branch. Absent until integration-service has recorded it
+     * from the provider's webhook.
+     */
+  reviewRequested?: boolean;
+  /**
+     * Lines added by the pull request (`pull_request.additions`). GitHub only: GitLab's
+     * merge request webhook carries no line counts. Absent until integration-service has
+     * recorded it from the provider's webhook.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  additions?: number;
+  /**
+     * Lines deleted by the pull request (`pull_request.deletions`). GitHub only, as
+     * `additions`. Absent until integration-service has recorded it from the provider's
+     * webhook.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  deletions?: number;
+  linkSource?: GitLinkSource;
 }
 
 /**

@@ -119,21 +119,59 @@ export const listTaskGitLinksInternalResponseItemsItemVersionMax = 9007199254740
 
 
 
+
+
+
+export const listTaskGitLinksInternalResponseItemsItemChecksTotalMin = 0;
+export const listTaskGitLinksInternalResponseItemsItemChecksTotalMax = 9007199254740991;
+
+export const listTaskGitLinksInternalResponseItemsItemChecksFailedMin = 0;
+export const listTaskGitLinksInternalResponseItemsItemChecksFailedMax = 9007199254740991;
+
+export const listTaskGitLinksInternalResponseItemsItemAdditionsMin = 0;
+export const listTaskGitLinksInternalResponseItemsItemAdditionsMax = 9007199254740991;
+
+export const listTaskGitLinksInternalResponseItemsItemDeletionsMin = 0;
+export const listTaskGitLinksInternalResponseItemsItemDeletionsMax = 9007199254740991;
+
+
+
 export const ListTaskGitLinksInternalResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.uuid().regex(listTaskGitLinksInternalResponseItemsItemIdRegExp).describe('UUIDv7 that Integration assigned to the link, the `gitLinkId` of its Git facts.'),
   "taskKey": zod.string().regex(listTaskGitLinksInternalResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
   "provider": zod.string().describe('Git host of the linked repository (`x-extensible-enum`): `github` or `gitlab`. Later\nversions may add other hosts; ignore a link whose provider is unknown.\n'),
   "kind": zod.string().describe('What the task is linked to (`x-extensible-enum`): `branch` for a branch, `pull-request`\nfor a GitHub pull request or a GitLab merge request.\n'),
-  "state": zod.string().describe('Lifecycle of the linked object (`x-extensible-enum`). A branch is always `branch`. A pull\nor merge request is `open`, `merged` or `closed` (closed without merging). `merged` is\nfinal; a verified merge supersedes `closed`, and a closed request does not return to\n`open`. Integration\ndoes not record whether a request is a draft. Later versions may add `draft`.\n'),
-  "providerRepositoryId": zod.int().min(1).max(listTaskGitLinksInternalResponseItemsItemProviderRepositoryIdMax).describe('The provider\'s numeric ID of the repository (GitHub) or project (GitLab) of the\nverified binding. A GitLab project ID is local to its GitLab instance. Integration\ndoes not record the repository name or web address.\n'),
+  "state": zod.string().describe('Lifecycle of the linked object (`x-extensible-enum`). A branch is always `branch`. A pull\nor merge request is `open`, `merged` or `closed` (closed without merging). `merged` is\nfinal; a verified merge supersedes `closed`, and a closed request does not return to\n`open`. A draft request is `open` with `draft: true`.\n'),
+  "providerRepositoryId": zod.int().min(1).max(listTaskGitLinksInternalResponseItemsItemProviderRepositoryIdMax).describe('The provider\'s numeric ID of the repository (GitHub) or project (GitLab) of the\nverified binding. A GitLab project ID is local to its GitLab instance. `repository`\ngives its name and web address.\n'),
   "number": zod.int().min(1).max(listTaskGitLinksInternalResponseItemsItemNumberMax).nullable().describe('The pull request number (`#214`) or the merge request IID (`!31`); `null` for a\nbranch.\n'),
-  "branch": zod.string().min(1).nullable().describe('The short name of a linked branch, without `refs/heads/`; `null` for a pull or merge\nrequest, whose source branch Integration does not record.\n'),
+  "branch": zod.string().min(1).nullable().describe('The short name of a linked branch, without `refs/heads/`; `null` for a pull or merge\nrequest, whose source branch is `sourceBranch`.\n'),
   "headSha": zod.string().regex(listTaskGitLinksInternalResponseItemsItemHeadShaRegExp).nullable().describe('The latest verified head commit of a pull or merge request; `null` for a branch and\nfor a request whose head has not been observed.\n'),
-  "checksCompletedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the provider reported the latest completed checks for `headSha`; `null` when no\ncompletion is recorded for it. Integration does not record the outcome or the number\nof checks.\n'),
+  "checksCompletedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the provider reported the latest completed checks for `headSha`; `null` when no\ncompletion is recorded for it. `checks` gives the outcome.\n'),
   "createdAt": zod.iso.datetime({"offset":true}).describe('When Integration recorded the link.'),
   "updatedAt": zod.iso.datetime({"offset":true}).describe('When Integration last recorded a change to the link.'),
-  "version": zod.int().min(1).max(listTaskGitLinksInternalResponseItemsItemVersionMax).describe('Version of the link, the `version` of its latest Git fact. Ignore a fact whose version\nis not newer than the one read.\n')
+  "version": zod.int().min(1).max(listTaskGitLinksInternalResponseItemsItemVersionMax).describe('Version of the link, the `version` of its latest Git fact. Ignore a fact whose version\nis not newer than the one read.\n'),
+  "title": zod.string().min(1).optional().describe('Title of the pull or merge request (`pull_request.title` on GitHub,\n`object_attributes.title` on GitLab). Never present for a branch. Absent until\nintegration-service has recorded it from the provider\'s webhook.\n'),
+  "draft": zod.boolean().optional().describe('Whether the pull or merge request is a draft (`pull_request.draft` on GitHub,\n`object_attributes.draft` on GitLab). Never present for a branch. Absent until\nintegration-service has recorded it from the provider\'s webhook.\n'),
+  "url": zod.url().optional().describe('Web address of the pull or merge request (`pull_request.html_url` on GitHub,\n`object_attributes.url` on GitLab), or of a branch, built from the repository web\naddress and the branch name (`/tree/<branch>` on GitHub, `/-/tree/<branch>` on\nGitLab). Absent until integration-service has recorded it from the provider\'s webhook.\n'),
+  "repository": zod.object({
+  "fullName": zod.string().min(1).describe('Owner and name, `repository.full_name` on GitHub, `project.path_with_namespace` on\nGitLab.\n'),
+  "url": zod.url().describe('Web address, `repository.html_url` on GitHub, `project.web_url` on GitLab.')
+}).optional().describe('Repository (GitHub) or project (GitLab) of the link, from the `repository` object on\nGitHub and the `project` object on GitLab. Absent until integration-service has recorded\nit from the provider\'s webhook.\n'),
+  "sourceBranch": zod.string().min(1).optional().describe('Source branch of the pull or merge request (`pull_request.head.ref` on GitHub,\n`object_attributes.source_branch` on GitLab). Never present for a branch, whose name\nis `branch`. Absent until integration-service has recorded it from the provider\'s\nwebhook.\n'),
+  "author": zod.object({
+  "login": zod.string().min(1).describe('Provider username (`login` on GitHub, `username` on GitLab).'),
+  "name": zod.string().min(1).optional().describe('Display name. GitLab sends it (`user.name`, `user_name`); GitHub webhook payloads\nusually do not, so it is often absent there.\n')
+}).optional().describe('Provider account that opened the pull or merge request or created the branch: the\n`pull_request.user` of the opening delivery or the `sender` of the branch creation on\nGitHub, the `user` of the opening merge request delivery or the pusher of the branch\ncreation on GitLab. It is a provider account, not a Cadenway member. Absent until\nintegration-service has recorded it from the provider\'s webhook.\n'),
+  "checks": zod.object({
+  "state": zod.string().describe('`passed`, `failed` or `running` (`x-extensible-enum`). On GitHub, a completed suite\nwith conclusion `success`, `neutral` or `skipped` has passed and any other conclusion\nhas failed; a requested or in-progress suite is running. On GitLab, pipeline status\n`success` or `skipped` has passed, `failed` or `canceled` has failed, and `created`,\n`pending` or `running` is running.\n'),
+  "total": zod.int().min(listTaskGitLinksInternalResponseItemsItemChecksTotalMin).max(listTaskGitLinksInternalResponseItemsItemChecksTotalMax).optional().describe('Number of checks: `check_suite.latest_check_runs_count` on GitHub, the jobs in\n`builds` on GitLab. Absent when the payload does not carry it.\n'),
+  "failed": zod.int().min(listTaskGitLinksInternalResponseItemsItemChecksFailedMin).max(listTaskGitLinksInternalResponseItemsItemChecksFailedMax).optional().describe('Number of failed checks, the jobs in `builds` with status `failed` on GitLab. GitHub\'s\ncheck suite payload carries no per-run result, so it is absent for GitHub.\n')
+}).optional().describe('Checks of the current head of a pull or merge request: GitHub\'s check suite\n(`check_suite`), GitLab\'s merge request pipeline (`Pipeline Hook`). Never present for a\nbranch. Absent until integration-service has recorded it from the provider\'s webhook.\n'),
+  "reviewRequested": zod.boolean().optional().describe('Whether reviewers are requested on the pull or merge request (a non-empty\n`pull_request.requested_reviewers` or `requested_teams` on GitHub, `reviewers` on\nGitLab). Never present for a branch. Absent until integration-service has recorded it\nfrom the provider\'s webhook.\n'),
+  "additions": zod.int().min(listTaskGitLinksInternalResponseItemsItemAdditionsMin).max(listTaskGitLinksInternalResponseItemsItemAdditionsMax).optional().describe('Lines added by the pull request (`pull_request.additions`). GitHub only: GitLab\'s\nmerge request webhook carries no line counts. Absent until integration-service has\nrecorded it from the provider\'s webhook.\n'),
+  "deletions": zod.int().min(listTaskGitLinksInternalResponseItemsItemDeletionsMin).max(listTaskGitLinksInternalResponseItemsItemDeletionsMax).optional().describe('Lines deleted by the pull request (`pull_request.deletions`). GitHub only, as\n`additions`. Absent until integration-service has recorded it from the provider\'s\nwebhook.\n'),
+  "linkSource": zod.string().optional().describe('Where integration-service found the task key when it created the link\n(`x-extensible-enum`): `branch` (the branch name or the request\'s source branch),\n`title` (the request title), `description` (the request description) or `commit` (a\ncommit message of the branch creation push or the request\'s last commit), the first of\nthem in that order. Absent until integration-service has recorded it. Links are only\ndetected today; a later manual link route may add `manual`.\n')
 }).describe('One branch or pull or merge request linked to the task. The link is unique per verified\nrepository binding, task and provider object, so a request keeps its link as its state\nchanges.\n')),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
 }).describe('One page of a task\'s Git links, newest first.')
