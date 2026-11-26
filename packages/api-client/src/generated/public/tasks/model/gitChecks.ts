@@ -8,9 +8,10 @@
  * the latest status and conclusion of every check suite (`check_suite`) for that head, by
  * suite ID, and leaves out a suite whose conclusion is `stale` (GitHub superseded it). On
  * GitLab, it keeps the latest merge request pipeline (`Pipeline Hook`) for that head, the one
- * with the highest pipeline ID. Observations are stored per head SHA, also for a head that
- * is not current yet, so when a head becomes current `checks` is computed from what is
- * already stored for it, and is absent when nothing is. It is also absent when no eligible
+ * with the highest pipeline ID. Observations are stored per repository and head SHA, also
+ * before the link exists or the head is current, so when a link is created or a head
+ * becomes current `checks` is computed from what is already stored for it, and is absent
+ * when nothing is. It is also absent when no eligible
  * suite remains for that head, for example when its only suite became `stale`. See
  * "Checks" in `asyncapi/integration-service.yaml`. Never present for a branch. Absent until
  * integration-service has recorded it from the provider's webhook.

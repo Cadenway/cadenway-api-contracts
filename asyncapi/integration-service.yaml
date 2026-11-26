@@ -34,27 +34,30 @@ info:
     equal-time tie can be wrong; "Reconciliation" marks and resolves such a link.
 
     **Checks.** `checks` is an aggregate over the current `headSha`. Integration stores check
-    observations keyed by link, head SHA and suite (GitHub check suite ID) or pipeline (GitLab
-    pipeline ID), each with its own provider-time watermark under the Ordering rules, including
-    an observation for a head SHA that is not the link's current head yet, so a check delivery
-    that arrives before its head update is kept. A stored observation of a head that is not
-    current changes no projected member and publishes nothing. On GitHub, the aggregate uses
-    the latest status and conclusion of each suite stored for the current head and leaves out a
-    `stale` suite. A suite counts as failed with conclusion `failure`, `timed_out`,
-    `cancelled`, `action_required` or `startup_failure`, and as passed with `success`,
-    `neutral` or `skipped`. The aggregate is `failed` when any completed suite failed, else
-    `running` when any suite is queued, requested or in progress, else `passed`; with no
-    eligible suite left (for example the only suite became `stale`) the aggregate is absent,
-    and leaving a present aggregate that way publishes `git.link-updated.v1` with `checks` in
-    `changed`. `total` and `failed` count suites. On GitLab, the stored pipeline of the current head with the highest
-    pipeline ID gives the state, and `total` and `failed` count its jobs. When a head becomes
-    current, the aggregate is computed from the observations already stored for that SHA, and
-    is absent when there are none; that head change publishes `git.link-updated.v1` naming
-    `headSha` and, when it changed, `checks`. An observation of a head SHA that is not current
-    is kept for 7 days after its own last update, whatever the age of the current head, and
-    is pruned after that; a head update delayed by more than 7 days after its checks is not
-    supported and leaves `checks` absent until the next check delivery. A check observation of
-    the current head that makes the aggregate enter `passed` or `failed` publishes
+    observations keyed by organization, connected repository, head SHA and suite (GitHub check
+    suite ID) or pipeline (GitLab pipeline ID), not by link, each with its own provider-time
+    watermark under the Ordering rules. An observation is therefore kept when its delivery
+    arrives before the head update or before the opening delivery that creates the link, and
+    an observation for a head SHA that is no link's current head changes no projected member
+    and publishes nothing. On GitHub, the aggregate uses the latest status and conclusion of
+    each suite stored for the current head of the link's repository and leaves out a `stale`
+    suite. A suite counts as failed with conclusion `failure`, `timed_out`, `cancelled`,
+    `action_required` or `startup_failure`, and as passed with `success`, `neutral` or
+    `skipped`. The aggregate is `failed` when any completed suite failed, else `running` when
+    any suite is queued, requested or in progress, else `passed`; with no eligible suite left
+    (for example the only suite became `stale`) the aggregate is absent, and leaving a present
+    aggregate that way publishes `git.link-updated.v1` with `checks` in `changed`. `total` and
+    `failed` count suites. On GitLab, the stored pipeline of the current head with the highest
+    pipeline ID gives the state, and `total` and `failed` count its jobs. When a link is
+    created or its head becomes current, the aggregate is computed from the observations
+    already stored for that repository and SHA, and is absent when there are none; a head
+    change publishes `git.link-updated.v1` naming `headSha` and, when it changed, `checks`,
+    and a creation that finds stored observations also publishes `git.link-updated.v1` with
+    `checks` in `changed`, after its opening fact. An observation of a head
+    SHA that is no link's current head is kept for 7 days after its own last update and is
+    pruned after that; a link created or a head update delayed by more than 7 days after its
+    checks is not supported and leaves `checks` absent until the next check delivery. A check
+    observation of the current head that makes the aggregate enter `passed` or `failed` publishes
     `git.checks-completed.v1`. Any other change to the aggregate, entering `running` or new
     counts, publishes `git.link-updated.v1` with `checks` in `changed`.
 
