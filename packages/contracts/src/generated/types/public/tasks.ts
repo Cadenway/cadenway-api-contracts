@@ -1557,11 +1557,13 @@ export type GitLinkKind = string;
  * Lifecycle of the linked object (`x-extensible-enum`). A branch is always `branch`. A pull
  * or merge request is `open`, `merged` or `closed` (closed without merging). `merged` is
  * final, and a verified merge supersedes `closed`. A closed request returns to `open` on a
- * verified reopen (GitHub `reopened`, GitLab `reopen`) newer than its closure. Integration
- * applies deliveries in provider time order per link and ignores one that is not newer than
- * the state it already applied, so a late delivery never reverses a newer state (see
- * "Ordering" in `asyncapi/integration-service.yaml`). A draft request is `open` with
- * `draft: true`.
+ * verified reopen (GitHub `reopened`, GitLab `reopen`) not older than its closure.
+ * Integration applies deliveries in provider time order per link: it ignores one older than
+ * the state it already applied and applies one with an equal provider time in arrival
+ * order, never leaving `merged`. Every later delivery that carries the request's current
+ * state (any pull or merge request action, a GitLab merge request pipeline) realigns a
+ * state left wrong by such a tie. See "Ordering" and "Reconciliation" in
+ * `asyncapi/integration-service.yaml`. A draft request is `open` with `draft: true`.
  */
 export type GitLinkState = string;
 

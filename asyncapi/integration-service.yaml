@@ -16,15 +16,37 @@ info:
 
     **Ordering.** Each link keeps the provider time of the last delivery applied to its
     lifecycle (`pull_request.updated_at` on GitHub, `object_attributes.updated_at` on GitLab)
-    and, separately, to each other projected member. Integration ignores a delivery that is not
-    newer than the one already applied to the member it would change, so a late or replayed
-    delivery never reverses a newer state. A merge is final. A closure is reversed only by a
-    verified reopen (GitHub `pull_request` action `reopened`, GitLab merge request action
-    `reopen`) newer than the closure, which sets the state back to `open` and publishes
-    `git.pr-reopened.v1`. Every committed change increments the link version by one and
-    publishes exactly one fact: the lifecycle and check facts below, or `git.link-updated.v1`
-    for any other change to the projection read through
+    and, separately, to each other projected member. Provider times have a resolution of one
+    second, so two changes can share one. Integration ignores a delivery older than the one
+    already applied to the member it would change. A delivery whose provider time equals it is
+    applied in arrival order; a repeated delivery is already removed by its delivery identity.
+    A merge is final: no delivery, older, equal or newer, reverts a `merged` link. A closure is
+    reversed by a verified reopen (GitHub `pull_request` action `reopened`, GitLab merge request
+    action `reopen`) whose provider time is not older than the closure, which sets the state
+    back to `open` and publishes `git.pr-reopened.v1`. Every committed change increments the
+    link version by one and publishes exactly one fact: the lifecycle and check facts below, or
+    `git.link-updated.v1` for any other change to the projection read through
     `GET /internal/v1/tasks/{taskKey}/git-links`.
+
+    **Reconciliation.** A tie can leave the lifecycle wrong only until the next delivery for
+    the request. Every later delivery that carries the request's current state realigns it:
+    any GitHub `pull_request` action (`pull_request.state` and `pull_request.merged`), any
+    GitLab merge request action (`object_attributes.state`) and a GitLab merge request pipeline
+    (`merge_request.state`). GitHub's check suite lists its pull requests without their state
+    and does not realign. When that delivery is not older than the last applied lifecycle and
+    its state differs from the recorded one, Integration sets the recorded state to it and
+    publishes the matching lifecycle fact: `git.pr-reopened.v1` for `open`, `git.pr-closed.v1`
+    for `closed`, `git.pr-merged.v1` for `merged`, never leaving `merged`. A realignment sends
+    no Task status action: only the verified closing delivery carries task status intent.
+
+    Examples with the same provider time `T` on one request:
+
+    - close at `T`, then reopen at `T`: `closed`, then `open` (`git.pr-reopened.v1`);
+    - reopen at `T`, then close at `T`: `open`, then `closed` (`git.pr-closed.v1`); the next
+      delivery, such as a `synchronize` at `T` reporting `state: open`, realigns to `open` with
+      `git.pr-reopened.v1`;
+    - close at `T`, then merge at `T`: `closed`, then `merged` (`git.pr-merged.v1`);
+    - merge at `T`, then close at `T`: `merged`; the close is ignored and publishes nothing.
 
     The event ID is stable across retries. The version is ordered only within the link identified
     by `(organizationId, gitLinkId)`. The task is addressed by its stable business key. Payloads
@@ -304,6 +326,10 @@ components:
       name: git.pr-merged.v1
       title: Git pull request merged
       summary: Integration recorded a merged pull request or merge request for an authorized linked task.
+      description: |
+        Published for a verified merge, or for a realignment to the current `merged` state of
+        the request (see "Reconciliation"). Only the verified merge delivery sends closing task
+        status intent to Task.
       headers:
         $ref: '#/components/schemas/EventHeaders'
       payload:
@@ -364,6 +390,9 @@ components:
       name: git.pr-closed.v1
       title: Git pull request closed
       summary: Integration recorded a pull request or merge request closed without a merge for an authorized linked task.
+      description: |
+        Published for a verified closure without a merge, or for a realignment to the current
+        `closed` state of the request (see "Reconciliation"). A merged link never closes.
       headers:
         $ref: '#/components/schemas/EventHeaders'
       payload:
@@ -486,8 +515,9 @@ components:
       summary: Integration recorded a reopened pull request or merge request for an authorized linked task.
       description: |
         A verified reopen (GitHub `pull_request` action `reopened`, GitLab merge request action
-        `reopen`) newer than the closure set a `closed` link back to `open`. A merged link never
-        reopens. This fact does not change Task status.
+        `reopen`) not older than the closure, or a realignment to the current `open` state of
+        the request (see "Reconciliation"), set a `closed` link back to `open`. A merged link
+        never reopens. This fact does not change Task status.
       headers:
         $ref: '#/components/schemas/EventHeaders'
       payload:
