@@ -12,8 +12,19 @@ info:
     Append the fact to the outbox in the same tenant transaction as the link change. Publish it at
     least once from the outbox after commit. Use one fact per committed link change across repeat
     deliveries. A delivery that changes several task links produces a separate fact per affected
-    link. Reject an older provider delivery that would reverse a newer terminal state.
-    Task-service owns task status writes and emits the facts for those writes.
+    link. Task-service owns task status writes and emits the facts for those writes.
+
+    **Ordering.** Each link keeps the provider time of the last delivery applied to its
+    lifecycle (`pull_request.updated_at` on GitHub, `object_attributes.updated_at` on GitLab)
+    and, separately, to each other projected member. Integration ignores a delivery that is not
+    newer than the one already applied to the member it would change, so a late or replayed
+    delivery never reverses a newer state. A merge is final. A closure is reversed only by a
+    verified reopen (GitHub `pull_request` action `reopened`, GitLab merge request action
+    `reopen`) newer than the closure, which sets the state back to `open` and publishes
+    `git.pr-reopened.v1`. Every committed change increments the link version by one and
+    publishes exactly one fact: the lifecycle and check facts below, or `git.link-updated.v1`
+    for any other change to the projection read through
+    `GET /internal/v1/tasks/{taskKey}/git-links`.
 
     The event ID is stable across retries. The version is ordered only within the link identified
     by `(organizationId, gitLinkId)`. The task is addressed by its stable business key. Payloads
@@ -74,6 +85,18 @@ channels:
     messages:
       gitChecksCompletedV1:
         $ref: '#/components/messages/gitChecksCompletedV1'
+  gitPrReopenedV1:
+    address: evt.git.pr-reopened.v1
+    description: Git pull request reopened. Emitted by integration-service. Consumed by cadenway-realtime-gateway.
+    messages:
+      gitPrReopenedV1:
+        $ref: '#/components/messages/gitPrReopenedV1'
+  gitLinkUpdatedV1:
+    address: evt.git.link-updated.v1
+    description: Other Git link projection change. Emitted by integration-service. Consumed by cadenway-realtime-gateway.
+    messages:
+      gitLinkUpdatedV1:
+        $ref: '#/components/messages/gitLinkUpdatedV1'
   taskPurgedV1:
     address: evt.task.purged.v1
     description: Produced by task-service. Integration-service removes its Git links for the task.
@@ -116,6 +139,20 @@ operations:
       $ref: '#/channels/gitChecksCompletedV1'
     messages:
       - $ref: '#/channels/gitChecksCompletedV1/messages/gitChecksCompletedV1'
+  publishGitPrReopenedV1:
+    action: send
+    summary: Git pull request reopened.
+    channel:
+      $ref: '#/channels/gitPrReopenedV1'
+    messages:
+      - $ref: '#/channels/gitPrReopenedV1/messages/gitPrReopenedV1'
+  publishGitLinkUpdatedV1:
+    action: send
+    summary: Other Git link projection change.
+    channel:
+      $ref: '#/channels/gitLinkUpdatedV1'
+    messages:
+      - $ref: '#/channels/gitLinkUpdatedV1/messages/gitLinkUpdatedV1'
   receiveTaskPurgedV1:
     action: receive
     summary: Remove links and fence their recreation after the task is purged.
@@ -443,3 +480,163 @@ components:
             listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
             gitLinkId: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e03
             changed: [checks]
+    gitPrReopenedV1:
+      name: git.pr-reopened.v1
+      title: Git pull request reopened
+      summary: Integration recorded a reopened pull request or merge request for an authorized linked task.
+      description: |
+        A verified reopen (GitHub `pull_request` action `reopened`, GitLab merge request action
+        `reopen`) newer than the closure set a `closed` link back to `open`. A merged link never
+        reopens. This fact does not change Task status.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            taskKey,
+            spaceId,
+            listId,
+            gitLinkId,
+            changed,
+          ]
+        properties:
+          id:
+            $ref: '#/components/schemas/LocalId'
+          occurredAt:
+            $ref: '#/components/schemas/CommitTime'
+          organizationId:
+            $ref: '#/components/schemas/LocalId'
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            $ref: '#/components/schemas/GitLinkVersion'
+          taskKey:
+            $ref: '../components/task.yaml#/components/schemas/TaskKey'
+          spaceId:
+            $ref: '#/components/schemas/LocalId'
+          listId:
+            $ref: '#/components/schemas/LocalId'
+          gitLinkId:
+            $ref: '#/components/schemas/LocalId'
+          changed:
+            type: array
+            minItems: 1
+            maxItems: 1
+            items:
+              const: state
+      examples:
+        - name: Git pull request reopened
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d54
+            occurredAt: '2026-11-08T11:02:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: git, id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01 }
+            version: 3
+            taskKey: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            gitLinkId: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e04
+            changed: [state]
+    gitLinkUpdatedV1:
+      name: git.link-updated.v1
+      title: Git link updated
+      summary: Integration recorded a change to the projection of a link that no lifecycle or check fact covers.
+      description: |
+        Published for every other committed change to the members of `GitLink` in
+        `components/git-links.yaml`, with their names in `changed`: `title`, `draft`, `url`,
+        `repository`, `sourceBranch`, `author`, `checks`, `reviewRequested`, `additions`,
+        `deletions` and `headSha` today. Later versions may name other members, which a consumer
+        ignores. Several members changed by one delivery share one fact. The deliveries that
+        produce it are:
+
+        - GitHub `pull_request` actions `edited`, `ready_for_review`, `converted_to_draft`,
+          `review_requested`, `review_request_removed` and `synchronize` (new head, line counts);
+        - GitHub `check_suite` actions `requested` and `rerequested` when GitHub sends them to
+          the installation, a suite not yet completed (`checks` running);
+        - GitLab `Merge Request Hook` action `update` (title, draft, reviewers, new head);
+        - GitLab `Pipeline Hook` with status `created`, `pending` or `running` (`checks`
+          running);
+        - an opening, merge, closure, reopen, branch creation or check completion delivery that
+          also changes another member of an existing link without changing its lifecycle or
+          checks.
+
+        A delivery that changes nothing in the projection publishes nothing. This fact does not
+        change Task status.
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          [
+            id,
+            occurredAt,
+            organizationId,
+            actor,
+            version,
+            taskKey,
+            spaceId,
+            listId,
+            gitLinkId,
+            changed,
+          ]
+        properties:
+          id:
+            $ref: '#/components/schemas/LocalId'
+          occurredAt:
+            $ref: '#/components/schemas/CommitTime'
+          organizationId:
+            $ref: '#/components/schemas/LocalId'
+          actor:
+            $ref: '../components/events.yaml#/components/schemas/Actor'
+          version:
+            $ref: '#/components/schemas/GitLinkVersion'
+          taskKey:
+            $ref: '../components/task.yaml#/components/schemas/TaskKey'
+          spaceId:
+            $ref: '#/components/schemas/LocalId'
+          listId:
+            $ref: '#/components/schemas/LocalId'
+          gitLinkId:
+            $ref: '#/components/schemas/LocalId'
+          changed:
+            type: array
+            minItems: 1
+            description: Names of the `GitLink` members that changed; a consumer ignores names it does not know.
+            items:
+              type: string
+              minLength: 1
+              x-extensible-enum:
+                [
+                  title,
+                  draft,
+                  url,
+                  repository,
+                  sourceBranch,
+                  author,
+                  checks,
+                  reviewRequested,
+                  additions,
+                  deletions,
+                  headSha,
+                ]
+      examples:
+        - name: Git pull request marked ready with reviewers requested
+          payload:
+            id: 019a7005-6f7a-7b8c-9d0e-1f2a3b4c5d55
+            occurredAt: '2026-11-08T11:05:00Z'
+            organizationId: 019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f
+            actor: { type: git, id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01 }
+            version: 4
+            taskKey: CAD-482
+            spaceId: 019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01
+            listId: 019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12
+            gitLinkId: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e04
+            changed: [draft, reviewRequested]

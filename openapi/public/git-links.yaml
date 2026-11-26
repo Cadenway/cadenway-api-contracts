@@ -12,8 +12,13 @@ info:
     caller's identity, then relays the read to integration-service. A task is read by whoever sees
     it, an archived task included; a task the caller does not see answers `404 task.not-found`,
     as an unknown key does, and a task in the trash answers as every route of its key does (see
-    "Trash" in `openapi/public/tasks.yaml`). `git.links-changed.v1` in
-    `asyncapi/realtime-gateway.yaml` tells an open task detail to read its links again.
+    "Trash" in `openapi/public/tasks.yaml`).
+
+    Every committed change to a link (its lifecycle, a reopen, its checks, or any other member
+    such as the title, draft flag, reviewers or line counts) increments its `version` and
+    publishes one Integration fact (`asyncapi/integration-service.yaml`). The realtime gateway
+    relays each of them as `git.links-changed.v1` (`asyncapi/realtime-gateway.yaml`), which tells
+    an open task detail to read its links again.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts

@@ -64,8 +64,9 @@ export interface GitLink {
   /** When Integration last recorded a change to the link. */
   updatedAt: string;
   /**
-     * Version of the link, the `version` of its latest Git fact. Ignore a fact whose version
-     * is not newer than the one read.
+     * Version of the link, the `version` of its latest Git fact: every committed change to
+     * this projection increments it and publishes one fact. Ignore a fact whose version is
+     * not newer than the one read.
      * @minimum 1
      * @maximum 9007199254740991
      */
