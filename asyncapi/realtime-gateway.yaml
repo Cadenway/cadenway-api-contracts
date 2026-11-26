@@ -167,6 +167,18 @@ channels:
     messages:
       gitChecksCompletedV1:
         $ref: './integration-service.yaml#/components/messages/gitChecksCompletedV1'
+  gitPrReopenedV1:
+    address: evt.git.pr-reopened.v1
+    description: Produced by integration-service. Consumed by realtime-gateway.
+    messages:
+      gitPrReopenedV1:
+        $ref: './integration-service.yaml#/components/messages/gitPrReopenedV1'
+  gitLinkUpdatedV1:
+    address: evt.git.link-updated.v1
+    description: Produced by integration-service. Consumed by realtime-gateway.
+    messages:
+      gitLinkUpdatedV1:
+        $ref: './integration-service.yaml#/components/messages/gitLinkUpdatedV1'
   notificationCreatedV1:
     address: evt.notification.created.v1
     description: Produced by notification-service. Consumed by realtime-gateway.
@@ -300,6 +312,16 @@ operations:
     summary: Invalidate Git links for authorized task readers.
     channel:
       $ref: '#/channels/gitChecksCompletedV1'
+  receiveGitPrReopenedV1:
+    action: receive
+    summary: Invalidate Git links for authorized task readers.
+    channel:
+      $ref: '#/channels/gitPrReopenedV1'
+  receiveGitLinkUpdatedV1:
+    action: receive
+    summary: Invalidate Git links for authorized task readers.
+    channel:
+      $ref: '#/channels/gitLinkUpdatedV1'
   receiveNotificationCreatedV1:
     action: receive
     summary: Relay an inbox invalidation to the recipient's authorized personal room.
@@ -499,8 +521,10 @@ x-cadenway-socket-io:
             $ref: '#/x-cadenway-socket-io/schemas/taskChange'
         git.links-changed.v1:
           description: |
-            Uniform Git invalidation from the five Integration link facts. Preserve the producer
-            event ID and time. Use protocol version 1. Refresh the task's Development panel or
+            Uniform Git invalidation from the seven Integration link facts:
+            `git.branch-created.v1`, `git.pr-opened.v1`, `git.pr-merged.v1`, `git.pr-closed.v1`,
+            `git.pr-reopened.v1`, `git.checks-completed.v1` and `git.link-updated.v1`, with the
+            same audience rules for each. Preserve the producer event ID and time. Use protocol version 1. Refresh the task's Development panel or
             its Git chip through the authorized HTTP projection. The data carries only the verified
             task ID. Clients can ignore an unsupported notice type and refetch on reconnect.
           rooms: ['task:<taskId>', 'list:<listId>']
