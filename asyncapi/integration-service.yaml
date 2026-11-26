@@ -20,7 +20,9 @@ info:
     second, so two changes can share one. Integration ignores a delivery older than the one
     already applied to the member it would change. A delivery whose provider time equals it is
     applied in arrival order; a repeated delivery is already removed by its delivery identity.
-    A merge is final: no delivery, older, equal or newer, reverts a `merged` link. A closure is
+    A merge is final: no delivery, older, equal or newer, reverts a `merged` link. These rules
+    apply to the projection only: the Task status intent of a verified merge delivery is never
+    ignored by them (see "Merge intent"). A closure is
     reversed by a verified reopen (GitHub `pull_request` action `reopened`, GitLab merge request
     action `reopen`) whose provider time is not older than the closure, which sets the state
     back to `open` and publishes `git.pr-reopened.v1`. Every committed change increments the
@@ -56,7 +58,30 @@ info:
     its state differs from the recorded one, Integration sets the recorded state to it and
     publishes the matching lifecycle fact: `git.pr-reopened.v1` for `open`, `git.pr-closed.v1`
     for `closed`, `git.pr-merged.v1` for `merged`, never leaving `merged`. A realignment sends
-    no Task status action: only the verified closing delivery carries task status intent.
+    no Task status action: only the verified merge delivery carries task status intent.
+
+    **Merge intent.** The Task status intent of a verified merge (GitHub `pull_request` action
+    `closed` with `merged: true`, GitLab merge request action `merge`) is tracked apart from the
+    lifecycle projection, so no ordering rule above can drop it. Each link records whether its
+    merge intent was handled, with the ID of the delivery that handled it. The first verified
+    merge delivery for the link submits its idempotent Task status action, under the stable Task
+    command identity of that delivery and task, and records the intent as handled, whether or not
+    the lifecycle already shows `merged` and whatever its provider time. A later verified merge
+    delivery for the same link finds the intent handled and submits nothing. When the lifecycle
+    already shows `merged`, the merge delivery does not publish `git.pr-merged.v1` again; it
+    still applies its other members under the Ordering rules.
+
+    Merge intent examples on one request:
+
+    - realign, then merge: a `synchronize` or `edited` delivery reporting `merged: true` realigns
+      the link to `merged` and publishes `git.pr-merged.v1` with no Task action; the delayed merge
+      delivery then submits the Task status action once and publishes no lifecycle fact;
+    - merge, then realign: the merge sets `merged`, publishes `git.pr-merged.v1` and submits the
+      Task status action; a later delivery reporting `merged` changes nothing;
+    - duplicate merge: a repeated delivery is removed by its delivery identity; another verified
+      merge delivery for the same link finds the intent handled and submits nothing;
+    - merge after close: a closed link becomes `merged` with `git.pr-merged.v1`, and the merge
+      submits the Task status action.
 
     Examples with the same provider time `T` on one request:
 
@@ -346,9 +371,12 @@ components:
       title: Git pull request merged
       summary: Integration recorded a merged pull request or merge request for an authorized linked task.
       description: |
-        Published for a verified merge, or for a realignment to the current `merged` state of
-        the request (see "Reconciliation"). Only the verified merge delivery sends closing task
-        status intent to Task.
+        Published once per link, when the lifecycle first becomes `merged`: for a verified merge,
+        or for a realignment to the current `merged` state of the request (see
+        "Reconciliation"). The Task status intent of the merge is separate (see "Merge intent"):
+        the first verified merge delivery for the link submits it exactly once, also when it
+        arrives after a realignment has already published this fact, in which case the fact is
+        not published again.
       headers:
         $ref: '#/components/schemas/EventHeaders'
       payload:
