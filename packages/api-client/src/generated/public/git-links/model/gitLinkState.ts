@@ -12,8 +12,9 @@
  * the state it already applied and applies one with an equal provider time in arrival
  * order, never leaving `merged`. Every later delivery that carries the request's current
  * state (any pull or merge request action, a GitLab merge request pipeline) realigns a
- * state left wrong by such a tie; until then the state can be wrong. Reconciliation
- * against the provider API comes with the outbound provider client of gap B5. See
+ * state left wrong by such a tie; until then the state can be wrong. Integration marks
+ * such a link internally for reconciliation; a scheduled read of the provider API comes
+ * with the outbound provider client of gap B5. See
  * "Ordering" and "Reconciliation" in
  * `asyncapi/integration-service.yaml`. A draft request is `open` with `draft: true`.
  */

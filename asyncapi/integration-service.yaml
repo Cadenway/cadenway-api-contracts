@@ -30,27 +30,32 @@ info:
     `git.link-updated.v1` for any other change to the projection read through
     `GET /internal/v1/tasks/{taskKey}/git-links`.
 
-    Known limit: arrival order does not always match the provider's order, so a lifecycle
-    resolved from an equal-time tie can be wrong until the next delivery that carries the
-    request's current state (see "Reconciliation"). Integration does not read the provider API
-    today. Reconciliation against the provider API comes with the outbound provider client of
-    gap B5.
+    Arrival order does not always match the provider's order, so a lifecycle resolved from an
+    equal-time tie can be wrong; "Reconciliation" marks and resolves such a link.
 
-    **Checks.** `checks` is an aggregate over the current `headSha`. On GitHub, Integration
-    keeps the latest status and conclusion of each check suite for that head, keyed by suite
-    ID, and drops a `stale` suite. A suite counts as failed with conclusion `failure`,
-    `timed_out`, `cancelled`, `action_required` or `startup_failure`, and as passed with
-    `success`, `neutral` or `skipped`. The aggregate is `failed` when any completed suite
-    failed, else `running` when any suite is queued, requested or in progress, else `passed`.
-    `total` and `failed` count suites. On GitLab, the latest merge request pipeline for the
-    head (highest pipeline ID) gives the state, and `total` and `failed` count its jobs. A
-    suite or pipeline update applies the Ordering rules to its own suite or pipeline. A new
-    head empties the set. `git.checks-completed.v1` is published when the aggregate enters
-    `passed` or `failed`. Any other change to the aggregate, entering `running` or new
+    **Checks.** `checks` is an aggregate over the current `headSha`. Integration stores check
+    observations keyed by link, head SHA and suite (GitHub check suite ID) or pipeline (GitLab
+    pipeline ID), each with its own provider-time watermark under the Ordering rules, including
+    an observation for a head SHA that is not the link's current head yet, so a check delivery
+    that arrives before its head update is kept. A stored observation of a head that is not
+    current changes no projected member and publishes nothing. On GitHub, the aggregate uses
+    the latest status and conclusion of each suite stored for the current head and leaves out a
+    `stale` suite. A suite counts as failed with conclusion `failure`, `timed_out`,
+    `cancelled`, `action_required` or `startup_failure`, and as passed with `success`,
+    `neutral` or `skipped`. The aggregate is `failed` when any completed suite failed, else
+    `running` when any suite is queued, requested or in progress, else `passed`. `total` and
+    `failed` count suites. On GitLab, the stored pipeline of the current head with the highest
+    pipeline ID gives the state, and `total` and `failed` count its jobs. When a head becomes
+    current, the aggregate is computed from the observations already stored for that SHA, and
+    is absent when there are none; that head change publishes `git.link-updated.v1` naming
+    `headSha` and, when it changed, `checks`. Observations of any other head SHA are pruned
+    once the current head has been current for 24 hours. A check observation of the current
+    head that makes the aggregate enter `passed` or `failed` publishes
+    `git.checks-completed.v1`. Any other change to the aggregate, entering `running` or new
     counts, publishes `git.link-updated.v1` with `checks` in `changed`.
 
-    **Reconciliation.** A tie can leave the lifecycle wrong only until the next delivery for
-    the request. Every later delivery that carries the request's current state realigns it:
+    **Reconciliation.** A tie can leave the lifecycle wrong until it is realigned. Every later
+    delivery that carries the request's current state realigns it:
     any GitHub `pull_request` action (`pull_request.state` and `pull_request.merged`), any
     GitLab merge request action (`object_attributes.state`) and a GitLab merge request pipeline
     (`merge_request.state`). GitHub's check suite lists its pull requests without their state
@@ -59,6 +64,20 @@ info:
     publishes the matching lifecycle fact: `git.pr-reopened.v1` for `open`, `git.pr-closed.v1`
     for `closed`, `git.pr-merged.v1` for `merged`, never leaving `merged`. A realignment sends
     no Task status action: only the verified merge delivery carries task status intent.
+
+    An equal-time delivery, distinct from the one already applied, whose lifecycle differs from
+    the recorded one durably marks the link `reconciliation pending` in the same transaction,
+    whether it was applied in arrival order or ignored because the link is `merged`. The mark is
+    internal to Integration and does not appear in the link projection. It is cleared by the
+    next delivery that carries the request's state with a strictly newer provider time, which
+    realigns the lifecycle as above. Once the outbound provider client exists, it is also
+    cleared by a scheduled provider read of the request (a job, retried with backoff) that
+    realigns the lifecycle from the provider's answer.
+
+    Known limit: Integration has no outbound provider client yet; it comes with gap B5. Until
+    then, a link marked `reconciliation pending` keeps its mark, and its lifecycle may stay
+    wrong, until the next qualifying delivery. Integration reports each marked link for
+    operator follow-up.
 
     **Merge intent.** The Task status intent of a verified merge (GitHub `pull_request` action
     `closed` with `merged: true`, GitLab merge request action `merge`) is tracked apart from the
