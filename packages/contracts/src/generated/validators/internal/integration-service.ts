@@ -78,3 +78,62 @@ export const ReceiveGitLabWebhookInternalHeader = zod.object({
 export const ReceiveGitLabWebhookInternalBody = zod.union([zod.instanceof(Uint8Array), zod.instanceof(Blob)])
 
 export const ReceiveGitLabWebhookInternalResponse = zod.void()
+
+
+/**
+ * Lists the task's branches and pull or merge requests newest first, in descending
+ * `(createdAt,id)` order. The opaque cursor is bound to the caller's organization, task and
+ * ordering. A task without links, including a purged task, answers an empty page. The read
+ * writes nothing and emits no event.
+ *
+ * Internal token: issuer `api-gateway` only, actor `user`, organization required. The
+ * gateway calls this route only after task-service has let the actor read the task.
+ * @summary List the Git links of a task
+ */
+export const listTaskGitLinksInternalPathTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+
+
+export const ListTaskGitLinksInternalParams = zod.object({
+  "taskKey": zod.string().regex(listTaskGitLinksInternalPathTaskKeyRegExp).describe('Stable key of the target task.')
+})
+
+export const listTaskGitLinksInternalQueryLimitDefault = 50;
+export const listTaskGitLinksInternalQueryLimitMax = 100;
+
+
+
+export const ListTaskGitLinksInternalQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor taken from the `nextCursor` of the previous page.'),
+  "limit": zod.coerce.number().int().min(1).max(listTaskGitLinksInternalQueryLimitMax).default(listTaskGitLinksInternalQueryLimitDefault).describe('Page size.')
+})
+
+export const listTaskGitLinksInternalResponseItemsItemIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listTaskGitLinksInternalResponseItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const listTaskGitLinksInternalResponseItemsItemProviderRepositoryIdMax = 9007199254740991;
+
+export const listTaskGitLinksInternalResponseItemsItemNumberMax = 9007199254740991;
+
+
+export const listTaskGitLinksInternalResponseItemsItemHeadShaRegExp = new RegExp('^(?:[0-9a-f]{40}|[0-9a-f]{64})$');
+export const listTaskGitLinksInternalResponseItemsItemVersionMax = 9007199254740991;
+
+
+
+export const ListTaskGitLinksInternalResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid().regex(listTaskGitLinksInternalResponseItemsItemIdRegExp).describe('UUIDv7 that Integration assigned to the link, the `gitLinkId` of its Git facts.'),
+  "taskKey": zod.string().regex(listTaskGitLinksInternalResponseItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "provider": zod.string().describe('Git host of the linked repository (`x-extensible-enum`): `github` or `gitlab`. Later\nversions may add other hosts; ignore a link whose provider is unknown.\n'),
+  "kind": zod.string().describe('What the task is linked to (`x-extensible-enum`): `branch` for a branch, `pull-request`\nfor a GitHub pull request or a GitLab merge request.\n'),
+  "state": zod.string().describe('Lifecycle of the linked object (`x-extensible-enum`). A branch is always `branch`. A pull\nor merge request is `open`, `merged` or `closed` (closed without merging). `merged` is\nfinal; a verified merge supersedes `closed`, and a closed request does not return to\n`open`. Integration\ndoes not record whether a request is a draft. Later versions may add `draft`.\n'),
+  "providerRepositoryId": zod.int().min(1).max(listTaskGitLinksInternalResponseItemsItemProviderRepositoryIdMax).describe('The provider\'s numeric ID of the repository (GitHub) or project (GitLab) of the\nverified binding. A GitLab project ID is local to its GitLab instance. Integration\ndoes not record the repository name or web address.\n'),
+  "number": zod.int().min(1).max(listTaskGitLinksInternalResponseItemsItemNumberMax).nullable().describe('The pull request number (`#214`) or the merge request IID (`!31`); `null` for a\nbranch.\n'),
+  "branch": zod.string().min(1).nullable().describe('The short name of a linked branch, without `refs/heads/`; `null` for a pull or merge\nrequest, whose source branch Integration does not record.\n'),
+  "headSha": zod.string().regex(listTaskGitLinksInternalResponseItemsItemHeadShaRegExp).nullable().describe('The latest verified head commit of a pull or merge request; `null` for a branch and\nfor a request whose head has not been observed.\n'),
+  "checksCompletedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the provider reported the latest completed checks for `headSha`; `null` when no\ncompletion is recorded for it. Integration does not record the outcome or the number\nof checks.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}).describe('When Integration recorded the link.'),
+  "updatedAt": zod.iso.datetime({"offset":true}).describe('When Integration last recorded a change to the link.'),
+  "version": zod.int().min(1).max(listTaskGitLinksInternalResponseItemsItemVersionMax).describe('Version of the link, the `version` of its latest Git fact. Ignore a fact whose version\nis not newer than the one read.\n')
+}).describe('One branch or pull or merge request linked to the task. The link is unique per verified\nrepository binding, task and provider object, so a request keeps its link as its state\nchanges.\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).describe('One page of a task\'s Git links, newest first.')

@@ -498,8 +498,7 @@ export class TasksService {
  * but for an archived task, whose detail shows the subtasks archived with it, and `list`
  * carries the role of the caller (`callerRole`). The gateway composes it; `partial` names
  * the parts it could not read, so that the web application shows the rest. A failure of the
- * base task read fails the detail as a whole. Later versions may add parts for attachments
- * and development links.
+ * base task read fails the detail as a whole. Later versions may add a part for attachments.
  *
  * `ETag` is the version to send in `If-Match` when editing the task. A successful read
  * returns the detail with `Cache-Control: private, no-store`. The gateway ignores
@@ -508,6 +507,9 @@ export class TasksService {
  * Scope `tasks:read` for a personal API token.
  * The gateway also reads the first comment page from task-service. A comments-only upstream
  * failure omits `comments` and adds `comments` to `partial`; a visibility denial fails closed.
+ * After the base task read, the gateway reads the first page of Git links from
+ * integration-service (`listTaskGitLinksInternal`). A failure of that read alone omits
+ * `development` and adds `development` to `partial`.
  * A base failure retains the existing whole-detail error.
  * `If-Organization-Match` optionally pins the read to the caller's expected organization.
  * The gateway checks it before reading the task or any part of its detail.

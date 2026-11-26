@@ -158,6 +158,21 @@ export type { ListTaskAttachmentsParams } from './generated/public/attachments/m
 export type { StartAttachmentUpload } from './generated/public/attachments/model/startAttachmentUpload';
 export type { TaskAttachment } from './generated/public/attachments/model/taskAttachment';
 export type { UploadCompletionConflictResponse } from './generated/public/attachments/model/uploadCompletionConflictResponse';
+
+// openapi/public/git-links.yaml
+export {
+  GitLinksService,
+  type ListTaskGitLinksClientResult,
+} from './generated/public/git-links/git-links/git-links.service';
+export type {
+  GitLink,
+  GitLinkId,
+  GitLinkKind,
+  GitLinkPage,
+  GitLinkState,
+  GitProvider,
+  ListTaskGitLinksParams,
+} from './generated/public/git-links/model';
 export type { UploadContentRefusedResponse } from './generated/public/attachments/model/uploadContentRefusedResponse';
 export type { UploadStartConflictResponse } from './generated/public/attachments/model/uploadStartConflictResponse';
 export type { UploadStartRefusedResponse } from './generated/public/attachments/model/uploadStartRefusedResponse';

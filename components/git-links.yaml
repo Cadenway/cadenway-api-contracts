@@ -1,0 +1,194 @@
+openapi: 3.1.0
+info:
+  title: Cadenway shared Git link components
+  version: 1.0.0
+  description: |
+    The Git links of a task as integration-service records them from verified GitHub and GitLab
+    deliveries: branches and pull or merge requests that cite the task key. A link carries what
+    Integration stores, its provider identity, lifecycle state and recorded head and check
+    observations. Provider content such as titles, authors, diff sizes, reviews and commits is not
+    recorded. Later versions may add it as optional members.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+components:
+  schemas:
+    GitLinkId:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      description: UUIDv7 that Integration assigned to the link, the `gitLinkId` of its Git facts.
+      examples: [019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e03]
+    GitProvider:
+      type: string
+      description: |
+        Git host of the linked repository (`x-extensible-enum`): `github` or `gitlab`. Later
+        versions may add other hosts; ignore a link whose provider is unknown.
+      x-extensible-enum: [github, gitlab]
+      examples: [github]
+    GitLinkKind:
+      type: string
+      description: |
+        What the task is linked to (`x-extensible-enum`): `branch` for a branch, `pull-request`
+        for a GitHub pull request or a GitLab merge request.
+      x-extensible-enum: [branch, pull-request]
+      examples: [pull-request]
+    GitLinkState:
+      type: string
+      description: |
+        Lifecycle of the linked object (`x-extensible-enum`). A branch is always `branch`. A pull
+        or merge request is `open`, `merged` or `closed` (closed without merging). `merged` is
+        final; a verified merge supersedes `closed`, and a closed request does not return to
+        `open`. Integration
+        does not record whether a request is a draft. Later versions may add `draft`.
+      x-extensible-enum: [branch, open, merged, closed]
+      examples: [open]
+    GitLink:
+      type: object
+      required:
+        [
+          id,
+          taskKey,
+          provider,
+          kind,
+          state,
+          providerRepositoryId,
+          number,
+          branch,
+          headSha,
+          checksCompletedAt,
+          createdAt,
+          updatedAt,
+          version,
+        ]
+      description: |
+        One branch or pull or merge request linked to the task. The link is unique per verified
+        repository binding, task and provider object, so a request keeps its link as its state
+        changes.
+      properties:
+        id:
+          $ref: '#/components/schemas/GitLinkId'
+        taskKey:
+          $ref: './task.yaml#/components/schemas/TaskKey'
+        provider:
+          $ref: '#/components/schemas/GitProvider'
+        kind:
+          $ref: '#/components/schemas/GitLinkKind'
+        state:
+          $ref: '#/components/schemas/GitLinkState'
+        providerRepositoryId:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: |
+            The provider's numeric ID of the repository (GitHub) or project (GitLab) of the
+            verified binding. A GitLab project ID is local to its GitLab instance. Integration
+            does not record the repository name or web address.
+          examples: [734912058]
+        number:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 9007199254740991
+          description: |
+            The pull request number (`#214`) or the merge request IID (`!31`); `null` for a
+            branch.
+          examples: [214]
+        branch:
+          type: [string, 'null']
+          minLength: 1
+          description: |
+            The short name of a linked branch, without `refs/heads/`; `null` for a pull or merge
+            request, whose source branch Integration does not record.
+          examples: [cad-482-ecran-connexion-sso]
+        headSha:
+          type: [string, 'null']
+          pattern: '^(?:[0-9a-f]{40}|[0-9a-f]{64})$'
+          description: |
+            The latest verified head commit of a pull or merge request; `null` for a branch and
+            for a request whose head has not been observed.
+          examples: [c4e1a9f2b7d04e8a9c1f3b5d7e9a0c2e4f6b8d01]
+        checksCompletedAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the provider reported the latest completed checks for `headSha`; `null` when no
+            completion is recorded for it. Integration does not record the outcome or the number
+            of checks.
+          examples: ['2026-11-07T15:20:00Z']
+        createdAt:
+          type: string
+          format: date-time
+          description: When Integration recorded the link.
+          examples: ['2026-11-08T08:40:00Z']
+        updatedAt:
+          type: string
+          format: date-time
+          description: When Integration last recorded a change to the link.
+          examples: ['2026-11-08T08:40:00Z']
+        version:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: |
+            Version of the link, the `version` of its latest Git fact. Ignore a fact whose version
+            is not newer than the one read.
+          examples: [1]
+    GitLinkPage:
+      type: object
+      required: [items, nextCursor]
+      description: One page of a task's Git links, newest first.
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GitLink'
+        nextCursor:
+          $ref: './http.yaml#/components/schemas/NextCursor'
+  examples:
+    TaskGitLinks:
+      summary: The Git links of CAD-482, newest first
+      value:
+        items:
+          - id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e03
+            taskKey: CAD-482
+            provider: github
+            kind: pull-request
+            state: open
+            providerRepositoryId: 734912058
+            number: 214
+            branch: null
+            headSha: c4e1a9f2b7d04e8a9c1f3b5d7e9a0c2e4f6b8d01
+            checksCompletedAt: null
+            createdAt: '2026-11-08T08:40:00Z'
+            updatedAt: '2026-11-08T08:40:00Z'
+            version: 1
+          - id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e05
+            taskKey: CAD-482
+            provider: github
+            kind: pull-request
+            state: merged
+            providerRepositoryId: 734912377
+            number: 388
+            branch: null
+            headSha: 0e9a6f15c3b84d7e9a1f2c4b6d8e0a3c5f7b9d12
+            checksCompletedAt: '2026-11-07T15:20:00Z'
+            createdAt: '2026-11-06T16:05:00Z'
+            updatedAt: '2026-11-07T16:30:00Z'
+            version: 3
+          - id: 019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e02
+            taskKey: CAD-482
+            provider: github
+            kind: branch
+            state: branch
+            providerRepositoryId: 734912058
+            number: null
+            branch: cad-482-ecran-connexion-sso
+            headSha: null
+            checksCompletedAt: null
+            createdAt: '2026-11-03T09:30:00Z'
+            updatedAt: '2026-11-03T09:30:00Z'
+            version: 1
+        nextCursor: null

@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
-  title: integration-service internal webhook routes
+  title: integration-service internal routes
   version: 1.0.0
   description: |
-    Requires a signed internal token with issuer and system actor ID `api-gateway`, audience
-    `integration-service` and no organization claim. Integration authenticates each delivery
+    Webhook routes require a signed internal token with issuer and system actor ID `api-gateway`,
+    audience `integration-service` and no organization claim. Integration authenticates each delivery
     with the receiver registration selected by the binding query. Its own provider bindings determine
     any organization, installation and repository. Provider headers and payload values do not
     select a Cadenway tenant.
@@ -15,6 +15,11 @@ info:
     reports receipt and does not imply that a Git link or Task change has completed.
     Problem bodies omit credential, tenant, repository and payload values. Logs and trace
     attributes omit raw provider bodies and provider authentication headers.
+
+    The Git link read requires a signed internal token with issuer `api-gateway`, audience
+    `integration-service`, a `user` actor and an organization. Integration does not decide task
+    visibility: the gateway relays the read only after task-service has let the actor read the
+    task. Integration bounds the read by the verified organization and the task key.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -23,7 +28,9 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
   x-consumers:
     - repository: cadenway-api-gateway
-      uses: The gateway relays GitHub and GitLab deliveries.
+      uses: >-
+        The gateway relays GitHub and GitLab deliveries. It reads the Git links of a task the
+        actor may read for the public Git link route and the Development part of the task detail.
 servers:
   - url: http://integration-service:3018
     description: Integration service on the internal network.
@@ -32,6 +39,8 @@ security:
 tags:
   - name: webhooks
     description: Inbound Git provider delivery.
+  - name: git-links
+    description: Branches and pull or merge requests linked to a task.
 paths:
   /internal/v1/webhooks/github:
     post:
@@ -109,14 +118,62 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /internal/v1/tasks/{taskKey}/git-links:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+    get:
+      operationId: listTaskGitLinksInternal
+      summary: List the Git links of a task
+      description: |
+        Lists the task's branches and pull or merge requests newest first, in descending
+        `(createdAt,id)` order. The opaque cursor is bound to the caller's organization, task and
+        ordering. A task without links, including a purged task, answers an empty page. The read
+        writes nothing and emits no event.
+
+        Internal token: issuer `api-gateway` only, actor `user`, organization required. The
+        gateway calls this route only after task-service has let the actor read the task.
+      tags: [git-links]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the task's Git links.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/git-links.yaml#/components/schemas/GitLinkPage'
+              examples:
+                taskGitLinks:
+                  $ref: '../../components/git-links.yaml#/components/examples/TaskGitLinks'
+        '400':
+          $ref: '#/components/responses/GitLinksBadRequest'
+        '401':
+          $ref: '#/components/responses/GitLinksTokenRefused'
+        '403':
+          $ref: '#/components/responses/GitLinksAccessRefused'
+        '503':
+          $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
     internalToken:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: HTTP bearer token for the designated gateway system actor.
+      description: |
+        Signed internal token with audience integration-service. The operation defines the
+        accepted issuer, actor and organization scope.
   parameters:
+    TaskKey:
+      name: taskKey
+      in: path
+      required: true
+      description: Stable key of the target task.
+      schema:
+        $ref: '../../components/task.yaml#/components/schemas/TaskKey'
     BindingId:
       name: bindingId
       in: query
@@ -203,7 +260,7 @@ components:
             format: binary
   headers:
     PrivateNoStore:
-      description: These deliveries and their responses are private and never cached.
+      description: These requests and their responses are private and never cached.
       required: true
       schema:
         type: string
@@ -253,9 +310,42 @@ components:
         application/problem+json:
           schema:
             $ref: '../../components/http.yaml#/components/schemas/Problem'
+    GitLinksBadRequest:
+      description: |
+        `request.invalid` for an invalid task key, an invalid, unknown or repeated query parameter,
+        or a malformed cursor, including a cursor for another task, tenant or operation.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    GitLinksTokenRefused:
+      description: |
+        `auth.token-missing` or `auth.token-invalid` rejects the internal token.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    GitLinksAccessRefused:
+      description: |
+        `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+        type, or `auth.organization-required` for a token without an organization.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/PrivateNoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
     Unavailable:
       description: |
-        `integration.unavailable` when Integration cannot confirm acceptance before the request ends.
+        `integration.unavailable` when Integration cannot confirm acceptance or read the links
+        before the request ends.
       headers:
         Cache-Control:
           $ref: '#/components/headers/PrivateNoStore'

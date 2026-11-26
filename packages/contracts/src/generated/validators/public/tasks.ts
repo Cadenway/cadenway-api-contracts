@@ -909,8 +909,7 @@ export const DuplicateTaskResponse = zod.object({
  * but for an archived task, whose detail shows the subtasks archived with it, and `list`
  * carries the role of the caller (`callerRole`). The gateway composes it; `partial` names
  * the parts it could not read, so that the web application shows the rest. A failure of the
- * base task read fails the detail as a whole. Later versions may add parts for attachments
- * and development links.
+ * base task read fails the detail as a whole. Later versions may add a part for attachments.
  *
  * `ETag` is the version to send in `If-Match` when editing the task. A successful read
  * returns the detail with `Cache-Control: private, no-store`. The gateway ignores
@@ -919,6 +918,9 @@ export const DuplicateTaskResponse = zod.object({
  * Scope `tasks:read` for a personal API token.
  * The gateway also reads the first comment page from task-service. A comments-only upstream
  * failure omits `comments` and adds `comments` to `partial`; a visibility denial fails closed.
+ * After the base task read, the gateway reads the first page of Git links from
+ * integration-service (`listTaskGitLinksInternal`). A failure of that read alone omits
+ * `development` and adds `development` to `partial`.
  * A base failure retains the existing whole-detail error.
  * `If-Organization-Match` optionally pins the read to the caller's expected organization.
  * The gateway checks it before reading the task or any part of its detail.
@@ -945,6 +947,16 @@ export const getTaskDetailResponseCommentsItemsItemMentionsItemStartMin = 0;
 
 
 export const getTaskDetailResponseCommentsTotalMin = 0;
+
+export const getTaskDetailResponseDevelopmentItemsItemIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const getTaskDetailResponseDevelopmentItemsItemTaskKeyRegExp = new RegExp('^[A-Z]{2,5}-[1-9][0-9]{0,8}$');
+export const getTaskDetailResponseDevelopmentItemsItemProviderRepositoryIdMax = 9007199254740991;
+
+export const getTaskDetailResponseDevelopmentItemsItemNumberMax = 9007199254740991;
+
+
+export const getTaskDetailResponseDevelopmentItemsItemHeadShaRegExp = new RegExp('^(?:[0-9a-f]{40}|[0-9a-f]{64})$');
+export const getTaskDetailResponseDevelopmentItemsItemVersionMax = 9007199254740991;
 
 export const getTaskDetailResponseTaskDescriptionMentionsItemStartMin = 0;
 
@@ -1008,6 +1020,24 @@ export const GetTaskDetailResponse = zod.object({
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(getTaskDetailResponseCommentsTotalMin)
 }).optional().describe('First page of comments, omitted if that part cannot be read.'),
+  "development": zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.uuid().regex(getTaskDetailResponseDevelopmentItemsItemIdRegExp).describe('UUIDv7 that Integration assigned to the link, the `gitLinkId` of its Git facts.'),
+  "taskKey": zod.string().regex(getTaskDetailResponseDevelopmentItemsItemTaskKeyRegExp).describe('Key of a task, the only way a task is named outside task-service: the prefix of the space\nit was created in, a dash and a number. A key never changes, also when the task moves to\nanother space or its space changes prefix, and is never given to another task.\n'),
+  "provider": zod.string().describe('Git host of the linked repository (`x-extensible-enum`): `github` or `gitlab`. Later\nversions may add other hosts; ignore a link whose provider is unknown.\n'),
+  "kind": zod.string().describe('What the task is linked to (`x-extensible-enum`): `branch` for a branch, `pull-request`\nfor a GitHub pull request or a GitLab merge request.\n'),
+  "state": zod.string().describe('Lifecycle of the linked object (`x-extensible-enum`). A branch is always `branch`. A pull\nor merge request is `open`, `merged` or `closed` (closed without merging). `merged` is\nfinal; a verified merge supersedes `closed`, and a closed request does not return to\n`open`. Integration\ndoes not record whether a request is a draft. Later versions may add `draft`.\n'),
+  "providerRepositoryId": zod.int().min(1).max(getTaskDetailResponseDevelopmentItemsItemProviderRepositoryIdMax).describe('The provider\'s numeric ID of the repository (GitHub) or project (GitLab) of the\nverified binding. A GitLab project ID is local to its GitLab instance. Integration\ndoes not record the repository name or web address.\n'),
+  "number": zod.int().min(1).max(getTaskDetailResponseDevelopmentItemsItemNumberMax).nullable().describe('The pull request number (`#214`) or the merge request IID (`!31`); `null` for a\nbranch.\n'),
+  "branch": zod.string().min(1).nullable().describe('The short name of a linked branch, without `refs/heads/`; `null` for a pull or merge\nrequest, whose source branch Integration does not record.\n'),
+  "headSha": zod.string().regex(getTaskDetailResponseDevelopmentItemsItemHeadShaRegExp).nullable().describe('The latest verified head commit of a pull or merge request; `null` for a branch and\nfor a request whose head has not been observed.\n'),
+  "checksCompletedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the provider reported the latest completed checks for `headSha`; `null` when no\ncompletion is recorded for it. Integration does not record the outcome or the number\nof checks.\n'),
+  "createdAt": zod.iso.datetime({"offset":true}).describe('When Integration recorded the link.'),
+  "updatedAt": zod.iso.datetime({"offset":true}).describe('When Integration last recorded a change to the link.'),
+  "version": zod.int().min(1).max(getTaskDetailResponseDevelopmentItemsItemVersionMax).describe('Version of the link, the `version` of its latest Git fact. Ignore a fact whose version\nis not newer than the one read.\n')
+}).describe('One branch or pull or merge request linked to the task. The link is unique per verified\nrepository binding, task and provider object, so a request keeps its link as its state\nchanges.\n')),
+  "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.')
+}).optional().describe('One page of a task\'s Git links, newest first.'),
   "task": zod.object({
   "milestone": zod.boolean().optional().describe('Whether this task is a milestone; absence means the producer did not report it.'),
   "recurrence": zod.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly']).optional().describe('`RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a\nsuccessor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;\nmonthly clamps to the last day while retaining the chain\'s original day.\n'),
@@ -1191,7 +1221,7 @@ export const GetTaskDetailResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().min(1).describe('Version of the task, also sent as `ETag` by the routes of one task.')
 }).describe('A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the\ndescription, the note of the cancellation and the items of the checklist.\n')).describe('The direct subtasks, 25 at most, in the order of their creation.'),
-  "partial": zod.array(zod.string()).describe('The parts the gateway could not read, the rest of the detail being complete. Always\nempty when all parts are available; `comments` identifies a comments-only upstream\nfailure. Later versions may name other parts (`attachments`, `development`)\n(`x-extensible-enum`).\n')
+  "partial": zod.array(zod.string()).describe('The parts the gateway could not read, the rest of the detail being complete. Always\nempty when all parts are available; `comments` identifies a comments-only upstream\nfailure and `development` a Git links-only upstream failure. Later versions may name\nother parts (`attachments`) (`x-extensible-enum`).\n')
 }).describe('The task detail, composed by the gateway.')
 
 

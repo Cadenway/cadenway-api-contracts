@@ -1,0 +1,162 @@
+openapi: 3.1.0
+info:
+  title: Cadenway task Git links
+  version: 1.0.0
+  description: |
+    The branches and pull or merge requests linked to the tasks of the verified organization, as
+    the Development panel of the task detail shows them ("Développement"). Integration-service
+    records a link when a verified GitHub or GitLab delivery from a mapped repository cites the
+    task key in a branch name, a request title or description, or a commit message.
+
+    The API gateway serves these routes. It first reads the task through task-service with the
+    caller's identity, then relays the read to integration-service. A task is read by whoever sees
+    it, an archived task included; a task the caller does not see answers `404 task.not-found`,
+    as an unknown key does, and a task in the trash answers as every route of its key does (see
+    "Trash" in `openapi/public/tasks.yaml`). `git.links-changed.v1` in
+    `asyncapi/realtime-gateway.yaml` tells an open task detail to read its links again.
+  contact:
+    name: Cadenway
+    url: https://github.com/Cadenway/cadenway-api-contracts
+  license:
+    name: Proprietary
+    url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
+  x-consumers:
+    - repository: cadenway-api-gateway
+      uses: >-
+        Serves these routes, checks task visibility through task-service and relays authorized
+        reads to integration-service.
+    - repository: cadenway-webapp
+      uses: Shows the Development panel of the task detail with the generated API client.
+servers:
+  - url: https://api.cadenway.com
+    description: Production.
+tags:
+  - name: git-links
+    description: Branches and pull or merge requests linked to a task.
+paths:
+  /v1/tasks/{taskKey}/git-links:
+    parameters:
+      - $ref: '#/components/parameters/TaskKey'
+      - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
+    get:
+      operationId: listTaskGitLinks
+      summary: List the Git links of a task
+      description: |
+        Lists the task's branches and pull or merge requests newest first, in descending
+        `(createdAt,id)` order. The opaque cursor is bound to the caller's organization, task and
+        ordering. Anyone who sees the task may read its links. The task detail carries the first
+        page in `development`.
+        Scope `tasks:read` for a personal API token.
+      tags: [git-links]
+      security:
+        - sessionCookie: []
+        - apiToken: [tasks:read]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/Cursor'
+        - $ref: '../../components/http.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of the task's Git links.
+          headers:
+            Cache-Control:
+              $ref: '../../components/http.yaml#/components/headers/OrganizationScopedNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/git-links.yaml#/components/schemas/GitLinkPage'
+              examples:
+                taskGitLinks:
+                  $ref: '../../components/git-links.yaml#/components/examples/TaskGitLinks'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ReadForbidden'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-cw_session
+      description: Session held by the caller's browser.
+    apiToken:
+      type: http
+      scheme: bearer
+      description: Personal API token with the operation's required task scope.
+  parameters:
+    TaskKey:
+      name: taskKey
+      in: path
+      required: true
+      description: Stable key of the target task.
+      schema:
+        $ref: '../../components/task.yaml#/components/schemas/TaskKey'
+  responses:
+    BadRequest:
+      description: |
+        `request.invalid` with `details.issues`, including a malformed cursor or one issued for
+        another task.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unauthenticated:
+      description: |
+        `auth.session-required`, `auth.session-expired` or `auth.api-token-invalid`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    ReadForbidden:
+      description: |
+        `auth.scope-missing`, `organization.not-selected` or `organization.mfa-required`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    TaskNotFound:
+      description: |
+        `task.not-found` for a task the caller does not see or an unknown key, `task.trashed` with
+        its `details` for a task in the trash whose list the caller could change, or
+        `organization.not-found` for an inactive membership.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Tâche introuvable.
+            status: 404
+            code: task.not-found
+    RateLimited:
+      description: |
+        `rate-limit.exceeded`. Retry after the delay in `Retry-After`.
+      headers:
+        Retry-After:
+          required: true
+          description: Whole seconds before the caller can retry.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+    Unavailable:
+      description: |
+        `upstream.unavailable`, `upstream.unreachable`, `upstream.timeout`, `upstream.circuit-open`,
+        `upstream.failed`, `upstream.unauthorized` or `upstream.deadline-exceeded`, with
+        `details.service`, when task-service or integration-service cannot answer.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'

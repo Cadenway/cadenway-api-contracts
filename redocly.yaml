@@ -34,6 +34,11 @@ apis:
     rules:
       no-empty-servers: off
       no-unused-components: off
+  shared-git-links:
+    root: components/git-links.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
   shared-profile-media:
     root: components/profile-media.yaml
     rules:

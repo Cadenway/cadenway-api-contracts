@@ -3,6 +3,7 @@
  * Do not edit: change the spec and run `pnpm generate`.
  */
 import type { CommentPage } from './commentPage';
+import type { GitLinkPage } from './gitLinkPage';
 import type { Space } from './space';
 import type { Task } from './task';
 import type { TaskList } from './taskList';
@@ -15,6 +16,7 @@ import type { TaskSummary } from './taskSummary';
 export interface TaskDetail {
   /** First page of comments, omitted if that part cannot be read. */
   comments?: CommentPage;
+  development?: GitLinkPage;
   task: Task;
   space: Space;
   list: TaskList;
@@ -25,8 +27,8 @@ export interface TaskDetail {
   /**
      * The parts the gateway could not read, the rest of the detail being complete. Always
      * empty when all parts are available; `comments` identifies a comments-only upstream
-     * failure. Later versions may name other parts (`attachments`, `development`)
-     * (`x-extensible-enum`).
+     * failure and `development` a Git links-only upstream failure. Later versions may name
+     * other parts (`attachments`) (`x-extensible-enum`).
      */
   partial: string[];
 }

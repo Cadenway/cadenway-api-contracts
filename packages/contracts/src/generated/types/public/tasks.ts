@@ -1536,11 +1536,108 @@ export interface Home {
 }
 
 /**
+ * UUIDv7 that Integration assigned to the link, the `gitLinkId` of its Git facts.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type GitLinkId = string;
+
+/**
+ * Git host of the linked repository (`x-extensible-enum`): `github` or `gitlab`. Later
+ * versions may add other hosts; ignore a link whose provider is unknown.
+ */
+export type GitProvider = string;
+
+/**
+ * What the task is linked to (`x-extensible-enum`): `branch` for a branch, `pull-request`
+ * for a GitHub pull request or a GitLab merge request.
+ */
+export type GitLinkKind = string;
+
+/**
+ * Lifecycle of the linked object (`x-extensible-enum`). A branch is always `branch`. A pull
+ * or merge request is `open`, `merged` or `closed` (closed without merging). `merged` is
+ * final; a verified merge supersedes `closed`, and a closed request does not return to
+ * `open`. Integration
+ * does not record whether a request is a draft. Later versions may add `draft`.
+ */
+export type GitLinkState = string;
+
+/**
+ * One branch or pull or merge request linked to the task. The link is unique per verified
+ * repository binding, task and provider object, so a request keeps its link as its state
+ * changes.
+ */
+export interface GitLink {
+  id: GitLinkId;
+  taskKey: TaskKey;
+  provider: GitProvider;
+  kind: GitLinkKind;
+  state: GitLinkState;
+  /**
+     * The provider's numeric ID of the repository (GitHub) or project (GitLab) of the
+     * verified binding. A GitLab project ID is local to its GitLab instance. Integration
+     * does not record the repository name or web address.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  providerRepositoryId: number;
+  /**
+     * The pull request number (`#214`) or the merge request IID (`!31`); `null` for a
+     * branch.
+     * @minimum 1
+     * @maximum 9007199254740991
+     * @nullable
+     */
+  number: number | null;
+  /**
+     * The short name of a linked branch, without `refs/heads/`; `null` for a pull or merge
+     * request, whose source branch Integration does not record.
+     * @minLength 1
+     * @nullable
+     */
+  branch: string | null;
+  /**
+     * The latest verified head commit of a pull or merge request; `null` for a branch and
+     * for a request whose head has not been observed.
+     * @nullable
+     * @pattern ^(?:[0-9a-f]{40}|[0-9a-f]{64})$
+     */
+  headSha: string | null;
+  /**
+     * When the provider reported the latest completed checks for `headSha`; `null` when no
+     * completion is recorded for it. Integration does not record the outcome or the number
+     * of checks.
+     * @nullable
+     */
+  checksCompletedAt: string | null;
+  /** When Integration recorded the link. */
+  createdAt: string;
+  /** When Integration last recorded a change to the link. */
+  updatedAt: string;
+  /**
+     * Version of the link, the `version` of its latest Git fact. Ignore a fact whose version
+     * is not newer than the one read.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+/**
+ * One page of a task's Git links, newest first.
+ */
+export interface GitLinkPage {
+  items: GitLink[];
+  nextCursor: NextCursor | null;
+}
+
+/**
  * The task detail, composed by the gateway.
  */
 export interface TaskDetail {
   /** First page of comments, omitted if that part cannot be read. */
   comments?: CommentPage;
+  development?: GitLinkPage;
   task: Task;
   space: Space;
   list: TaskList;
@@ -1551,8 +1648,8 @@ export interface TaskDetail {
   /**
      * The parts the gateway could not read, the rest of the detail being complete. Always
      * empty when all parts are available; `comments` identifies a comments-only upstream
-     * failure. Later versions may name other parts (`attachments`, `development`)
-     * (`x-extensible-enum`).
+     * failure and `development` a Git links-only upstream failure. Later versions may name
+     * other parts (`attachments`) (`x-extensible-enum`).
      */
   partial: string[];
 }

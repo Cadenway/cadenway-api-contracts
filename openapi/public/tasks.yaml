@@ -95,8 +95,9 @@ info:
     their stable IDs and display order. Existing filter and sort parameters keep their meanings.
     New tasks start without custom values, including copies, templates and recurring successors.
 
-    **Later versions** add attachments and development links. The detail names their parts in
-    `partial` when they cannot be read.
+    **Git links.** The detail carries the first page of the task's Git links in `development`;
+    `openapi/public/git-links.yaml` lists them. **Later versions** add attachments. The detail
+    names each part in `partial` when it cannot be read.
   contact:
     name: Cadenway
     url: https://github.com/Cadenway/cadenway-api-contracts
@@ -106,8 +107,8 @@ info:
   x-consumers:
     - repository: cadenway-api-gateway
       uses: >-
-        Serves every route through openapi/internal/task-service.yaml, composes task detail and
-        checks scopes. Allows If-Organization-Match in CORS preflight and checks it against the
+        Serves every route through openapi/internal/task-service.yaml, composes task detail with
+        its Development part from openapi/internal/integration-service.yaml and checks scopes. Allows If-Organization-Match in CORS preflight and checks it against the
         verified organization before forwarding the task operations that declare it.
     - repository: cadenway-webapp
       uses: >-
@@ -823,8 +824,7 @@ paths:
         but for an archived task, whose detail shows the subtasks archived with it, and `list`
         carries the role of the caller (`callerRole`). The gateway composes it; `partial` names
         the parts it could not read, so that the web application shows the rest. A failure of the
-        base task read fails the detail as a whole. Later versions may add parts for attachments
-        and development links.
+        base task read fails the detail as a whole. Later versions may add a part for attachments.
 
         `ETag` is the version to send in `If-Match` when editing the task. A successful read
         returns the detail with `Cache-Control: private, no-store`. The gateway ignores
@@ -833,6 +833,9 @@ paths:
         Scope `tasks:read` for a personal API token.
         The gateway also reads the first comment page from task-service. A comments-only upstream
         failure omits `comments` and adds `comments` to `partial`; a visibility denial fails closed.
+        After the base task read, the gateway reads the first page of Git links from
+        integration-service (`listTaskGitLinksInternal`). A failure of that read alone omits
+        `development` and adds `development` to `partial`.
         A base failure retains the existing whole-detail error.
         `If-Organization-Match` optionally pins the read to the caller's expected organization.
         The gateway checks it before reading the task or any part of its detail.
@@ -5102,6 +5105,11 @@ components:
         comments:
           $ref: '#/components/schemas/CommentPage'
           description: First page of comments, omitted if that part cannot be read.
+        development:
+          $ref: '../../components/git-links.yaml#/components/schemas/GitLinkPage'
+          description: |
+            First page of the task's Git links, newest first, as `GET /v1/tasks/{taskKey}/git-links`
+            in `openapi/public/git-links.yaml` returns it; omitted if that part cannot be read.
         task:
           $ref: '#/components/schemas/Task'
         space:
@@ -5123,8 +5131,8 @@ components:
           description: |
             The parts the gateway could not read, the rest of the detail being complete. Always
             empty when all parts are available; `comments` identifies a comments-only upstream
-            failure. Later versions may name other parts (`attachments`, `development`)
-            (`x-extensible-enum`).
+            failure and `development` a Git links-only upstream failure. Later versions may name
+            other parts (`attachments`) (`x-extensible-enum`).
           items:
             type: string
             x-extensible-enum: [comments, attachments, development]
