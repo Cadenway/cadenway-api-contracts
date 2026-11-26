@@ -48,9 +48,11 @@ info:
     pipeline ID gives the state, and `total` and `failed` count its jobs. When a head becomes
     current, the aggregate is computed from the observations already stored for that SHA, and
     is absent when there are none; that head change publishes `git.link-updated.v1` naming
-    `headSha` and, when it changed, `checks`. Observations of any other head SHA are pruned
-    once the current head has been current for 24 hours. A check observation of the current
-    head that makes the aggregate enter `passed` or `failed` publishes
+    `headSha` and, when it changed, `checks`. An observation of a head SHA that is not current
+    is kept for 7 days after its own last update, whatever the age of the current head, and
+    is pruned after that; a head update delayed by more than 7 days after its checks is not
+    supported and leaves `checks` absent until the next check delivery. A check observation of
+    the current head that makes the aggregate enter `passed` or `failed` publishes
     `git.checks-completed.v1`. Any other change to the aggregate, entering `running` or new
     counts, publishes `git.link-updated.v1` with `checks` in `changed`.
 
