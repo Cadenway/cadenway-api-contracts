@@ -59,7 +59,10 @@ info:
     checks is not supported and leaves `checks` absent until the next check delivery. A check
     observation of the current head that makes the aggregate enter `passed` or `failed` publishes
     `git.checks-completed.v1`. Any other change to the aggregate, entering `running` or new
-    counts, publishes `git.link-updated.v1` with `checks` in `changed`.
+    counts, publishes `git.link-updated.v1` with `checks` in `changed`. A completion that moves
+    `checksCompletedAt` while the aggregate stays the same (for example a later successful
+    GitLab pipeline with the same counts) increments the link version and publishes
+    `git.link-updated.v1` with `checksCompletedAt` in `changed`.
 
     **Reconciliation.** A tie can leave the lifecycle wrong until it is realigned. Every later
     delivery that carries the request's current state realigns it:
@@ -674,8 +677,8 @@ components:
       description: |
         Published for every other committed change to the members of `GitLink` in
         `components/git-links.yaml`, with their names in `changed`: `title`, `draft`, `url`,
-        `repository`, `sourceBranch`, `author`, `checks`, `reviewRequested`, `additions`,
-        `deletions` and `headSha` today. Later versions may name other members, which a consumer
+        `repository`, `sourceBranch`, `author`, `checks`, `checksCompletedAt`,
+        `reviewRequested`, `additions`, `deletions` and `headSha` today. Later versions may name other members, which a consumer
         ignores. Several members changed by one delivery share one fact. The deliveries that
         produce it are:
 
@@ -745,6 +748,7 @@ components:
                   sourceBranch,
                   author,
                   checks,
+                  checksCompletedAt,
                   reviewRequested,
                   additions,
                   deletions,
