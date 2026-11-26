@@ -62,12 +62,28 @@ info:
 
     **Merge intent.** The Task status intent of a verified merge (GitHub `pull_request` action
     `closed` with `merged: true`, GitLab merge request action `merge`) is tracked apart from the
-    lifecycle projection, so no ordering rule above can drop it. Each link records whether its
-    merge intent was handled, with the ID of the delivery that handled it. The first verified
-    merge delivery for the link submits its idempotent Task status action, under the stable Task
-    command identity of that delivery and task, and records the intent as handled, whether or not
-    the lifecycle already shows `merged` and whatever its provider time. A later verified merge
-    delivery for the same link finds the intent handled and submits nothing. When the lifecycle
+    lifecycle projection, so no ordering rule above can drop it. Each link keeps one merge intent
+    record, `pending` or `handled`, with the ID of the delivery that created it, for as long as
+    the link exists.
+
+    - The first verified merge delivery for the link, whether or not the lifecycle already shows
+      `merged` and whatever its provider time, durably records a `pending` Task status command
+      with its stable command identity (the `Idempotency-Key` of
+      `applyGitTaskStatusActionInternal`, derived from that delivery and task), in the same
+      transaction as its link change, through the integration-service outbox and jobs of the
+      service kit.
+    - The job submits the command and retries it with backoff under that same identity on a
+      failure or an ambiguous answer (timeout, transport error, `503`), within the window in
+      which Task retains its receipts (at least 24 hours). A command still unconfirmed at the end
+      of that window stays `pending`, is not resent and is reported for operator follow-up.
+    - The record becomes `handled` only after Task confirms: an `applied` or `no_op`
+      disposition, including a replay of an already applied command. A definitive refusal, such
+      as `404 task.not-found` or `task.trashed`, is recorded as `handled` with its reason.
+    - Deliveries for the same link serialize on the link row, so a link has at most one pending
+      command. A later verified merge delivery finds a `pending` or `handled` record and submits
+      nothing.
+
+    When the lifecycle
     already shows `merged`, the merge delivery does not publish `git.pr-merged.v1` again; it
     still applies its other members under the Ordering rules.
 
@@ -79,7 +95,8 @@ info:
     - merge, then realign: the merge sets `merged`, publishes `git.pr-merged.v1` and submits the
       Task status action; a later delivery reporting `merged` changes nothing;
     - duplicate merge: a repeated delivery is removed by its delivery identity; another verified
-      merge delivery for the same link finds the intent handled and submits nothing;
+      merge delivery for the same link finds the record `pending` or `handled` and submits
+      nothing;
     - merge after close: a closed link becomes `merged` with `git.pr-merged.v1`, and the merge
       submits the Task status action.
 
@@ -374,9 +391,9 @@ components:
         Published once per link, when the lifecycle first becomes `merged`: for a verified merge,
         or for a realignment to the current `merged` state of the request (see
         "Reconciliation"). The Task status intent of the merge is separate (see "Merge intent"):
-        the first verified merge delivery for the link submits it exactly once, also when it
-        arrives after a realignment has already published this fact, in which case the fact is
-        not published again.
+        the first verified merge delivery for the link records it once as a pending Task command,
+        retried until Task confirms, also when it arrives after a realignment has already
+        published this fact, in which case the fact is not published again.
       headers:
         $ref: '#/components/schemas/EventHeaders'
       payload:
