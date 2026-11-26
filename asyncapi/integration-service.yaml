@@ -28,6 +28,25 @@ info:
     `git.link-updated.v1` for any other change to the projection read through
     `GET /internal/v1/tasks/{taskKey}/git-links`.
 
+    Known limit: arrival order does not always match the provider's order, so a lifecycle
+    resolved from an equal-time tie can be wrong until the next delivery that carries the
+    request's current state (see "Reconciliation"). Integration does not read the provider API
+    today. Reconciliation against the provider API comes with the outbound provider client of
+    gap B5.
+
+    **Checks.** `checks` is an aggregate over the current `headSha`. On GitHub, Integration
+    keeps the latest status and conclusion of each check suite for that head, keyed by suite
+    ID, and drops a `stale` suite. A suite counts as failed with conclusion `failure`,
+    `timed_out`, `cancelled`, `action_required` or `startup_failure`, and as passed with
+    `success`, `neutral` or `skipped`. The aggregate is `failed` when any completed suite
+    failed, else `running` when any suite is queued, requested or in progress, else `passed`.
+    `total` and `failed` count suites. On GitLab, the latest merge request pipeline for the
+    head (highest pipeline ID) gives the state, and `total` and `failed` count its jobs. A
+    suite or pipeline update applies the Ordering rules to its own suite or pipeline. A new
+    head empties the set. `git.checks-completed.v1` is published when the aggregate enters
+    `passed` or `failed`. Any other change to the aggregate, entering `running` or new
+    counts, publishes `git.link-updated.v1` with `checks` in `changed`.
+
     **Reconciliation.** A tie can leave the lifecycle wrong only until the next delivery for
     the request. Every later delivery that carries the request's current state realigns it:
     any GitHub `pull_request` action (`pull_request.state` and `pull_request.merged`), any
@@ -453,6 +472,9 @@ components:
       name: git.checks-completed.v1
       title: Git checks completed
       summary: Integration recorded completed checks for an authorized linked task.
+      description: |
+        Published when the aggregate checks of the current head enter `passed` or `failed` (see
+        "Checks"). Other aggregate changes publish `git.link-updated.v1` with `checks`.
       headers:
         $ref: '#/components/schemas/EventHeaders'
       payload:

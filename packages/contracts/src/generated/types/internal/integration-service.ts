@@ -60,7 +60,9 @@ export type GitLinkKind = string;
  * the state it already applied and applies one with an equal provider time in arrival
  * order, never leaving `merged`. Every later delivery that carries the request's current
  * state (any pull or merge request action, a GitLab merge request pipeline) realigns a
- * state left wrong by such a tie. See "Ordering" and "Reconciliation" in
+ * state left wrong by such a tie; until then the state can be wrong. Reconciliation
+ * against the provider API comes with the outbound provider client of gap B5. See
+ * "Ordering" and "Reconciliation" in
  * `asyncapi/integration-service.yaml`. A draft request is `open` with `draft: true`.
  */
 export type GitLinkState = string;
@@ -111,29 +113,39 @@ export interface GitAuthor {
 }
 
 /**
- * Checks of the current head of a pull or merge request: GitHub's check suite
- * (`check_suite`), GitLab's merge request pipeline (`Pipeline Hook`). Never present for a
- * branch. Absent until integration-service has recorded it from the provider's webhook.
+ * Aggregate checks of the link's current `headSha`. On GitHub, integration-service keeps
+ * the latest status and conclusion of every check suite (`check_suite`) for that head, by
+ * suite ID, and leaves out a suite whose conclusion is `stale` (GitHub superseded it). On
+ * GitLab, it keeps the latest merge request pipeline (`Pipeline Hook`) for that head, the one
+ * with the highest pipeline ID. A new head empties the set, so `checks` is absent until a
+ * suite or pipeline of the new head is recorded. Never present for a branch. Absent until
+ * integration-service has recorded it from the provider's webhook.
  */
 export interface GitChecks {
   /**
-     * `passed`, `failed` or `running` (`x-extensible-enum`). On GitHub, a completed suite
-     * with conclusion `success`, `neutral` or `skipped` has passed and any other conclusion
-     * has failed; a requested or in-progress suite is running. On GitLab, pipeline status
-     * `success` or `skipped` has passed, `failed` or `canceled` has failed, and `created`,
-     * `pending` or `running` is running.
+     * `passed`, `failed` or `running` (`x-extensible-enum`), over the recorded set.
+     *
+     * - GitHub: `failed` when any completed suite has conclusion `failure`, `timed_out`,
+     *   `cancelled`, `action_required` or `startup_failure`, even while others run;
+     *   otherwise `running` when any suite is queued, requested or in progress; otherwise
+     *   `passed`, every recorded suite having completed with `success`, `neutral` or
+     *   `skipped`.
+     * - GitLab: the pipeline status. `failed` or `canceled` is `failed`; `created`,
+     *   `waiting_for_resource`, `preparing`, `pending` or `running` is `running`;
+     *   `success` or `skipped` is `passed`.
      */
   state: string;
   /**
-     * Number of checks: `check_suite.latest_check_runs_count` on GitHub, the jobs in
-     * `builds` on GitLab. Absent when the payload does not carry it.
+     * Number of recorded check suites for the head on GitHub; number of jobs (`builds`) of
+     * the pipeline on GitLab. Absent when the payload does not carry it.
      * @minimum 0
      * @maximum 9007199254740991
      */
   total?: number;
   /**
-     * Number of failed checks, the jobs in `builds` with status `failed` on GitLab. GitHub's
-     * check suite payload carries no per-run result, so it is absent for GitHub.
+     * Number of those suites (GitHub) or jobs (GitLab, status `failed`) that failed, counted
+     * with the conclusions and statuses `state` treats as failed. Absent when the payload
+     * does not carry it.
      * @minimum 0
      * @maximum 9007199254740991
      */
@@ -192,8 +204,8 @@ export interface GitLink {
      */
   headSha: string | null;
   /**
-     * When the provider reported the latest completed checks for `headSha`; `null` when no
-     * completion is recorded for it. `checks` gives the outcome.
+     * Provider time of the latest completed check suite or pipeline recorded for
+     * `headSha`; `null` when none is recorded for it. `checks` gives the aggregate outcome.
      * @nullable
      */
   checksCompletedAt: string | null;

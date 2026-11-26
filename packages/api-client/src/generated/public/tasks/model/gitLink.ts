@@ -54,8 +54,8 @@ export interface GitLink {
      */
   headSha: string | null;
   /**
-     * When the provider reported the latest completed checks for `headSha`; `null` when no
-     * completion is recorded for it. `checks` gives the outcome.
+     * Provider time of the latest completed check suite or pipeline recorded for
+     * `headSha`; `null` when none is recorded for it. `checks` gives the aggregate outcome.
      * @nullable
      */
   checksCompletedAt: string | null;
