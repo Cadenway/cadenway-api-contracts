@@ -212,6 +212,11 @@ export class InvitationsService {
  * and the key is not reserved. A batch without `Idempotency-Key` never counts toward the
  * budget and never answers this code.
  *
+ * The guarantee holds once every serving release enforces the budget. During a rollout or a
+ * rollback, a release that predates it admits new keys without counting them; their stored
+ * outcomes count toward the budget from then on, and the organization may hold more than the
+ * budget until they expire.
+ *
  * `details.nextAvailableAt` is the earliest instant at which the expiry of stored outcomes
  * alone brings the count, stored outcomes plus running requests, below the budget: the
  * expiry, 24 hours after it was stored, of the (count - budget + 1)-th oldest stored
