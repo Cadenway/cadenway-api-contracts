@@ -230,18 +230,25 @@ export const RemoveMemberResponse = zod.void()
  * transaction. No part of the batch commits without its replay record. A request that fails
  * without committing is not stored and the key may run again.
  *
- * **Replay record budget.** Each organization holds at most a service-defined number of live
- * replay records: requests with a key still running plus stored outcomes still inside their
- * 24 hours, across all its users. The budget bounds keyed batches that send no email, such as
- * a batch whose addresses are all members or already invited. It is checked only for a key
- * that has no live record, after authorization, organization preconditions and the replay
- * lookup, and before the daily allowances; replays, `409 idempotency.request-in-progress`
- * and `422 idempotency.key-reused` answer as before. When the budget is used up, the request
- * answers `429 invitation.keyed-batch-limit-reached`: nothing is created, sent, emitted or
- * stored. `details.nextAvailableAt` is when the oldest live replay record of the organization
- * expires, and `Retry-After` is the seconds until then, rounded up. The same key may be sent
- * again after `Retry-After`. A batch without `Idempotency-Key` never counts toward the
- * budget and never answers this code.
+ * **Replay record budget.** Each organization holds at most a service-defined number of
+ * stored outcomes: replay records still inside their 24 hours, across all its users. Requests
+ * with a key still running do not count. The budget bounds keyed batches that send no email,
+ * such as a batch whose addresses are all members or already invited. It is checked only for
+ * a key that has no live record, after authorization, organization preconditions and the
+ * replay lookup, and before the key is reserved and the daily allowances are checked;
+ * replays, `409 idempotency.request-in-progress` and `422 idempotency.key-reused` answer as
+ * before. When the budget is used up, the request answers
+ * `429 invitation.keyed-batch-limit-reached`: nothing is created, sent, emitted or stored,
+ * and the key is not reserved. `details.nextAvailableAt` is when the oldest stored outcome
+ * of the organization expires, 24 hours after it was stored, and `Retry-After` is the
+ * seconds until then, rounded up, at least `1`. The same key may be sent again after
+ * `Retry-After`. A batch without `Idempotency-Key` never counts toward the budget and never
+ * answers this code.
+ *
+ * The budget bounds storage, not a hard quota: concurrent first requests with new keys may
+ * each pass the check, so the organization can exceed the number by the requests in flight
+ * at that moment. A request still running keeps the behavior described above, including
+ * `409 idempotency.request-in-progress` for an equivalent request with its key.
  * @summary Invite people
  */
 export const inviteMembersHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');

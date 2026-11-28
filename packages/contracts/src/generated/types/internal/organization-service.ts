@@ -1010,7 +1010,7 @@ export type InvitationBatchLimitedResponse = Problem;
  *   when both will have grown if they are equal.
  * - `invitation.keyed-batch-limit-reached` when a request with an `Idempotency-Key` that has
  *   no live replay record finds the organization's replay record budget used up.
- *   `details.nextAvailableAt` reports when the oldest live replay record of the organization
+ *   `details.nextAvailableAt` reports when the oldest stored outcome of the organization
  *   expires; there is no `details.remaining`. A request without the header never answers it.
  *
  * `Retry-After` is the seconds until `details.nextAvailableAt`, rounded up. Nothing was

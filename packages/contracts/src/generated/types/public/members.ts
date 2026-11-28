@@ -455,7 +455,7 @@ export type RateLimitedResponse = Problem;
  *   will have grown if they are equal. Nothing was created or sent.
  * - `invitation.keyed-batch-limit-reached` when a request with an `Idempotency-Key` that has
  *   no live replay record finds the organization's replay record budget used up.
- *   `details.nextAvailableAt` reports when the oldest live replay record of the organization
+ *   `details.nextAvailableAt` reports when the oldest stored outcome of the organization
  *   expires; there is no `details.remaining`. Nothing was created, sent or stored. A request
  *   without the header never answers it.
  * - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
