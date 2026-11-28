@@ -510,7 +510,8 @@ export const RemoveMemberInternalResponse = zod.void()
  * go to `POST /internal/v1/invitation-batches`, which only a release with replay support
  * serves, so a rollback to an older release can never run a keyed retry as a fresh batch.
  * The optional header stays declared for compatibility; this route treats it as
- * `POST /internal/v1/invitation-batches` does.
+ * `POST /internal/v1/invitation-batches` does, with the same key namespace, replay records
+ * and in-progress reservation.
  * @summary Invite people
  */
 export const inviteMembersInternalHeaderIdempotencyKeyMax = 255;
@@ -604,8 +605,11 @@ export const ListInvitationsInternalResponse = zod.object({
  *
  * **Idempotency.** This route requires `Idempotency-Key` and exists only in releases that
  * store and replay keyed batches; an older release answers `404` on it, never a fresh batch.
- * The `Idempotency-Key` is scoped to the verified organization, acting user and this
- * operation. The same key in another organization or from another user never replays
+ * The `Idempotency-Key` is scoped to the verified organization, the acting user and the
+ * invitation of members: this route and `POST /internal/v1/invitations` share one key
+ * namespace, the same replay records and the same in-progress reservation, records written
+ * through either route before a gateway switch included, so a key used on one route replays,
+ * conflicts or waits on the other for the whole replay window. The same key in another organization or from another user never replays
  * this result. Before any replay, the current owner or admin authorization and organization
  * preconditions, including `If-Organization-Match` at the gateway, must pass again. Otherwise
  * the request answers as a fresh request would, including `403` or `412`, not the stored result.
