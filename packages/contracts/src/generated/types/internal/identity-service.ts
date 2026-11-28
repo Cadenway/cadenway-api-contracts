@@ -1478,6 +1478,104 @@ export interface ProfileMediaPreparation {
 }
 
 /**
+ * Pictogram of a status message, in the order of the picker of the dialog ("Icône du
+ * message"): `chat` ("Message"), `users` ("Réunion"), `airplane` ("Voyage"), `car`
+ * ("Trajet"), `train` ("Train"), `house` ("Télétravail"), `headphones` ("Concentration"),
+ * `code` ("Développement"), `pencil` ("Rédaction"), `lightbulb` ("Idée"), `calendar`
+ * ("Agenda"), `coffee` ("Pause"), `fork-knife` ("Repas"), `barbell` ("Sport"), `book`
+ * ("Formation"), `thermometer` ("Malade"), `sun-horizon` ("Congé") or `moon` ("Repos"), the
+ * entries of `STATUS_ICONS` of the mockup. The web application sends `chat` when the person
+ * picked none.
+ */
+export type StatusMessageIcon = typeof StatusMessageIcon[keyof typeof StatusMessageIcon];
+
+
+export const StatusMessageIcon = {
+  chat: 'chat',
+  users: 'users',
+  airplane: 'airplane',
+  car: 'car',
+  train: 'train',
+  house: 'house',
+  headphones: 'headphones',
+  code: 'code',
+  pencil: 'pencil',
+  lightbulb: 'lightbulb',
+  calendar: 'calendar',
+  coffee: 'coffee',
+  'fork-knife': 'fork-knife',
+  barbell: 'barbell',
+  book: 'book',
+  thermometer: 'thermometer',
+  'sun-horizon': 'sun-horizon',
+  moon: 'moon',
+} as const;
+
+/**
+ * A pictogram of `StatusMessageIcon`, as a status message carries it. Later versions add
+ * pictograms (`x-extensible-enum`): a client shows an unknown one as `chat`.
+ */
+export type StatusMessageIconValue = string;
+
+/**
+ * Text of a status message ("Que faites-vous ?"), one line of 80 characters at most (the
+ * counter "n / 80"). The generated validators count UTF-16 code units, as the input of the
+ * web application does; a JSON Schema validator counts code points, so a text that fits the
+ * first count always fits the second. The pattern refuses a control character (U+0000 to
+ * U+001F and U+007F to U+009F, line breaks and tabs included), the line and paragraph
+ * separators (U+2028, U+2029) and a text made only of white space;
+ * its leading run matches white space only, so it runs in linear time on any input.
+ * identity-service removes the surrounding white space before it stores the text, and the
+ * responses and events return the stored text.
+ * @minLength 1
+ * @maxLength 80
+ * @pattern ^[^\S\u0000-\u001F\u007F-\u009F ]*[^\s\u0000-\u001F\u007F-\u009F ][^\u0000-\u001F\u007F-\u009F ]*$
+ */
+export type StatusMessageText = string;
+
+/**
+ * The whole status message, as the dialog saves it ("Enregistrer"). Every member is
+ * required: a save replaces the current message.
+ */
+export interface StatusMessageInput {
+  icon: StatusMessageIcon;
+  text: StatusMessageText;
+  /**
+     * UTC instant from which the message no longer exists ("Effacer après"); `null` for
+     * "Jamais". The web application computes it when the person saves: 30 minutes ("30
+     * min"), 1 hour ("1 h") or 4 hours ("4 h") after now, or the end of the current day in
+     * the time zone of the account (`timeZone` of the profile) for "Aujourd’hui". It must be
+     * later than the moment identity-service handles the request, else
+     * `422 status-message.clears-at-passed`.
+     * @nullable
+     */
+  clearsAt: string | null;
+}
+
+/**
+ * The current status message of an account, as identity-service stored it.
+ */
+export interface StatusMessage {
+  icon: StatusMessageIconValue;
+  text: StatusMessageText;
+  /**
+     * UTC instant from which the message no longer exists, always later than the moment it
+     * was read; `null` when it stays until the person clears it ("Jamais"). A client that
+     * keeps a copy hides it at this instant without waiting for an event.
+     * @nullable
+     */
+  clearsAt: string | null;
+}
+
+/**
+ * The status message of the account, read or just saved.
+ */
+export interface CurrentStatusMessage {
+  /** The current message, or `null` when the person has none or it expired. */
+  statusMessage: StatusMessage | null;
+}
+
+/**
  * Members specific to the code, for example the fields that failed validation.
  */
 export type ProblemDetails = { [key: string]: unknown };
@@ -1781,6 +1879,12 @@ export type CodeThrottledResponse = Problem;
  * `session.not-found`: no session with this id belongs to the actor.
  */
 export type SessionNotFoundResponse = Problem;
+
+/**
+ * `status-message.clears-at-passed`: `clearsAt` is not later than the moment identity-service
+ * handled the request. The gateway answers the French title of `openapi/public/auth.yaml`.
+ */
+export type StatusMessageClearsAtPassedResponse = Problem;
 
 /**
  * `user.not-found`: no account with this id is readable by the actor.

@@ -967,6 +967,78 @@ export const userSignedUpV1Schema = zod.object({
   language: zod.string(),
 }) satisfies zod.ZodType<UserSignedUpV1>;
 
+/** Name of the event `user.status-message-changed.v1`. The status message of an account was set, replaced or cleared. */
+export const USER_STATUS_MESSAGE_CHANGED_V1 = 'user.status-message-changed.v1';
+
+/** Payload of the event `user.status-message-changed.v1`. */
+export interface UserStatusMessageChangedV1 {
+  /** Id of the event, the deduplication key. */
+  id: string;
+  /** When the change was committed. */
+  occurredAt: string;
+  /** Always `null`, a status message belongs to the account outside any organization. */
+  organizationId: null;
+  /** Who caused the event. */
+  actor: {
+    /** Kind of actor. */
+    type: 'user' | 'automation' | 'git' | 'system';
+    /** Id of the user, the automation rule, the Git integration or the service. */
+    id: string;
+  };
+  /**
+   * Version of the status message of the account after this change, separate from the
+   * version of the account: each set or clear that changes the current message moves it
+   * to the next one.
+   */
+  version: number;
+  /** Account whose status message changed. */
+  userId: string;
+  /** The status message after the change; `null` when it was cleared. */
+  statusMessage: {
+    /**
+     * A pictogram of `StatusMessageIcon`, as a status message carries it. Later versions add
+     * pictograms (`x-extensible-enum`): a client shows an unknown one as `chat`.
+     */
+    icon: string;
+    /**
+     * Text of a status message ("Que faites-vous ?"), one line of 80 characters at most (the
+     * counter "n / 80"). The generated validators count UTF-16 code units, as the input of the
+     * web application does; a JSON Schema validator counts code points, so a text that fits the
+     * first count always fits the second. The pattern refuses a control character (U+0000 to
+     * U+001F and U+007F to U+009F, line breaks and tabs included), the line and paragraph
+     * separators (U+2028, U+2029) and a text made only of white space;
+     * its leading run matches white space only, so it runs in linear time on any input.
+     * identity-service removes the surrounding white space before it stores the text, and the
+     * responses and events return the stored text.
+     */
+    text: string;
+    /**
+     * UTC instant from which the message no longer exists, always later than the moment it
+     * was read; `null` when it stays until the person clears it ("Jamais"). A client that
+     * keeps a copy hides it at this instant without waiting for an event.
+     */
+    clearsAt: string | null;
+  } | null;
+}
+
+/** Validator of the payload of the event `user.status-message-changed.v1`. */
+export const userStatusMessageChangedV1Schema = zod.object({
+  id: zod.uuid(),
+  occurredAt: zod.iso.datetime(),
+  organizationId: zod.null(),
+  actor: zod.object({
+    type: zod.enum(['user', 'automation', 'git', 'system']),
+    id: zod.string(),
+  }),
+  version: zod.int().min(1).max(9007199254740991),
+  userId: zod.uuid(),
+  statusMessage: zod.union([zod.object({
+    icon: zod.string(),
+    text: zod.string().min(1).max(80).regex(new RegExp('^[^\\S\\u0000-\\u001F\\u007F-\\u009F  ]*[^\\s\\u0000-\\u001F\\u007F-\\u009F  ][^\\u0000-\\u001F\\u007F-\\u009F  ]*$')),
+    clearsAt: zod.iso.datetime().nullable(),
+  }), zod.null()]),
+}) satisfies zod.ZodType<UserStatusMessageChangedV1>;
+
 /** Name of the event `user.two-step-verification-changed.v1`. The two-step verification of an account changed. */
 export const USER_TWO_STEP_VERIFICATION_CHANGED_V1 = 'user.two-step-verification-changed.v1';
 
@@ -1096,7 +1168,7 @@ export const userTwoStepVerificationChangedV1Schema = zod.object({
 }) satisfies zod.ZodType<UserTwoStepVerificationChangedV1>;
 
 /** Names of the events of this document. */
-export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, PASSWORD_RESET_LINK_ISSUED_V1, SESSION_OPENED_ON_NEW_DEVICE_V1, SESSION_ORGANIZATION_CHANGED_V1, SESSION_REVOKED_V1, USER_AVATAR_CHANGED_V1, USER_AVATAR_UPLOAD_ABANDONED_V1, USER_DELETED_V1, USER_DELETION_CANCELLED_V1, USER_DELETION_SCHEDULED_V1, USER_EMAIL_CHANGED_V1, USER_EMAIL_VERIFIED_V1, USER_PASSWORD_CHANGED_V1, USER_PROFILE_UPDATED_V1, USER_SIGNED_UP_V1, USER_TWO_STEP_VERIFICATION_CHANGED_V1] as const;
+export const EVENT_NAMES = [ONE_TIME_CODE_ISSUED_V1, PASSWORD_RESET_LINK_ISSUED_V1, SESSION_OPENED_ON_NEW_DEVICE_V1, SESSION_ORGANIZATION_CHANGED_V1, SESSION_REVOKED_V1, USER_AVATAR_CHANGED_V1, USER_AVATAR_UPLOAD_ABANDONED_V1, USER_DELETED_V1, USER_DELETION_CANCELLED_V1, USER_DELETION_SCHEDULED_V1, USER_EMAIL_CHANGED_V1, USER_EMAIL_VERIFIED_V1, USER_PASSWORD_CHANGED_V1, USER_PROFILE_UPDATED_V1, USER_SIGNED_UP_V1, USER_STATUS_MESSAGE_CHANGED_V1, USER_TWO_STEP_VERIFICATION_CHANGED_V1] as const;
 
 /** Name of an event of this document. */
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -1128,6 +1200,7 @@ export interface EventPayloads {
   'user.password-changed.v1': UserPasswordChangedV1;
   'user.profile-updated.v1': UserProfileUpdatedV1;
   'user.signed-up.v1': UserSignedUpV1;
+  'user.status-message-changed.v1': UserStatusMessageChangedV1;
   'user.two-step-verification-changed.v1': UserTwoStepVerificationChangedV1;
 }
 
@@ -1148,5 +1221,6 @@ export const eventSchemas = {
   'user.password-changed.v1': userPasswordChangedV1Schema,
   'user.profile-updated.v1': userProfileUpdatedV1Schema,
   'user.signed-up.v1': userSignedUpV1Schema,
+  'user.status-message-changed.v1': userStatusMessageChangedV1Schema,
   'user.two-step-verification-changed.v1': userTwoStepVerificationChangedV1Schema,
 } as const satisfies { readonly [Name in EventName]: zod.ZodType<EventPayloads[Name]> };

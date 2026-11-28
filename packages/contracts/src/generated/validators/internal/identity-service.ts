@@ -1095,6 +1095,94 @@ export const GetAvatarReferenceInternalResponse = zod.object({
 
 
 /**
+ * Returns the status message of the account of the actor, as `GET /v1/me/status-message`
+ * says: `statusMessage` is `null` when there is none or when its `clearsAt` has passed, an
+ * expiry computed at the read, never by a job. Another id, or an unknown one, answers
+ * `404 user.not-found`. Internal token: issuer `api-gateway`, actor `user` whose id is
+ * `userId`; any organization claim is ignored for this account-scoped operation.
+ * @summary Read the status message of a user
+ */
+export const GetStatusMessageInternalParams = zod.object({
+  "userId": zod.uuid().describe('Id of the account, the actor.')
+})
+
+export const getStatusMessageInternalResponseStatusMessageOneTextMax = 80;
+
+
+export const getStatusMessageInternalResponseStatusMessageOneTextRegExp = new RegExp('^[^\\S\\u0000-\\u001F\\u007F-\\u009F\u2028\u2029]*[^\\s\\u0000-\\u001F\\u007F-\\u009F\u2028\u2029][^\\u0000-\\u001F\\u007F-\\u009F\u2028\u2029]*$');
+
+
+export const GetStatusMessageInternalResponse = zod.object({
+  "statusMessage": zod.union([zod.object({
+  "icon": zod.string().describe('A pictogram of `StatusMessageIcon`, as a status message carries it. Later versions add\npictograms (`x-extensible-enum`): a client shows an unknown one as `chat`.\n'),
+  "text": zod.string().min(1).max(getStatusMessageInternalResponseStatusMessageOneTextMax).regex(getStatusMessageInternalResponseStatusMessageOneTextRegExp).describe('Text of a status message ("Que faites-vous ?"), one line of 80 characters at most (the\ncounter "n / 80"). The generated validators count UTF-16 code units, as the input of the\nweb application does; a JSON Schema validator counts code points, so a text that fits the\nfirst count always fits the second. The pattern refuses a control character (U+0000 to\nU+001F and U+007F to U+009F, line breaks and tabs included), the line and paragraph\nseparators (U+2028, U+2029) and a text made only of white space;\nits leading run matches white space only, so it runs in linear time on any input.\nidentity-service removes the surrounding white space before it stores the text, and the\nresponses and events return the stored text.\n'),
+  "clearsAt": zod.iso.datetime({"offset":true}).nullable().describe('UTC instant from which the message no longer exists, always later than the moment it\nwas read; `null` when it stays until the person clears it ("Jamais"). A client that\nkeeps a copy hides it at this instant without waiting for an event.\n')
+}).describe('The current status message of an account, as identity-service stored it.'),zod.null()]).describe('The current message, or `null` when the person has none or it expired.')
+}).describe('The status message of the account, read or just saved.')
+
+
+/**
+ * Replaces the whole status message of the account of the actor, as
+ * `PUT /v1/me/status-message` says: the surrounding white space of `text` is removed before
+ * it is stored; a `clearsAt` that is not later than the moment the request is handled
+ * answers `422 status-message.clears-at-passed`; no version, `ETag` or `If-Match`, the last
+ * write wins. A message equal to the current one (same `icon`, `text` and `clearsAt`)
+ * answers `200` and appends nothing; any other appends `user.status-message-changed.v1` in
+ * the same transaction as the change (transactional outbox). Another id, or an unknown
+ * one, answers `404 user.not-found`. Internal token: issuer `api-gateway`, actor `user`
+ * whose id is `userId`; any organization claim is ignored for this account-scoped
+ * operation.
+ * @summary Set the status message of a user
+ */
+export const SetStatusMessageInternalParams = zod.object({
+  "userId": zod.uuid().describe('Id of the account, the actor.')
+})
+
+export const setStatusMessageInternalBodyTextMax = 80;
+
+
+export const setStatusMessageInternalBodyTextRegExp = new RegExp('^[^\\S\\u0000-\\u001F\\u007F-\\u009F\u2028\u2029]*[^\\s\\u0000-\\u001F\\u007F-\\u009F\u2028\u2029][^\\u0000-\\u001F\\u007F-\\u009F\u2028\u2029]*$');
+
+
+export const SetStatusMessageInternalBody = zod.strictObject({
+  "icon": zod.enum(['chat', 'users', 'airplane', 'car', 'train', 'house', 'headphones', 'code', 'pencil', 'lightbulb', 'calendar', 'coffee', 'fork-knife', 'barbell', 'book', 'thermometer', 'sun-horizon', 'moon']).describe('Pictogram of a status message, in the order of the picker of the dialog ("Icône du\nmessage"): `chat` ("Message"), `users` ("Réunion"), `airplane` ("Voyage"), `car`\n("Trajet"), `train` ("Train"), `house` ("Télétravail"), `headphones` ("Concentration"),\n`code` ("Développement"), `pencil` ("Rédaction"), `lightbulb` ("Idée"), `calendar`\n("Agenda"), `coffee` ("Pause"), `fork-knife` ("Repas"), `barbell` ("Sport"), `book`\n("Formation"), `thermometer` ("Malade"), `sun-horizon` ("Congé") or `moon` ("Repos"), the\nentries of `STATUS_ICONS` of the mockup. The web application sends `chat` when the person\npicked none.\n'),
+  "text": zod.string().min(1).max(setStatusMessageInternalBodyTextMax).regex(setStatusMessageInternalBodyTextRegExp).describe('Text of a status message ("Que faites-vous ?"), one line of 80 characters at most (the\ncounter "n / 80"). The generated validators count UTF-16 code units, as the input of the\nweb application does; a JSON Schema validator counts code points, so a text that fits the\nfirst count always fits the second. The pattern refuses a control character (U+0000 to\nU+001F and U+007F to U+009F, line breaks and tabs included), the line and paragraph\nseparators (U+2028, U+2029) and a text made only of white space;\nits leading run matches white space only, so it runs in linear time on any input.\nidentity-service removes the surrounding white space before it stores the text, and the\nresponses and events return the stored text.\n'),
+  "clearsAt": zod.iso.datetime({"offset":true}).nullable().describe('UTC instant from which the message no longer exists ("Effacer après"); `null` for\n"Jamais". The web application computes it when the person saves: 30 minutes ("30\nmin"), 1 hour ("1 h") or 4 hours ("4 h") after now, or the end of the current day in\nthe time zone of the account (`timeZone` of the profile) for "Aujourd’hui". It must be\nlater than the moment identity-service handles the request, else\n`422 status-message.clears-at-passed`.\n')
+}).describe('The whole status message, as the dialog saves it ("Enregistrer"). Every member is\nrequired: a save replaces the current message.\n')
+
+export const setStatusMessageInternalResponseStatusMessageOneTextMax = 80;
+
+
+export const setStatusMessageInternalResponseStatusMessageOneTextRegExp = new RegExp('^[^\\S\\u0000-\\u001F\\u007F-\\u009F\u2028\u2029]*[^\\s\\u0000-\\u001F\\u007F-\\u009F\u2028\u2029][^\\u0000-\\u001F\\u007F-\\u009F\u2028\u2029]*$');
+
+
+export const SetStatusMessageInternalResponse = zod.object({
+  "statusMessage": zod.union([zod.object({
+  "icon": zod.string().describe('A pictogram of `StatusMessageIcon`, as a status message carries it. Later versions add\npictograms (`x-extensible-enum`): a client shows an unknown one as `chat`.\n'),
+  "text": zod.string().min(1).max(setStatusMessageInternalResponseStatusMessageOneTextMax).regex(setStatusMessageInternalResponseStatusMessageOneTextRegExp).describe('Text of a status message ("Que faites-vous ?"), one line of 80 characters at most (the\ncounter "n / 80"). The generated validators count UTF-16 code units, as the input of the\nweb application does; a JSON Schema validator counts code points, so a text that fits the\nfirst count always fits the second. The pattern refuses a control character (U+0000 to\nU+001F and U+007F to U+009F, line breaks and tabs included), the line and paragraph\nseparators (U+2028, U+2029) and a text made only of white space;\nits leading run matches white space only, so it runs in linear time on any input.\nidentity-service removes the surrounding white space before it stores the text, and the\nresponses and events return the stored text.\n'),
+  "clearsAt": zod.iso.datetime({"offset":true}).nullable().describe('UTC instant from which the message no longer exists, always later than the moment it\nwas read; `null` when it stays until the person clears it ("Jamais"). A client that\nkeeps a copy hides it at this instant without waiting for an event.\n')
+}).describe('The current status message of an account, as identity-service stored it.'),zod.null()]).describe('The current message, or `null` when the person has none or it expired.')
+}).describe('The status message of the account, read or just saved.')
+
+
+/**
+ * Removes the status message of the account of the actor, as
+ * `DELETE /v1/me/status-message` says: `204` also when there is none or it has expired.
+ * Removing a current message appends `user.status-message-changed.v1` with
+ * `statusMessage: null` in the same transaction (transactional outbox); removing nothing
+ * appends nothing. Another id, or an unknown one, answers `404 user.not-found`. Internal
+ * token: issuer `api-gateway`, actor `user` whose id is `userId`; any organization claim is
+ * ignored for this account-scoped operation.
+ * @summary Clear the status message of a user
+ */
+export const ClearStatusMessageInternalParams = zod.object({
+  "userId": zod.uuid().describe('Id of the account, the actor.')
+})
+
+export const ClearStatusMessageInternalResponse = zod.void()
+
+
+/**
  * Returns an account. A user actor reads its own account only: another id, or an unknown one,
  * answers `404 user.not-found`. Internal token: actor `user`, no organization.
  * @summary Read a user

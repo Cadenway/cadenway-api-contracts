@@ -2,9 +2,10 @@
 # openapi/public/auth.yaml and their two-step challenge, the introspection of the session cookie and
 # of a personal API token, the sessions of a user, their revocation and the choice of their
 # organization, the password reset and the recent re-authentication, the reading, the profile, the
-# password, the address, the two-step verification and the deletion of a user, the authentication
-# policy of an organization, the personal API tokens of openapi/public/api-tokens.yaml, the
-# account avatar and realtime ticket issuance. cadenway-realtime-gateway redeems tickets.
+# status message, the password, the address, the two-step verification and the deletion of a
+# user, the authentication policy of an organization, the personal API tokens of
+# openapi/public/api-tokens.yaml, the account avatar and realtime ticket issuance.
+# cadenway-realtime-gateway redeems tickets.
 # cadenway-notification-service reads the recipient profile for notification emails.
 openapi: 3.1.0
 info:
@@ -50,6 +51,9 @@ info:
     | `DELETE /v1/me/avatar` | `DELETE /internal/v1/users/{userId}/avatar` |
     | `GET /v1/me/avatar` or authorized `GET /v1/members/{memberId}/avatar` | `GET /internal/v1/users/{userId}/avatar-reference` before the Storage read |
     | `PATCH /v1/me` | `PATCH /internal/v1/users/{userId}` with the user the introspection returned |
+    | `GET /v1/me/status-message` | `GET /internal/v1/users/{userId}/status-message` with the user the introspection returned |
+    | `PUT /v1/me/status-message` | `PUT /internal/v1/users/{userId}/status-message` with the user the introspection returned |
+    | `DELETE /v1/me/status-message` | `DELETE /internal/v1/users/{userId}/status-message` with the user the introspection returned |
     | `PUT /v1/me/password` | `PUT /internal/v1/users/{userId}/password` with the user and the session the introspection returned |
     | `POST /v1/me/email-change` | `POST /internal/v1/users/{userId}/email-change` with the user and the session the introspection returned |
     | `POST /v1/me/email-change/confirmation` | `POST /internal/v1/users/{userId}/email-change/confirmation` with the user and the session the introspection returned |
@@ -216,8 +220,8 @@ info:
     - repository: cadenway-api-gateway
       uses: >-
         Calls its routes through the generated client for authentication, session and API token
-        introspection, account and avatar management, personal API tokens, the current
-        organization and its authentication policy, and realtime ticket issuance.
+        introspection, account, avatar and status message management, personal API tokens, the
+        current organization and its authentication policy, and realtime ticket issuance.
     - repository: cadenway-realtime-gateway
       uses: Redeems a realtime ticket before authenticating a Socket.IO connection.
     - repository: cadenway-notification-service
@@ -1294,6 +1298,110 @@ paths:
               schema:
                 $ref: '../../components/profile-media.yaml#/components/schemas/CurrentAvatarReference'
               example: { assetId: 019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01 }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+  /internal/v1/users/{userId}/status-message:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      operationId: getStatusMessageInternal
+      summary: Read the status message of a user
+      description: |
+        Returns the status message of the account of the actor, as `GET /v1/me/status-message`
+        says: `statusMessage` is `null` when there is none or when its `clearsAt` has passed, an
+        expiry computed at the read, never by a job. Another id, or an unknown one, answers
+        `404 user.not-found`. Internal token: issuer `api-gateway`, actor `user` whose id is
+        `userId`; any organization claim is ignored for this account-scoped operation.
+      tags: [users]
+      responses:
+        '200':
+          description: The current status message, or `null`.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/status-message.yaml#/components/schemas/CurrentStatusMessage'
+              examples:
+                inAMeeting:
+                  $ref: '#/components/examples/StatusMessageInAMeeting'
+                none:
+                  summary: No status message, or it expired
+                  value:
+                    statusMessage: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+    put:
+      operationId: setStatusMessageInternal
+      summary: Set the status message of a user
+      description: |
+        Replaces the whole status message of the account of the actor, as
+        `PUT /v1/me/status-message` says: the surrounding white space of `text` is removed before
+        it is stored; a `clearsAt` that is not later than the moment the request is handled
+        answers `422 status-message.clears-at-passed`; no version, `ETag` or `If-Match`, the last
+        write wins. A message equal to the current one (same `icon`, `text` and `clearsAt`)
+        answers `200` and appends nothing; any other appends `user.status-message-changed.v1` in
+        the same transaction as the change (transactional outbox). Another id, or an unknown
+        one, answers `404 user.not-found`. Internal token: issuer `api-gateway`, actor `user`
+        whose id is `userId`; any organization claim is ignored for this account-scoped
+        operation.
+      tags: [users]
+      x-cadenway-strict-body: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../../components/status-message.yaml#/components/schemas/StatusMessageInput'
+            example:
+              icon: users
+              text: En réunion
+              clearsAt: '2026-11-24T10:00:00Z'
+      responses:
+        '200':
+          description: The status message after the change.
+          content:
+            application/json:
+              schema:
+                $ref: '../../components/status-message.yaml#/components/schemas/CurrentStatusMessage'
+              examples:
+                inAMeeting:
+                  $ref: '#/components/examples/StatusMessageInAMeeting'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InternalTokenRefused'
+        '403':
+          $ref: '#/components/responses/InternalAccessRefused'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+        '422':
+          $ref: '#/components/responses/StatusMessageClearsAtPassed'
+    delete:
+      operationId: clearStatusMessageInternal
+      summary: Clear the status message of a user
+      description: |
+        Removes the status message of the account of the actor, as
+        `DELETE /v1/me/status-message` says: `204` also when there is none or it has expired.
+        Removing a current message appends `user.status-message-changed.v1` with
+        `statusMessage: null` in the same transaction (transactional outbox); removing nothing
+        appends nothing. Another id, or an unknown one, answers `404 user.not-found`. Internal
+        token: issuer `api-gateway`, actor `user` whose id is `userId`; any organization claim is
+        ignored for this account-scoped operation.
+      tags: [users]
+      responses:
+        '204':
+          description: The account has no status message.
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -3118,6 +3226,13 @@ components:
         type: integer
         minimum: 1
   examples:
+    StatusMessageInAMeeting:
+      summary: Camille Martin is in a meeting for 1 hour
+      value:
+        statusMessage:
+          icon: users
+          text: En réunion
+          clearsAt: '2026-11-24T10:00:00Z'
     CamilleMartin:
       summary: Camille Martin, with the profile of the mockup
       value:
@@ -3840,6 +3955,19 @@ components:
             title: Not Found
             status: 404
             code: session.not-found
+    StatusMessageClearsAtPassed:
+      description: |
+        `status-message.clears-at-passed`: `clearsAt` is not later than the moment identity-service
+        handled the request. The gateway answers the French title of `openapi/public/auth.yaml`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: The clearing time of the status message has already passed.
+            status: 422
+            code: status-message.clears-at-passed
     UserNotFound:
       description: '`user.not-found`: no account with this id is readable by the actor.'
       content:

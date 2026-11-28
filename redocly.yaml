@@ -139,6 +139,11 @@ apis:
     rules:
       no-empty-servers: off
       no-unused-components: off
+  shared-status-message:
+    root: components/status-message.yaml
+    rules:
+      no-empty-servers: off
+      no-unused-components: off
   shared-realtime:
     root: components/realtime.yaml
     rules:
