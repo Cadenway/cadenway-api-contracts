@@ -1035,7 +1035,7 @@ components:
       summary: Replay record budget of keyed invitation batches used up
       value:
         type: about:blank
-        title: 'Trop de demandes d’invitation récentes : réessayez plus tard.'
+        title: Too Many Requests
         status: 429
         code: invitation.keyed-batch-limit-reached
         details:
