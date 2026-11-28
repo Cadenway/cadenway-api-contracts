@@ -13,6 +13,12 @@ info:
     url: https://github.com/Cadenway/cadenway-api-contracts/blob/main/LICENSE
 components:
   parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Client-chosen key for replaying an equivalent request.
+      schema: { type: string, minLength: 1, maxLength: 255 }
     Cursor:
       name: cursor
       in: query
@@ -60,6 +66,18 @@ components:
         status: 412
         code: organization.context-changed
   responses:
+    IdempotencyInProgress:
+      description: '`idempotency.request-in-progress`: an equivalent request with this key is still running.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    IdempotencyKeyReused:
+      description: '`idempotency.key-reused`: this key was already used with a different body.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     OrganizationContextChanged:
       description: |
         `organization.context-changed`: `If-Organization-Match` differs from the organization

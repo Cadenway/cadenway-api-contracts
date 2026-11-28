@@ -505,8 +505,22 @@ export const RemoveMemberInternalResponse = zod.void()
  * when the limiting allowance next grows. If both remaining allowances are equal, it is
  * when both will have grown. `Retry-After` is the delay in seconds rounded up.
  * A batch whose addresses are all members or already invited uses neither allowance.
+ *
+ * **Idempotency.** For 24 hours, an equivalent body with the same `Idempotency-Key`
+ * replays the stored status and body without sending again or charging the daily allowances
+ * twice. A different body answers `422 idempotency.key-reused`; an equivalent request still
+ * running answers `409 idempotency.request-in-progress`. Responses with a `5xx` status are
+ * not stored.
  * @summary Invite people
  */
+export const inviteMembersInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const InviteMembersInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(inviteMembersInternalHeaderIdempotencyKeyMax).optional().describe('Client-chosen key for replaying an equivalent request.')
+})
+
 export const inviteMembersInternalBodyEmailsItemMax = 254;
 
 export const inviteMembersInternalBodyEmailsMax = 50;
@@ -571,6 +585,39 @@ export const ListInvitationsInternalResponse = zod.object({
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(listInvitationsInternalResponseTotalMin)
 })
+
+
+/**
+ * Returns an invitation of the current organization in any state. Owner and admins only.
+ * Internal token: actor `user`, organization required.
+ * @summary Get an invitation
+ */
+export const GetInvitationInternalParams = zod.object({
+  "invitationId": zod.uuid().describe('Id of the invitation.')
+})
+
+export const getInvitationInternalResponseOneEmailMax = 254;
+
+
+
+
+export const GetInvitationInternalResponse = zod.object({
+  "id": zod.uuid(),
+  "email": zod.email().max(getInvitationInternalResponseOneEmailMax).describe('Email address, compared without regard to case.'),
+  "role": zod.enum(['admin', 'member', 'guest']).describe('A role that can be given; never `owner`.'),
+  "invitedBy": zod.object({
+  "userId": zod.uuid(),
+  "name": zod.string()
+}),
+  "status": zod.string(),
+  "sentAt": zod.iso.datetime({"offset":true}),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().min(1)
+}).and(zod.object({
+  "status": zod.string().describe('The current lifecycle state of the invitation.'),
+  "answeredAt": zod.iso.datetime({"offset":true}).nullable().describe('When the invitation was accepted or refused; otherwise null.'),
+  "revokedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the invitation was revoked; otherwise null.')
+})).describe('An invitation in any state of its lifecycle.')
 
 
 /**

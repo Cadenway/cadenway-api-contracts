@@ -197,6 +197,24 @@ export interface Invitation {
   version: number;
 }
 
+/**
+ * An invitation in any state of its lifecycle.
+ */
+export type InvitationState = Invitation & ({
+  /** The current lifecycle state of the invitation. */
+  status: string;
+  /**
+     * When the invitation was accepted or refused; otherwise null.
+     * @nullable
+     */
+  answeredAt: string | null;
+  /**
+     * When the invitation was revoked; otherwise null.
+     * @nullable
+     */
+  revokedAt: string | null;
+});
+
 export interface InvitationPage {
   items: Invitation[];
   nextCursor: NextCursor | null;

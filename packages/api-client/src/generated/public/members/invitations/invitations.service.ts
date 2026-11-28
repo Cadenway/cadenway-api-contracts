@@ -23,6 +23,7 @@ import type {
   InvitationBatch,
   InvitationBatchResult,
   InvitationPage,
+  InvitationState,
   JoinedOrganization,
   ListInvitationsParams,
   ListReceivedInvitationsParams,
@@ -173,6 +174,12 @@ export class InvitationsService {
  *
  * A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
  * `invitation.issued.v1` per `invited` address. Session only.
+ *
+ * **Idempotency.** For 24 hours, an equivalent body with the same `Idempotency-Key`
+ * replays the stored status and body without sending again or charging the daily allowances
+ * twice. A different body answers `422 idempotency.key-reused`; an equivalent request still
+ * running answers `409 idempotency.request-in-progress`. Responses with a `5xx` status are
+ * not stored.
  * @summary Invite people
  */
  inviteMembers<TData = InvitationBatchResult>(invitationBatch: InvitationBatch, options?: HttpClientBodyOptions): Observable<TData>;
@@ -244,6 +251,41 @@ export class InvitationsService {
     ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
         params: filteredParams,}
+    );
+  }
+/**
+ * Returns an invitation of the current organization in any state. Owner and admins only.
+ * Session only.
+ * @summary Get an invitation
+ */
+ getInvitation<TData = InvitationState>(invitationId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ getInvitation<TData = InvitationState>(invitationId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getInvitation<TData = InvitationState>(invitationId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getInvitation<TData = InvitationState>(
+    invitationId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/invitations/${invitationId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/invitations/${invitationId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/invitations/${invitationId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
     );
   }
 /**
@@ -487,6 +529,7 @@ export class InvitationsService {
 
 export type InviteMembersClientResult = NonNullable<InvitationBatchResult>
 export type ListInvitationsClientResult = NonNullable<InvitationPage>
+export type GetInvitationClientResult = NonNullable<InvitationState>
 export type RevokeInvitationClientResult = NonNullable<void>
 export type ResendInvitationClientResult = NonNullable<Invitation>
 export type ListReceivedInvitationsClientResult = NonNullable<ReceivedInvitationPage>

@@ -210,13 +210,22 @@ export const RemoveMemberResponse = zod.void()
  *
  * A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
  * `invitation.issued.v1` per `invited` address. Session only.
+ *
+ * **Idempotency.** For 24 hours, an equivalent body with the same `Idempotency-Key`
+ * replays the stored status and body without sending again or charging the daily allowances
+ * twice. A different body answers `422 idempotency.key-reused`; an equivalent request still
+ * running answers `409 idempotency.request-in-progress`. Responses with a `5xx` status are
+ * not stored.
  * @summary Invite people
  */
 export const inviteMembersHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+export const inviteMembersHeaderIdempotencyKeyMax = 255;
+
 
 
 export const InviteMembersHeader = zod.object({
-  "If-Organization-Match": zod.uuid().regex(inviteMembersHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+  "If-Organization-Match": zod.uuid().regex(inviteMembersHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n'),
+  "Idempotency-Key": zod.string().min(1).max(inviteMembersHeaderIdempotencyKeyMax).optional().describe('Client-chosen key for replaying an equivalent request.')
 })
 
 export const inviteMembersBodyEmailsItemMax = 254;
@@ -290,6 +299,46 @@ export const ListInvitationsResponse = zod.object({
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(listInvitationsResponseTotalMin).describe('Pending invitations of the organization, on every page.')
 })
+
+
+/**
+ * Returns an invitation of the current organization in any state. Owner and admins only.
+ * Session only.
+ * @summary Get an invitation
+ */
+export const GetInvitationParams = zod.object({
+  "invitationId": zod.uuid().describe('Id of the invitation, as a list or the email link gives it.')
+})
+
+export const getInvitationHeaderIfOrganizationMatchRegExp = new RegExp('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-7[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+
+
+export const GetInvitationHeader = zod.object({
+  "If-Organization-Match": zod.uuid().regex(getInvitationHeaderIfOrganizationMatchRegExp).optional().describe('The UUIDv7 of the organization the caller expects, compared without regard to hex case.\nThe verified session or API token determines the organization for the request. The gateway\nuses this header only to check that organization before forwarding the request. A mismatch\nanswers `412 organization.context-changed`. Omit the header to use the verified context\nwithout an organization precondition. Send exactly one UUIDv7: repeated, comma-separated\nor malformed values answer `400 request.invalid` with an issue on this header.\n')
+})
+
+export const getInvitationResponseOneEmailMax = 254;
+
+
+
+
+export const GetInvitationResponse = zod.object({
+  "id": zod.uuid(),
+  "email": zod.email().max(getInvitationResponseOneEmailMax).describe('Email address, compared without regard to case.'),
+  "role": zod.enum(['admin', 'member', 'guest']).describe('A role that can be given: `admin` ("Administrateur — gère membres et réglages"), `member`\n("Membre — accès aux espaces partagés") or `guest` ("Invité — accès à des listes précises,\ngratuit"). Never `owner`.\n'),
+  "invitedBy": zod.object({
+  "userId": zod.uuid(),
+  "name": zod.string()
+}).describe('Who sent the invitation ("Invité par {nom}").'),
+  "status": zod.string().describe('`pending` ("Expire dans {n} jours") or `expired` ("Expirée le {date}"); the list holds\nno other. Later versions may add statuses (`x-extensible-enum`).\n'),
+  "sentAt": zod.iso.datetime({"offset":true}).describe('When the email was last sent; a resend moves it.'),
+  "expiresAt": zod.iso.datetime({"offset":true}).describe('`sentAt` plus 7 days.'),
+  "version": zod.int().min(1).describe('Version of the invitation; a resend adds one.')
+}).and(zod.object({
+  "status": zod.string().describe('The current lifecycle state of the invitation.'),
+  "answeredAt": zod.iso.datetime({"offset":true}).nullable().describe('When the invitation was accepted or refused; otherwise null.'),
+  "revokedAt": zod.iso.datetime({"offset":true}).nullable().describe('When the invitation was revoked; otherwise null.')
+})).describe('An invitation in any state of its lifecycle.')
 
 
 /**
