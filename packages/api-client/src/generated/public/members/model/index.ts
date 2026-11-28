@@ -14,6 +14,7 @@ export * from './invitationAnsweredResponse';
 export * from './invitationBatch';
 export * from './invitationBatchLimitedResponse';
 export * from './invitationBatchResult';
+export * from './invitationBatchUnavailableResponse';
 export * from './invitationClosedResponse';
 export * from './invitationForbiddenResponse';
 export * from './invitationNotFoundResponse';

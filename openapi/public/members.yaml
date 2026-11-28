@@ -475,7 +475,7 @@ paths:
         '429':
           $ref: '#/components/responses/InvitationBatchLimited'
         '503':
-          $ref: '#/components/responses/Unavailable'
+          $ref: '#/components/responses/InvitationBatchUnavailable'
     get:
       operationId: listInvitations
       summary: List the pending invitations
@@ -1408,6 +1408,31 @@ components:
                   nextAvailableAt: '2026-11-08T08:40:00Z'
             rateLimited:
               $ref: '#/components/examples/RateLimited'
+    InvitationBatchUnavailable:
+      description: |
+        organization-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+        `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+        `upstream.deadline-exceeded`, with `details.service`. A request carrying `Idempotency-Key`
+        also answers `upstream.unavailable` while the serving organization-service release cannot
+        replay keyed batches (during a rollout or a rollback); nothing was run, and the same key may
+        be sent again after `Retry-After`.
+      headers:
+        Retry-After:
+          description: Seconds to wait before sending the request again, when known.
+          schema:
+            type: integer
+            minimum: 0
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../../components/http.yaml#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            code: upstream.unavailable
+            details:
+              service: organization-service
     Unavailable:
       description: |
         organization-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,

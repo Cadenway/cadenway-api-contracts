@@ -477,6 +477,16 @@ export type InvitationResendLimitedResponse = Problem;
 /**
  * organization-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
  * `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
+ * `upstream.deadline-exceeded`, with `details.service`. A request carrying `Idempotency-Key`
+ * also answers `upstream.unavailable` while the serving organization-service release cannot
+ * replay keyed batches (during a rollout or a rollback); nothing was run, and the same key may
+ * be sent again after `Retry-After`.
+ */
+export type InvitationBatchUnavailableResponse = Problem;
+
+/**
+ * organization-service cannot answer: `upstream.unavailable`, `upstream.unreachable`,
+ * `upstream.timeout`, `upstream.circuit-open`, `upstream.failed`, `upstream.unauthorized` or
  * `upstream.deadline-exceeded`, with `details.service`.
  */
 export type UnavailableResponse = Problem;

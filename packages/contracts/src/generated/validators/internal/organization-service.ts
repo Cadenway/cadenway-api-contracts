@@ -506,23 +506,12 @@ export const RemoveMemberInternalResponse = zod.void()
  * when both will have grown. `Retry-After` is the delay in seconds rounded up.
  * A batch whose addresses are all members or already invited uses neither allowance.
  *
- * **Idempotency.** The `Idempotency-Key` is scoped to the verified organization, acting user
- * and this operation. The same key in another organization or from another user never replays
- * this result. Before any replay, the current owner or admin authorization and organization
- * preconditions, including `If-Organization-Match` at the gateway, must pass again. Otherwise
- * the request answers as a fresh request would, including `403` or `412`, not the stored result.
- *
- * While authorization and preconditions still hold, an equivalent body with the same key
- * replays the original `200` status and body for 24 hours without sending again or charging
- * the daily allowances twice. A different body answers `422 idempotency.key-reused`; an
- * equivalent request still running answers `409 idempotency.request-in-progress`. Only the
- * `200` outcome is stored. No `429`, including `invitation.daily-limit-reached`, or other
- * error is stored; the same key may run again when the allowance is available.
- *
- * When a key is supplied, the invitations, their `invitation.issued.v1` events in a
- * transactional outbox or equivalent, and the replay record commit together in the same
- * transaction. No part of the batch commits without its replay record. A request that fails
- * without committing is not stored and the key may run again.
+ * **Idempotency.** The gateway never sends `Idempotency-Key` to this route: keyed batches
+ * go to `POST /internal/v1/invitation-batches`, which only a release with replay support
+ * serves, so a rollback to an older release can never run a keyed retry as a fresh batch.
+ * The optional header stays declared for compatibility; this route treats it as
+ * `POST /internal/v1/invitation-batches` does, with the same key namespace, replay records
+ * and in-progress reservation.
  * @summary Invite people
  */
 export const inviteMembersInternalHeaderIdempotencyKeyMax = 255;
@@ -596,6 +585,77 @@ export const ListInvitationsInternalResponse = zod.object({
 })),
   "nextCursor": zod.string().nullable().describe('Cursor of the next page; `null` on the last page.'),
   "total": zod.int().min(listInvitationsInternalResponseTotalMin)
+})
+
+
+/**
+ * Invites the addresses of the batch with one role, one outcome per distinct address, as
+ * `POST /v1/invitations` says. Owner and admins only. Emits one `invitation.issued.v1` per
+ * `invited` address. Internal token: actor `user`, organization required.
+ *
+ * **Daily allowances.** Organization-service allows at most 100 invitation emails per
+ * organization and 100 per sender across all organizations in any rolling 24 hours.
+ * Each email from this route, organization creation or resend uses both allowances.
+ * Once the body and role are accepted, a batch that would exceed either allowance returns
+ * `429 invitation.daily-limit-reached`. Nothing is created, sent or emitted.
+ * `details.remaining` is the smaller allowance remaining. `details.nextAvailableAt` is
+ * when the limiting allowance next grows. If both remaining allowances are equal, it is
+ * when both will have grown. `Retry-After` is the delay in seconds rounded up.
+ * A batch whose addresses are all members or already invited uses neither allowance.
+ *
+ * **Idempotency.** This route requires `Idempotency-Key` and exists only in releases that
+ * store and replay keyed batches; an older release answers `404` on it, never a fresh batch.
+ * The `Idempotency-Key` is scoped to the verified organization, the acting user and the
+ * invitation of members: this route and `POST /internal/v1/invitations` share one key
+ * namespace, the same replay records and the same in-progress reservation, records written
+ * through either route before a gateway switch included, so a key used on one route replays,
+ * conflicts or waits on the other for the whole replay window. The same key in another organization or from another user never replays
+ * this result. Before any replay, the current owner or admin authorization and organization
+ * preconditions, including `If-Organization-Match` at the gateway, must pass again. Otherwise
+ * the request answers as a fresh request would, including `403` or `412`, not the stored result.
+ *
+ * While authorization and preconditions still hold, an equivalent body with the same key
+ * replays the original `200` status and body for 24 hours without sending again or charging
+ * the daily allowances twice. A different body answers `422 idempotency.key-reused`; an
+ * equivalent request still running answers `409 idempotency.request-in-progress`. Only the
+ * `200` outcome is stored. No `429`, including `invitation.daily-limit-reached`, or other
+ * error is stored; the same key may run again when the allowance is available.
+ *
+ * When a key is supplied, the invitations, their `invitation.issued.v1` events in a
+ * transactional outbox or equivalent, and the replay record commit together in the same
+ * transaction. No part of the batch commits without its replay record. A request that fails
+ * without committing is not stored and the key may run again.
+ * @summary Invite people with an idempotency key
+ */
+export const inviteMembersKeyedInternalHeaderIdempotencyKeyMax = 255;
+
+
+
+export const InviteMembersKeyedInternalHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(inviteMembersKeyedInternalHeaderIdempotencyKeyMax).describe('Client-chosen key for replaying an equivalent request.')
+})
+
+export const inviteMembersKeyedInternalBodyEmailsItemMax = 254;
+
+export const inviteMembersKeyedInternalBodyEmailsMax = 50;
+
+export const inviteMembersKeyedInternalBodyRoleDefault = `member`;
+
+export const InviteMembersKeyedInternalBody = zod.object({
+  "emails": zod.array(zod.email().max(inviteMembersKeyedInternalBodyEmailsItemMax).describe('Email address, compared without regard to case.')).min(1).max(inviteMembersKeyedInternalBodyEmailsMax),
+  "role": zod.enum(['admin', 'member', 'guest']).default(inviteMembersKeyedInternalBodyRoleDefault).describe('A role that can be given; never `owner`.')
+})
+
+export const inviteMembersKeyedInternalResponseInvitationsItemEmailMax = 254;
+
+
+
+export const InviteMembersKeyedInternalResponse = zod.object({
+  "invitations": zod.array(zod.object({
+  "email": zod.email().max(inviteMembersKeyedInternalResponseInvitationsItemEmailMax).describe('Email address, compared without regard to case.'),
+  "outcome": zod.string(),
+  "invitationId": zod.uuid().nullable()
+}))
 })
 
 
