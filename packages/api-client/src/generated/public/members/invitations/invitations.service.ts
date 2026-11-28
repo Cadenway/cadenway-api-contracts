@@ -23,6 +23,7 @@ import type {
   InvitationBatch,
   InvitationBatchResult,
   InvitationPage,
+  InvitationState,
   JoinedOrganization,
   ListInvitationsParams,
   ListReceivedInvitationsParams,
@@ -173,6 +174,24 @@ export class InvitationsService {
  *
  * A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
  * `invitation.issued.v1` per `invited` address. Session only.
+ *
+ * **Idempotency.** The `Idempotency-Key` is scoped to the verified organization, acting user
+ * and this operation. The same key in another organization or from another user never replays
+ * this result. Before any replay, the current owner or admin authorization and organization
+ * preconditions, including `If-Organization-Match` at the gateway, must pass again. Otherwise
+ * the request answers as a fresh request would, including `403` or `412`, not the stored result.
+ *
+ * While authorization and preconditions still hold, an equivalent body with the same key
+ * replays the original `200` status and body for 24 hours without sending again or charging
+ * the daily allowances twice. A different body answers `422 idempotency.key-reused`; an
+ * equivalent request still running answers `409 idempotency.request-in-progress`. Only the
+ * `200` outcome is stored. No `429`, including `invitation.daily-limit-reached`, or other
+ * error is stored; the same key may run again when the allowance is available.
+ *
+ * When a key is supplied, the invitations, their `invitation.issued.v1` events in a
+ * transactional outbox or equivalent, and the replay record commit together in the same
+ * transaction. No part of the batch commits without its replay record. A request that fails
+ * without committing is not stored and the key may run again.
  * @summary Invite people
  */
  inviteMembers<TData = InvitationBatchResult>(invitationBatch: InvitationBatch, options?: HttpClientBodyOptions): Observable<TData>;
@@ -244,6 +263,41 @@ export class InvitationsService {
     ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
         params: filteredParams,}
+    );
+  }
+/**
+ * Returns an invitation of the current organization in any state. Owner and admins only.
+ * Session only.
+ * @summary Get an invitation
+ */
+ getInvitation<TData = InvitationState>(invitationId: string, options?: HttpClientBodyOptions): Observable<TData>;
+ getInvitation<TData = InvitationState>(invitationId: string, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ getInvitation<TData = InvitationState>(invitationId: string, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  getInvitation<TData = InvitationState>(
+    invitationId: string, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/v1/invitations/${invitationId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/v1/invitations/${invitationId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/v1/invitations/${invitationId}`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
     );
   }
 /**
@@ -487,6 +541,7 @@ export class InvitationsService {
 
 export type InviteMembersClientResult = NonNullable<InvitationBatchResult>
 export type ListInvitationsClientResult = NonNullable<InvitationPage>
+export type GetInvitationClientResult = NonNullable<InvitationState>
 export type RevokeInvitationClientResult = NonNullable<void>
 export type ResendInvitationClientResult = NonNullable<Invitation>
 export type ListReceivedInvitationsClientResult = NonNullable<ReceivedInvitationPage>

@@ -405,7 +405,27 @@ paths:
 
         A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
         `invitation.issued.v1` per `invited` address. Session only.
+
+        **Idempotency.** The `Idempotency-Key` is scoped to the verified organization, acting user
+        and this operation. The same key in another organization or from another user never replays
+        this result. Before any replay, the current owner or admin authorization and organization
+        preconditions, including `If-Organization-Match` at the gateway, must pass again. Otherwise
+        the request answers as a fresh request would, including `403` or `412`, not the stored result.
+
+        While authorization and preconditions still hold, an equivalent body with the same key
+        replays the original `200` status and body for 24 hours without sending again or charging
+        the daily allowances twice. A different body answers `422 idempotency.key-reused`; an
+        equivalent request still running answers `409 idempotency.request-in-progress`. Only the
+        `200` outcome is stored. No `429`, including `invitation.daily-limit-reached`, or other
+        error is stored; the same key may run again when the allowance is available.
+
+        When a key is supplied, the invitations, their `invitation.issued.v1` events in a
+        transactional outbox or equivalent, and the replay record commit together in the same
+        transaction. No part of the batch commits without its replay record. A request that fails
+        without committing is not stored and the key may run again.
       tags: [invitations]
+      parameters:
+        - $ref: '../../components/http.yaml#/components/parameters/IdempotencyKey'
       security:
         - sessionCookie: []
       requestBody:
@@ -448,6 +468,10 @@ paths:
           $ref: '#/components/responses/OrganizationNotFound'
         '412':
           $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
+        '409':
+          $ref: '../../components/http.yaml#/components/responses/IdempotencyInProgress'
+        '422':
+          $ref: '../../components/http.yaml#/components/responses/IdempotencyKeyReused'
         '429':
           $ref: '#/components/responses/InvitationBatchLimited'
         '503':
@@ -524,6 +548,49 @@ paths:
     parameters:
       - $ref: '../../components/http.yaml#/components/parameters/IfOrganizationMatch'
       - $ref: '#/components/parameters/InvitationId'
+    get:
+      operationId: getInvitation
+      summary: Get an invitation
+      description: |
+        Returns an invitation of the current organization in any state. Owner and admins only.
+        Session only.
+      tags: [invitations]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The invitation and its current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationState'
+              example:
+                id: 019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a70
+                email: marc.roux@ateliernord.fr
+                role: member
+                invitedBy:
+                  userId: 019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31
+                  name: Inès Robert
+                status: accepted
+                sentAt: '2026-11-06T16:20:00Z'
+                expiresAt: '2026-11-13T16:20:00Z'
+                answeredAt: '2026-11-07T09:30:00Z'
+                revokedAt: null
+                version: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OrganizationReadForbidden'
+        '404':
+          $ref: '#/components/responses/InvitationNotFound'
+        '412':
+          $ref: '../../components/http.yaml#/components/responses/OrganizationContextChanged'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
     delete:
       operationId: revokeInvitation
       summary: Revoke an invitation
@@ -1554,6 +1621,45 @@ components:
             `pending` ("Expire dans {n} jours") or `expired` ("Expirée le {date}"); the list holds
             no other. Later versions may add statuses (`x-extensible-enum`).
           x-extensible-enum: [pending, expired]
+        sentAt:
+          type: string
+          format: date-time
+          description: When the email was last sent; a resend moves it.
+        expiresAt:
+          type: string
+          format: date-time
+          description: '`sentAt` plus 7 days.'
+        version:
+          type: integer
+          minimum: 1
+          description: Version of the invitation; a resend adds one.
+    InvitationState:
+      description: An invitation in any state of its lifecycle.
+      type: object
+      required:
+        [id, email, role, invitedBy, status, sentAt, expiresAt, version, answeredAt, revokedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          $ref: '#/components/schemas/Email'
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+        invitedBy:
+          $ref: '#/components/schemas/Inviter'
+        status:
+          type: string
+          description: The current lifecycle state of the invitation.
+          x-extensible-enum: [pending, accepted, refused, revoked, expired]
+        answeredAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the invitation was accepted or refused; otherwise null.
+        revokedAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the invitation was revoked; otherwise null.
         sentAt:
           type: string
           format: date-time

@@ -21,6 +21,7 @@ export * from './invitationNotPendingResponse';
 export * from './invitationPage';
 export * from './invitationResendLimitedResponse';
 export * from './invitationResult';
+export * from './invitationState';
 export * from './inviter';
 export * from './invitingOrganization';
 export * from './joinedOrganization';

@@ -453,6 +453,32 @@ export interface Invitation {
   version: number;
 }
 
+/**
+ * An invitation in any state of its lifecycle.
+ */
+export interface InvitationState {
+  id: string;
+  email: Email;
+  role: AssignableRole;
+  invitedBy: Inviter;
+  /** The current lifecycle state of the invitation. */
+  status: string;
+  /**
+     * When the invitation was accepted or refused; otherwise null.
+     * @nullable
+     */
+  answeredAt: string | null;
+  /**
+     * When the invitation was revoked; otherwise null.
+     * @nullable
+     */
+  revokedAt: string | null;
+  sentAt: string;
+  expiresAt: string;
+  /** @minimum 1 */
+  version: number;
+}
+
 export interface InvitationPage {
   items: Invitation[];
   nextCursor: NextCursor | null;
