@@ -510,8 +510,10 @@ export const RemoveMemberInternalResponse = zod.void()
  * go to `POST /internal/v1/invitation-batches`, which only a release with replay support
  * serves, so a rollback to an older release can never run a keyed retry as a fresh batch.
  * The optional header stays declared for compatibility; this route treats it as
- * `POST /internal/v1/invitation-batches` does, with the same key namespace, replay records
- * and in-progress reservation.
+ * `POST /internal/v1/invitation-batches` does, with the same key namespace, replay records,
+ * in-progress reservation and replay record budget, including
+ * `429 invitation.keyed-batch-limit-reached`. A batch without the header never counts toward
+ * that budget and never answers that code.
  * @summary Invite people
  */
 export const inviteMembersInternalHeaderIdempotencyKeyMax = 255;
@@ -618,13 +620,46 @@ export const ListInvitationsInternalResponse = zod.object({
  * replays the original `200` status and body for 24 hours without sending again or charging
  * the daily allowances twice. A different body answers `422 idempotency.key-reused`; an
  * equivalent request still running answers `409 idempotency.request-in-progress`. Only the
- * `200` outcome is stored. No `429`, including `invitation.daily-limit-reached`, or other
- * error is stored; the same key may run again when the allowance is available.
+ * `200` outcome is stored. No `429`, including `invitation.daily-limit-reached` and
+ * `invitation.keyed-batch-limit-reached`, or other error is stored; the same key may run
+ * again when the allowance or budget is available.
  *
  * When a key is supplied, the invitations, their `invitation.issued.v1` events in a
  * transactional outbox or equivalent, and the replay record commit together in the same
  * transaction. No part of the batch commits without its replay record. A request that fails
  * without committing is not stored and the key may run again.
+ *
+ * **Replay record budget.** Each organization holds at most a service-defined number of
+ * keyed batches at once, across all its users and both invitation routes: stored outcomes
+ * (replay records still inside their 24 hours) plus running requests. A running request
+ * counts once from the moment its key is reserved until it stores its outcome, from then on
+ * as that stored outcome, or until it ends without storing one, when it stops counting. The
+ * budget bounds keyed batches that use no email allowance, such as a batch whose addresses
+ * are all members or already invited.
+ *
+ * It is checked only for a key that has no live record, after authorization, organization
+ * preconditions and the replay lookup, and before the daily allowances are checked;
+ * replays, `409 idempotency.request-in-progress` and `422 idempotency.key-reused` answer as
+ * before. The check and the reservation of the key are one step, serialized per
+ * organization, so concurrent requests with new keys never take the organization past the
+ * budget. When the budget is used up, the request answers
+ * `429 invitation.keyed-batch-limit-reached`: nothing is created, sent, emitted or stored,
+ * and the key is not reserved.
+ *
+ * The guarantee holds once every serving release enforces the budget. During a rollout or a
+ * rollback, a release that predates it admits new keys without counting them; their stored
+ * outcomes count toward the budget from then on, and the organization may hold more than the
+ * budget until they expire.
+ *
+ * `details.nextAvailableAt` is the earliest instant at which the expiry of stored outcomes
+ * alone brings the count, stored outcomes plus running requests, below the budget: the
+ * expiry, 24 hours after it was stored, of the (count - budget + 1)-th oldest stored
+ * outcome of the organization. When running requests alone fill the budget, so that no
+ * expiry can free a place, it is a short service-defined delay away, within the lifetime of
+ * a running request. `Retry-After` is the seconds until
+ * `details.nextAvailableAt`, rounded up, at least `1`. A retry may succeed sooner when a
+ * running request ends without storing an outcome. The same key may be sent again after
+ * `Retry-After`.
  * @summary Invite people with an idempotency key
  */
 export const inviteMembersKeyedInternalHeaderIdempotencyKeyMax = 255;
