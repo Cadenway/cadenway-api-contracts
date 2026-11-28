@@ -11,9 +11,10 @@ import type { Problem } from './problem';
  *   will have grown if they are equal. Nothing was created or sent.
  * - `invitation.keyed-batch-limit-reached` when a request with an `Idempotency-Key` that has
  *   no live replay record finds the organization's replay record budget used up.
- *   `details.nextAvailableAt` reports when the oldest stored outcome of the organization
- *   expires; there is no `details.remaining`. Nothing was created, sent or stored. A request
- *   without the header never answers it.
+ *   `details.nextAvailableAt` reports when expiring stored outcomes next free a place in the
+ *   budget, or a short delay away when running requests alone fill it; there is no
+ *   `details.remaining`. Nothing was created, sent or stored. A request without the header
+ *   never answers it.
  * - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
  *
  * `Retry-After` says how many seconds to wait: until `details.nextAvailableAt` for
