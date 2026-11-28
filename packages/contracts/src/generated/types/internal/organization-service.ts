@@ -456,7 +456,11 @@ export interface Invitation {
 /**
  * An invitation in any state of its lifecycle.
  */
-export type InvitationState = Invitation & ({
+export interface InvitationState {
+  id: string;
+  email: Email;
+  role: AssignableRole;
+  invitedBy: Inviter;
   /** The current lifecycle state of the invitation. */
   status: string;
   /**
@@ -469,7 +473,11 @@ export type InvitationState = Invitation & ({
      * @nullable
      */
   revokedAt: string | null;
-});
+  sentAt: string;
+  expiresAt: string;
+  /** @minimum 1 */
+  version: number;
+}
 
 export interface InvitationPage {
   items: Invitation[];

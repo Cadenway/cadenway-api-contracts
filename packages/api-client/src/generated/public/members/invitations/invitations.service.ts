@@ -175,11 +175,23 @@ export class InvitationsService {
  * A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
  * `invitation.issued.v1` per `invited` address. Session only.
  *
- * **Idempotency.** For 24 hours, an equivalent body with the same `Idempotency-Key`
- * replays the stored status and body without sending again or charging the daily allowances
- * twice. A different body answers `422 idempotency.key-reused`; an equivalent request still
- * running answers `409 idempotency.request-in-progress`. Responses with a `5xx` status are
- * not stored.
+ * **Idempotency.** The `Idempotency-Key` is scoped to the verified organization, acting user
+ * and this operation. The same key in another organization or from another user never replays
+ * this result. Before any replay, the current owner or admin authorization and organization
+ * preconditions, including `If-Organization-Match` at the gateway, must pass again. Otherwise
+ * the request answers as a fresh request would, including `403` or `412`, not the stored result.
+ *
+ * While authorization and preconditions still hold, an equivalent body with the same key
+ * replays the original `200` status and body for 24 hours without sending again or charging
+ * the daily allowances twice. A different body answers `422 idempotency.key-reused`; an
+ * equivalent request still running answers `409 idempotency.request-in-progress`. Only the
+ * `200` outcome is stored. No `429`, including `invitation.daily-limit-reached`, or other
+ * error is stored; the same key may run again when the allowance is available.
+ *
+ * When a key is supplied, the invitations, their `invitation.issued.v1` events in a
+ * transactional outbox or equivalent, and the replay record commit together in the same
+ * transaction. No part of the batch commits without its replay record. A request that fails
+ * without committing is not stored and the key may run again.
  * @summary Invite people
  */
  inviteMembers<TData = InvitationBatchResult>(invitationBatch: InvitationBatch, options?: HttpClientBodyOptions): Observable<TData>;

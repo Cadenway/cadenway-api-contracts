@@ -406,11 +406,23 @@ paths:
         A batch, not one resource: the answer is `200` with the outcomes, not `201`. Emits one
         `invitation.issued.v1` per `invited` address. Session only.
 
-        **Idempotency.** For 24 hours, an equivalent body with the same `Idempotency-Key`
-        replays the stored status and body without sending again or charging the daily allowances
-        twice. A different body answers `422 idempotency.key-reused`; an equivalent request still
-        running answers `409 idempotency.request-in-progress`. Responses with a `5xx` status are
-        not stored.
+        **Idempotency.** The `Idempotency-Key` is scoped to the verified organization, acting user
+        and this operation. The same key in another organization or from another user never replays
+        this result. Before any replay, the current owner or admin authorization and organization
+        preconditions, including `If-Organization-Match` at the gateway, must pass again. Otherwise
+        the request answers as a fresh request would, including `403` or `412`, not the stored result.
+
+        While authorization and preconditions still hold, an equivalent body with the same key
+        replays the original `200` status and body for 24 hours without sending again or charging
+        the daily allowances twice. A different body answers `422 idempotency.key-reused`; an
+        equivalent request still running answers `409 idempotency.request-in-progress`. Only the
+        `200` outcome is stored. No `429`, including `invitation.daily-limit-reached`, or other
+        error is stored; the same key may run again when the allowance is available.
+
+        When a key is supplied, the invitations, their `invitation.issued.v1` events in a
+        transactional outbox or equivalent, and the replay record commit together in the same
+        transaction. No part of the batch commits without its replay record. A request that fails
+        without committing is not stored and the key may run again.
       tags: [invitations]
       parameters:
         - $ref: '../../components/http.yaml#/components/parameters/IdempotencyKey'
@@ -1623,23 +1635,43 @@ components:
           description: Version of the invitation; a resend adds one.
     InvitationState:
       description: An invitation in any state of its lifecycle.
-      allOf:
-        - $ref: '#/components/schemas/Invitation'
-        - type: object
-          required: [status, answeredAt, revokedAt]
-          properties:
-            status:
-              type: string
-              description: The current lifecycle state of the invitation.
-              x-extensible-enum: [pending, accepted, refused, revoked, expired]
-            answeredAt:
-              type: [string, 'null']
-              format: date-time
-              description: When the invitation was accepted or refused; otherwise null.
-            revokedAt:
-              type: [string, 'null']
-              format: date-time
-              description: When the invitation was revoked; otherwise null.
+      type: object
+      required:
+        [id, email, role, invitedBy, status, sentAt, expiresAt, version, answeredAt, revokedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          $ref: '#/components/schemas/Email'
+        role:
+          $ref: '#/components/schemas/AssignableRole'
+        invitedBy:
+          $ref: '#/components/schemas/Inviter'
+        status:
+          type: string
+          description: The current lifecycle state of the invitation.
+          x-extensible-enum: [pending, accepted, refused, revoked, expired]
+        answeredAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the invitation was accepted or refused; otherwise null.
+        revokedAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the invitation was revoked; otherwise null.
+        sentAt:
+          type: string
+          format: date-time
+          description: When the email was last sent; a resend moves it.
+        expiresAt:
+          type: string
+          format: date-time
+          description: '`sentAt` plus 7 days.'
+        version:
+          type: integer
+          minimum: 1
+          description: Version of the invitation; a resend adds one.
     InvitationPage:
       type: object
       required: [items, nextCursor, total]
