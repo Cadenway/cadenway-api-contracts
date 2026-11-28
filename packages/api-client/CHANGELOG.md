@@ -1,5 +1,11 @@
 # @cadenway/api-client
 
+## 1.4.0
+
+### Minor Changes
+
+- 293668a: Add idempotent invitation batches and an invitation state read.
+
 ## 1.3.0
 
 ### Minor Changes

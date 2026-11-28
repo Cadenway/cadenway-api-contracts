@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.45.0
+
+### Minor Changes
+
+- 293668a: Add idempotent invitation batches and an invitation state read.
+
 ## 0.44.0
 
 ### Minor Changes
