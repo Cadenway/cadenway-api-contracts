@@ -1,5 +1,11 @@
 # @cadenway/api-client
 
+## 1.5.0
+
+### Minor Changes
+
+- cecf823: Add `POST /internal/v1/invitation-batches` for keyed invitation batches, so a rollback to a release without replay support answers 404 instead of running a keyed retry as a fresh batch.
+
 ## 1.4.0
 
 ### Minor Changes

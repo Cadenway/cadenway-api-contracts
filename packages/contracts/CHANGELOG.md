@@ -1,5 +1,11 @@
 # @cadenway/contracts
 
+## 0.46.0
+
+### Minor Changes
+
+- cecf823: Add `POST /internal/v1/invitation-batches` for keyed invitation batches, so a rollback to a release without replay support answers 404 instead of running a keyed retry as a fresh batch.
+
 ## 0.45.0
 
 ### Minor Changes
