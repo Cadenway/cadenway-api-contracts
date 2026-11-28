@@ -1,5 +1,11 @@
 # @cadenway/api-client
 
+## 1.6.0
+
+### Minor Changes
+
+- 7c0e1d1: Add `429 invitation.keyed-batch-limit-reached` to keyed invitation batches (`inviteMembers`, `inviteMembersInternal` and `inviteMembersKeyedInternal`), with `Retry-After` and `details.nextAvailableAt`, so organization-service can bound the live replay records of each organization.
+
 ## 1.5.0
 
 ### Minor Changes
