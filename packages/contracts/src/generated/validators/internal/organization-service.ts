@@ -510,8 +510,10 @@ export const RemoveMemberInternalResponse = zod.void()
  * go to `POST /internal/v1/invitation-batches`, which only a release with replay support
  * serves, so a rollback to an older release can never run a keyed retry as a fresh batch.
  * The optional header stays declared for compatibility; this route treats it as
- * `POST /internal/v1/invitation-batches` does, with the same key namespace, replay records
- * and in-progress reservation.
+ * `POST /internal/v1/invitation-batches` does, with the same key namespace, replay records,
+ * in-progress reservation and replay record budget, including
+ * `429 invitation.keyed-batch-limit-reached`. A batch without the header never counts toward
+ * that budget and never answers that code.
  * @summary Invite people
  */
 export const inviteMembersInternalHeaderIdempotencyKeyMax = 255;
@@ -618,13 +620,27 @@ export const ListInvitationsInternalResponse = zod.object({
  * replays the original `200` status and body for 24 hours without sending again or charging
  * the daily allowances twice. A different body answers `422 idempotency.key-reused`; an
  * equivalent request still running answers `409 idempotency.request-in-progress`. Only the
- * `200` outcome is stored. No `429`, including `invitation.daily-limit-reached`, or other
- * error is stored; the same key may run again when the allowance is available.
+ * `200` outcome is stored. No `429`, including `invitation.daily-limit-reached` and
+ * `invitation.keyed-batch-limit-reached`, or other error is stored; the same key may run
+ * again when the allowance or budget is available.
  *
  * When a key is supplied, the invitations, their `invitation.issued.v1` events in a
  * transactional outbox or equivalent, and the replay record commit together in the same
  * transaction. No part of the batch commits without its replay record. A request that fails
  * without committing is not stored and the key may run again.
+ *
+ * **Replay record budget.** Each organization holds at most a service-defined number of live
+ * replay records: in-progress reservations plus stored outcomes still inside their 24 hours,
+ * across all its users and both invitation routes. The budget bounds keyed batches that use
+ * no email allowance, such as a batch whose addresses are all members or already invited.
+ * It is checked only for a key that has no live record, after authorization, organization
+ * preconditions and the replay lookup, and before the key is reserved and the daily
+ * allowances are checked; replays, `409 idempotency.request-in-progress` and
+ * `422 idempotency.key-reused` answer as before. When the budget is used up, the request
+ * answers `429 invitation.keyed-batch-limit-reached`: nothing is created, sent, emitted or
+ * stored, and the key is not reserved. `details.nextAvailableAt` is when the oldest live
+ * replay record of the organization expires, and `Retry-After` is the seconds until then,
+ * rounded up, at least `1`. The same key may be sent again after `Retry-After`.
  * @summary Invite people with an idempotency key
  */
 export const inviteMembersKeyedInternalHeaderIdempotencyKeyMax = 255;

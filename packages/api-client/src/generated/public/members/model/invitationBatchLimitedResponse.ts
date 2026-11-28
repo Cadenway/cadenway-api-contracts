@@ -9,9 +9,14 @@ import type { Problem } from './problem';
  *   rolling allowance. `details.remaining` is the smaller allowance remaining.
  *   `details.nextAvailableAt` reports when the limiting allowance next grows or when both
  *   will have grown if they are equal. Nothing was created or sent.
+ * - `invitation.keyed-batch-limit-reached` when a request with an `Idempotency-Key` that has
+ *   no live replay record finds the organization's replay record budget used up.
+ *   `details.nextAvailableAt` reports when the oldest live replay record of the organization
+ *   expires; there is no `details.remaining`. Nothing was created, sent or stored. A request
+ *   without the header never answers it.
  * - `rate-limit.exceeded`: the gateway refuses more requests from this session for now.
  *
  * `Retry-After` says how many seconds to wait: until `details.nextAvailableAt` for
- * `invitation.daily-limit-reached`.
+ * `invitation.daily-limit-reached` and `invitation.keyed-batch-limit-reached`.
  */
 export type InvitationBatchLimitedResponse = Problem;

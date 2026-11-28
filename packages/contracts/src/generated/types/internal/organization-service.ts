@@ -1004,6 +1004,21 @@ export type InvitationClosedResponse = Problem;
 export type InvitationBatchLimitedResponse = Problem;
 
 /**
+ * - `invitation.daily-limit-reached` when the requested emails exceed the sender's or
+ *   organization's rolling allowance. `details.remaining` is the smaller allowance
+ *   remaining. `details.nextAvailableAt` reports when the limiting allowance next grows or
+ *   when both will have grown if they are equal.
+ * - `invitation.keyed-batch-limit-reached` when a request with an `Idempotency-Key` that has
+ *   no live replay record finds the organization's replay record budget used up.
+ *   `details.nextAvailableAt` reports when the oldest live replay record of the organization
+ *   expires; there is no `details.remaining`. A request without the header never answers it.
+ *
+ * `Retry-After` is the seconds until `details.nextAvailableAt`, rounded up. Nothing was
+ * created, sent, emitted or stored.
+ */
+export type KeyedInvitationBatchLimitedResponse = Problem;
+
+/**
  * - `invitation.resend-throttled`: the email of the invitation went out less than an hour
  *   ago; `details.resendAvailableAt` is `sentAt` plus one hour;
  * - `invitation.daily-limit-reached` when the organization or sender has no invitation
